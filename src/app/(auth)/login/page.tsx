@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { Dumbbell, Zap, BarChart3, Brain } from 'lucide-react'
 import { LoginForm } from './LoginForm'
 

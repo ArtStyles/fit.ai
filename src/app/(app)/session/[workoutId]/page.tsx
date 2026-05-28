@@ -1,8 +1,9 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { SessionClient }      from './SessionClient'
 import type { ExerciseSession } from '@/store/sessionStore'
 import { buildInitialExercises } from '@/store/sessionStore'
+import { getWorkoutStartAccess } from '@/lib/workouts/access'
 
 // ─── Tipos de datos crudos del servidor ──────────────────────────────────────
 
@@ -36,16 +37,23 @@ interface PageProps {
 export default async function SessionPage({ params }: PageProps) {
   const { workoutId } = params
 
-  const { supabase } = await requireAppUserContext()
+  const { supabase, user } = await requireAppUserContext()
+
+  const access = await getWorkoutStartAccess({
+    supabase,
+    userId: user.id,
+    workoutId,
+  })
+
+  if (!access.allowed) {
+    if (access.reason === 'not_found') notFound()
+    redirect('/dashboard?error=workout_unavailable')
+  }
+
+  const workout = access.workout
 
   // ── Datos del workout ──────────────────────────────────────────────────────
-  type WorkoutRow = { id: string; name: string; estimated_duration_minutes: number | null; focus: string | null }
-  const [{ data: workout }, { data: weRows }] = await Promise.all([
-    supabase
-      .from('workouts')
-      .select('id, name, estimated_duration_minutes, focus')
-      .eq('id', workoutId)
-      .single() as unknown as Promise<{ data: WorkoutRow | null }>,
+  const { data: weRows } = await (
     supabase
       .from('workout_exercises')
       .select(`
@@ -69,10 +77,8 @@ export default async function SessionPage({ params }: PageProps) {
         )
       `)
       .eq('workout_id', workoutId)
-      .order('order_index') as unknown as Promise<{ data: RawWorkoutExercise[] | null }>,
-  ])
-
-  if (!workout) notFound()
+      .order('order_index') as unknown as Promise<{ data: RawWorkoutExercise[] | null }>
+  )
 
   const rows = weRows ?? []
 

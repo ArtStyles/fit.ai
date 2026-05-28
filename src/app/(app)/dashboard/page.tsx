@@ -6,35 +6,15 @@ import { AINotesBanner }     from '@/components/dashboard/AINotesBanner'
 import { PendingLink }       from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
+import {
+  addDays as addCalendarDays,
+  getIsoWeekday,
+  getLocalDateString,
+  getWeekMonday as getCurrentWeekMonday,
+} from '@/lib/workouts/schedule'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 
 export const metadata = { title: 'Dashboard · FitAI' }
-
-// ─── Date helpers (UTC — aproximación aceptable para el saludo y calendario) ──
-
-function getTodayIso(): number {
-  const d = new Date().getDay()
-  return d === 0 ? 7 : d   // 0=Sun → 7, 1=Mon → 1 … 6=Sat → 6
-}
-
-function getWeekMonday(): Date {
-  const today  = new Date()
-  const isoDay = getTodayIso()
-  const mon    = new Date(today)
-  mon.setDate(today.getDate() - (isoDay - 1))
-  mon.setHours(0, 0, 0, 0)
-  return mon
-}
-
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d)
-  r.setDate(r.getDate() + n)
-  return r
-}
-
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0]
-}
 
 function getGreeting(): string {
   const h = new Date().getHours()
@@ -292,16 +272,16 @@ export default async function DashboardPage() {
     ?? user.email?.split('@')[0]
     ?? 'Campeón'
 
-  const todayIso  = getTodayIso()
-  const weekStart = getWeekMonday()
-  const todayStr  = toDateStr(new Date())
+  const todayIso  = getIsoWeekday()
+  const weekStart = getCurrentWeekMonday()
+  const todayStr  = getLocalDateString()
 
   // ── Plan activo ────────────────────────────────────────────────────────────
   const dashboardPayload = await loadDashboardPayload(
     supabase,
     user.id,
     weekStart,
-    addDays(new Date(), -30),
+    addCalendarDays(new Date(), -30),
   )
   const {
     planRaw,
@@ -318,11 +298,11 @@ export default async function DashboardPage() {
   // ── Racha (30 días hacia atrás) ────────────────────────────────────────────
   let streak = 0
   if (allRecentLogs.length > 0) {
-    const logDateSet = new Set(allRecentLogs.map(l => l.completed_at.split('T')[0]))
+    const logDateSet = new Set(allRecentLogs.map(l => getLocalDateString(new Date(l.completed_at))))
     let check = new Date()
-    while (logDateSet.has(toDateStr(check))) {
+    while (logDateSet.has(getLocalDateString(check))) {
       streak++
-      check = addDays(check, -1)
+      check = addCalendarDays(check, -1)
     }
   }
 
@@ -331,7 +311,7 @@ export default async function DashboardPage() {
 
   const todayLog = weekLogs.find(l =>
     l.workout_id === todayWorkout?.id &&
-    l.completed_at.startsWith(todayStr),
+    getLocalDateString(new Date(l.completed_at)) === todayStr,
   )
 
   // ── Siguiente workout (para día de descanso) ───────────────────────────────
@@ -342,12 +322,13 @@ export default async function DashboardPage() {
 
   // ── Datos del calendario semanal ──────────────────────────────────────────
   const weekDays: DayData[] = Array.from({ length: 7 }, (_, i) => {
-    const date    = addDays(weekStart, i)
-    const dateStr = toDateStr(date)
+    const date    = addCalendarDays(weekStart, i)
+    const dateStr = getLocalDateString(date)
     const iso     = i + 1
     const workout = workouts.find(w => w.day_of_week === iso) ?? null
     const log     = weekLogs.find(l =>
-      l.workout_id === workout?.id && l.completed_at.startsWith(dateStr),
+      l.workout_id === workout?.id &&
+      getLocalDateString(new Date(l.completed_at)) === dateStr,
     )
     return {
       isoDay: iso,
@@ -368,7 +349,7 @@ export default async function DashboardPage() {
   // ── Banner de IA: si el plan tiene ai_notes y se creó en los últimos 7 días ─
   const showAiBanner = !!(
     planRaw?.ai_notes &&
-    new Date(planRaw.created_at).getTime() > addDays(new Date(), -7).getTime()
+    new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7).getTime()
   )
 
   return (

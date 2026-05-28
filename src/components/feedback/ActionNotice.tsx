@@ -52,6 +52,10 @@ const ERRORS: Record<string, { title: string; description?: string }> = {
     title: 'No se pudo guardar',
     description: 'La acción falló. Intenta nuevamente.',
   },
+  workout_unavailable: {
+    title: 'Rutina no disponible',
+    description: 'Solo puedes iniciar la rutina programada para hoy.',
+  },
 }
 
 export function ActionNotice() {

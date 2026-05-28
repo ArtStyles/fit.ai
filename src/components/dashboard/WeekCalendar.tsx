@@ -14,14 +14,20 @@ interface Props {
 
 type DayState = 'completed' | 'today' | 'scheduled' | 'rest' | 'skipped'
 
-export function WeekCalendar({ days }: Props) {
-  const [activeRestDay, setActiveRestDay] = useState<number | null>(null)
+export function WeekCalendar({ days, todayIso }: Props) {
+  const [activeMessageDay, setActiveMessageDay] = useState<number | null>(null)
+  const activeDay = activeMessageDay === null
+    ? null
+    : days.find(day => day.isoDay === activeMessageDay) ?? null
+  const activeMessage = activeDay
+    ? getUnavailableMessage(activeDay, getDayState(activeDay, todayIso))
+    : null
 
   useEffect(() => {
-    if (activeRestDay === null) return
-    const id = window.setTimeout(() => setActiveRestDay(null), 2200)
+    if (activeMessageDay === null) return
+    const id = window.setTimeout(() => setActiveMessageDay(null), 2200)
     return () => window.clearTimeout(id)
-  }, [activeRestDay])
+  }, [activeMessageDay])
 
   return (
     <div>
@@ -31,7 +37,7 @@ export function WeekCalendar({ days }: Props) {
       <div className="grid grid-cols-7 gap-1.5">
         {days.map((day) => {
           const dayNum  = parseInt(day.dateStr.split('-')[2], 10)
-          const state   = getDayState(day)
+          const state   = getDayState(day, todayIso)
 
           return (
             <DayCell
@@ -40,23 +46,30 @@ export function WeekCalendar({ days }: Props) {
               dayInitial={DAY_INITIALS[day.isoDay - 1]}
               dayNum={dayNum}
               state={state}
-              showRestMessage={activeRestDay === day.isoDay}
-              onRestTap={() => setActiveRestDay(day.isoDay)}
+              showMessage={activeMessageDay === day.isoDay}
+              onUnavailableTap={() => setActiveMessageDay(day.isoDay)}
             />
           )
         })}
       </div>
+      <p
+        aria-live="polite"
+        className={cn(
+          'mt-3 min-h-5 px-0.5 text-xs font-medium text-muted-foreground transition-opacity sm:hidden',
+          activeMessage ? 'opacity-100' : 'opacity-0',
+        )}
+      >
+        {activeMessage ?? ' '}
+      </p>
     </div>
   )
 }
 
-function getDayState(day: DayData): DayState {
-  const today = new Date().toISOString().split('T')[0]
-
+function getDayState(day: DayData, todayIso: number): DayState {
   if (day.isCompleted) return 'completed'
   if (!day.workout) return 'rest'
-  if (day.isToday) return 'today'
-  if (day.dateStr < today) return 'skipped'
+  if (day.isoDay === todayIso || day.isToday) return 'today'
+  if (day.isoDay < todayIso) return 'skipped'
   return 'scheduled'
 }
 
@@ -71,23 +84,33 @@ function getTooltip(day: DayData, state: DayState): string {
   return day.workout.name
 }
 
+function getUnavailableMessage(day: DayData, state: DayState): string {
+  if (!day.workout) return 'Dia de descanso, aprovecha para recuperar'
+  if (state === 'completed') return 'Esta rutina ya fue completada.'
+  if (state === 'skipped') return 'Esta rutina ya paso. Solo puedes iniciar la rutina de hoy.'
+  if (state === 'scheduled') return 'Esta rutina aun no esta disponible. Solo puedes iniciar la rutina de hoy.'
+  return day.workout.name
+}
+
 function DayCell({
   day,
   dayInitial,
   dayNum,
   state,
-  showRestMessage,
-  onRestTap,
+  showMessage,
+  onUnavailableTap,
 }: {
   day:             DayData
   dayInitial:      string
   dayNum:          number
   state:           DayState
-  showRestMessage: boolean
-  onRestTap:       () => void
+  showMessage:     boolean
+  onUnavailableTap: () => void
 }) {
-  const tooltip = showRestMessage
-    ? 'Día de descanso, aprovecha para recuperar'
+  const workout = day.workout
+  const canStart = state === 'today' && workout !== null
+  const tooltip = showMessage
+    ? getUnavailableMessage(day, state)
     : getTooltip(day, state)
 
   const inner = (
@@ -96,9 +119,11 @@ function DayCell({
         'group relative flex flex-col items-center gap-1 rounded-xl border py-2.5 px-1 transition-colors select-none',
         day.isToday && 'border-violet-500/80 bg-violet-500/10 text-violet-200',
         state === 'completed' && 'border-green-500/30 bg-green-500/5',
-        state === 'scheduled' && 'border-border/60 bg-muted/10 hover:bg-muted/20',
+        state === 'scheduled' && 'border-border/60 bg-muted/10',
         state === 'rest' && 'border-border/30 bg-transparent opacity-60 hover:opacity-80',
         state === 'skipped' && 'border-border/40 bg-muted/5 opacity-70',
+        canStart ? 'cursor-pointer hover:bg-violet-500/15' : 'cursor-not-allowed',
+        state === 'rest' && 'cursor-default',
       )}
     >
       <span className={cn(
@@ -125,7 +150,7 @@ function DayCell({
         role="tooltip"
         className={cn(
           'pointer-events-none absolute left-1/2 top-[calc(100%+0.45rem)] z-30 hidden w-max max-w-48 -translate-x-1/2 rounded-md border border-border/70 bg-popover px-2 py-1 text-center text-[11px] font-medium leading-snug text-popover-foreground shadow-lg group-hover:block group-focus-within:block',
-          showRestMessage && 'block',
+          showMessage && 'block',
         )}
       >
         {tooltip}
@@ -133,12 +158,12 @@ function DayCell({
     </div>
   )
 
-  if (day.workout) {
+  if (canStart) {
     return (
       <PendingLink
-        href={`/session/${day.workout.id}`}
+        href={`/session/${workout.id}`}
         className="focus-visible:outline-none"
-        aria-label={day.isToday ? `Continuar ${day.workout.name}` : day.workout.name}
+        aria-label={day.isToday ? `Continuar ${workout.name}` : workout.name}
         title={getTooltip(day, state)}
         showSpinner={false}
       >
@@ -150,10 +175,11 @@ function DayCell({
   return (
     <button
       type="button"
-      onClick={onRestTap}
+      onClick={onUnavailableTap}
       className="focus-visible:outline-none"
-      aria-label="Día de descanso"
-      title="Descanso"
+      aria-disabled={day.workout ? true : undefined}
+      aria-label={day.workout ? getUnavailableMessage(day, state) : 'Dia de descanso'}
+      title={getUnavailableMessage(day, state)}
     >
       {inner}
     </button>

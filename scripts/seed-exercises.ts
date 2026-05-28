@@ -46,7 +46,7 @@ function sleep(ms: number): Promise<void> {
 
 async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
   let attempt = 0
-  while (true) {
+  while (attempt < MAX_RETRIES) {
     try {
       return await fn()
     } catch (err) {
@@ -57,6 +57,8 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
       await sleep(backoff)
     }
   }
+
+  throw new Error(`${label} failed after ${MAX_RETRIES} attempts`)
 }
 
 function stripHtml(html: string): string {
@@ -132,7 +134,7 @@ async function main() {
   let page = firstPage
   let offset = 0
 
-  while (true) {
+  while (page.results.length > 0) {
     const toUpsert: ExerciseInsert[] = []
 
     for (const ex of page.results) {

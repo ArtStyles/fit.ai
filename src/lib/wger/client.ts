@@ -77,6 +77,7 @@ export async function fetchExercises(
   limit = 100,
   offset = 0,
 ): Promise<WgerPage<WgerExerciseInfo>> {
+  void _language
   // exerciseinfo includes all translations; language filtering is done client-side
   return get(`/exerciseinfo/?format=json&limit=${limit}&offset=${offset}`)
 }

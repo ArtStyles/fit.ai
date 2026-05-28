@@ -9,7 +9,7 @@
  * porque validan estructura y contratos, no contenido específico del modelo.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mockGenerateInitialPlan }         from '../mock-planGenerator'
 import type { UserContext, FilteredExercise } from '../types'
 

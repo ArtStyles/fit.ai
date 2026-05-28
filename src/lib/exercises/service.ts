@@ -14,10 +14,6 @@ const DEFAULT_LIMIT = 24
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 /** Cast helper — avoids repeating the verbose supabase-js v2 workaround. */
-function castData<T>(raw: unknown): T {
-  return (raw as { data: T }).data
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -43,7 +39,7 @@ export async function getExercises(
   const to   = from + limit - 1
 
   // Build base query
-  let query = (supabase as unknown as {
+  const query = (supabase as unknown as {
     from: (t: string) => unknown
   })
     .from('exercises') as ReturnType<typeof supabase.from>

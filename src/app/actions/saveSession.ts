@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { buildProgressionSuggestions } from '@/lib/progression'
+import { getWorkoutStartAccess } from '@/lib/workouts/access'
 import type { ProgressionSuggestion } from '@/lib/progression'
 
 export interface SetPayload {
@@ -131,6 +132,32 @@ export async function saveSession(
 
   if (!user) {
     return { success: false, progressLogId: null, prs: [], progressions: [], error: 'No autenticado' }
+  }
+
+  const access = await getWorkoutStartAccess({
+    supabase,
+    userId: user.id,
+    workoutId: payload.workoutId,
+  })
+
+  if (!access.allowed && access.reason === 'completed_today') {
+    return {
+      success: false,
+      progressLogId: null,
+      prs: [],
+      progressions: [],
+      error: 'Esta rutina ya fue completada hoy.',
+    }
+  }
+
+  if (!access.allowed) {
+    return {
+      success: false,
+      progressLogId: null,
+      prs: [],
+      progressions: [],
+      error: 'Solo puedes registrar la rutina programada para hoy.',
+    }
   }
 
   const durationMinutes = Math.max(

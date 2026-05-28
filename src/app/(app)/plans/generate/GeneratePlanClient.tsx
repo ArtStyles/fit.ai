@@ -23,20 +23,6 @@ const LOADING_MESSAGES = [
   'Casi listo…',
 ]
 
-function useLoadingMessage(isLoading: boolean) {
-  const [idx, setIdx] = useState(0)
-
-  useState(() => {
-    if (!isLoading) return
-    const id = setInterval(() => {
-      setIdx(i => (i + 1) % LOADING_MESSAGES.length)
-    }, 1800)
-    return () => clearInterval(id)
-  })
-
-  return LOADING_MESSAGES[idx]
-}
-
 // ─── Tarjeta de dato del perfil ───────────────────────────────────────────────
 
 function ProfileChip({

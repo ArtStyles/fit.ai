@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { CheckCircle2, ChevronRight, Clock, Dumbbell, Moon, Sparkles, TrendingUp } from 'lucide-react'
 import type { WorkoutSummary } from '@/app/(app)/dashboard/page'
-import { cn } from '@/lib/utils'
 
 // ── Mapeo de isoDay → nombre del día en español ───────────────────────────────
 const DAY_NAMES: Record<number, string> = {
