@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Dumbbell, LogOut, Settings } from 'lucide-react'
+import { Dumbbell, LogOut, Ruler, Settings } from 'lucide-react'
 import { DevModeBanner } from '@/components/DevModeBanner'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { signOut } from '@/app/(auth)/actions'
@@ -60,6 +60,12 @@ export function DashboardHeader({ greeting, firstName, avatarUrl }: Props) {
               sideOffset={10}
               className="w-48 border-border/70 bg-popover/95 p-1.5 shadow-lg shadow-black/30 backdrop-blur-md"
             >
+              <DropdownMenuItem asChild className="cursor-pointer gap-2 rounded-md px-3 py-2">
+                <PendingLink href="/medidas" showSpinner={false}>
+                  <Ruler className="h-4 w-4 text-violet-300" />
+                  Medidas
+                </PendingLink>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild className="cursor-pointer gap-2 rounded-md px-3 py-2">
                 <PendingLink href="/settings" showSpinner={false}>
                   <Settings className="h-4 w-4 text-violet-300" />

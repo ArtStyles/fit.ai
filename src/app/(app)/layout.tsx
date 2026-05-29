@@ -1,5 +1,6 @@
 import { requireAppUserContext } from '@/lib/auth/server'
 import { PageTransition } from '@/components/navigation/PageTransition'
+import { BottomNav } from '@/components/navigation/BottomNav'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   await requireAppUserContext()
@@ -9,6 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="flex-1 overflow-x-hidden">
         <PageTransition>{children}</PageTransition>
       </main>
+      <BottomNav />
     </div>
   )
 }
