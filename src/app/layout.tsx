@@ -8,6 +8,10 @@ import '@/styles/globals.css'
 export const metadata: Metadata = {
   title: { default: 'FitAI', template: '%s | FitAI' },
   description: 'Tu entrenador personal con IA. Rutinas adaptativas semana a semana.',
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
