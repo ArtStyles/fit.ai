@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PendingLink } from '@/components/navigation/PendingLink'
-import { CheckCircle2, ChevronRight, Clock, Dumbbell, Moon, Sparkles, TrendingUp } from 'lucide-react'
+import { CheckCircle2, ChevronRight, Clock, Dumbbell, Flame, Moon, Sparkles, TrendingUp } from 'lucide-react'
 import type { WorkoutSummary } from '@/app/(app)/dashboard/page'
 
 // ── Mapeo de isoDay → nombre del día en español ───────────────────────────────
@@ -16,17 +16,18 @@ interface Props {
   planExists:        boolean
   nextWorkout:       WorkoutSummary | null
   nextWorkoutIsoDay: number | null
+  streak:            number
 }
 
 export function HeroCard({
   todayWorkout, isCompletedToday, planExists,
-  nextWorkout, nextWorkoutIsoDay,
+  nextWorkout, nextWorkoutIsoDay, streak,
 }: Props) {
 
   // ── Sin plan activo ───────────────────────────────────────────────────────
   if (!planExists) {
     return (
-      <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center space-y-3">
+      <div className="fitai-shimmer rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center space-y-3">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-500/10">
           <Sparkles className="h-6 w-6 text-indigo-400" />
         </div>
@@ -50,16 +51,24 @@ export function HeroCard({
   if (isCompletedToday && todayWorkout) {
     return (
       <div className="rounded-2xl border border-green-500/20 bg-green-500/5 p-5 space-y-3">
-        <div className="flex items-center gap-2 text-green-400">
-          <CheckCircle2 className="h-5 w-5" />
-          <span className="text-sm font-semibold">Entrenamiento completado</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-green-400">
+            <CheckCircle2 className="h-5 w-5" />
+            <span className="text-sm font-semibold">¡Completado!</span>
+          </div>
+          {streak >= 2 && (
+            <span className="fitai-pop flex items-center gap-1 rounded-full bg-orange-500/15 px-2.5 py-1 text-sm font-bold text-orange-400">
+              <Flame className="h-4 w-4" />
+              {streak}
+            </span>
+          )}
         </div>
         <p className="text-xl font-bold text-foreground leading-tight">
           {todayWorkout.name}
         </p>
         {nextWorkout && nextWorkoutIsoDay && (
           <p className="text-sm text-muted-foreground">
-            Tu próxima sesión: <span className="text-foreground font-medium">{nextWorkout.name}</span>
+            Próxima sesión: <span className="text-foreground font-medium">{nextWorkout.name}</span>
             {' '}{DAY_NAMES[nextWorkoutIsoDay]}
           </p>
         )}
@@ -131,7 +140,7 @@ export function HeroCard({
       </div>
 
       <Button
-        className="w-full h-14 bg-white text-indigo-700 hover:bg-indigo-50 font-bold text-base shadow-none"
+        className="fitai-cta-ring w-full h-14 bg-white text-indigo-700 hover:bg-indigo-50 font-bold text-base shadow-none"
         asChild
       >
         <PendingLink href={`/session/${todayWorkout.id}`}>

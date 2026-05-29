@@ -12,6 +12,7 @@ import {
   Loader2,
   Minus,
   RefreshCw,
+  Sparkles,
   Target,
   TrendingDown,
   TrendingUp,
@@ -103,21 +104,25 @@ function MoodSelector({
   )
 }
 
-function PRBadge({ pr }: { pr: PRRecord }) {
+function PRBadge({ pr, index }: { pr: PRRecord; index: number }) {
   return (
     <motion.div
-      variants={itemMotion}
-      className="flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-3 py-3 text-left"
+      initial={{ opacity: 0, scale: 0.75, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.38, delay: 0.12 + index * 0.1, ease: [0.34, 1.3, 0.64, 1] }}
+      className="flex items-center gap-3 rounded-xl border border-yellow-500/40 bg-yellow-500/8 px-3 py-3 text-left shadow-sm shadow-yellow-900/20"
+      style={{ background: 'rgba(234,179,8,0.06)' }}
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-yellow-500/10">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-yellow-500/15">
         <Trophy className="h-4 w-4 text-yellow-300" />
       </div>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold leading-tight text-yellow-300">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold leading-tight text-yellow-200">
           Nuevo PR — {pr.exerciseName}
         </p>
         <p className="text-xs text-yellow-500/80">{pr.weightKg} kg</p>
       </div>
+      <span className="fitai-pop shrink-0 text-lg">🏆</span>
     </motion.div>
   )
 }
@@ -163,6 +168,71 @@ function ProgressionCard({ suggestion }: { suggestion: ProgressionSuggestion }) 
   )
 }
 
+// ─── Generador de insight post-sesión ────────────────────────────────────────
+
+function pick<T>(arr: T[], seed: number): T {
+  return arr[seed % arr.length]
+}
+
+function generateSessionInsight(params: {
+  prCount:          number
+  progressionCount: number
+  volumeKg:         number
+  completedSets:    number
+  isPerfect:        boolean
+}): string {
+  const { prCount, progressionCount, volumeKg, completedSets, isPerfect } = params
+  const v = new Date().getDate() % 3
+
+  if (prCount > 0 && progressionCount > 0) {
+    return pick([
+      `${prCount} nuevo${prCount > 1 ? 's' : ''} PR y ${progressionCount} progresión${progressionCount > 1 ? 'es' : ''} activada${progressionCount > 1 ? 's' : ''}. Uno de tus mejores días.`,
+      `Nuevas marcas y el sistema ya actualizó tus cargas. Así se construye fuerza real.`,
+      `PR + progresiones: combinación perfecta. Esto es lo que pasa cuando eres consistente.`,
+    ], v)
+  }
+
+  if (prCount > 0) {
+    return pick([
+      `${prCount > 1 ? `${prCount} nuevos PRs` : 'Nuevo PR'} hoy. Tu fuerza sigue creciendo.`,
+      `Marcas personales batidas. El trabajo está dando resultados concretos.`,
+      `${prCount > 1 ? 'Varios récords' : 'Récord'} nuevo${prCount > 1 ? 's' : ''}. No pasa por accidente — es consistencia acumulada.`,
+    ], v)
+  }
+
+  if (progressionCount > 0) {
+    return pick([
+      `Sesión sólida. La IA ajustó ${progressionCount} ejercicio${progressionCount > 1 ? 's' : ''} para la próxima vez.`,
+      `${progressionCount} progresión${progressionCount > 1 ? 'es' : ''} lista${progressionCount > 1 ? 's' : ''} para el siguiente entrenamiento. Sigue así.`,
+      `El sistema detectó que puedes más en ${progressionCount} ejercicio${progressionCount > 1 ? 's' : ''}. Buena señal.`,
+    ], v)
+  }
+
+  if (isPerfect) {
+    return pick([
+      `${completedSets} series completadas sin saltarte nada. Eso es disciplina.`,
+      `Sesión 100% completada.${volumeKg > 0 ? ` ${Math.round(volumeKg)} kg de volumen total.` : ''} Excelente trabajo.`,
+      `Todo completado. Esa constancia es lo que separa los resultados a largo plazo.`,
+    ], v)
+  }
+
+  if (volumeKg >= 5000) {
+    return pick([
+      `${(Math.round(volumeKg / 100) / 10).toFixed(1)} toneladas de volumen hoy. Sesión de alto rendimiento.`,
+      `Gran día de volumen — ${Math.round(volumeKg)} kg movidos en total.`,
+      `Sesión intensa: ${Math.round(volumeKg)} kg. Asegúrate de descansar bien.`,
+    ], v)
+  }
+
+  return pick([
+    `${completedSets} series registradas. Cada sesión es un ladrillo más.`,
+    `Progreso guardado. La constancia a largo plazo es lo que funciona.`,
+    `Sesión anotada. Los datos están ahí para la próxima vez.`,
+  ], v)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface Props {
   workoutId: string
   onClearBackup: () => void
@@ -184,6 +254,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
   const [prs, setPrs] = useState<PRRecord[]>([])
   const [progressions, setProgressions] = useState<ProgressionSuggestion[]>([])
   const [saved, setSaved] = useState(false)
+  const [insight, setInsight] = useState<string | null>(null)
 
   const durationMs = (finishedAt || Date.now()) - startedAt
   const completedExercises = exercises.filter(exercise => exercise.status === 'completed').length
@@ -240,6 +311,18 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
         setProgressions(result.progressions)
         setSaved(true)
         setSyncStatus('saved')
+        const qualityProgressions = result.progressions.filter(
+          s => s.nextWeightKg !== null && s.confidence !== 'low',
+        ).length
+        setInsight(generateSessionInsight({
+          prCount:          result.prs.length,
+          progressionCount: qualityProgressions,
+          volumeKg:         totalVolumeKg,
+          completedSets,
+          isPerfect,
+        }))
+        // Haptic: short-pause-long = success pattern
+        navigator.vibrate?.([60, 40, 120])
         const progressionCount = result.progressions.filter(
           suggestion => suggestion.nextWeightKg !== null && suggestion.confidence !== 'low',
         ).length
@@ -303,7 +386,9 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
           className="mx-auto flex w-full max-w-lg flex-col items-center text-center"
         >
           <motion.div
-            variants={itemMotion}
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: [0, 1.28, 0.88, 1.1, 1], opacity: [0, 1, 1, 1, 1] }}
+            transition={{ duration: 0.85, times: [0, 0.42, 0.6, 0.78, 1], ease: 'easeOut', delay: 0.08 }}
             className="mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-indigo-700 shadow-xl shadow-indigo-900/40"
           >
             <Trophy className="h-11 w-11 text-white" />
@@ -351,8 +436,8 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
                   PRs detectados al guardar la sesión.
                 </p>
               </motion.div>
-              {visiblePrs.map(pr => (
-                <PRBadge key={`${pr.exerciseName}-${pr.weightKg}`} pr={pr} />
+              {visiblePrs.map((pr, index) => (
+                <PRBadge key={`${pr.exerciseName}-${pr.weightKg}`} pr={pr} index={index} />
               ))}
               {hiddenPrCount > 0 && (
                 <motion.p variants={itemMotion} className="text-left text-xs text-muted-foreground">
@@ -436,12 +521,23 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
               <h2 className="mt-2 text-2xl font-bold text-foreground">
                 {visibleProgressions.length > 0 ? 'Tu siguiente paso está listo' : 'Progreso sincronizado'}
               </h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {visibleProgressions.length > 0
-                  ? 'La app ajustó tus cargas usando lo que completaste hoy.'
-                  : 'Tu sesión quedó guardada. Cuando haya más datos, verás recomendaciones aquí.'}
-              </p>
             </motion.div>
+
+            {/* Insight generado por IA */}
+            {insight && (
+              <motion.div
+                variants={itemMotion}
+                className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 px-4 py-3.5 space-y-2"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="h-3 w-3 text-violet-400" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400/80">
+                    Coach IA
+                  </span>
+                </div>
+                <p className="text-sm leading-relaxed text-foreground/80">{insight}</p>
+              </motion.div>
+            )}
 
             {visibleProgressions.length > 0 && (
               <motion.div variants={containerMotion} className="mt-6 space-y-3">
