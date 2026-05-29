@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronDown, ChevronUp, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, History, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
 import { cn }    from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { SetRow } from './SetRow'
@@ -182,6 +182,13 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
             <p className="text-xs text-indigo-300 px-1">
               Objetivo: {targetReps} reps · RPE {exercise.targetRpe}
             </p>
+          )}
+
+          {exercise.hasLastSessionData && (
+            <div className="inline-flex items-center gap-1 rounded-md bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
+              <History className="h-3 w-3" />
+              Pesos de tu última sesión
+            </div>
           )}
 
           {weightSuggestionBasis === 'based_on_previous_logs' && suggestedWeight !== null && (

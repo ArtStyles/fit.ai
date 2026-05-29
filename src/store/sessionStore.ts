@@ -48,6 +48,7 @@ export interface ExerciseSession {
   sets:              SetData[]
   status:            'pending' | 'active' | 'completed' | 'skipped'
   expanded:          boolean
+  hasLastSessionData: boolean         // true cuando pesos/reps vienen de la sesión anterior
 }
 
 export interface RestTimerState {
@@ -85,6 +86,7 @@ export interface SessionState {
   tickRestTimer:   () => void
   extendRestTimer: (seconds: number) => void
   clearRestTimer:  () => void
+  applyProgressions: (updates: Array<{ weId: string; weightKg: number }>) => void
   finishSession:   () => void
   setSyncStatus:   (status: SyncStatus) => void
   clearSession:    () => void
@@ -92,13 +94,31 @@ export interface SessionState {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function buildInitialSets(targetSets: number, suggestedWeight: number | null): SetData[] {
-  return Array.from({ length: targetSets }, () => ({
-    weightKg:  suggestedWeight != null ? String(suggestedWeight) : '',
-    reps:      '',
-    rpe:       null,
-    completed: false,
-  }))
+function buildInitialSets(
+  targetSets:      number,
+  suggestedWeight: number | null,
+  lastWeightsKg?:  number[] | null,
+  lastReps?:       number[] | null,
+): SetData[] {
+  return Array.from({ length: targetSets }, (_, i) => {
+    // Usar valor de la última sesión por índice; si el nuevo plan tiene más series
+    // que la última sesión, repetir el último valor disponible.
+    const lastW = lastWeightsKg?.length
+      ? (lastWeightsKg[i] ?? lastWeightsKg[lastWeightsKg.length - 1])
+      : null
+    const lastR = lastReps?.length
+      ? (lastReps[i] ?? lastReps[lastReps.length - 1])
+      : null
+
+    return {
+      weightKg:  lastW  != null ? String(lastW)
+               : suggestedWeight != null ? String(suggestedWeight)
+               : '',
+      reps:      lastR != null ? String(lastR) : '',
+      rpe:       null,
+      completed: false,
+    }
+  })
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -135,6 +155,7 @@ function buildFlexibleExercise(
       : 'Agregado solo por hoy.',
     source,
     skipReason: null,
+    hasLastSessionData: false,
     sets: buildInitialSets(targetSets, null),
     status: original?.status === 'active' ? 'active' : 'pending',
     expanded: original?.status === 'active',
@@ -405,6 +426,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ restTimer: null })
   },
 
+  // ── applyProgressions ────────────────────────────────────────────────────
+  applyProgressions(updates) {
+    set(s => ({
+      exercises: s.exercises.map(ex => {
+        const u = updates.find(item => item.weId === ex.workoutExerciseId)
+        if (!u) return ex
+        return {
+          ...ex,
+          sets: ex.sets.map(st => ({ ...st, weightKg: String(u.weightKg) })),
+        }
+      }),
+    }))
+  },
+
   // ── finishSession ─────────────────────────────────────────────────────────
   finishSession() {
     set({ isFinished: true, finishedAt: Date.now(), restTimer: null, syncStatus: 'idle' })
@@ -449,15 +484,18 @@ export function buildInitialExercises(
     suggestedWeight:   number | null
     weightSuggestionBasis: 'user_baseline_pending' | 'estimated_from_profile' | 'based_on_previous_logs' | null
     notes:             string | null
+    lastWeightsKg:     number[] | null
+    lastReps:          number[] | null
   }>,
 ): ExerciseSession[] {
   return rows.map(r => ({
     ...r,
-    originalExerciseId: null,
-    originalName: null,
-    source: 'planned' as const,
-    skipReason: null,
-    sets:     buildInitialSets(r.targetSets, r.suggestedWeight),
+    originalExerciseId:  null,
+    originalName:        null,
+    source:              'planned' as const,
+    skipReason:          null,
+    hasLastSessionData:  !!(r.lastWeightsKg && r.lastWeightsKg.length > 0),
+    sets:     buildInitialSets(r.targetSets, r.suggestedWeight, r.lastWeightsKg, r.lastReps),
     status:   'pending' as const,
     expanded: false,
   }))

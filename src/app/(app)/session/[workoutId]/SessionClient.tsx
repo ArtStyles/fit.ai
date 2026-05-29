@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef }  from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSessionStore }    from '@/store/sessionStore'
 import { useRestTimer }       from '@/hooks/useRestTimer'
 import { useWakeLock }        from '@/hooks/useWakeLock'
@@ -9,6 +9,8 @@ import { ExerciseCard }       from '@/components/session/ExerciseCard'
 import { RestTimer }          from '@/components/session/RestTimer'
 import { CompletionScreen }   from '@/components/session/CompletionScreen'
 import { SessionRoutineTools } from '@/components/session/SessionRoutineTools'
+import { PreSessionScreen }   from '@/components/session/PreSessionScreen'
+import type { ProgressionItem } from '@/components/session/PreSessionScreen'
 import { saveBackup, loadBackup, clearBackup } from '@/lib/session/persistSession'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 
@@ -24,15 +26,43 @@ interface Props {
 
 // ─── SessionClient ────────────────────────────────────────────────────────────
 
+// Extrae las progresiones a mostrar en la pantalla pre-sesión
+function extractProgressions(exercises: ExerciseSession[]): ProgressionItem[] {
+  return exercises
+    .filter(e => e.weightSuggestionBasis === 'based_on_previous_logs' && e.suggestedWeight != null)
+    .map(e => {
+      const prefilledWeight = e.sets[0]?.weightKg ? Number(e.sets[0].weightKg) || null : null
+      return {
+        weId:         e.workoutExerciseId,
+        name:         e.name,
+        muscleGroups: e.muscleGroups,
+        fromWeightKg: e.hasLastSessionData ? prefilledWeight : null,
+        toWeightKg:   e.suggestedWeight!,
+      }
+    })
+    // Solo mostrar si el peso sugerido es realmente diferente al pre-rellenado
+    .filter(p => p.fromWeightKg == null || p.fromWeightKg !== p.toWeightKg)
+}
+
 export function SessionClient({ workoutId, workoutName, exercises, exerciseOptions }: Props) {
-  const initSession     = useSessionStore(s => s.initSession)
-  const restoreSession  = useSessionStore(s => s.restoreSession)
-  const finishSession   = useSessionStore(s => s.finishSession)
-  const isFinished      = useSessionStore(s => s.isFinished)
-  const storeExercises  = useSessionStore(s => s.exercises)
-  const storeWorkoutId  = useSessionStore(s => s.workoutId)
-  const startedAt       = useSessionStore(s => s.startedAt)
-  const workoutNameStore = useSessionStore(s => s.workoutName)
+  const initSession       = useSessionStore(s => s.initSession)
+  const restoreSession    = useSessionStore(s => s.restoreSession)
+  const applyProgressions = useSessionStore(s => s.applyProgressions)
+  const finishSession     = useSessionStore(s => s.finishSession)
+  const isFinished        = useSessionStore(s => s.isFinished)
+  const storeExercises    = useSessionStore(s => s.exercises)
+  const storeWorkoutId    = useSessionStore(s => s.workoutId)
+  const startedAt         = useSessionStore(s => s.startedAt)
+  const workoutNameStore  = useSessionStore(s => s.workoutName)
+
+  // Pre-calcular progresiones desde la prop del servidor (antes de hidratación)
+  const progressions = extractProgressions(exercises)
+
+  // Mostrar pantalla pre-sesión solo en arranques frescos con progresiones
+  const [showPreSession, setShowPreSession] = useState(() => {
+    if (typeof window === 'undefined' || progressions.length === 0) return false
+    return !loadBackup(workoutId)
+  })
 
   // Evitar guardar el backup durante la hidratación inicial
   const initializedRef = useRef(false)
@@ -77,6 +107,20 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
 
   // ── Wake lock: pantalla encendida durante el entrenamiento ────────────────
   useWakeLock(!isFinished)
+
+  // ── Pantalla pre-sesión (progresiones pendientes) ─────────────────────────
+  if (showPreSession && progressions.length > 0) {
+    return (
+      <PreSessionScreen
+        progressions={progressions}
+        onApply={updates => {
+          applyProgressions(updates)
+          setShowPreSession(false)
+        }}
+        onSkip={() => setShowPreSession(false)}
+      />
+    )
+  }
 
   // ── Pantalla de finalización ──────────────────────────────────────────────
   if (isFinished) {

@@ -61,8 +61,8 @@ export default async function SessionPage({ params }: PageProps) {
 
   const workout = access.workout
 
-  // ── Datos del workout ──────────────────────────────────────────────────────
-  const [{ data: weRows }, { data: exerciseOptionRows }] = await Promise.all([
+  // ── Datos del workout + última sesión completada (en paralelo) ────────────
+  const [{ data: weRows }, { data: exerciseOptionRows }, { data: lastLogRow }] = await Promise.all([
     supabase
       .from('workout_exercises')
       .select(`
@@ -93,30 +93,68 @@ export default async function SessionPage({ params }: PageProps) {
       .eq('is_public', true)
       .order('name')
       .limit(500) as unknown as Promise<{ data: RawExerciseOption[] | null }>,
+    supabase
+      .from('progress_logs')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('workout_id', workoutId)
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle() as unknown as Promise<{ data: { id: string } | null }>,
   ])
+
+  // ── Pesos/reps de la última sesión para pre-rellenar ──────────────────────
+  type LastLogRow = { exercise_id: string | null; weights_kg: number[] | null; reps_completed: number[] | null }
+  let lastExerciseLogs: LastLogRow[] = []
+
+  if (lastLogRow?.id) {
+    const { data } = await supabase
+      .from('exercise_logs')
+      .select('exercise_id, weights_kg, reps_completed')
+      .eq('progress_log_id', lastLogRow.id) as unknown as { data: LastLogRow[] | null }
+    lastExerciseLogs = data ?? []
+  }
+
+  // exerciseId → { weightsKg (por serie), reps (por serie) }
+  const lastSessionMap = new Map(
+    lastExerciseLogs
+      .filter(l => l.exercise_id != null)
+      .map(l => [
+        l.exercise_id!,
+        {
+          weightsKg: (l.weights_kg ?? []).filter((w): w is number => w != null && w > 0),
+          reps:      (l.reps_completed ?? []).filter((r): r is number => r != null && r > 0),
+        },
+      ]),
+  )
 
   const rows = weRows ?? []
 
   // ── Transformar a ExerciseSession[] ───────────────────────────────────────
   const exerciseInitData = rows
     .filter(r => r.exercises != null)
-    .map(r => ({
-      workoutExerciseId: r.id,
-      exerciseId:        r.exercises!.id,
-      name:              r.exercises!.name,
-      imageUrl:          r.exercises!.image_url,
-      instructions:      r.exercises!.instructions,
-      muscleGroups:      r.exercises!.muscle_groups ?? [],
-      isCompound:        r.exercises!.is_compound,
-      targetSets:        r.sets ?? 3,
-      targetReps:        r.reps,
-      targetDuration:    r.duration_seconds,
-      restSeconds:       r.rest_seconds ?? 90,
-      targetRpe:         r.target_rpe ?? 7,
-      suggestedWeight:   r.weight_kg,
-      weightSuggestionBasis: r.weight_suggestion_basis as ExerciseSession['weightSuggestionBasis'],
-      notes:             r.notes,
-    }))
+    .map(r => {
+      const last = lastSessionMap.get(r.exercises!.id)
+      return {
+        workoutExerciseId:     r.id,
+        exerciseId:            r.exercises!.id,
+        name:                  r.exercises!.name,
+        imageUrl:              r.exercises!.image_url,
+        instructions:          r.exercises!.instructions,
+        muscleGroups:          r.exercises!.muscle_groups ?? [],
+        isCompound:            r.exercises!.is_compound,
+        targetSets:            r.sets ?? 3,
+        targetReps:            r.reps,
+        targetDuration:        r.duration_seconds,
+        restSeconds:           r.rest_seconds ?? 90,
+        targetRpe:             r.target_rpe ?? 7,
+        suggestedWeight:       r.weight_kg,
+        weightSuggestionBasis: r.weight_suggestion_basis as ExerciseSession['weightSuggestionBasis'],
+        notes:                 r.notes,
+        lastWeightsKg:         last?.weightsKg ?? null,
+        lastReps:              last?.reps      ?? null,
+      }
+    })
 
   const exercises: ExerciseSession[] = buildInitialExercises(exerciseInitData)
   const exerciseOptions: SessionExerciseDraft[] = (exerciseOptionRows ?? []).map(exercise => ({
