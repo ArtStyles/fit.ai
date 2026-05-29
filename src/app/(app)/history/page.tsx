@@ -6,8 +6,10 @@ import {
 } from 'lucide-react'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { HistorySessionList } from '@/components/history/HistorySessionList'
+import { ExerciseProgressionSection } from '@/components/history/ExerciseProgressionSection'
 import { requireAppUserContext } from '@/lib/auth/server'
 import type { Database } from '@/types/database'
+import type { TrackedExercise } from '@/app/actions/progression'
 
 export const metadata = { title: 'Historial · FitAI' }
 
@@ -214,6 +216,22 @@ export default async function HistoryPage() {
   }, 0))
   const personalRecords = buildPersonalRecords(exerciseLogs, sessionLogs)
 
+  // Deduplicate tracked exercises for the progression chart selector
+  const exerciseCountById = new Map<string, number>()
+  const exerciseMetaById  = new Map<string, { name: string; muscleGroups: string[] }>()
+  for (const row of exerciseLogs) {
+    if (!row.exercise_id) continue
+    const ex = getExercise(row)
+    if (!ex) continue
+    exerciseCountById.set(row.exercise_id, (exerciseCountById.get(row.exercise_id) ?? 0) + 1)
+    if (!exerciseMetaById.has(row.exercise_id)) {
+      exerciseMetaById.set(row.exercise_id, { name: ex.name, muscleGroups: ex.muscle_groups ?? [] })
+    }
+  }
+  const trackedExercises: TrackedExercise[] = Array.from(exerciseCountById.entries())
+    .map(([id, sessionCount]) => ({ id, sessionCount, ...exerciseMetaById.get(id)! }))
+    .sort((a, b) => b.sessionCount - a.sessionCount)
+
   return (
     <div className="min-h-screen bg-background pb-16">
       <main className="mx-auto max-w-lg px-4 py-8">
@@ -321,6 +339,10 @@ export default async function HistoryPage() {
                   ))}
                 </div>
               </section>
+            )}
+
+            {trackedExercises.length >= 2 && (
+              <ExerciseProgressionSection exercises={trackedExercises} />
             )}
 
             <HistorySessionList sessionLogs={sessionLogs} exerciseLogs={exerciseLogs} />
