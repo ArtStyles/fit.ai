@@ -1,10 +1,11 @@
-import { DashboardHeader }   from '@/components/dashboard/DashboardHeader'
-import { HeroCard }          from '@/components/dashboard/HeroCard'
-import { WeekCalendar }      from '@/components/dashboard/WeekCalendar'
-import { QuickStats }        from '@/components/dashboard/QuickStats'
-import { AINotesBanner }     from '@/components/dashboard/AINotesBanner'
+import { DashboardHeader }    from '@/components/dashboard/DashboardHeader'
+import { HeroCard }           from '@/components/dashboard/HeroCard'
+import { WeekCalendar }       from '@/components/dashboard/WeekCalendar'
+import { QuickStats }         from '@/components/dashboard/QuickStats'
+import { AINotesBanner }      from '@/components/dashboard/AINotesBanner'
 import { ProgressHighlights } from '@/components/dashboard/ProgressHighlights'
-import { PendingLink }       from '@/components/navigation/PendingLink'
+import { DailyBrief }         from '@/components/dashboard/DailyBrief'
+import { PendingLink }        from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import {
@@ -13,6 +14,7 @@ import {
   getLocalDateString,
   getWeekMonday as getCurrentWeekMonday,
 } from '@/lib/workouts/schedule'
+import { generateDailyBrief } from '@/lib/ai/mock-briefGenerator'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 import type { Database } from '@/types/database'
 
@@ -436,6 +438,24 @@ export default async function DashboardPage() {
     new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7).getTime()
   )
 
+  // ── Brief diario personalizado (sólo cuando hay un plan activo) ────────────
+  const dailyBriefMessage = planRaw
+    ? generateDailyBrief({
+        firstName,
+        streak,
+        todayWorkout: todayWorkout
+          ? { name: todayWorkout.name, exercise_count: todayWorkout.exercise_count }
+          : null,
+        isCompletedToday:  !!todayLog,
+        progressionCount:  activeAdjustmentCount,
+        topRecord:         topRecordHighlight
+          ? { exerciseName: topRecordHighlight.exerciseName, maxWeightKg: topRecordHighlight.maxWeightKg }
+          : null,
+        weekSessions:      sessionsThisWeek,
+        scheduledSessions: scheduledThisWeek,
+      })
+    : null
+
   return (
     <div className="min-h-screen bg-background pb-16">
       <DashboardHeader greeting={getGreeting()} firstName={firstName} avatarUrl={profile?.avatar_url ?? null} />
@@ -454,9 +474,18 @@ export default async function DashboardPage() {
           </section>
         )}
 
+        {dailyBriefMessage && (
+          <section
+            className="animate-in fade-in slide-in-from-bottom-3 mt-8 duration-500"
+            style={{ animationDelay: showAiBanner ? '100ms' : '40ms' }}
+          >
+            <DailyBrief message={dailyBriefMessage} />
+          </section>
+        )}
+
         <section
-          className="animate-in fade-in slide-in-from-bottom-3 mt-8 duration-500"
-          style={{ animationDelay: showAiBanner ? '120ms' : '40ms' }}
+          className="animate-in fade-in slide-in-from-bottom-3 mt-4 duration-500"
+          style={{ animationDelay: showAiBanner ? '180ms' : '120ms' }}
         >
           <HeroCard
             todayWorkout={todayWorkout}
@@ -464,6 +493,7 @@ export default async function DashboardPage() {
             planExists={!!planRaw}
             nextWorkout={nextWorkoutDay?.workout ?? null}
             nextWorkoutIsoDay={nextWorkoutDay?.iso ?? null}
+            streak={streak}
           />
         </section>
 
