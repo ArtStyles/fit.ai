@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { SessionClient }      from './SessionClient'
-import type { ExerciseSession } from '@/store/sessionStore'
+import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 import { buildInitialExercises } from '@/store/sessionStore'
 import { getWorkoutStartAccess } from '@/lib/workouts/access'
 
@@ -26,6 +26,15 @@ type RawWorkoutExercise = {
     is_compound:  boolean
     muscle_groups: string[]
   } | null
+}
+
+type RawExerciseOption = {
+  id: string
+  name: string
+  image_url: string | null
+  instructions: string | null
+  is_compound: boolean
+  muscle_groups: string[] | null
 }
 
 // ─── Página ───────────────────────────────────────────────────────────────────
@@ -53,7 +62,7 @@ export default async function SessionPage({ params }: PageProps) {
   const workout = access.workout
 
   // ── Datos del workout ──────────────────────────────────────────────────────
-  const { data: weRows } = await (
+  const [{ data: weRows }, { data: exerciseOptionRows }] = await Promise.all([
     supabase
       .from('workout_exercises')
       .select(`
@@ -77,8 +86,14 @@ export default async function SessionPage({ params }: PageProps) {
         )
       `)
       .eq('workout_id', workoutId)
-      .order('order_index') as unknown as Promise<{ data: RawWorkoutExercise[] | null }>
-  )
+      .order('order_index') as unknown as Promise<{ data: RawWorkoutExercise[] | null }>,
+    supabase
+      .from('exercises')
+      .select('id, name, image_url, instructions, is_compound, muscle_groups')
+      .eq('is_public', true)
+      .order('name')
+      .limit(500) as unknown as Promise<{ data: RawExerciseOption[] | null }>,
+  ])
 
   const rows = weRows ?? []
 
@@ -104,6 +119,19 @@ export default async function SessionPage({ params }: PageProps) {
     }))
 
   const exercises: ExerciseSession[] = buildInitialExercises(exerciseInitData)
+  const exerciseOptions: SessionExerciseDraft[] = (exerciseOptionRows ?? []).map(exercise => ({
+    exerciseId: exercise.id,
+    name: exercise.name,
+    imageUrl: exercise.image_url,
+    instructions: exercise.instructions,
+    muscleGroups: exercise.muscle_groups ?? [],
+    isCompound: exercise.is_compound,
+    targetSets: 3,
+    targetReps: 10,
+    targetDuration: null,
+    restSeconds: 90,
+    targetRpe: 7,
+  }))
 
   return (
     <SessionClient
@@ -111,6 +139,7 @@ export default async function SessionPage({ params }: PageProps) {
       workoutName={workout.name}
       estimatedMinutes={workout.estimated_duration_minutes}
       exercises={exercises}
+      exerciseOptions={exerciseOptions}
     />
   )
 }

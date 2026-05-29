@@ -3,6 +3,7 @@ import { HeroCard }          from '@/components/dashboard/HeroCard'
 import { WeekCalendar }      from '@/components/dashboard/WeekCalendar'
 import { QuickStats }        from '@/components/dashboard/QuickStats'
 import { AINotesBanner }     from '@/components/dashboard/AINotesBanner'
+import { ProgressHighlights } from '@/components/dashboard/ProgressHighlights'
 import { PendingLink }       from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
@@ -76,6 +77,20 @@ type WeekLogRow = {
   completed_at: string
   duration_minutes: number | null
 }
+
+type ExerciseProgressRow = {
+  progress_log_id: string
+  weights_kg: number[] | null
+  reps_completed: number[] | null
+  exercise: { name: string } | { name: string }[] | null
+}
+
+type TopRecordHighlight = {
+  logId: string
+  exerciseName: string
+  maxWeightKg: number
+  repsAtMaxWeight: number
+} | null
 
 type DashboardPayload = {
   planRaw: PlanRow | null
@@ -262,6 +277,54 @@ async function loadDashboardPayload(
   return loadDashboardFallback(supabase, userId, weekStart, recentStart)
 }
 
+function getExerciseName(row: ExerciseProgressRow): string | null {
+  if (Array.isArray(row.exercise)) return row.exercise[0]?.name ?? null
+  return row.exercise?.name ?? null
+}
+
+async function loadTopRecordHighlight(
+  supabase: SupabaseServerClient,
+  recentLogs: WeekLogRow[],
+): Promise<TopRecordHighlight> {
+  const logIds = recentLogs.map(log => log.id)
+  if (logIds.length === 0) return null
+
+  const { data } = await supabase
+    .from('exercise_logs')
+    .select('progress_log_id, weights_kg, reps_completed, exercise:exercises(name)')
+    .in('progress_log_id', logIds) as unknown as { data: ExerciseProgressRow[] | null }
+
+  let best: NonNullable<TopRecordHighlight> | null = null
+
+  for (const row of data ?? []) {
+    const exerciseName = getExerciseName(row)
+    if (!exerciseName) continue
+
+    const weights = row.weights_kg ?? []
+    const reps = row.reps_completed ?? []
+    const maxWeightKg = weights.reduce((max, weight) => Math.max(max, Number(weight) || 0), 0)
+    const maxWeightIndex = weights.findIndex(weight => (Number(weight) || 0) === maxWeightKg)
+    const repsAtMaxWeight = Number(reps[maxWeightIndex] ?? 0) || 0
+
+    if (maxWeightKg <= 0 && repsAtMaxWeight <= 0) continue
+
+    if (
+      !best ||
+      maxWeightKg > best.maxWeightKg ||
+      (maxWeightKg === best.maxWeightKg && repsAtMaxWeight > best.repsAtMaxWeight)
+    ) {
+      best = {
+        logId: row.progress_log_id,
+        exerciseName,
+        maxWeightKg,
+        repsAtMaxWeight,
+      }
+    }
+  }
+
+  return best
+}
+
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage() {
@@ -291,6 +354,23 @@ export default async function DashboardPage() {
     hasCompletedSessions,
   } = dashboardPayload
   const workouts = await attachProgressionCounts(supabase, dashboardPayload.workouts)
+  const topRecordHighlight = await loadTopRecordHighlight(supabase, allRecentLogs)
+  const workoutNameById = new Map(workouts.map(workout => [workout.id, workout.name]))
+  const latestCompletedSession = allRecentLogs[0]
+  const latestSession = latestCompletedSession
+    ? {
+        id: latestCompletedSession.id,
+        workoutName: latestCompletedSession.workout_id
+          ? workoutNameById.get(latestCompletedSession.workout_id) ?? 'Entrenamiento'
+          : 'Entrenamiento',
+        completedAt: latestCompletedSession.completed_at,
+        durationMinutes: latestCompletedSession.duration_minutes,
+      }
+    : null
+  const activeAdjustmentCount = workouts.reduce(
+    (sum, workout) => sum + workout.progression_suggestion_count,
+    0,
+  )
 
   // ── Workouts del plan + conteo de ejercicios ───────────────────────────────
   // ── Datos de esta semana ───────────────────────────────────────────────────
@@ -418,6 +498,19 @@ export default async function DashboardPage() {
             </PendingLink>
           )}
         </section>
+
+        {hasCompletedSessions && (
+          <section
+            className="animate-in fade-in slide-in-from-bottom-3 mt-12 duration-500"
+            style={{ animationDelay: '360ms' }}
+          >
+            <ProgressHighlights
+              latestSession={latestSession}
+              topRecord={topRecordHighlight}
+              activeAdjustments={activeAdjustmentCount}
+            />
+          </section>
+        )}
       </main>
     </div>
   )

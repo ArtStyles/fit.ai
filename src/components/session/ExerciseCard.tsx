@@ -1,15 +1,19 @@
 'use client'
 
-import { ChevronDown, ChevronUp, SkipForward, TrendingUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
 import { cn }    from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { SetRow } from './SetRow'
+import { SessionExercisePicker } from '@/components/session/SessionExercisePicker'
 import { useSessionStore } from '@/store/sessionStore'
-import type { ExerciseSession } from '@/store/sessionStore'
+import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 
 interface Props {
   exercise: ExerciseSession
+  exerciseOptions: SessionExerciseDraft[]
 }
+
+const SKIP_REASONS = ['Sin equipo', 'Fatiga', 'Dolor', 'Tiempo']
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -38,7 +42,7 @@ function StatusBadge({ status }: { status: ExerciseSession['status'] }) {
 
 // ─── ExerciseCard ─────────────────────────────────────────────────────────────
 
-export function ExerciseCard({ exercise }: Props) {
+export function ExerciseCard({ exercise, exerciseOptions }: Props) {
   const {
     workoutExerciseId: weId,
     status,
@@ -51,6 +55,9 @@ export function ExerciseCard({ exercise }: Props) {
     isCompound,
     suggestedWeight,
     weightSuggestionBasis,
+    source,
+    originalName,
+    skipReason,
   } = exercise
 
   const toggleExpanded  = useSessionStore(s => s.toggleExpanded)
@@ -58,11 +65,16 @@ export function ExerciseCard({ exercise }: Props) {
   const selectRpe       = useSessionStore(s => s.selectRpe)
   const completeSet     = useSessionStore(s => s.completeSet)
   const skipExercise    = useSessionStore(s => s.skipExercise)
+  const replaceExercise = useSessionStore(s => s.replaceSessionExercise)
+  const removeExercise  = useSessionStore(s => s.removeSessionExercise)
 
   const isActive    = status === 'active'
   const isCompleted = status === 'completed'
   const isSkipped   = status === 'skipped'
   const canExpand   = status !== 'skipped'
+  const hasCompletedSets = sets.some(set => set.completed)
+  const canReplace = !hasCompletedSets && !isSkipped
+  const canRemove = source === 'ad_hoc' && !hasCompletedSets
 
   // Número de series completadas
   const completedSets = sets.filter(s => s.completed).length
@@ -112,6 +124,11 @@ export function ExerciseCard({ exercise }: Props) {
                 compuesto
               </Badge>
             )}
+            {source !== 'planned' && (
+              <Badge variant="ghost" className="shrink-0 border border-violet-500/20 bg-violet-500/10 px-1.5 py-0 text-[10px] text-violet-200">
+                solo hoy
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -147,6 +164,12 @@ export function ExerciseCard({ exercise }: Props) {
       {/* ── Contenido expandido ───────────────────────────────────────────── */}
       {expanded && !isSkipped && (
         <div className="px-3 pb-3 space-y-2">
+          {originalName && (
+            <p className="text-xs text-violet-200 bg-violet-500/10 rounded-lg px-3 py-2">
+              Reemplaza solo por hoy a {originalName}.
+            </p>
+          )}
+
           {/* Nota del ejercicio */}
           {notes && (
             <p className="text-xs text-muted-foreground bg-muted/20 rounded-lg px-3 py-2">
@@ -195,16 +218,59 @@ export function ExerciseCard({ exercise }: Props) {
           ))}
 
           {/* Botón Saltar ejercicio */}
-          {isActive && (
+          {canReplace && (
+            <details className="rounded-lg border border-border/40 bg-muted/10 p-3">
+              <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-violet-200">
+                <Repeat2 className="h-3.5 w-3.5" />
+                Cambiar ejercicio solo por hoy
+              </summary>
+              <div className="mt-3">
+                <SessionExercisePicker
+                  options={exerciseOptions.filter(option => option.exerciseId !== exercise.exerciseId)}
+                  placeholder="Buscar reemplazo"
+                  onSelect={nextExercise => replaceExercise(weId, nextExercise)}
+                />
+              </div>
+            </details>
+          )}
+
+          {canRemove && (
             <button
               type="button"
-              onClick={() => skipExercise(weId)}
-              className="mt-1 w-full flex items-center justify-center gap-1.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => removeExercise(weId)}
+              className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-xs text-red-300 hover:bg-red-500/10 transition-colors"
             >
-              <SkipForward className="h-3.5 w-3.5" />
-              Saltar ejercicio
+              <Trash2 className="h-3.5 w-3.5" />
+              Quitar ejercicio agregado
             </button>
           )}
+
+          {isActive && (
+            <div className="mt-1 rounded-lg border border-border/40 bg-background/40 p-2">
+              <p className="px-1 text-[11px] font-medium text-muted-foreground">
+                Saltar por:
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {SKIP_REASONS.map(reason => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => skipExercise(weId, reason)}
+                    className="flex items-center justify-center gap-1.5 rounded-md border border-border/50 bg-muted/10 px-2 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                  >
+                    <SkipForward className="h-3.5 w-3.5" />
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isSkipped && skipReason && (
+        <div className="px-4 pb-3 text-xs text-muted-foreground">
+          Motivo: {skipReason}
         </div>
       )}
     </div>

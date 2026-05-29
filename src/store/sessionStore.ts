@@ -9,9 +9,27 @@ export interface SetData {
   completed: boolean
 }
 
+export type SessionExerciseSource = 'planned' | 'replacement' | 'ad_hoc'
+
+export interface SessionExerciseDraft {
+  exerciseId: string
+  name: string
+  imageUrl: string | null
+  instructions: string | null
+  muscleGroups: string[]
+  isCompound: boolean
+  targetSets?: number | null
+  targetReps?: number | null
+  targetDuration?: number | null
+  restSeconds?: number | null
+  targetRpe?: number | null
+}
+
 export interface ExerciseSession {
   workoutExerciseId: string
   exerciseId:        string
+  originalExerciseId:string | null
+  originalName:      string | null
   name:              string
   imageUrl:          string | null
   instructions:      string | null
@@ -25,6 +43,8 @@ export interface ExerciseSession {
   suggestedWeight:   number | null    // weight_kg inicial sugerido
   weightSuggestionBasis: 'user_baseline_pending' | 'estimated_from_profile' | 'based_on_previous_logs' | null
   notes:             string | null
+  source:            SessionExerciseSource
+  skipReason:        string | null
   sets:              SetData[]
   status:            'pending' | 'active' | 'completed' | 'skipped'
   expanded:          boolean
@@ -57,7 +77,10 @@ export interface SessionState {
   updateSetField:  (weId: string, setIdx: number, field: 'weightKg' | 'reps', value: string) => void
   selectRpe:       (weId: string, setIdx: number, rpe: number) => void
   completeSet:     (weId: string, setIdx: number) => void
-  skipExercise:    (weId: string) => void
+  skipExercise:    (weId: string, reason?: string | null) => void
+  addSessionExercise: (exercise: SessionExerciseDraft) => void
+  replaceSessionExercise: (weId: string, exercise: SessionExerciseDraft) => void
+  removeSessionExercise: (weId: string) => void
   startRestTimer:  (exerciseId: string, seconds: number) => void
   tickRestTimer:   () => void
   extendRestTimer: (seconds: number) => void
@@ -79,6 +102,44 @@ function buildInitialSets(targetSets: number, suggestedWeight: number | null): S
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
+
+function buildFlexibleExercise(
+  draft: SessionExerciseDraft,
+  source: SessionExerciseSource,
+  original?: Pick<
+    ExerciseSession,
+    'exerciseId' | 'name' | 'targetSets' | 'targetReps' | 'targetDuration' | 'restSeconds' | 'targetRpe' | 'status'
+  >,
+): ExerciseSession {
+  const targetSets = draft.targetSets ?? original?.targetSets ?? 3
+
+  return {
+    workoutExerciseId: `session-${draft.exerciseId}-${Date.now()}`,
+    exerciseId: draft.exerciseId,
+    originalExerciseId: original?.exerciseId ?? null,
+    originalName: original?.name ?? null,
+    name: draft.name,
+    imageUrl: draft.imageUrl,
+    instructions: draft.instructions,
+    muscleGroups: draft.muscleGroups,
+    isCompound: draft.isCompound,
+    targetSets,
+    targetReps: draft.targetReps ?? original?.targetReps ?? 10,
+    targetDuration: draft.targetDuration ?? original?.targetDuration ?? null,
+    restSeconds: draft.restSeconds ?? original?.restSeconds ?? 90,
+    targetRpe: draft.targetRpe ?? original?.targetRpe ?? 7,
+    suggestedWeight: null,
+    weightSuggestionBasis: 'user_baseline_pending',
+    notes: source === 'replacement' && original?.name
+      ? `Cambio solo por hoy: reemplaza ${original.name}.`
+      : 'Agregado solo por hoy.',
+    source,
+    skipReason: null,
+    sets: buildInitialSets(targetSets, null),
+    status: original?.status === 'active' ? 'active' : 'pending',
+    expanded: original?.status === 'active',
+  }
+}
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   // ── Estado inicial ─────────────────────────────────────────────────────────
@@ -119,7 +180,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       workoutName,
       startedAt,
       finishedAt: 0,
-      exercises,
+      exercises: exercises.map(exercise => ({
+        ...exercise,
+        originalExerciseId: exercise.originalExerciseId ?? null,
+        originalName: exercise.originalName ?? null,
+        source: exercise.source ?? 'planned',
+        skipReason: exercise.skipReason ?? null,
+      })),
       restTimer:  null,
       isFinished: false,
       syncStatus: 'idle',
@@ -220,13 +287,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   // ── skipExercise ──────────────────────────────────────────────────────────
-  skipExercise(weId) {
+  skipExercise(weId, reason = null) {
     set(s => {
       const exIdx = s.exercises.findIndex(e => e.workoutExerciseId === weId)
       if (exIdx === -1) return s
 
       let newExercises = s.exercises.map((e, i) =>
-        i === exIdx ? { ...e, status: 'skipped' as const, expanded: false } : e,
+        i === exIdx ? { ...e, status: 'skipped' as const, expanded: false, skipReason: reason } : e,
       )
 
       // Activar el siguiente pendiente
@@ -244,6 +311,58 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   // ── startRestTimer ────────────────────────────────────────────────────────
+  addSessionExercise(exercise) {
+    set(s => {
+      const hasActive = s.exercises.some(ex => ex.status === 'active')
+      const nextExercise = buildFlexibleExercise(exercise, 'ad_hoc')
+
+      return {
+        exercises: [
+          ...s.exercises,
+          {
+            ...nextExercise,
+            status: hasActive ? 'pending' as const : 'active' as const,
+            expanded: !hasActive,
+          },
+        ],
+      }
+    })
+  },
+
+  replaceSessionExercise(weId, exercise) {
+    set(s => ({
+      exercises: s.exercises.map(ex => {
+        if (ex.workoutExerciseId !== weId) return ex
+        if (ex.sets.some(set => set.completed)) return ex
+
+        return {
+          ...buildFlexibleExercise(exercise, 'replacement', ex),
+          workoutExerciseId: weId,
+        }
+      }),
+    }))
+  },
+
+  removeSessionExercise(weId) {
+    set(s => {
+      const target = s.exercises.find(ex => ex.workoutExerciseId === weId)
+      if (!target || target.source !== 'ad_hoc') return s
+
+      let nextExercises = s.exercises.filter(ex => ex.workoutExerciseId !== weId)
+
+      if (target.status === 'active') {
+        const nextIdx = nextExercises.findIndex(ex => ex.status === 'pending')
+        if (nextIdx !== -1) {
+          nextExercises = nextExercises.map((ex, index) =>
+            index === nextIdx ? { ...ex, status: 'active' as const, expanded: true } : ex,
+          )
+        }
+      }
+
+      return { exercises: nextExercises }
+    })
+  },
+
   startRestTimer(exerciseId, seconds) {
     set({
       restTimer: {
@@ -334,6 +453,10 @@ export function buildInitialExercises(
 ): ExerciseSession[] {
   return rows.map(r => ({
     ...r,
+    originalExerciseId: null,
+    originalName: null,
+    source: 'planned' as const,
+    skipReason: null,
     sets:     buildInitialSets(r.targetSets, r.suggestedWeight),
     status:   'pending' as const,
     expanded: false,

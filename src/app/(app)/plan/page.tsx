@@ -14,6 +14,7 @@ import { updatePlanSummary, updateWorkoutSummary } from '@/app/actions/plan'
 import {
   ArrowLeft,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   Dumbbell,
   History,
@@ -21,6 +22,7 @@ import {
   Target,
   Timer,
 } from 'lucide-react'
+import { getIsoWeekday } from '@/lib/workouts/schedule'
 
 export const metadata = { title: 'Plan completo · FitAI' }
 
@@ -172,6 +174,8 @@ export default async function PlanPage() {
     acc[row.workout_id].push(row)
     return acc
   }, {})
+  const todayIso = getIsoWeekday()
+  const hasTodayWorkout = workouts.some(workout => workout.day_of_week === todayIso)
 
   return (
     <div className="min-h-screen bg-background pb-16">
@@ -287,100 +291,119 @@ export default async function PlanPage() {
         <div className="mt-8 space-y-4">
           {workouts.map((workout, index) => {
             const exercises = exercisesByWorkout[workout.id] ?? []
+            const isToday = workout.day_of_week === todayIso
+            const dayLabel = workout.day_of_week ? DAY_NAMES[workout.day_of_week] : `Sesión ${index + 1}`
+            const defaultOpen = isToday || (!hasTodayWorkout && index === 0)
 
             return (
-              <section
+              <details
                 key={workout.id}
-                className="animate-in fade-in slide-in-from-bottom-3 rounded-2xl border border-border/60 bg-muted/10 p-5 duration-500"
+                open={defaultOpen}
+                className="group animate-in fade-in slide-in-from-bottom-3 rounded-2xl border border-border/60 bg-muted/10 duration-500 open:bg-muted/15"
                 style={{ animationDelay: `${Math.min(index * 70 + 140, 420)}ms` }}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {workout.day_of_week ? DAY_NAMES[workout.day_of_week] : `Sesión ${index + 1}`}
-                    </p>
-                    <h2 className="mt-1 text-lg font-semibold leading-snug text-foreground">
+                <summary className="flex cursor-pointer list-none items-center gap-3 p-5 outline-none transition-colors hover:bg-muted/10 [&::-webkit-details-marker]:hidden">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {dayLabel}
+                      </p>
+                      {isToday && (
+                        <Badge variant="ghost" className="border border-violet-500/30 bg-violet-500/10 px-2 py-0 text-[11px] text-violet-100">
+                          Hoy
+                        </Badge>
+                      )}
+                    </div>
+                    <h2 className="mt-1 truncate text-base font-semibold leading-snug text-foreground">
                       {workout.displayName}
                     </h2>
-                    {workout.focus && (
-                      <p className="mt-1 text-sm text-muted-foreground">{workout.focus}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      {workout.focus && <span className="truncate">{workout.focus}</span>}
+                      <span className="inline-flex items-center">
+                        <Dumbbell className="mr-1 h-3.5 w-3.5" />
+                        {exercises.length}
+                      </span>
+                      <span className="inline-flex items-center">
+                        <Timer className="mr-1 h-3.5 w-3.5" />
+                        {formatDuration(workout.estimated_duration_minutes)}
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                </summary>
+
+                <div className="border-t border-border/50 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    {isToday ? (
+                      <PendingLink
+                        href={`/session/${workout.id}`}
+                        className="inline-flex h-9 shrink-0 items-center rounded-md border border-violet-500/30 px-3 text-xs font-semibold text-violet-300 hover:bg-violet-500/10"
+                        spinnerClassName="h-3 w-3"
+                      >
+                        Abrir rutina de hoy
+                      </PendingLink>
+                    ) : (
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Disponible el {dayLabel.toLowerCase()}.
+                      </p>
                     )}
                   </div>
 
-                  <PendingLink
-                    href={`/session/${workout.id}`}
-                    className="inline-flex h-9 shrink-0 items-center rounded-md border border-violet-500/30 px-3 text-xs font-semibold text-violet-300 hover:bg-violet-500/10"
-                    spinnerClassName="h-3 w-3"
-                  >
-                    Abrir
-                  </PendingLink>
+                  <WorkoutExerciseList
+                    planId={planRaw.id}
+                    workoutId={workout.id}
+                    exercises={exercises}
+                    exerciseOptions={exerciseOptions}
+                  />
+
+                  <details className="mt-4 rounded-xl border border-border/50 bg-background/40 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-violet-300">
+                      Editar entrenamiento
+                    </summary>
+                    <form action={updateWorkoutSummary} className="mt-4 space-y-3">
+                      <input type="hidden" name="planId" value={planRaw.id} />
+                      <input type="hidden" name="workoutId" value={workout.id} />
+
+                      <label className="block space-y-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">Nombre</span>
+                        <input
+                          name="name"
+                          defaultValue={workout.displayName}
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                        />
+                      </label>
+
+                      <label className="block space-y-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">Foco muscular</span>
+                        <input
+                          name="focus"
+                          defaultValue={workout.focus ?? ''}
+                          placeholder="Pecho · Hombros · Tríceps"
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                        />
+                      </label>
+
+                      <label className="block space-y-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">Duración estimada</span>
+                        <input
+                          name="estimatedDurationMinutes"
+                          type="number"
+                          min={10}
+                          max={180}
+                          defaultValue={workout.estimated_duration_minutes ?? ''}
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                        />
+                      </label>
+
+                      <SubmitButton
+                        label="Guardar entrenamiento"
+                        pendingLabel="Guardando entrenamiento"
+                        className="h-10 w-full bg-violet-500 text-white hover:bg-violet-600"
+                      />
+                    </form>
+                  </details>
                 </div>
-
-                <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center">
-                    <Dumbbell className="mr-1 h-3.5 w-3.5" />
-                    {exercises.length} ejercicios
-                  </span>
-                  <span className="inline-flex items-center">
-                    <Timer className="mr-1 h-3.5 w-3.5" />
-                    {formatDuration(workout.estimated_duration_minutes)}
-                  </span>
-                </div>
-
-                <WorkoutExerciseList
-                  planId={planRaw.id}
-                  workoutId={workout.id}
-                  exercises={exercises}
-                  exerciseOptions={exerciseOptions}
-                />
-
-                <details className="mt-4 rounded-xl border border-border/50 bg-background/40 p-3">
-                  <summary className="cursor-pointer text-sm font-medium text-violet-300">
-                    Editar entrenamiento
-                  </summary>
-                  <form action={updateWorkoutSummary} className="mt-4 space-y-3">
-                    <input type="hidden" name="planId" value={planRaw.id} />
-                    <input type="hidden" name="workoutId" value={workout.id} />
-
-                    <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Nombre</span>
-                      <input
-                        name="name"
-                        defaultValue={workout.displayName}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                      />
-                    </label>
-
-                    <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Foco muscular</span>
-                      <input
-                        name="focus"
-                        defaultValue={workout.focus ?? ''}
-                        placeholder="Pecho · Hombros · Tríceps"
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                      />
-                    </label>
-
-                    <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Duración estimada</span>
-                      <input
-                        name="estimatedDurationMinutes"
-                        type="number"
-                        min={10}
-                        max={180}
-                        defaultValue={workout.estimated_duration_minutes ?? ''}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                      />
-                    </label>
-
-                    <SubmitButton
-                      label="Guardar entrenamiento"
-                      pendingLabel="Guardando entrenamiento"
-                      className="h-10 w-full bg-violet-500 text-white hover:bg-violet-600"
-                    />
-                  </form>
-                </details>
-              </section>
+              </details>
             )
           })}
         </div>

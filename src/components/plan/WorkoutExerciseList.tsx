@@ -1,4 +1,5 @@
 import { SubmitButton } from '@/components/feedback/SubmitButton'
+import { ExercisePicker } from '@/components/plan/ExercisePicker'
 import {
   addWorkoutExercise,
   moveWorkoutExercise,
@@ -344,34 +345,11 @@ export function WorkoutExerciseList({
                     </div>
                   )}
 
-                  <form action={replaceWorkoutExercise} className="mt-3 grid gap-2">
-                    <HiddenFields planId={planId} workoutExerciseId={row.id} />
-                    <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Buscar en catálogo</span>
-                      <select
-                        name="exerciseId"
-                        defaultValue=""
-                        disabled={!hasExerciseOptions}
-                        className={inputClass}
-                      >
-                        <option value="" disabled>
-                          Selecciona un ejercicio
-                        </option>
-                        {exerciseOptions.map(option => (
-                          <option key={option.id} value={option.id}>
-                            {option.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <SubmitButton
-                      label="Usar selección"
-                      pendingLabel="Cambiando"
-                      disabled={!hasExerciseOptions}
-                      variant="outline"
-                      className="h-10 w-full border-violet-500/30 bg-violet-500/5 text-violet-200 hover:bg-violet-500/10"
-                    />
-                  </form>
+                  {replacementCandidates.length === 0 && (
+                    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                      No encontramos alternativas cercanas. Puedes agregar otro ejercicio abajo y quitar este.
+                    </p>
+                  )}
                 </details>
               </div>
             )
@@ -393,24 +371,13 @@ export function WorkoutExerciseList({
           <input type="hidden" name="planId" value={planId} />
           <input type="hidden" name="workoutId" value={workoutId} />
 
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">Ejercicio</span>
-            <select
-              name="exerciseId"
-              defaultValue=""
-              disabled={!hasExerciseOptions}
-              className={inputClass}
-            >
-              <option value="" disabled>
-                Selecciona un ejercicio
-              </option>
-              {exerciseOptions.map(option => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <ExercisePicker
+            name="exerciseId"
+            label="Ejercicio"
+            options={exerciseOptions}
+            disabled={!hasExerciseOptions}
+            placeholder="Busca por nombre, músculo o equipo"
+          />
 
           <PrescriptionFields />
 

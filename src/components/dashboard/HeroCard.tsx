@@ -110,7 +110,7 @@ export function HeroCard({
         {todayWorkout.progression_suggestion_count > 0 && (
           <p className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-indigo-100">
             <TrendingUp className="h-3.5 w-3.5" />
-            Hoy tienes {todayWorkout.progression_suggestion_count} progresión{todayWorkout.progression_suggestion_count === 1 ? '' : 'es'} sugerida{todayWorkout.progression_suggestion_count === 1 ? '' : 's'}
+            Hoy tienes {todayWorkout.progression_suggestion_count} {todayWorkout.progression_suggestion_count === 1 ? 'progresión' : 'progresiones'} sugerida{todayWorkout.progression_suggestion_count === 1 ? '' : 's'}
           </p>
         )}
       </div>

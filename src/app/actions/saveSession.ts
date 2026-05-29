@@ -15,7 +15,15 @@ export interface SetPayload {
 export interface ExercisePayload {
   workoutExerciseId: string
   exerciseId: string
+  originalExerciseId?: string | null
+  originalName?: string | null
   name: string
+  isCompound?: boolean
+  targetSets?: number | null
+  targetReps?: number | null
+  targetRpe?: number | null
+  source?: 'planned' | 'replacement' | 'ad_hoc'
+  skipReason?: string | null
   sets: SetPayload[]
   status: 'pending' | 'active' | 'completed' | 'skipped'
 }
@@ -68,6 +76,19 @@ function groupByExerciseId<T extends { exercise_id: string }>(rows: T[]): Record
     acc[row.exercise_id].push(row)
     return acc
   }, {})
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function buildExerciseLogNote(exercise: ExercisePayload): string | null {
+  if (exercise.status === 'skipped' && exercise.skipReason) return `Saltado: ${exercise.skipReason}.`
+  if (exercise.source === 'ad_hoc') return 'Agregado solo por hoy.'
+  if (exercise.source === 'replacement' && exercise.originalName) {
+    return `Cambio solo por hoy: reemplaza ${exercise.originalName}.`
+  }
+  return null
 }
 
 async function updateActivePlanWeights(
@@ -188,7 +209,9 @@ export async function saveSession(
     }
   }
 
-  const workoutExerciseIds = payload.exercises.map(ex => ex.workoutExerciseId)
+  const workoutExerciseIds = payload.exercises
+    .filter(ex => (ex.source ?? 'planned') === 'planned' && isUuid(ex.workoutExerciseId))
+    .map(ex => ex.workoutExerciseId)
   const exerciseIds = Array.from(new Set(payload.exercises.map(ex => ex.exerciseId)))
 
   const [{ data: metaRows }, { data: historyRows }] = await Promise.all([
@@ -219,21 +242,22 @@ export async function saveSession(
   const metadataByWorkoutExercise = new Map((metaRows ?? []).map(row => [row.id, row]))
   const historyByExercise = groupByExerciseId(historyRows ?? [])
   const exercisesWithData = payload.exercises.filter(ex =>
-    ex.sets.some(set => set.completed),
+    ex.sets.some(set => set.completed) || (ex.status === 'skipped' && Boolean(ex.skipReason)),
   )
 
   const progressions = buildProgressionSuggestions(payload.exercises.map(ex => {
     const meta = metadataByWorkoutExercise.get(ex.workoutExerciseId)
     const relatedExercise = meta ? getExerciseRelation(meta) : null
+    const usePlanMeta = (ex.source ?? 'planned') === 'planned'
 
     return {
       exerciseId: ex.exerciseId,
       exerciseName: ex.name,
-      isCompound: Boolean(relatedExercise?.is_compound),
-      targetSets: meta?.sets ?? ex.sets.length,
-      targetReps: meta?.reps ?? null,
-      targetRpe: meta?.target_rpe ?? 7,
-      suggestedWeightKg: meta?.weight_kg ?? null,
+      isCompound: usePlanMeta ? Boolean(relatedExercise?.is_compound) : Boolean(ex.isCompound),
+      targetSets: usePlanMeta ? meta?.sets ?? ex.sets.length : ex.targetSets ?? ex.sets.length,
+      targetReps: usePlanMeta ? meta?.reps ?? null : ex.targetReps ?? null,
+      targetRpe: usePlanMeta ? meta?.target_rpe ?? 7 : ex.targetRpe ?? 7,
+      suggestedWeightKg: usePlanMeta ? meta?.weight_kg ?? null : null,
       previousLogCount: historyByExercise[ex.exerciseId]?.length ?? 0,
       status: ex.status,
       sets: ex.sets,
@@ -253,6 +277,7 @@ export async function saveSession(
         reps_completed: completedSets.map(set => Math.max(0, parseInt(set.reps) || 0)),
         weights_kg: completedSets.map(set => Math.max(0, parseFloat(set.weightKg) || 0)),
         rpe_values: completedSets.map(set => set.rpe),
+        notes: buildExerciseLogNote(ex),
       }
     })
 

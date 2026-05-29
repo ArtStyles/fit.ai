@@ -8,8 +8,9 @@ import { SessionHeader }      from '@/components/session/SessionHeader'
 import { ExerciseCard }       from '@/components/session/ExerciseCard'
 import { RestTimer }          from '@/components/session/RestTimer'
 import { CompletionScreen }   from '@/components/session/CompletionScreen'
+import { SessionRoutineTools } from '@/components/session/SessionRoutineTools'
 import { saveBackup, loadBackup, clearBackup } from '@/lib/session/persistSession'
-import type { ExerciseSession } from '@/store/sessionStore'
+import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -18,11 +19,12 @@ interface Props {
   workoutName:      string
   estimatedMinutes: number | null
   exercises:        ExerciseSession[]   // estado inicial del servidor
+  exerciseOptions:  SessionExerciseDraft[]
 }
 
 // ─── SessionClient ────────────────────────────────────────────────────────────
 
-export function SessionClient({ workoutId, workoutName, exercises }: Props) {
+export function SessionClient({ workoutId, workoutName, exercises, exerciseOptions }: Props) {
   const initSession     = useSessionStore(s => s.initSession)
   const restoreSession  = useSessionStore(s => s.restoreSession)
   const finishSession   = useSessionStore(s => s.finishSession)
@@ -89,6 +91,8 @@ export function SessionClient({ workoutId, workoutName, exercises }: Props) {
       {/* Lista de ejercicios con scroll */}
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-lg mx-auto px-4 pt-4 pb-40 space-y-3">
+          <SessionRoutineTools exerciseOptions={exerciseOptions} />
+
           {storeExercises.length === 0 && (
             <div className="text-center py-16 text-muted-foreground text-sm">
               Este workout no tiene ejercicios configurados.
@@ -99,6 +103,7 @@ export function SessionClient({ workoutId, workoutName, exercises }: Props) {
             <ExerciseCard
               key={exercise.workoutExerciseId}
               exercise={exercise}
+              exerciseOptions={exerciseOptions}
             />
           ))}
 
