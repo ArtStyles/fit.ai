@@ -14,6 +14,7 @@ import {
   getWeekMonday as getCurrentWeekMonday,
 } from '@/lib/workouts/schedule'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
+import type { Database } from '@/types/database'
 
 export const metadata = { title: 'Dashboard · FitAI' }
 
@@ -51,6 +52,10 @@ export interface WorkoutSummary {
   progression_suggestion_count: number
 }
 
+type WorkoutPayloadSummary = Omit<WorkoutSummary, 'progression_suggestion_count'> & {
+  progression_suggestion_count?: number | null
+}
+
 export interface DayData {
   isoDay:                   number        // 1=Lun … 7=Dom
   dateStr:                  string        // YYYY-MM-DD
@@ -80,6 +85,7 @@ type WeekLogRow = {
 
 type ExerciseProgressRow = {
   progress_log_id: string
+  exercise_id: string | null
   weights_kg: number[] | null
   reps_completed: number[] | null
   exercise: { name: string } | { name: string }[] | null
@@ -87,6 +93,7 @@ type ExerciseProgressRow = {
 
 type TopRecordHighlight = {
   logId: string
+  exerciseId: string
   exerciseName: string
   maxWeightKg: number
   repsAtMaxWeight: number
@@ -101,16 +108,16 @@ type DashboardPayload = {
   hasCompletedSessions: boolean
 }
 
-type RpcDashboardPayload = {
-  active_plan?: PlanRow | null
-  workouts?: WorkoutSummary[]
-  recent_logs?: WeekLogRow[]
-  week_logs?: WeekLogRow[]
-  week_volume_kg?: number | string | null
-  has_completed_sessions?: boolean | null
+type DashboardRpc = Database['public']['Functions']['get_dashboard_payload']
+
+type DashboardRpcClient = {
+  rpc: (
+    functionName: 'get_dashboard_payload',
+    args: DashboardRpc['Args'],
+  ) => Promise<{ data: DashboardRpc['Returns'] | null; error: { message?: string } | null }>
 }
 
-function normalizeWorkouts(workouts: WorkoutSummary[]): WorkoutSummary[] {
+function normalizeWorkouts(workouts: WorkoutPayloadSummary[]): WorkoutSummary[] {
   return workouts.map(workout => ({
     ...workout,
     name: getWorkoutDisplayName(workout.name, workout.focus),
@@ -253,15 +260,11 @@ async function loadDashboardPayload(
   weekStart: Date,
   recentStart: Date,
 ): Promise<DashboardPayload> {
-  const { data, error } = await (supabase as unknown as {
-    rpc: (
-      name: string,
-      args: Record<string, string>,
-    ) => Promise<{ data: RpcDashboardPayload | null; error: { message: string } | null }>
-  }).rpc('get_dashboard_payload', {
-    p_week_start: weekStart.toISOString(),
-    p_recent_start: recentStart.toISOString(),
-  })
+  const { data, error } = await (supabase as unknown as DashboardRpcClient)
+    .rpc('get_dashboard_payload', {
+      p_week_start: weekStart.toISOString(),
+      p_recent_start: recentStart.toISOString(),
+    })
 
   if (!error && data) {
     return {
@@ -291,14 +294,14 @@ async function loadTopRecordHighlight(
 
   const { data } = await supabase
     .from('exercise_logs')
-    .select('progress_log_id, weights_kg, reps_completed, exercise:exercises(name)')
+    .select('progress_log_id, exercise_id, weights_kg, reps_completed, exercise:exercises(name)')
     .in('progress_log_id', logIds) as unknown as { data: ExerciseProgressRow[] | null }
 
   let best: NonNullable<TopRecordHighlight> | null = null
 
   for (const row of data ?? []) {
     const exerciseName = getExerciseName(row)
-    if (!exerciseName) continue
+    if (!exerciseName || !row.exercise_id) continue
 
     const weights = row.weights_kg ?? []
     const reps = row.reps_completed ?? []
@@ -315,6 +318,7 @@ async function loadTopRecordHighlight(
     ) {
       best = {
         logId: row.progress_log_id,
+        exerciseId: row.exercise_id,
         exerciseName,
         maxWeightKg,
         repsAtMaxWeight,

@@ -1,17 +1,13 @@
 import {
   ArrowLeft,
-  CalendarDays,
-  ChevronRight,
-  Clock,
-  Dumbbell,
   History,
   Medal,
   Trophy,
 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { HistorySessionList } from '@/components/history/HistorySessionList'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { getWorkoutDisplayName } from '@/lib/workouts/display'
+import type { Database } from '@/types/database'
 
 export const metadata = { title: 'Historial · FitAI' }
 
@@ -43,6 +39,17 @@ type ExerciseLogRow = {
   exercise: ExerciseSummary | ExerciseSummary[] | null
 }
 
+type AppSupabaseClient = Awaited<ReturnType<typeof requireAppUserContext>>['supabase']
+
+type HistoryRpc = Database['public']['Functions']['get_history_payload']
+
+type HistoryRpcClient = {
+  rpc: (
+    functionName: 'get_history_payload',
+    args: HistoryRpc['Args'],
+  ) => Promise<{ data: HistoryRpc['Returns'] | null; error: { message?: string } | null }>
+}
+
 type PersonalRecord = {
   exerciseId: string
   exerciseName: string
@@ -56,34 +63,76 @@ type PersonalRecord = {
   sessionCount: number
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  }).format(new Date(value))
-}
-
-function formatTime(value: string): string {
-  return new Intl.DateTimeFormat('es', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
 function formatWeight(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return 'Sin carga'
   return Number.isInteger(value) ? `${value} kg` : `${value.toFixed(1)} kg`
 }
 
-function getWorkout(row: ProgressLogRow): WorkoutSummary | null {
-  if (Array.isArray(row.workout)) return row.workout[0] ?? null
-  return row.workout
-}
-
 function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
   if (Array.isArray(row.exercise)) return row.exercise[0] ?? null
   return row.exercise
+}
+
+async function loadHistoryPayloadFallback(
+  supabase: AppSupabaseClient,
+  userId: string,
+): Promise<{ sessionLogs: ProgressLogRow[]; exerciseLogs: ExerciseLogRow[] }> {
+  const { data: logs } = await supabase
+    .from('progress_logs')
+    .select(`
+      id,
+      workout_id,
+      completed_at,
+      duration_minutes,
+      mood_rating,
+      workout:workouts(name, focus)
+    `)
+    .eq('user_id', userId)
+    .not('workout_id', 'is', null)
+    .order('completed_at', { ascending: false })
+    .limit(50) as unknown as { data: ProgressLogRow[] | null }
+
+  const sessionLogs = logs ?? []
+  const logIds = sessionLogs.map(log => log.id)
+  let exerciseLogs: ExerciseLogRow[] = []
+
+  if (logIds.length > 0) {
+    const { data } = await supabase
+      .from('exercise_logs')
+      .select(`
+        progress_log_id,
+        exercise_id,
+        weights_kg,
+        reps_completed,
+        exercise:exercises(name, muscle_groups, is_compound)
+      `)
+      .in('progress_log_id', logIds) as unknown as { data: ExerciseLogRow[] | null }
+
+    exerciseLogs = data ?? []
+  }
+
+  return { sessionLogs, exerciseLogs }
+}
+
+async function loadHistoryPayload(
+  supabase: AppSupabaseClient,
+  userId: string,
+): Promise<{ sessionLogs: ProgressLogRow[]; exerciseLogs: ExerciseLogRow[] }> {
+  try {
+    const { data, error } = await (supabase as unknown as HistoryRpcClient)
+      .rpc('get_history_payload', { p_limit: 50 })
+
+    if (!error && data) {
+      return {
+        sessionLogs: data.session_logs ?? [],
+        exerciseLogs: data.exercise_logs ?? [],
+      }
+    }
+  } catch {
+    // The migration may not be applied locally yet; fallback keeps the screen usable.
+  }
+
+  return loadHistoryPayloadFallback(supabase, userId)
 }
 
 function volumeFor(logId: string, rows: ExerciseLogRow[]): number {
@@ -157,40 +206,7 @@ function buildPersonalRecords(rows: ExerciseLogRow[], logs: ProgressLogRow[]): P
 
 export default async function HistoryPage() {
   const { supabase, user } = await requireAppUserContext()
-
-  const { data: logs } = await supabase
-    .from('progress_logs')
-    .select(`
-      id,
-      workout_id,
-      completed_at,
-      duration_minutes,
-      mood_rating,
-      workout:workouts(name, focus)
-    `)
-    .eq('user_id', user.id)
-    .not('workout_id', 'is', null)
-    .order('completed_at', { ascending: false })
-    .limit(50) as unknown as { data: ProgressLogRow[] | null }
-
-  const sessionLogs = logs ?? []
-  const logIds = sessionLogs.map(log => log.id)
-  let exerciseLogs: ExerciseLogRow[] = []
-
-  if (logIds.length > 0) {
-    const { data } = await supabase
-      .from('exercise_logs')
-      .select(`
-        progress_log_id,
-        exercise_id,
-        weights_kg,
-        reps_completed,
-        exercise:exercises(name, muscle_groups, is_compound)
-      `)
-      .in('progress_log_id', logIds) as unknown as { data: ExerciseLogRow[] | null }
-
-    exerciseLogs = data ?? []
-  }
+  const { sessionLogs, exerciseLogs } = await loadHistoryPayload(supabase, user.id)
 
   const totalMinutes = sessionLogs.reduce((sum, log) => sum + (log.duration_minutes ?? 0), 0)
   const totalVolume = Math.round(sessionLogs.reduce((sum, log) => {
@@ -273,7 +289,7 @@ export default async function HistoryPage() {
                   {personalRecords.map((record, index) => (
                     <PendingLink
                       key={record.exerciseId}
-                      href={`/history/${record.bestLogId}`}
+                      href={`/exercises/${record.exerciseId}`}
                       className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/15 bg-background/50 px-3 py-3 transition-colors hover:border-amber-400/40 hover:bg-amber-500/10"
                       spinnerClassName="h-3 w-3"
                     >
@@ -307,61 +323,7 @@ export default async function HistoryPage() {
               </section>
             )}
 
-            <div className="mt-8 space-y-3">
-              {sessionLogs.map(log => {
-                const workout = getWorkout(log)
-                const workoutName = workout
-                  ? getWorkoutDisplayName(workout.name, workout.focus)
-                  : 'Entrenamiento'
-                const volume = Math.round(volumeFor(log.id, exerciseLogs))
-
-                return (
-                  <PendingLink
-                    key={log.id}
-                    href={`/history/${log.id}`}
-                    className="block rounded-2xl border border-border/60 bg-muted/10 p-4 transition-colors hover:border-violet-500/30 hover:bg-violet-500/5"
-                    spinnerClassName="h-3.5 w-3.5"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-medium capitalize text-muted-foreground">
-                          {formatDate(log.completed_at)} · {formatTime(log.completed_at)}
-                        </p>
-                        <h2 className="mt-1 text-base font-semibold text-foreground">
-                          {workoutName}
-                        </h2>
-                        {workout?.focus && (
-                          <p className="mt-1 text-sm text-muted-foreground">{workout.focus}</p>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {log.mood_rating && (
-                          <Badge variant="ghost" className="border border-border/50">
-                            ánimo {log.mood_rating}/5
-                          </Badge>
-                        )}
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                        <Clock className="mr-1 h-3.5 w-3.5" />
-                        {log.duration_minutes ?? 0} min
-                      </span>
-                      <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                        <Dumbbell className="mr-1 h-3.5 w-3.5" />
-                        {volume} kg
-                      </span>
-                      <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                        <CalendarDays className="mr-1 h-3.5 w-3.5" />
-                        completado
-                      </span>
-                    </div>
-                  </PendingLink>
-                )
-              })}
-            </div>
+            <HistorySessionList sessionLogs={sessionLogs} exerciseLogs={exerciseLogs} />
           </>
         )}
       </main>

@@ -10,6 +10,7 @@ type LatestSession = {
 
 type TopRecord = {
   logId: string
+  exerciseId: string
   exerciseName: string
   maxWeightKg: number
   repsAtMaxWeight: number
@@ -77,7 +78,7 @@ export function ProgressHighlights({
 
         {topRecord && (
           <PendingLink
-            href={`/history/${topRecord.logId}`}
+            href={`/exercises/${topRecord.exerciseId}`}
             className="group flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 transition-colors hover:border-amber-400/40 hover:bg-amber-500/10"
             spinnerClassName="h-3.5 w-3.5"
           >

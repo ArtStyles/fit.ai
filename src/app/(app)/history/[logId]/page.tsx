@@ -324,6 +324,13 @@ export default async function HistoryDetailPage({ params }: PageProps) {
                           {exercise.muscle_groups.slice(0, 3).join(' · ')}
                         </p>
                       )}
+                      <PendingLink
+                        href={`/exercises/${row.exercise_id}`}
+                        className="mt-2 inline-flex text-xs font-medium text-violet-300 underline-offset-4 hover:underline"
+                        spinnerClassName="h-3 w-3"
+                      >
+                        Ver progreso del ejercicio
+                      </PendingLink>
                     </div>
 
                     <div className="text-right">

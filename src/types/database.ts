@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 008_plan_lifecycle
+ * Last updated: migration 011_history_and_exercise_payloads
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -491,6 +491,118 @@ export interface Database {
       [name: string]: {
         Args: Record<string, unknown>
         Returns: unknown
+      }
+      get_dashboard_payload: {
+        Args: {
+          p_week_start: string
+          p_recent_start: string
+        }
+        Returns: {
+          active_plan: {
+            id: string
+            name: string
+            ai_notes: string | null
+            created_at: string
+            week_number: number
+            plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
+            days_per_week: number | null
+            duration_weeks: number | null
+            difficulty: 'beginner' | 'intermediate' | 'advanced' | null
+            goal: string | null
+          } | null
+          workouts: {
+            id: string
+            name: string
+            focus: string | null
+            day_of_week: number | null
+            order_in_plan: number | null
+            estimated_duration_minutes: number | null
+            exercise_count: number
+          }[]
+          recent_logs: {
+            id: string
+            workout_id: string | null
+            completed_at: string
+            duration_minutes: number | null
+          }[]
+          week_logs: {
+            id: string
+            workout_id: string | null
+            completed_at: string
+            duration_minutes: number | null
+          }[]
+          week_volume_kg: number | string
+          has_completed_sessions: boolean
+        }
+      }
+      get_history_payload: {
+        Args: {
+          p_limit?: number | null
+        }
+        Returns: {
+          session_logs: {
+            id: string
+            workout_id: string | null
+            completed_at: string
+            duration_minutes: number | null
+            mood_rating: number | null
+            workout: {
+              name: string
+              focus: string | null
+            } | null
+          }[]
+          exercise_logs: {
+            progress_log_id: string
+            exercise_id: string | null
+            weights_kg: number[] | null
+            reps_completed: number[] | null
+            exercise: {
+              name: string
+              muscle_groups: string[] | null
+              is_compound: boolean | null
+            } | null
+          }[]
+        }
+      }
+      get_exercise_detail_payload: {
+        Args: {
+          p_exercise_id: string
+        }
+        Returns: {
+          exercise: {
+            id: string
+            name: string
+            description: string | null
+            muscle_groups: string[] | null
+            equipment: string[] | null
+            difficulty: string | null
+            exercise_type: string | null
+            is_compound: boolean | null
+            instructions: string | null
+            video_url: string | null
+          } | null
+          logs: {
+            id: string
+            progress_log_id: string
+            sets_completed: number | null
+            reps_completed: number[] | null
+            weights_kg: number[] | null
+            rpe_values: (number | null)[] | null
+            notes: string | null
+            progress_log: {
+              id: string
+              workout_id: string | null
+              completed_at: string
+              duration_minutes: number | null
+              mood_rating: number | null
+            } | null
+          }[]
+          workouts: {
+            id: string
+            name: string
+            focus: string | null
+          }[]
+        }
       }
     }
     Enums: Record<string, string[]>
