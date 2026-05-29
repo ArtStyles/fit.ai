@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
+import { WorkoutAdjustButton } from '@/components/plan/WorkoutAdjustButton'
 import {
   WorkoutExerciseList,
   type PlanExerciseOption,
@@ -333,7 +334,7 @@ export default async function PlanPage() {
                 </summary>
 
                 <div className="border-t border-border/50 p-5">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     {isToday ? (
                       <PendingLink
                         href={`/session/${workout.id}`}
@@ -347,6 +348,22 @@ export default async function PlanPage() {
                         Disponible el {dayLabel.toLowerCase()}.
                       </p>
                     )}
+                    <WorkoutAdjustButton
+                      workoutId={workout.id}
+                      context={{
+                        workoutName: workout.displayName,
+                        workoutFocus: workout.focus,
+                        exercises: exercises.map(ex => {
+                          const exData = Array.isArray(ex.exercise) ? ex.exercise[0] : ex.exercise
+                          return {
+                            name: exData?.name ?? 'Ejercicio',
+                            sets: ex.sets,
+                            reps: ex.reps,
+                            targetRpe: ex.target_rpe,
+                          }
+                        }),
+                      }}
+                    />
                   </div>
 
                   <WorkoutExerciseList
