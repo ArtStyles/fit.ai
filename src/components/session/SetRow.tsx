@@ -25,7 +25,7 @@ export function SetRow({
   return (
     <div className={cn(
       'grid items-center gap-1.5 py-2 px-1 rounded-lg transition-colors',
-      'grid-cols-[28px_1fr_1fr_64px_44px]',
+      'grid-cols-[28px_1fr_1fr_64px_48px]',
       completed && 'bg-green-500/5',
       !completed && isActive && 'bg-muted/10',
     )}>
@@ -48,7 +48,7 @@ export function SetRow({
         onChange={e => onWeightChange(e.target.value)}
         disabled={!isActive || completed}
         className={cn(
-          'h-9 w-full rounded-lg border border-border/60 bg-background/80',
+          'h-11 w-full rounded-lg border border-border/60 bg-background/80',
           'px-2 text-center text-sm font-medium tabular-nums',
           'placeholder:text-muted-foreground/40',
           'focus:outline-none focus:ring-1 focus:ring-indigo-500',
@@ -67,7 +67,7 @@ export function SetRow({
         onChange={e => onRepsChange(e.target.value)}
         disabled={!isActive || completed}
         className={cn(
-          'h-9 w-full rounded-lg border border-border/60 bg-background/80',
+          'h-11 w-full rounded-lg border border-border/60 bg-background/80',
           'px-2 text-center text-sm font-medium tabular-nums',
           'placeholder:text-muted-foreground/40',
           'focus:outline-none focus:ring-1 focus:ring-indigo-500',

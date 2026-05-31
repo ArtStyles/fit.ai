@@ -17,11 +17,14 @@ export function DailyBrief({ message }: Props) {
   }, [])
 
   return (
-    <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 px-4 py-3.5 space-y-2.5">
+    <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/8 via-violet-500/4 to-transparent px-4 py-3.5 space-y-2.5">
 
       {/* header chip */}
       <div className="flex items-center gap-1.5">
-        <Sparkles className="h-3 w-3 text-violet-400" />
+        <div className="relative">
+          <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+          <span className="absolute inset-0 h-3.5 w-3.5 animate-ping rounded-full bg-violet-400/25" />
+        </div>
         <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400/80">
           Coach IA
         </span>
@@ -43,8 +46,8 @@ export function DailyBrief({ message }: Props) {
       {/* content */}
       {phase === 'thinking' ? (
         <div className="space-y-2 py-0.5">
-          <div className="h-3 w-full animate-pulse rounded-full bg-white/6" />
-          <div className="h-3 w-4/5 animate-pulse rounded-full bg-white/6" />
+          <div className="h-3 w-full animate-pulse rounded-full bg-white/[0.06]" />
+          <div className="h-3 w-4/5 animate-pulse rounded-full bg-white/[0.06]" />
         </div>
       ) : (
         <p

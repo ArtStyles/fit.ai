@@ -44,7 +44,7 @@ export function BottomNav() {
               key={href}
               href={href}
               showSpinner={false}
-              className="group flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-[4.5rem]"
+              className="group relative flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-[4.5rem]"
             >
               {/* icon bubble */}
               <span
@@ -52,10 +52,10 @@ export function BottomNav() {
                   'flex h-9 w-9 items-center justify-center rounded-[14px] transition-all duration-200',
                   accent
                     ? isActive
-                      ? 'bg-violet-500 text-white shadow-md shadow-violet-500/40 scale-105'
+                      ? 'bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/50 scale-105'
                       : 'bg-violet-500/12 text-violet-400 group-hover:bg-violet-500/20'
                     : isActive
-                      ? 'bg-white/10 text-foreground'
+                      ? 'bg-white/12 text-foreground ring-1 ring-white/10'
                       : 'text-muted-foreground group-hover:text-foreground/70',
                 )}
               >
@@ -77,6 +77,11 @@ export function BottomNav() {
               >
                 {label}
               </span>
+
+              {/* active dot indicator */}
+              {isActive && (
+                <span className="absolute bottom-0 h-0.5 w-5 rounded-full bg-current opacity-50" />
+              )}
             </PendingLink>
           )
         })}

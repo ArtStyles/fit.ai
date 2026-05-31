@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { X } from 'lucide-react'
+import { Pencil, RefreshCw, Sparkles, X } from 'lucide-react'
 
 export type BannerContext = 'first_plan' | 'weekly_regeneration' | 'manual_update'
 
@@ -13,10 +13,10 @@ interface Props {
   bannerContext: BannerContext
 }
 
-const BANNER_COPY: Record<BannerContext, { title: string; icon: string }> = {
-  first_plan:          { title: 'Tu plan está listo',   icon: '🎯' },
-  weekly_regeneration: { title: 'Tu plan se actualizó', icon: '🤖' },
-  manual_update:       { title: 'Plan actualizado',     icon: '✏️' },
+const BANNER_COPY: Record<BannerContext, { title: string; icon: React.ComponentType<{ className?: string }> }> = {
+  first_plan:          { title: 'Tu plan está listo',   icon: Sparkles  },
+  weekly_regeneration: { title: 'Tu plan se actualizó', icon: RefreshCw },
+  manual_update:       { title: 'Plan actualizado',     icon: Pencil    },
 }
 
 export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' }: Props) {
@@ -28,14 +28,14 @@ export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' 
 
   return (
     <>
-      <div className="relative rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3.5 flex gap-3">
-        <span className="mt-0.5 shrink-0 text-lg leading-none" aria-hidden="true">{copy.icon}</span>
+      <div className="relative rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3.5 flex gap-3">
+        <copy.icon className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-amber-300 mb-0.5">{copy.title}</p>
+          <p className="text-xs font-semibold text-violet-300 mb-0.5">{copy.title}</p>
           <p className="text-sm text-muted-foreground line-clamp-2">{aiNotes}</p>
           <button
             onClick={() => setOpen(true)}
-            className="mt-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors"
+            className="mt-1.5 text-xs font-medium text-violet-400 hover:text-violet-300 transition-colors"
           >
             Ver detalles →
           </button>
@@ -53,7 +53,7 @@ export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' 
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <span aria-hidden="true">{copy.icon}</span>
+              <copy.icon aria-hidden="true" className="h-4 w-4" />
               Nota de tu entrenador IA
             </DialogTitle>
           </DialogHeader>

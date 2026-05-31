@@ -20,9 +20,10 @@ export function QuickStats({
   if (!hasCompletedSessions) {
     return (
       <div>
-        <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground px-0.5">
-          Tu progreso
-        </p>
+        <div className="mb-3 flex items-center gap-2 px-0.5">
+          <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">Tu progreso</span>
+          <div className="h-px flex-1 bg-border/40" />
+        </div>
         <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-muted/10 p-5">
           <span className="shrink-0 text-4xl leading-none opacity-60" aria-hidden="true">💪</span>
           <div className="min-w-0">
@@ -36,65 +37,70 @@ export function QuickStats({
     )
   }
 
-  const streakCopy =
-    streak === 0 ? 'Retoma tu racha' :
-    streak === 1 ? '1 día · ¡vas bien!' :
-    `${streak} días · sigue así`
+  const streakLabel = streak === 0 ? 'Retoma tu racha' :
+    streak === 1 ? '¡Vas bien!' : 'Sigue así'
 
   return (
     <div>
-      <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground px-0.5">
-        Tu progreso
-      </p>
+      <div className="mb-3 flex items-center gap-2 px-0.5">
+        <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">Tu progreso</span>
+        <div className="h-px flex-1 bg-border/40" />
+      </div>
       <PendingLink
         href="/history"
-        className="grid grid-cols-3 gap-2.5 focus-visible:outline-none group"
+        className="grid grid-cols-2 grid-rows-2 gap-2.5 focus-visible:outline-none"
         spinnerClassName="hidden"
       >
-        <StatCard
-          icon={<Flame className="h-4 w-4" />}
-          value={streakCopy}
-          label="Racha actual"
-          iconClass="text-orange-400"
-          highlight={streak >= 3}
-        />
-        <StatCard
-          icon={<CalendarCheck className="h-4 w-4" />}
-          value={`${sessionsThisWeek}/${scheduledThisWeek} sesiones`}
-          label="Esta semana"
-          iconClass="text-indigo-400"
-        />
-        <StatCard
-          icon={<Weight className="h-4 w-4" />}
-          value={`${volumeKg} kg`}
-          label="Volumen"
-          iconClass="text-emerald-400"
-        />
-      </PendingLink>
-    </div>
-  )
-}
+        {/* Racha — tarjeta grande ocupa fila completa */}
+        <div className={cn(
+          'col-span-2 flex items-center gap-4 rounded-2xl border p-4 transition-all',
+          streak >= 3
+            ? 'border-orange-500/25 bg-gradient-to-r from-orange-500/10 to-orange-500/5'
+            : 'border-border/60 bg-muted/10',
+        )}>
+          <div className={cn(
+            'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl',
+            streak >= 3 ? 'bg-orange-500/15 text-orange-400' : 'bg-muted/30 text-muted-foreground',
+          )}>
+            <Flame className={cn('h-6 w-6', streak >= 3 && 'drop-shadow-[0_0_8px_rgba(249,115,22,0.6)]')} />
+          </div>
+          <div className="min-w-0">
+            <p className={cn(
+              'font-display text-3xl font-bold leading-none tracking-tight',
+              streak >= 3 ? 'text-orange-400 drop-shadow-[0_0_10px_rgba(249,115,22,0.4)]' : 'text-foreground',
+            )}>
+              {streak > 0 ? streak : '—'}
+              {streak > 0 && <span className="ml-1 text-base font-sans font-medium text-muted-foreground">días</span>}
+            </p>
+            <p className={cn(
+              'mt-0.5 text-sm',
+              streak >= 3 ? 'text-orange-400/70' : 'text-muted-foreground',
+            )}>
+              {streakLabel}
+            </p>
+          </div>
+        </div>
 
-function StatCard({
-  icon, value, label, iconClass, highlight = false,
-}: {
-  icon:       React.ReactNode
-  value:      string
-  label:      string
-  iconClass:  string
-  highlight?: boolean
-}) {
-  return (
-    <div className={cn(
-      'flex flex-col gap-1 rounded-xl border border-border/60 bg-muted/10 p-3.5',
-      'transition-colors hover:bg-muted/20',
-      highlight && 'border-orange-500/20 bg-orange-500/5',
-    )}>
-      <span className={cn('mb-0.5', iconClass)}>{icon}</span>
-      <span className="min-h-10 text-sm font-semibold text-foreground leading-snug">
-        {value}
-      </span>
-      <span className="text-[11px] text-muted-foreground">{label}</span>
+        {/* Sesiones semana */}
+        <div className="flex flex-col gap-1.5 rounded-xl border border-border/60 bg-muted/10 p-3.5 transition-colors hover:bg-muted/20">
+          <CalendarCheck className="h-4 w-4 text-indigo-400" />
+          <span className="font-display text-xl font-bold text-foreground tracking-tight leading-none">
+            {sessionsThisWeek}
+            <span className="text-sm font-sans font-medium text-muted-foreground">/{scheduledThisWeek}</span>
+          </span>
+          <span className="text-[11px] text-muted-foreground">Esta semana</span>
+        </div>
+
+        {/* Volumen */}
+        <div className="flex flex-col gap-1.5 rounded-xl border border-border/60 bg-muted/10 p-3.5 transition-colors hover:bg-muted/20">
+          <Weight className="h-4 w-4 text-emerald-400" />
+          <span className="font-display text-xl font-bold text-foreground tracking-tight leading-none">
+            {volumeKg}
+            <span className="text-sm font-sans font-medium text-muted-foreground"> kg</span>
+          </span>
+          <span className="text-[11px] text-muted-foreground">Volumen</span>
+        </div>
+      </PendingLink>
     </div>
   )
 }

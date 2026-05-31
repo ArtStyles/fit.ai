@@ -457,14 +457,14 @@ export default async function DashboardPage() {
     : null
 
   return (
-    <div className="min-h-screen bg-background pb-16">
+    <div className="min-h-screen bg-background pb-28">
       <DashboardHeader greeting={getGreeting()} firstName={firstName} avatarUrl={profile?.avatar_url ?? null} />
 
       <main className="mx-auto max-w-lg px-4">
         {showAiBanner && (
           <section
             className="animate-in fade-in slide-in-from-bottom-3 mt-8 duration-500"
-            style={{ animationDelay: '40ms' }}
+            style={{ animationDelay: '80ms' }}
           >
             <AINotesBanner
               aiNotes={planRaw!.ai_notes!}
@@ -477,7 +477,7 @@ export default async function DashboardPage() {
         {dailyBriefMessage && (
           <section
             className="animate-in fade-in slide-in-from-bottom-3 mt-8 duration-500"
-            style={{ animationDelay: showAiBanner ? '100ms' : '40ms' }}
+            style={{ animationDelay: showAiBanner ? '160ms' : '80ms' }}
           >
             <DailyBrief message={dailyBriefMessage} />
           </section>
@@ -485,7 +485,7 @@ export default async function DashboardPage() {
 
         <section
           className="animate-in fade-in slide-in-from-bottom-3 mt-4 duration-500"
-          style={{ animationDelay: showAiBanner ? '180ms' : '120ms' }}
+          style={{ animationDelay: showAiBanner ? '240ms' : '160ms' }}
         >
           <HeroCard
             todayWorkout={todayWorkout}
@@ -500,7 +500,7 @@ export default async function DashboardPage() {
         {workouts.length > 0 && (
           <section
             className="animate-in fade-in slide-in-from-bottom-3 mt-12 duration-500"
-            style={{ animationDelay: '200ms' }}
+            style={{ animationDelay: '320ms' }}
           >
             <WeekCalendar days={weekDays} todayIso={todayIso} />
             <PendingLink
@@ -514,7 +514,7 @@ export default async function DashboardPage() {
 
         <section
           className="animate-in fade-in slide-in-from-bottom-3 mt-12 duration-500"
-          style={{ animationDelay: '280ms' }}
+          style={{ animationDelay: '400ms' }}
         >
           <QuickStats
             streak={streak}
@@ -536,7 +536,7 @@ export default async function DashboardPage() {
         {hasCompletedSessions && (
           <section
             className="animate-in fade-in slide-in-from-bottom-3 mt-12 duration-500"
-            style={{ animationDelay: '360ms' }}
+            style={{ animationDelay: '480ms' }}
           >
             <ProgressHighlights
               latestSession={latestSession}

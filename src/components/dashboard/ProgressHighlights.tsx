@@ -51,9 +51,10 @@ export function ProgressHighlights({
 
   return (
     <div>
-      <p className="mb-2.5 px-0.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        Progreso inteligente
-      </p>
+      <div className="mb-3 flex items-center gap-2 px-0.5">
+        <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">Progreso inteligente</span>
+        <div className="h-px flex-1 bg-border/40" />
+      </div>
 
       <div className="grid gap-2.5">
         {latestSession && (
@@ -63,7 +64,7 @@ export function ProgressHighlights({
             spinnerClassName="h-3.5 w-3.5"
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
-              <Activity className="h-4.5 w-4.5" />
+              <Activity className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">Última sesión</p>
@@ -79,20 +80,30 @@ export function ProgressHighlights({
         {topRecord && (
           <PendingLink
             href={`/exercises/${topRecord.exerciseId}`}
-            className="group flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 transition-colors hover:border-amber-400/40 hover:bg-amber-500/10"
+            className="group relative overflow-hidden rounded-2xl border border-amber-500/25 p-4 transition-all hover:border-amber-400/50"
             spinnerClassName="h-3.5 w-3.5"
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-300">
-              <Medal className="h-4.5 w-4.5" />
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/12 via-amber-500/6 to-transparent" />
+            <div className="relative flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300 shadow-[0_0_16px_rgba(245,158,11,0.2)]">
+                <Medal className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-amber-400/80 mb-0.5">
+                  Mejor marca personal
+                </p>
+                <p className="font-display text-xl font-bold text-foreground tracking-tight leading-none">
+                  {formatWeight(topRecord.maxWeightKg)}
+                  {topRecord.repsAtMaxWeight > 0 && (
+                    <span className="text-sm font-sans font-medium text-muted-foreground ml-1">
+                      × {topRecord.repsAtMaxWeight}
+                    </span>
+                  )}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{topRecord.exerciseName}</p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">Mejor marca destacada</p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {topRecord.exerciseName} · {formatWeight(topRecord.maxWeightKg)}
-                {topRecord.repsAtMaxWeight > 0 ? ` x ${topRecord.repsAtMaxWeight}` : ''}
-              </p>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
           </PendingLink>
         )}
 
@@ -103,7 +114,7 @@ export function ProgressHighlights({
             spinnerClassName="h-3.5 w-3.5"
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-300">
-              <TrendingUp className="h-4.5 w-4.5" />
+              <TrendingUp className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">Plan ajustado por tus datos</p>

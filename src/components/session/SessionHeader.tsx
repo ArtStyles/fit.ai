@@ -65,7 +65,8 @@ export function SessionHeader({ onFinish }: Props) {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-background/95 backdrop-blur-sm border-b border-border/40">
+      <header className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b border-border/40">
+        <div className="flex items-center gap-3 px-4 py-3">
         {/* Botón atrás */}
         <button
           type="button"
@@ -111,6 +112,17 @@ export function SessionHeader({ onFinish }: Props) {
           <Flag className="h-3.5 w-3.5" />
           Finalizar
         </Button>
+        </div>
+
+        {/* Barra de progreso de sesión */}
+        {totalSets > 0 && (
+          <div className="h-0.5 bg-muted/30">
+            <div
+              className="h-full bg-indigo-500 transition-all duration-500 ease-out"
+              style={{ width: `${Math.round((completedSets / totalSets) * 100)}%` }}
+            />
+          </div>
+        )}
       </header>
 
       {/* ── Diálogo de confirmación para salir ───────────────────────────── */}

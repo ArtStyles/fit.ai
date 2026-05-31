@@ -87,7 +87,7 @@ export function RestTimer() {
           {/* Tiempo centrado */}
           <div className="absolute inset-0 flex items-center justify-center">
             <span className={cn(
-              'text-sm font-bold tabular-nums',
+              'text-base font-display font-bold tabular-nums',
               isLow ? 'text-red-400' : 'text-foreground',
             )}>
               {fmt(remainingSeconds)}
@@ -97,7 +97,7 @@ export function RestTimer() {
 
         {/* Texto + botones */}
         <div className="flex-1">
-          <p className="text-xs text-muted-foreground mb-2">Descanso</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Descanso activo</p>
           <div className="flex gap-2">
             <button
               type="button"

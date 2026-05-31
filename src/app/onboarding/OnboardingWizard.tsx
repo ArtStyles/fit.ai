@@ -52,18 +52,18 @@ function OptionCard({
         'w-full text-left rounded-2xl border-2 px-5 py-4 transition-all duration-150',
         'flex items-center gap-4 active:scale-[0.98]',
         selected
-          ? 'border-orange-500 bg-orange-500/10'
-          : 'border-zinc-800 bg-zinc-900/80 hover:border-zinc-700',
+          ? 'border-violet-500 bg-violet-500/10'
+          : 'border-border bg-muted/20 hover:border-border/80',
       )}
     >
       <span className="text-2xl leading-none flex-shrink-0">{emoji}</span>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-white text-base leading-tight">{label}</p>
-        {sublabel && <p className="text-xs text-zinc-400 mt-0.5">{sublabel}</p>}
+        <p className="font-semibold text-foreground text-base leading-tight">{label}</p>
+        {sublabel && <p className="text-xs text-muted-foreground mt-0.5">{sublabel}</p>}
       </div>
       <div className={cn(
         'flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
-        selected ? 'border-orange-500 bg-orange-500' : 'border-zinc-700',
+        selected ? 'border-violet-500 bg-violet-500' : 'border-border',
       )}>
         {selected && <Check className="w-3 h-3 text-white" />}
       </div>
@@ -83,8 +83,8 @@ function ChipButton({
       className={cn(
         'flex-1 py-4 rounded-xl border-2 font-bold text-lg transition-all duration-150 active:scale-95',
         selected
-          ? 'border-orange-500 bg-orange-500 text-white'
-          : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-600',
+          ? 'border-violet-500 bg-violet-500 text-white'
+          : 'border-border bg-muted/20 text-muted-foreground hover:border-border/80',
       )}
     >
       {label}
@@ -116,7 +116,7 @@ function StepShell({
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors"
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="text-sm font-medium">Atrás</span>
@@ -126,9 +126,9 @@ function StepShell({
 
       {/* Heading */}
       <div className="mt-8 mb-7">
-        <h2 className="text-[1.6rem] font-bold text-white leading-tight">{title}</h2>
+        <h2 className="text-[1.6rem] font-bold text-foreground leading-tight">{title}</h2>
         {subtitle && (
-          <p className="text-zinc-400 text-sm mt-2 leading-relaxed">{subtitle}</p>
+          <p className="text-muted-foreground text-sm mt-2 leading-relaxed">{subtitle}</p>
         )}
       </div>
 
@@ -144,8 +144,8 @@ function StepShell({
           className={cn(
             'w-full py-4 rounded-2xl font-bold text-base transition-all duration-150',
             canProceed
-              ? 'bg-orange-500 text-white hover:bg-orange-400 active:scale-[0.98] shadow-lg shadow-orange-500/20'
-              : 'bg-zinc-800 text-zinc-600 cursor-not-allowed',
+              ? 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] shadow-lg shadow-primary/20'
+              : 'bg-muted text-muted-foreground cursor-not-allowed',
           )}
         >
           {ctaLabel}
@@ -219,7 +219,7 @@ function Step3Days({ answers, update, onNext, onBack, isFirst }: StepProps) {
         ))}
       </div>
       {answers.days_per_week !== null && (
-        <p className="text-zinc-500 text-sm text-center mt-4">
+        <p className="text-muted-foreground text-sm text-center mt-4">
           {answers.days_per_week} días por semana
         </p>
       )}
@@ -248,8 +248,8 @@ function Step4Duration({ answers, update, onNext, onBack, isFirst }: StepProps) 
             className={cn(
               'py-6 rounded-2xl border-2 font-bold text-xl transition-all duration-150 active:scale-95',
               answers.session_duration === o.value
-                ? 'border-orange-500 bg-orange-500/10 text-orange-400'
-                : 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-600',
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border bg-muted/20 text-muted-foreground hover:border-border/80',
             )}
           >
             {o.label}
@@ -322,12 +322,12 @@ function Step6Equipment({ answers, update, onNext, onBack, isFirst }: StepProps)
               className={cn(
                 'py-4 px-3 rounded-xl border-2 transition-all duration-150 active:scale-95',
                 'flex flex-col items-center gap-1.5',
-                sel ? 'border-orange-500 bg-orange-500/10' : 'border-zinc-800 bg-zinc-900 hover:border-zinc-600',
+                sel ? 'border-primary bg-primary/10' : 'border-border bg-muted/20 hover:border-border/80',
               )}
             >
               <span className="text-2xl">{eq.emoji}</span>
               <span className={cn('text-xs font-medium text-center leading-tight',
-                sel ? 'text-orange-300' : 'text-zinc-300')}>
+                sel ? 'text-primary' : 'text-muted-foreground')}>
                 {eq.label}
               </span>
             </button>
@@ -354,12 +354,12 @@ function Step7Injuries({ answers, update, onNext, onBack, isFirst }: StepProps) 
           placeholder="Ej: Dolor de rodilla izquierda, evitar sentadillas profundas. Lesión de hombro derecho..."
           rows={5}
           className={cn(
-            'w-full rounded-xl border-2 border-zinc-800 bg-zinc-900 px-4 py-3',
-            'text-white placeholder:text-zinc-600 text-sm leading-relaxed resize-none',
-            'focus:outline-none focus:border-orange-500/50 transition-colors',
+            'w-full rounded-xl border-2 border-border bg-muted/20 px-4 py-3',
+            'text-foreground placeholder:text-muted-foreground/40 text-sm leading-relaxed resize-none',
+            'focus:outline-none focus:border-primary/50 transition-colors',
           )}
         />
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-muted-foreground/50">
           Solo se usa para personalizar tu plan y no se comparte con nadie.
         </p>
       </div>
@@ -376,9 +376,9 @@ function Step8Physical({ answers, update, onNext, onBack, isFirst }: StepProps) 
   const isValid = answers.age !== '' && answers.weight_kg !== '' && answers.height_cm !== '' && answers.gender !== null
 
   const inputClass = cn(
-    'w-full rounded-xl border-2 border-zinc-800 bg-zinc-900 px-4 py-3.5',
-    'text-white placeholder:text-zinc-600 text-base',
-    'focus:outline-none focus:border-orange-500/50 transition-colors',
+    'w-full rounded-xl border-2 border-border bg-muted/20 px-4 py-3.5',
+    'text-foreground placeholder:text-muted-foreground/40 text-base',
+    'focus:outline-none focus:border-primary/50 transition-colors',
   )
 
   return (
@@ -391,7 +391,7 @@ function Step8Physical({ answers, update, onNext, onBack, isFirst }: StepProps) 
       <div className="space-y-5">
         {/* Gender */}
         <div className="space-y-2">
-          <label className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Sexo</label>
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Sexo</label>
           <div className="flex gap-2">
             {genders.map(g => (
               <ChipButton key={g.value} selected={answers.gender === g.value}
@@ -402,33 +402,33 @@ function Step8Physical({ answers, update, onNext, onBack, isFirst }: StepProps) 
 
         {/* Age */}
         <div className="space-y-2">
-          <label className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Edad</label>
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Edad</label>
           <div className="relative">
             <input type="number" min={13} max={100}
               value={answers.age} onChange={e => update('age', e.target.value)}
               placeholder="25" className={inputClass} />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">años</span>
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/60 text-sm">años</span>
           </div>
         </div>
 
         {/* Weight + Height */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Peso</label>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Peso</label>
             <div className="relative">
               <input type="number" min={30} max={300}
                 value={answers.weight_kg} onChange={e => update('weight_kg', e.target.value)}
                 placeholder="70" className={cn(inputClass, 'pr-10')} />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">kg</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 text-xs">kg</span>
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Altura</label>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Altura</label>
             <div className="relative">
               <input type="number" min={100} max={250}
                 value={answers.height_cm} onChange={e => update('height_cm', e.target.value)}
                 placeholder="175" className={cn(inputClass, 'pr-10')} />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">cm</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 text-xs">cm</span>
             </div>
           </div>
         </div>
@@ -491,12 +491,12 @@ function Step9GeneratingAuto({ onFinish }: { onFinish: () => Promise<GeneratePla
   if (status === 'error') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
-        <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-3xl border-2 border-orange-500/30 bg-orange-500/10">
-          <Dumbbell className="h-10 w-10 text-orange-400" />
+        <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-3xl border-2 border-primary/30 bg-primary/10">
+          <Dumbbell className="h-10 w-10 text-primary" />
         </div>
 
-        <h2 className="mb-3 text-2xl font-bold text-white">Tu perfil se guardó</h2>
-        <p className="max-w-sm text-sm leading-relaxed text-zinc-400">
+        <h2 className="mb-3 text-2xl font-bold text-foreground">Tu perfil se guardó</h2>
+        <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
           No pudimos generar el plan ahora. Puedes reintentarlo sin perder tus datos.
         </p>
 
@@ -512,7 +512,7 @@ function Step9GeneratingAuto({ onFinish }: { onFinish: () => Promise<GeneratePla
             startedRef.current = false
             setRetryNonce(value => value + 1)
           }}
-          className="mt-8 w-full max-w-sm rounded-2xl bg-orange-500 py-4 text-base font-bold text-white shadow-lg shadow-orange-500/20 transition-colors hover:bg-orange-400 active:scale-[0.98]"
+          className="mt-8 w-full max-w-sm rounded-2xl bg-primary py-4 text-base font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 active:scale-[0.98]"
         >
           Reintentar generación
         </button>
@@ -527,12 +527,12 @@ function Step9GeneratingAuto({ onFinish }: { onFinish: () => Promise<GeneratePla
         transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
         className="mb-10"
       >
-        <div className="flex h-24 w-24 items-center justify-center rounded-3xl border-2 border-orange-500/30 bg-orange-500/10">
-          <Dumbbell className="h-12 w-12 text-orange-400" />
+        <div className="flex h-24 w-24 items-center justify-center rounded-3xl border-2 border-primary/30 bg-primary/10">
+          <Dumbbell className="h-12 w-12 text-primary" />
         </div>
       </motion.div>
 
-      <h2 className="mb-3 text-2xl font-bold text-white">Preparando tu primer plan</h2>
+      <h2 className="mb-3 text-2xl font-bold text-foreground">Preparando tu primer plan</h2>
 
       <AnimatePresence mode="wait">
         <motion.p
@@ -541,7 +541,7 @@ function Step9GeneratingAuto({ onFinish }: { onFinish: () => Promise<GeneratePla
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.25 }}
-          className="text-base text-zinc-400"
+          className="text-base text-muted-foreground"
         >
           {AUTO_GENERATION_MSGS[msgIdx]}
         </motion.p>
@@ -553,7 +553,7 @@ function Step9GeneratingAuto({ onFinish }: { onFinish: () => Promise<GeneratePla
             key={i}
             animate={{ opacity: i <= msgIdx ? 1 : 0.2, scale: i === msgIdx ? 1.3 : 1 }}
             transition={{ duration: 0.2 }}
-            className={cn('h-2 w-2 rounded-full', i <= msgIdx ? 'bg-orange-500' : 'bg-zinc-700')}
+            className={cn('h-2 w-2 rounded-full', i <= msgIdx ? 'bg-primary' : 'bg-border')}
           />
         ))}
       </div>
@@ -664,22 +664,33 @@ export default function OnboardingWizard() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 overflow-x-hidden">
+    <div className="min-h-screen bg-background overflow-x-hidden">
 
       {/* Progress bar — sticky, not fixed (stays part of flow) */}
       {stepKey !== 'generating' && (
-        <div className="sticky top-0 z-50 bg-zinc-950/95 backdrop-blur-sm">
-          <div className="h-0.5 bg-zinc-800">
+        <div className="sticky top-0 z-50 bg-background/95 backdrop-blur-sm">
+          <div className="h-0.5 bg-border">
             <motion.div
-              className="h-full bg-orange-500"
+              className="h-full bg-primary"
               animate={{ width: `${progress}%` }}
               transition={{ duration: 0.4, ease: 'easeOut' }}
             />
           </div>
-          <div className="flex justify-end px-5 pt-2 pb-1">
-            <span className="text-xs text-zinc-600 tabular-nums">
-              {contentIdx + 1} / {contentSteps.length}
-            </span>
+          <div className="flex justify-center gap-1.5 px-5 pt-2.5 pb-1.5">
+            {contentSteps.map((_, i) => (
+              <motion.div
+                key={i}
+                animate={{
+                  width: i === contentIdx ? 20 : 6,
+                  opacity: i <= contentIdx ? 1 : 0.25,
+                }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className={cn(
+                  'h-1.5 rounded-full',
+                  i <= contentIdx ? 'bg-primary' : 'bg-border',
+                )}
+              />
+            ))}
           </div>
         </div>
       )}

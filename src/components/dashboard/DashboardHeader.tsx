@@ -28,11 +28,11 @@ export function DashboardHeader({ greeting, firstName, avatarUrl }: Props) {
 
         {/* Logo + saludo */}
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-400">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-400 shadow-[0_0_12px_rgba(124,92,250,0.25)]">
             <Dumbbell className="h-4 w-4" />
           </div>
           <p className="truncate text-base leading-none">
-            <span className="font-normal text-gray-400">{greeting}, </span>
+            <span className="font-normal text-muted-foreground">{greeting}, </span>
             <span className="font-semibold text-white">{firstName}</span>
           </p>
         </div>

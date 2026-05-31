@@ -31,9 +31,10 @@ export function WeekCalendar({ days, todayIso }: Props) {
 
   return (
     <div>
-      <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground px-0.5">
-        Esta semana
-      </p>
+      <div className="mb-3 flex items-center gap-2 px-0.5">
+        <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">Esta semana</span>
+        <div className="h-px flex-1 bg-border/40" />
+      </div>
       <div className="grid grid-cols-7 gap-1.5">
         {days.map((day) => {
           const dayNum  = parseInt(day.dateStr.split('-')[2], 10)
@@ -116,13 +117,13 @@ function DayCell({
   const inner = (
     <div
       className={cn(
-        'group relative flex flex-col items-center gap-1 rounded-xl border py-2.5 px-1 transition-colors select-none',
-        day.isToday && 'border-violet-500/80 bg-violet-500/10 text-violet-200',
+        'group relative flex flex-col items-center gap-1 rounded-xl border py-3 px-1 transition-all duration-150 select-none',
+        day.isToday && 'border-violet-500/80 bg-violet-500/10 text-violet-200 shadow-[0_0_14px_rgba(139,92,246,0.15)]',
         state === 'completed' && 'border-green-500/30 bg-green-500/5',
         state === 'scheduled' && 'border-border/60 bg-muted/10',
-        state === 'rest' && 'border-border/30 bg-transparent opacity-60 hover:opacity-80',
-        state === 'skipped' && 'border-border/40 bg-muted/5 opacity-70',
-        canStart ? 'cursor-pointer hover:bg-violet-500/15' : 'cursor-not-allowed',
+        state === 'rest' && 'border-border/30 bg-transparent opacity-50 hover:opacity-70',
+        state === 'skipped' && 'border-border/40 bg-muted/5 opacity-60',
+        canStart ? 'cursor-pointer hover:bg-violet-500/15 hover:scale-[1.03]' : 'cursor-not-allowed',
         state === 'rest' && 'cursor-default',
       )}
     >
@@ -198,12 +199,12 @@ function StatusIndicator({ state }: { state: DayState }) {
   }
 
   if (state === 'scheduled') {
-    return <span className="h-2 w-2 rounded-full border border-gray-600" />
+    return <span className="h-2 w-2 rounded-full border border-border/70" />
   }
 
   if (state === 'skipped') {
-    return <span className="text-xs font-semibold leading-none text-gray-600 opacity-50">✕</span>
+    return <span className="text-xs font-semibold leading-none text-muted-foreground/40">✕</span>
   }
 
-  return <span className="text-xs font-medium leading-none text-gray-700">—</span>
+  return <span className="text-xs font-medium leading-none text-muted-foreground/30">—</span>
 }
