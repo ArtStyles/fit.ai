@@ -250,7 +250,7 @@ export default async function HistoryPage() {
               <History className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Historial</h1>
+              <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">Historial</h1>
               <p className="text-sm text-muted-foreground">Últimas sesiones completadas</p>
             </div>
           </div>
@@ -258,15 +258,15 @@ export default async function HistoryPage() {
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
               <p className="text-xs text-muted-foreground">Sesiones</p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{sessionLogs.length}</p>
+              <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{sessionLogs.length}</p>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
               <p className="text-xs text-muted-foreground">Tiempo</p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{totalMinutes}m</p>
+              <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{totalMinutes}m</p>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
               <p className="text-xs text-muted-foreground">Volumen</p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{totalVolume}kg</p>
+              <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{totalVolume}kg</p>
             </div>
           </div>
         </header>
@@ -276,13 +276,13 @@ export default async function HistoryPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/10">
               <Trophy className="h-6 w-6 text-violet-400" />
             </div>
-            <h2 className="mt-4 text-lg font-semibold text-foreground">Sin sesiones todavía</h2>
+            <h2 className="mt-4 font-display text-xl font-bold text-foreground">Sin sesiones todavía</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Cuando completes tu primer entrenamiento aparecerá aquí.
             </p>
             <PendingLink
               href="/dashboard"
-              className="mt-5 inline-flex h-10 items-center justify-center rounded-md bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-600"
+              className="mt-5 inline-flex h-11 items-center justify-center rounded-md bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-600"
             >
               Ir al dashboard
             </PendingLink>

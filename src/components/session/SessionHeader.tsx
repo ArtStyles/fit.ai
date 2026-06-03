@@ -71,7 +71,7 @@ export function SessionHeader({ onFinish }: Props) {
         <button
           type="button"
           onClick={handleBack}
-          className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          className="shrink-0 h-11 w-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
           aria-label="Volver"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -82,7 +82,7 @@ export function SessionHeader({ onFinish }: Props) {
           <p className="text-sm font-semibold text-foreground truncate">{workoutName}</p>
           <div className="flex items-center gap-2">
             <p className={cn(
-              'text-xs tabular-nums',
+              'font-display text-base font-bold leading-none tabular-nums',
               elapsed > 0 ? 'text-indigo-400' : 'text-muted-foreground',
             )}>
               {formatTime(elapsed)}
@@ -103,7 +103,7 @@ export function SessionHeader({ onFinish }: Props) {
           onClick={onFinish}
           disabled={completedSets === 0}
           className={cn(
-            'shrink-0 h-9 gap-1.5 transition-colors',
+            'shrink-0 h-11 gap-1.5 transition-colors',
             completedSets > 0
               ? 'border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/50'
               : 'border-border/30 text-muted-foreground/40 cursor-not-allowed',
@@ -116,9 +116,9 @@ export function SessionHeader({ onFinish }: Props) {
 
         {/* Barra de progreso de sesión */}
         {totalSets > 0 && (
-          <div className="h-0.5 bg-muted/30">
+          <div className="h-1 bg-muted/20">
             <div
-              className="h-full bg-indigo-500 transition-all duration-500 ease-out"
+              className="h-full rounded-r-full bg-gradient-to-r from-violet-500 to-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.6)] transition-all duration-500 ease-out"
               style={{ width: `${Math.round((completedSets / totalSets) * 100)}%` }}
             />
           </div>

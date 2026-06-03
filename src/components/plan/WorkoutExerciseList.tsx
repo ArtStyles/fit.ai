@@ -49,7 +49,7 @@ type WorkoutExerciseListProps = {
 }
 
 const inputClass =
-  'h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500'
+  'h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500'
 
 const textareaClass =
   'w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500'
@@ -249,7 +249,7 @@ export function WorkoutExerciseList({
                       aria-label="Subir ejercicio"
                       disabled={index === 0}
                       variant="outline"
-                      className="h-8 w-8 border-border/60 bg-muted/10 p-0 text-muted-foreground hover:bg-muted/20"
+                      className="h-10 w-10 border-border/60 bg-muted/10 p-0 text-muted-foreground hover:bg-muted/20"
                     >
                       <ArrowUp className="h-3.5 w-3.5" />
                     </SubmitButton>
@@ -264,7 +264,7 @@ export function WorkoutExerciseList({
                       aria-label="Bajar ejercicio"
                       disabled={index === orderedExercises.length - 1}
                       variant="outline"
-                      className="h-8 w-8 border-border/60 bg-muted/10 p-0 text-muted-foreground hover:bg-muted/20"
+                      className="h-10 w-10 border-border/60 bg-muted/10 p-0 text-muted-foreground hover:bg-muted/20"
                     >
                       <ArrowDown className="h-3.5 w-3.5" />
                     </SubmitButton>
@@ -276,7 +276,7 @@ export function WorkoutExerciseList({
                       label="Quitar"
                       pendingLabel="Quitando"
                       variant="outline"
-                      className="h-8 border-red-500/30 bg-red-500/5 px-2 text-xs text-red-300 hover:bg-red-500/10"
+                      className="h-10 border-red-500/30 bg-red-500/5 px-2 text-xs text-red-300 hover:bg-red-500/10"
                     >
                       <Trash2 className="mr-1 h-3.5 w-3.5" />
                       Quitar
@@ -307,7 +307,7 @@ export function WorkoutExerciseList({
                     <SubmitButton
                       label="Guardar ajustes"
                       pendingLabel="Guardando ajustes"
-                      className="h-10 w-full bg-violet-500 text-white hover:bg-violet-600"
+                      className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
                     />
                   </form>
                 </details>
@@ -395,7 +395,7 @@ export function WorkoutExerciseList({
             label="Agregar al entrenamiento"
             pendingLabel="Agregando ejercicio"
             disabled={!hasExerciseOptions}
-            className="h-10 w-full bg-violet-500 text-white hover:bg-violet-600"
+            className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
           />
         </form>
       </details>

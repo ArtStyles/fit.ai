@@ -49,7 +49,7 @@ export function PlanRegenerateButton() {
         type="button"
         onClick={handleClick}
         disabled={loading}
-        className="h-10 w-full gap-2 bg-violet-500 text-white hover:bg-violet-600 disabled:opacity-70"
+        className="h-11 w-full gap-2 bg-violet-500 text-white hover:bg-violet-600 disabled:opacity-70"
       >
         {loading ? (
           <>

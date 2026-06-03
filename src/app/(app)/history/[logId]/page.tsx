@@ -216,7 +216,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
           <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
             Sesión completada
           </p>
-          <h1 className="mt-2 text-2xl font-bold leading-tight text-foreground">
+          <h1 className="mt-2 font-display text-3xl font-extrabold leading-tight tracking-tight text-foreground">
             {workoutName}
           </h1>
           <p className="mt-2 text-sm capitalize text-muted-foreground">
@@ -229,17 +229,17 @@ export default async function HistoryDetailPage({ params }: PageProps) {
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
               <Clock className="h-4 w-4 text-violet-300" />
-              <p className="mt-2 text-lg font-semibold text-foreground">{formatDuration(log.duration_minutes)}</p>
+              <p className="mt-2 font-display text-2xl font-bold tabular-nums text-foreground">{formatDuration(log.duration_minutes)}</p>
               <p className="text-xs text-muted-foreground">Duración</p>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
               <Dumbbell className="h-4 w-4 text-violet-300" />
-              <p className="mt-2 text-lg font-semibold text-foreground">{totalSets}</p>
+              <p className="mt-2 font-display text-2xl font-bold tabular-nums text-foreground">{totalSets}</p>
               <p className="text-xs text-muted-foreground">Series</p>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
               <Weight className="h-4 w-4 text-violet-300" />
-              <p className="mt-2 text-lg font-semibold text-foreground">{totalVolume}kg</p>
+              <p className="mt-2 font-display text-2xl font-bold tabular-nums text-foreground">{totalVolume}kg</p>
               <p className="text-xs text-muted-foreground">Volumen</p>
             </div>
           </div>
@@ -267,7 +267,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
         {exerciseLogs.length === 0 ? (
           <section className="mt-8 rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">
             <Info className="mx-auto h-7 w-7 text-muted-foreground" />
-            <h2 className="mt-3 text-lg font-semibold text-foreground">Sin detalle de ejercicios</h2>
+            <h2 className="mt-3 font-display text-xl font-bold text-foreground">Sin detalle de ejercicios</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Esta sesión no tiene logs por ejercicio.
             </p>
@@ -294,7 +294,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-base font-semibold text-foreground">
+                        <h2 className="font-display text-lg font-semibold text-foreground">
                           {exercise?.name ?? 'Ejercicio'}
                         </h2>
                         {exercise?.is_compound && (

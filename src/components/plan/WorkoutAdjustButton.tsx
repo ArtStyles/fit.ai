@@ -76,7 +76,7 @@ export function WorkoutAdjustButton({ workoutId, context }: Props) {
       <button
         type="button"
         onClick={handleOpen}
-        className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/30 px-3 py-1.5 text-xs font-semibold text-violet-300 transition-colors hover:bg-violet-500/10"
+        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-violet-500/30 px-3.5 py-2.5 text-xs font-semibold text-violet-300 transition-colors hover:bg-violet-500/10"
       >
         <Sparkles className="h-3.5 w-3.5" />
         Sugerir ajuste IA
@@ -104,11 +104,11 @@ export function WorkoutAdjustButton({ workoutId, context }: Props) {
                 <div className="flex gap-2">
                   <button type="button"
                     onClick={() => { setSuggestion(null); setRequest('') }}
-                    className="flex-1 rounded-lg border border-border/50 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground">
+                    className="flex-1 rounded-lg border border-border/50 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
                     Otra pregunta
                   </button>
                   <button type="button" onClick={handleClose}
-                    className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-500">
+                    className="flex-1 rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500">
                     Cerrar
                   </button>
                 </div>
@@ -154,7 +154,7 @@ export function WorkoutAdjustButton({ workoutId, context }: Props) {
                         type="button"
                         onClick={() => handleSubmit(request)}
                         disabled={!request.trim()}
-                        className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:opacity-40"
+                        className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:opacity-40"
                       >
                         <Send className="h-3.5 w-3.5" />
                       </button>

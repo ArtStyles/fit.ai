@@ -167,13 +167,13 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
             value={query}
             onChange={event => setQuery(event.target.value)}
             placeholder="Buscar rutina, foco o fecha"
-            className="h-10 w-full rounded-xl border border-border/60 bg-background/70 pl-9 pr-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
+            className="h-11 w-full rounded-xl border border-border/60 bg-background/70 pl-9 pr-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground"
               aria-label="Limpiar búsqueda"
             >
               <X className="h-3.5 w-3.5" />
@@ -182,8 +182,8 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
         </div>
 
         <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
+            <SlidersHorizontal className="h-4 w-4" />
           </div>
           {modes.map(item => (
             <button
@@ -191,7 +191,7 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
               type="button"
               onClick={() => setMode(item.value)}
               className={cn(
-                'h-8 shrink-0 rounded-lg border px-3 text-xs font-medium transition-colors',
+                'h-10 shrink-0 rounded-lg border px-3 text-xs font-medium transition-colors',
                 mode === item.value
                   ? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
                   : 'border-border/50 bg-background/50 text-muted-foreground hover:border-violet-500/30 hover:text-foreground',
@@ -246,7 +246,7 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
                   <p className="text-xs font-medium capitalize text-muted-foreground">
                     {formatDate(log.completed_at)} · {formatTime(log.completed_at)}
                   </p>
-                  <h2 className="mt-1 text-base font-semibold text-foreground">
+                  <h2 className="mt-1 font-display text-lg font-semibold text-foreground">
                     {workoutName}
                   </h2>
                   {workout?.focus && (

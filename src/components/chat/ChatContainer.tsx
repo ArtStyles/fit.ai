@@ -154,13 +154,13 @@ export function ChatContainer({ initialConversations }: Props) {
           <button
             type="button"
             onClick={handleBack}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">{selected.title}</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground/70">
               {selected.context ? CONTEXT_LABELS[selected.context] : 'General'}
             </p>
           </div>
@@ -176,7 +176,7 @@ export function ChatContainer({ initialConversations }: Props) {
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
                 <MessageSquare className="h-6 w-6" />
               </div>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-muted-foreground">
                 Conversación iniciada.<br />¿En qué te puedo ayudar?
               </p>
             </div>
@@ -204,16 +204,16 @@ export function ChatContainer({ initialConversations }: Props) {
           <div className="flex items-center gap-2.5">
             <PendingLink
               href="/dashboard"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
             >
               <ArrowLeft className="h-5 w-5" />
             </PendingLink>
-            <h1 className="text-base font-semibold text-white">Coach IA</h1>
+            <h1 className="font-display text-xl font-bold text-foreground">Coach IA</h1>
           </div>
           <button
             type="button"
             onClick={() => setShowNewDialog(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700"
           >
             <Plus className="h-4 w-4" />
             Nueva
@@ -229,7 +229,7 @@ export function ChatContainer({ initialConversations }: Props) {
             </div>
             <div>
               <p className="font-semibold text-white">Sin conversaciones aún</p>
-              <p className="mt-1 text-sm text-gray-400">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Pregúntale a tu coach sobre tu entrenamiento, progreso o nutrición
               </p>
             </div>
@@ -268,14 +268,14 @@ export function ChatContainer({ initialConversations }: Props) {
                 type="button"
                 disabled={creating}
                 onClick={() => handleNewConversation(value)}
-                className="flex items-center gap-3 rounded-xl border border-border/40 bg-white/5 p-3.5 text-left transition-colors hover:border-violet-500/40 hover:bg-violet-500/5 disabled:opacity-50"
+                className="flex items-center gap-3 rounded-xl border border-border/40 bg-muted/10 p-3.5 text-left transition-colors hover:border-violet-500/40 hover:bg-violet-500/5 disabled:opacity-50"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400">
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-white">{label}</p>
-                  <p className="text-xs text-gray-400">{description}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
                 </div>
               </button>
             ))}
@@ -299,7 +299,7 @@ function ConversationItem({
   const date  = new Date(conversation.updated_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
 
   return (
-    <li className="group flex items-center gap-3 rounded-xl border border-border/40 bg-white/5 p-3.5 transition-colors hover:border-violet-500/30 hover:bg-violet-500/5">
+    <li className="group flex items-center gap-3 rounded-xl border border-border/40 bg-muted/10 p-3.5 transition-colors hover:border-violet-500/30 hover:bg-violet-500/5">
       <button
         type="button"
         onClick={onSelect}
@@ -310,13 +310,13 @@ function ConversationItem({
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-white">{conversation.title}</p>
-          <p className="text-xs text-gray-500">{label} · {date}</p>
+          <p className="text-xs text-muted-foreground/70">{label} · {date}</p>
         </div>
       </button>
       <button
         type="button"
         onClick={onDelete}
-        className="ml-auto shrink-0 rounded-lg p-1.5 text-gray-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+        className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-red-500/10 hover:text-red-400"
         aria-label="Eliminar conversación"
       >
         <Trash2 className="h-4 w-4" />

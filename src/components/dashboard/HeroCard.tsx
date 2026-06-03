@@ -1,10 +1,13 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PendingLink } from '@/components/navigation/PendingLink'
-import { CheckCircle2, ChevronRight, Clock, Dumbbell, Flame, Moon, Sparkles, TrendingUp } from 'lucide-react'
+import {
+  CheckCircle2, ChevronRight, Clock, Dumbbell,
+  Flame, Moon, Sparkles, TrendingUp,
+} from 'lucide-react'
 import type { WorkoutSummary } from '@/app/(app)/dashboard/page'
 
-// ── Mapeo de isoDay → nombre del día en español ───────────────────────────────
+// ── Mapeo isoDay → nombre del día ──────────────────────────────────────────────
 const DAY_NAMES: Record<number, string> = {
   1: 'el lunes', 2: 'el martes', 3: 'el miércoles',
   4: 'el jueves', 5: 'el viernes', 6: 'el sábado', 7: 'el domingo',
@@ -17,11 +20,58 @@ interface Props {
   nextWorkout:       WorkoutSummary | null
   nextWorkoutIsoDay: number | null
   streak:            number
+  weekDone:          number
+  weekTotal:         number
 }
+
+// ── Week progress bar (static SVG arc) ────────────────────────────────────────
+
+function WeekRing({ done, total }: { done: number; total: number }) {
+  if (total === 0) return null
+  const pct     = Math.min(done / total, 1)
+  const radius  = 18
+  const circ    = 2 * Math.PI * radius
+  const offset  = circ * (1 - pct)
+
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="relative h-12 w-12">
+        <svg className="-rotate-90" width="48" height="48" viewBox="0 0 48 48">
+          {/* Track */}
+          <circle
+            cx="24" cy="24" r={radius}
+            strokeWidth="4" fill="transparent"
+            className="stroke-white/10"
+          />
+          {/* Progress */}
+          <circle
+            cx="24" cy="24" r={radius}
+            strokeWidth="4" fill="transparent"
+            strokeLinecap="round"
+            strokeDasharray={`${circ} ${circ}`}
+            strokeDashoffset={offset}
+            className="stroke-white/80 transition-all duration-1000"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[11px] font-bold text-white/90 tabular-nums leading-none">
+            {done}/{total}
+          </span>
+        </div>
+      </div>
+      <span className="text-[9px] font-semibold uppercase tracking-wider text-white/50">
+        semana
+      </span>
+    </div>
+  )
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function HeroCard({
   todayWorkout, isCompletedToday, planExists,
   nextWorkout, nextWorkoutIsoDay, streak,
+  weekDone, weekTotal,
 }: Props) {
 
   // ── Sin plan activo ───────────────────────────────────────────────────────
@@ -50,28 +100,37 @@ export function HeroCard({
   // ── Entrenamiento completado hoy ──────────────────────────────────────────
   if (isCompletedToday && todayWorkout) {
     return (
-      <div className="relative rounded-2xl overflow-hidden p-5 text-white shadow-xl shadow-emerald-900/30 space-y-3">
+      <div className="relative overflow-hidden rounded-2xl p-5 text-white shadow-[0_22px_55px_-15px_rgba(5,150,105,0.55)] space-y-3">
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-700 via-green-600 to-teal-700" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(34,197,94,0.25),_transparent_60%)]" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <span className="fitai-aurora-blob fitai-aurora-blob--1 bg-emerald-300/40" />
+          <span className="fitai-aurora-blob fitai-aurora-blob--2 bg-teal-300/40" />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_75%_at_50%_-15%,_rgba(255,255,255,0.18),_transparent_60%)]" />
+        <div className="fitai-grain pointer-events-none absolute inset-0 opacity-[0.07]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/25" />
 
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-2 text-emerald-200">
             <CheckCircle2 className="h-5 w-5" />
             <span className="text-sm font-semibold">¡Completado hoy!</span>
           </div>
-          {streak >= 2 && (
-            <span className="fitai-pop flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-sm font-bold text-white">
-              <Flame className="h-4 w-4 text-orange-300" />
-              {streak}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {streak >= 2 && (
+              <span className="fitai-pop flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-sm font-bold text-white">
+                <Flame className="h-4 w-4 text-orange-300" />
+                {streak}
+              </span>
+            )}
+            <WeekRing done={weekDone} total={weekTotal} />
+          </div>
         </div>
-        <p className="relative text-xl font-display font-bold leading-tight tracking-tight">
+        <p className="relative font-display text-2xl font-extrabold leading-tight tracking-tight drop-shadow-sm">
           {todayWorkout.name}
         </p>
         {nextWorkout && nextWorkoutIsoDay && (
           <p className="relative text-sm text-emerald-200/80">
-            Próxima sesión: <span className="text-white font-medium">{nextWorkout.name}</span>
+            Próxima: <span className="text-white font-medium">{nextWorkout.name}</span>
             {' '}{DAY_NAMES[nextWorkoutIsoDay]}
           </p>
         )}
@@ -85,9 +144,12 @@ export function HeroCard({
       <div className="relative rounded-2xl border border-border/40 bg-gradient-to-br from-muted/20 to-muted/5 p-5 space-y-3 overflow-hidden">
         <div className="absolute inset-0 opacity-[0.025] bg-[radial-gradient(circle_at_70%_30%,_white,_transparent_60%)]" />
 
-        <div className="relative flex items-center gap-2 text-muted-foreground">
-          <Moon className="h-4 w-4" />
-          <span className="text-xs font-semibold uppercase tracking-wide">Día de descanso</span>
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Moon className="h-4 w-4" />
+            <span className="text-xs font-semibold uppercase tracking-wide">Día de descanso</span>
+          </div>
+          <WeekRing done={weekDone} total={weekTotal} />
         </div>
         <p className="relative text-sm text-muted-foreground leading-relaxed">
           Los músculos crecen mientras descansas. Aprovecha para recuperarte.
@@ -111,28 +173,37 @@ export function HeroCard({
 
   // ── Workout programado para hoy ───────────────────────────────────────────
   return (
-    <div className="relative rounded-2xl overflow-hidden p-5 text-white shadow-xl shadow-violet-900/40 space-y-4">
-      {/* Aurora animated background */}
+    <div className="relative overflow-hidden rounded-2xl p-5 text-white shadow-[0_22px_55px_-15px_rgba(91,33,182,0.65)] space-y-4">
+      {/* Aurora animada + profundidad */}
       <div className="absolute inset-0 bg-gradient-to-br from-violet-700 via-indigo-600 to-purple-800" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(249,115,22,0.18),_transparent_60%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_rgba(139,92,246,0.25),_transparent_55%)]" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <span className="fitai-aurora-blob fitai-aurora-blob--1 bg-fuchsia-500/40" />
+        <span className="fitai-aurora-blob fitai-aurora-blob--2 bg-indigo-400/40" />
+        <span className="fitai-aurora-blob fitai-aurora-blob--3 bg-orange-500/30" />
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_75%_at_50%_-15%,_rgba(255,255,255,0.20),_transparent_60%)]" />
+      <div className="fitai-grain pointer-events-none absolute inset-0 opacity-[0.08]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/25" />
 
       <div className="relative space-y-4">
-        <div className="flex items-center gap-2">
+        {/* Top row: badge + week ring */}
+        <div className="flex items-start justify-between">
           <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
             Hoy
           </span>
+          <WeekRing done={weekDone} total={weekTotal} />
         </div>
 
         <div className="space-y-1">
-          <p className="text-2xl font-display font-bold leading-tight tracking-tight">{todayWorkout.name}</p>
+          <p className="font-display text-[1.7rem] font-extrabold leading-[1.05] tracking-tight drop-shadow-sm">{todayWorkout.name}</p>
           {todayWorkout.focus && (
             <p className="text-indigo-200 text-sm">{todayWorkout.focus}</p>
           )}
           {todayWorkout.progression_suggestion_count > 0 && (
             <p className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-indigo-100">
               <TrendingUp className="h-3.5 w-3.5" />
-              Hoy tienes {todayWorkout.progression_suggestion_count} {todayWorkout.progression_suggestion_count === 1 ? 'progresión' : 'progresiones'} sugerida{todayWorkout.progression_suggestion_count === 1 ? '' : 's'}
+              {todayWorkout.progression_suggestion_count}{' '}
+              {todayWorkout.progression_suggestion_count === 1 ? 'progresión sugerida' : 'progresiones sugeridas'}
             </p>
           )}
         </div>

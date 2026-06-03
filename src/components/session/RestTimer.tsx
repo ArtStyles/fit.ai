@@ -56,8 +56,9 @@ export function RestTimer() {
           'pointer-events-auto',
           'flex items-center gap-4 px-5 py-3.5 rounded-2xl shadow-xl',
           'border border-border/60 bg-background/95 backdrop-blur-md',
+          'animate-in fade-in slide-in-from-bottom-4 duration-300',
           'transition-colors',
-          isLow && 'border-red-500/40 bg-red-500/5',
+          isLow && 'border-red-500/50 bg-red-500/10 shadow-[0_0_28px_rgba(239,68,68,0.4)]',
         )}
       >
         {/* Progreso circular */}
@@ -87,7 +88,7 @@ export function RestTimer() {
           {/* Tiempo centrado */}
           <div className="absolute inset-0 flex items-center justify-center">
             <span className={cn(
-              'text-base font-display font-bold tabular-nums',
+              'font-display text-lg font-bold tabular-nums',
               isLow ? 'text-red-400' : 'text-foreground',
             )}>
               {fmt(remainingSeconds)}
@@ -102,14 +103,14 @@ export function RestTimer() {
             <button
               type="button"
               onClick={() => extendTimer(30)}
-              className="flex-1 h-8 rounded-lg border border-border/60 bg-muted/20 text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors"
+              className="flex-1 h-11 rounded-lg border border-border/60 bg-muted/20 text-sm font-semibold text-foreground hover:bg-muted/40 transition-colors"
             >
               +30s
             </button>
             <button
               type="button"
               onClick={clearTimer}
-              className="flex-1 h-8 rounded-lg border border-border/60 bg-muted/20 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              className="flex-1 h-11 rounded-lg border border-border/60 bg-muted/20 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
             >
               Saltar
             </button>
@@ -120,7 +121,7 @@ export function RestTimer() {
         <button
           type="button"
           onClick={clearTimer}
-          className="shrink-0 h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors"
+          className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Cerrar timer"
         >
           <X className="h-4 w-4" />

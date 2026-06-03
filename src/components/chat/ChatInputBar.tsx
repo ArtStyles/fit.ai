@@ -2,6 +2,7 @@
 
 import { useState, useRef, type KeyboardEvent } from 'react'
 import { Send } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface Props {
   onSend: (content: string) => void
@@ -36,33 +37,48 @@ export function ChatInputBar({ onSend, disabled }: Props) {
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`
   }
 
+  const canSend = !disabled && value.trim().length > 0
+
   return (
-    <div className="border-t border-border/40 bg-background/80 px-4 py-3 backdrop-blur-sm">
-      <div className="flex items-end gap-2 rounded-xl border border-border/60 bg-white/5 px-3 py-2 focus-within:border-violet-500/50">
+    <div className="border-t border-border/50 bg-background/95 px-4 py-3 backdrop-blur-md">
+      <div
+        className={cn(
+          'flex items-end gap-2 rounded-2xl border px-4 py-3 transition-colors duration-200',
+          'bg-muted/40',
+          canSend
+            ? 'border-violet-500/50 shadow-[0_0_0_1px_rgba(139,92,246,0.15)]'
+            : 'border-border/60',
+        )}
+      >
         <textarea
           ref={textareaRef}
           value={value}
           onChange={e => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder="Escribe un mensaje..."
+          placeholder="Escribe un mensaje…"
           rows={1}
           disabled={disabled}
-          className="flex-1 resize-none bg-transparent text-sm text-white placeholder:text-gray-500 focus:outline-none disabled:opacity-50"
+          className="flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:opacity-50"
           style={{ minHeight: '24px', maxHeight: '120px' }}
         />
         <button
           type="button"
           onClick={handleSend}
-          disabled={disabled || !value.trim()}
-          className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:opacity-40"
+          disabled={!canSend}
           aria-label="Enviar mensaje"
+          className={cn(
+            'mb-0.5 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl transition-all duration-200',
+            canSend
+              ? 'bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-md shadow-violet-500/25 hover:from-violet-500 hover:to-indigo-500 hover:shadow-violet-500/40 active:scale-95'
+              : 'bg-muted/60 text-muted-foreground/40 cursor-not-allowed',
+          )}
         >
-          <Send className="h-3.5 w-3.5" />
+          <Send className="h-4 w-4" />
         </button>
       </div>
-      <p className="mt-1.5 text-center text-xs text-gray-600">
-        Modo demo · respuestas predefinidas, sin IA real
+      <p className="mt-1.5 text-center text-[11px] text-muted-foreground/40">
+        Enter para enviar · Shift+Enter para nueva línea
       </p>
     </div>
   )

@@ -287,12 +287,17 @@ function getExerciseName(row: ExerciseProgressRow): string | null {
   return row.exercise?.name ?? null
 }
 
-async function loadTopRecordHighlight(
+type RecentInsights = {
+  topRecord:    TopRecordHighlight
+  volumeSeries: number[]
+}
+
+async function loadRecentInsights(
   supabase: SupabaseServerClient,
   recentLogs: WeekLogRow[],
-): Promise<TopRecordHighlight> {
+): Promise<RecentInsights> {
   const logIds = recentLogs.map(log => log.id)
-  if (logIds.length === 0) return null
+  if (logIds.length === 0) return { topRecord: null, volumeSeries: [] }
 
   const { data } = await supabase
     .from('exercise_logs')
@@ -300,13 +305,23 @@ async function loadTopRecordHighlight(
     .in('progress_log_id', logIds) as unknown as { data: ExerciseProgressRow[] | null }
 
   let best: NonNullable<TopRecordHighlight> | null = null
+  const volumeByLog = new Map<string, number>()
 
   for (const row of data ?? []) {
+    const weights = row.weights_kg ?? []
+    const reps = row.reps_completed ?? []
+
+    // ── Volumen acumulado por sesión (peso × reps) ─────────────────────────
+    let logVolume = volumeByLog.get(row.progress_log_id) ?? 0
+    for (let i = 0; i < weights.length; i++) {
+      logVolume += (Number(weights[i]) || 0) * (Number(reps[i]) || 0)
+    }
+    volumeByLog.set(row.progress_log_id, logVolume)
+
+    // ── Mejor marca personal ───────────────────────────────────────────────
     const exerciseName = getExerciseName(row)
     if (!exerciseName || !row.exercise_id) continue
 
-    const weights = row.weights_kg ?? []
-    const reps = row.reps_completed ?? []
     const maxWeightKg = weights.reduce((max, weight) => Math.max(max, Number(weight) || 0), 0)
     const maxWeightIndex = weights.findIndex(weight => (Number(weight) || 0) === maxWeightKg)
     const repsAtMaxWeight = Number(reps[maxWeightIndex] ?? 0) || 0
@@ -328,7 +343,15 @@ async function loadTopRecordHighlight(
     }
   }
 
-  return best
+  // recentLogs viene en orden descendente (reciente → antiguo); lo invertimos
+  // para obtener una serie cronológica de las últimas 10 sesiones con carga.
+  const volumeSeries = [...recentLogs]
+    .reverse()
+    .map(log => Math.round(volumeByLog.get(log.id) ?? 0))
+    .filter(volume => volume > 0)
+    .slice(-10)
+
+  return { topRecord: best, volumeSeries }
 }
 
 // ─── Página ───────────────────────────────────────────────────────────────────
@@ -360,7 +383,7 @@ export default async function DashboardPage() {
     hasCompletedSessions,
   } = dashboardPayload
   const workouts = await attachProgressionCounts(supabase, dashboardPayload.workouts)
-  const topRecordHighlight = await loadTopRecordHighlight(supabase, allRecentLogs)
+  const { topRecord: topRecordHighlight, volumeSeries } = await loadRecentInsights(supabase, allRecentLogs)
   const workoutNameById = new Map(workouts.map(workout => [workout.id, workout.name]))
   const latestCompletedSession = allRecentLogs[0]
   const latestSession = latestCompletedSession
@@ -438,6 +461,13 @@ export default async function DashboardPage() {
     new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7).getTime()
   )
 
+  // ── Momentum Score (0-100) ────────────────────────────────────────────────
+  const momentumScore = Math.min(100, Math.round(
+    Math.min(streak * 4, 40) +
+    (scheduledThisWeek > 0 ? (sessionsThisWeek / scheduledThisWeek) * 40 : 0) +
+    Math.min(weekVolumeKg / 500 * 20, 20),
+  ))
+
   // ── Brief diario personalizado (sólo cuando hay un plan activo) ────────────
   const dailyBriefMessage = planRaw
     ? generateDailyBrief({
@@ -458,12 +488,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <DashboardHeader greeting={getGreeting()} firstName={firstName} avatarUrl={profile?.avatar_url ?? null} />
+      <DashboardHeader greeting={getGreeting()} firstName={firstName} avatarUrl={profile?.avatar_url ?? null} momentumScore={momentumScore} />
 
       <main className="mx-auto max-w-lg px-4">
         {showAiBanner && (
           <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-8 duration-500"
+            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
             style={{ animationDelay: '80ms' }}
           >
             <AINotesBanner
@@ -476,7 +506,7 @@ export default async function DashboardPage() {
 
         {dailyBriefMessage && (
           <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-8 duration-500"
+            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
             style={{ animationDelay: showAiBanner ? '160ms' : '80ms' }}
           >
             <DailyBrief message={dailyBriefMessage} />
@@ -484,7 +514,7 @@ export default async function DashboardPage() {
         )}
 
         <section
-          className="animate-in fade-in slide-in-from-bottom-3 mt-4 duration-500"
+          className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
           style={{ animationDelay: showAiBanner ? '240ms' : '160ms' }}
         >
           <HeroCard
@@ -494,12 +524,14 @@ export default async function DashboardPage() {
             nextWorkout={nextWorkoutDay?.workout ?? null}
             nextWorkoutIsoDay={nextWorkoutDay?.iso ?? null}
             streak={streak}
+            weekDone={sessionsThisWeek}
+            weekTotal={scheduledThisWeek}
           />
         </section>
 
         {workouts.length > 0 && (
           <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-12 duration-500"
+            className="animate-in fade-in slide-in-from-bottom-3 mt-10 duration-500"
             style={{ animationDelay: '320ms' }}
           >
             <WeekCalendar days={weekDays} todayIso={todayIso} />
@@ -513,7 +545,7 @@ export default async function DashboardPage() {
         )}
 
         <section
-          className="animate-in fade-in slide-in-from-bottom-3 mt-12 duration-500"
+          className="animate-in fade-in slide-in-from-bottom-3 mt-10 duration-500"
           style={{ animationDelay: '400ms' }}
         >
           <QuickStats
@@ -521,21 +553,14 @@ export default async function DashboardPage() {
             sessionsThisWeek={sessionsThisWeek}
             scheduledThisWeek={scheduledThisWeek}
             volumeKg={Math.round(weekVolumeKg)}
+            volumeSeries={volumeSeries}
             hasCompletedSessions={hasCompletedSessions}
           />
-          {hasCompletedSessions && (
-            <PendingLink
-              href="/history"
-              className="mt-4 inline-flex text-sm font-medium text-violet-400 underline-offset-4 hover:underline"
-            >
-              Ver historial →
-            </PendingLink>
-          )}
         </section>
 
         {hasCompletedSessions && (
           <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-12 duration-500"
+            className="animate-in fade-in slide-in-from-bottom-3 mt-10 duration-500"
             style={{ animationDelay: '480ms' }}
           >
             <ProgressHighlights

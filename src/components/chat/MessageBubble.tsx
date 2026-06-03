@@ -1,3 +1,4 @@
+import { Bot } from 'lucide-react'
 import type { MessageRow } from '@/app/actions/chat'
 
 interface Props {
@@ -5,23 +6,32 @@ interface Props {
 }
 
 export function MessageBubble({ message }: Props) {
-  const isUser = message.role === 'user'
+  const isUser     = message.role === 'user'
   const isThinking = !isUser && !message.content
 
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[82%] rounded-2xl rounded-br-sm bg-gradient-to-br from-violet-600 to-indigo-600 px-4 py-3 text-sm leading-relaxed text-white shadow-md shadow-violet-500/20">
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-          isUser
-            ? 'rounded-br-sm bg-violet-600 text-white'
-            : 'rounded-bl-sm border border-border/40 bg-white/5 text-gray-200'
-        }`}
-      >
+    <div className="flex items-end gap-2.5 justify-start">
+      {/* AI avatar */}
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/20 text-violet-300">
+        <Bot className="h-3.5 w-3.5" />
+      </div>
+
+      <div className="max-w-[82%] rounded-2xl rounded-bl-sm border border-border/50 bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground backdrop-blur-sm">
         {isThinking ? (
-          <div className="flex items-center gap-1 py-0.5">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
+          <div className="flex items-center gap-1.5 py-0.5">
+            <span className="h-2 w-2 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
           </div>
         ) : (
           <p className="whitespace-pre-wrap">{message.content}</p>

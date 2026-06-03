@@ -5,13 +5,18 @@ import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
   AlertCircle,
+  Angry,
   ArrowDown,
   CheckCircle2,
   Clock,
   Dumbbell,
+  Frown,
+  Laugh,
   Loader2,
+  Meh,
   Minus,
   RefreshCw,
+  Smile,
   Sparkles,
   Target,
   TrendingDown,
@@ -19,6 +24,7 @@ import {
   Trophy,
   Weight,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useSessionStore } from '@/store/sessionStore'
@@ -54,12 +60,12 @@ function formatDuration(ms: number): string {
   return `${minutes}m`
 }
 
-const MOODS: { value: number; emoji: string; label: string }[] = [
-  { value: 1, emoji: '😞', label: 'Mal' },
-  { value: 2, emoji: '😕', label: 'Regular' },
-  { value: 3, emoji: '😐', label: 'Normal' },
-  { value: 4, emoji: '😊', label: 'Bien' },
-  { value: 5, emoji: '😄', label: 'Genial' },
+const MOODS: { value: number; Icon: LucideIcon; label: string }[] = [
+  { value: 1, Icon: Angry, label: 'Mal' },
+  { value: 2, Icon: Frown, label: 'Regular' },
+  { value: 3, Icon: Meh,   label: 'Normal' },
+  { value: 4, Icon: Smile, label: 'Bien' },
+  { value: 5, Icon: Laugh, label: 'Genial' },
 ]
 
 function MoodSelector({
@@ -88,7 +94,12 @@ function MoodSelector({
             )}
             aria-label={mood.label}
           >
-            <span className="text-2xl leading-none">{mood.emoji}</span>
+            <mood.Icon
+              className={cn(
+                'h-6 w-6',
+                value === mood.value ? 'text-indigo-300' : 'text-muted-foreground',
+              )}
+            />
             <span
               className={cn(
                 'text-[10px] font-medium',
@@ -122,7 +133,7 @@ function PRBadge({ pr, index }: { pr: PRRecord; index: number }) {
         </p>
         <p className="text-xs text-yellow-500/80">{pr.weightKg} kg</p>
       </div>
-      <span className="fitai-pop shrink-0 text-lg">🏆</span>
+      <Sparkles className="fitai-pop h-4 w-4 shrink-0 text-yellow-300" />
     </motion.div>
   )
 }
@@ -271,6 +282,8 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
     }, 0),
   0)
 
+  const isPerfect = completedExercises === totalExercises && totalExercises > 0
+
   const visiblePrs = prs.slice(0, 3)
   const hiddenPrCount = Math.max(0, prs.length - visiblePrs.length)
   const visibleProgressions = progressions
@@ -357,7 +370,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
     } finally {
       setIsSaving(false)
     }
-  }, [workoutId, startedAt, finishedAt, moodRating, exercises, onClearBackup, setSyncStatus, showToast])
+  }, [workoutId, startedAt, finishedAt, moodRating, exercises, onClearBackup, setSyncStatus, showToast, totalVolumeKg, completedSets, isPerfect])
 
   function handleDone() {
     clearSession()
@@ -371,8 +384,6 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
       block: 'start',
     })
   }
-
-  const isPerfect = completedExercises === totalExercises && totalExercises > 0
 
   return (
     <div className="relative z-50 h-dvh snap-y snap-proximity overflow-y-auto scroll-smooth bg-background">
@@ -395,7 +406,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
           </motion.div>
 
           <motion.div variants={itemMotion}>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            <h1 className="font-display text-4xl font-extrabold tracking-tight text-foreground">
               {isPerfect ? '¡Sesión perfecta!' : '¡Entrenamiento completado!'}
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">{workoutName}</p>
@@ -518,7 +529,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
               <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
                 Próxima mejora
               </p>
-              <h2 className="mt-2 text-2xl font-bold text-foreground">
+              <h2 className="mt-2 font-display text-3xl font-bold text-foreground">
                 {visibleProgressions.length > 0 ? 'Tu siguiente paso está listo' : 'Progreso sincronizado'}
               </h2>
             </motion.div>
@@ -578,7 +589,7 @@ function StatTile({
   return (
     <div className="flex min-h-[126px] flex-col items-center justify-center gap-2 rounded-2xl border border-border/60 bg-muted/10 px-2 py-4">
       {icon}
-      <span className="text-xl font-bold leading-none text-foreground">{value}</span>
+      <span className="font-display text-2xl font-bold leading-none tabular-nums text-foreground">{value}</span>
       <span className="text-[11px] text-muted-foreground">{label}</span>
     </div>
   )

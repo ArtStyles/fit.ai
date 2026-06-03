@@ -52,12 +52,6 @@ function WeightChart({ data }: { data: MeasurementRow[] }) {
     return () => ro.disconnect()
   }, [])
 
-  if (pts.length < 2) return (
-    <div className="flex h-[160px] items-center justify-center rounded-xl border border-dashed border-border/40">
-      <p className="text-xs text-muted-foreground">Registra al menos 2 medidas para ver la gráfica</p>
-    </div>
-  )
-
   const H      = 160
   const innerW = width  - PAD.left - PAD.right
   const innerH = H      - PAD.top  - PAD.bottom
@@ -70,14 +64,7 @@ function WeightChart({ data }: { data: MeasurementRow[] }) {
   const toY = (w: number) => PAD.top  + innerH - ((w - minW) / range) * innerH
   const coords = pts.map((p, i) => ({ x: toX(i), y: toY(p.weight_kg as number), p }))
 
-  const polyline = coords.map(c => `${c.x},${c.y}`).join(' ')
-  const area = `M${coords[0]!.x},${toY(minW)} ${coords.map(c => `L${c.x},${c.y}`).join(' ')} L${coords[coords.length - 1]!.x},${toY(minW)} Z`
-
-  const yTicks = [minW, minW + range / 2, maxW]
-  const step = Math.max(1, Math.floor(pts.length / 5))
-  const xIdx = Array.from({ length: pts.length }, (_, i) => i)
-    .filter(i => i === 0 || i === pts.length - 1 || i % step === 0).slice(0, 6)
-
+  // Hooks must run unconditionally on every render — keep above the early return below.
   const handleMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
     const mx = e.clientX - rect.left
@@ -86,6 +73,20 @@ function WeightChart({ data }: { data: MeasurementRow[] }) {
     const c = coords[Math.max(0, Math.min(pts.length - 1, idx))]
     if (c) setTooltip({ x: c.x, y: c.y, row: c.p })
   }, [coords, innerW, pts.length])
+
+  if (pts.length < 2) return (
+    <div className="flex h-[160px] items-center justify-center rounded-xl border border-dashed border-border/40">
+      <p className="text-xs text-muted-foreground">Registra al menos 2 medidas para ver la gráfica</p>
+    </div>
+  )
+
+  const polyline = coords.map(c => `${c.x},${c.y}`).join(' ')
+  const area = `M${coords[0]!.x},${toY(minW)} ${coords.map(c => `L${c.x},${c.y}`).join(' ')} L${coords[coords.length - 1]!.x},${toY(minW)} Z`
+
+  const yTicks = [minW, minW + range / 2, maxW]
+  const step = Math.max(1, Math.floor(pts.length / 5))
+  const xIdx = Array.from({ length: pts.length }, (_, i) => i)
+    .filter(i => i === 0 || i === pts.length - 1 || i % step === 0).slice(0, 6)
 
   return (
     <div ref={ref} className="w-full">

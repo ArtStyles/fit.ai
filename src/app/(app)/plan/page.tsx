@@ -110,7 +110,7 @@ export default async function PlanPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/10">
               <Sparkles className="h-6 w-6 text-violet-400" />
             </div>
-            <h1 className="mt-4 text-xl font-semibold text-foreground">No encontramos un plan activo</h1>
+            <h1 className="mt-4 font-display text-2xl font-bold text-foreground">No encontramos un plan activo</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               Tu perfil ya está guardado. Reintenta la generación para crear tu estructura semanal.
             </p>
@@ -194,7 +194,7 @@ export default async function PlanPage() {
           <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
             Plan completo
           </p>
-          <h1 className="mt-2 text-2xl font-bold leading-tight text-foreground">
+          <h1 className="mt-2 font-display text-3xl font-extrabold leading-tight tracking-tight text-foreground">
             {planRaw.name}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -234,7 +234,7 @@ export default async function PlanPage() {
             <Button
               asChild
               variant="outline"
-              className="h-10 border-border/60 bg-muted/10 text-sm text-foreground hover:bg-muted/20"
+              className="h-11 border-border/60 bg-muted/10 text-sm text-foreground hover:bg-muted/20"
             >
               <PendingLink href="/history">
                 <History className="mr-2 h-4 w-4" />
@@ -257,7 +257,7 @@ export default async function PlanPage() {
               <input
                 name="name"
                 defaultValue={planRaw.name}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
               />
             </label>
 
@@ -267,7 +267,7 @@ export default async function PlanPage() {
                 name="goal"
                 defaultValue={planRaw.goal ?? ''}
                 placeholder="Ej. Hipertrofia, fuerza, recomposición"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
               />
             </label>
 
@@ -284,7 +284,7 @@ export default async function PlanPage() {
             <SubmitButton
               label="Guardar resumen"
               pendingLabel="Guardando resumen"
-              className="h-10 w-full bg-violet-500 text-white hover:bg-violet-600"
+              className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
             />
           </form>
         </section>
@@ -300,7 +300,11 @@ export default async function PlanPage() {
               <details
                 key={workout.id}
                 open={defaultOpen}
-                className="group animate-in fade-in slide-in-from-bottom-3 rounded-2xl border border-border/60 bg-muted/10 duration-500 open:bg-muted/15"
+                className={`group animate-in fade-in slide-in-from-bottom-3 rounded-2xl border duration-500 ${
+                  isToday
+                    ? 'border-violet-500/50 bg-violet-500/[0.06] shadow-[0_0_0_1px_rgba(139,92,246,0.2)] open:bg-violet-500/[0.08]'
+                    : 'border-border/60 bg-muted/10 open:bg-muted/15'
+                }`}
                 style={{ animationDelay: `${Math.min(index * 70 + 140, 420)}ms` }}
               >
                 <summary className="flex cursor-pointer list-none items-center gap-3 p-5 outline-none transition-colors hover:bg-muted/10 [&::-webkit-details-marker]:hidden">
@@ -315,7 +319,7 @@ export default async function PlanPage() {
                         </Badge>
                       )}
                     </div>
-                    <h2 className="mt-1 truncate text-base font-semibold leading-snug text-foreground">
+                    <h2 className="mt-1 truncate font-display text-lg font-semibold leading-snug text-foreground">
                       {workout.displayName}
                     </h2>
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -338,10 +342,11 @@ export default async function PlanPage() {
                     {isToday ? (
                       <PendingLink
                         href={`/session/${workout.id}`}
-                        className="inline-flex h-9 shrink-0 items-center rounded-md border border-violet-500/30 px-3 text-xs font-semibold text-violet-300 hover:bg-violet-500/10"
-                        spinnerClassName="h-3 w-3"
+                        className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg bg-violet-500 px-4 text-sm font-semibold text-white shadow-sm shadow-violet-900/30 hover:bg-violet-600"
+                        spinnerClassName="h-3.5 w-3.5"
                       >
                         Abrir rutina de hoy
+                        <ChevronRight className="h-4 w-4" />
                       </PendingLink>
                     ) : (
                       <p className="text-xs font-medium text-muted-foreground">
@@ -386,7 +391,7 @@ export default async function PlanPage() {
                         <input
                           name="name"
                           defaultValue={workout.displayName}
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
                         />
                       </label>
 
@@ -396,7 +401,7 @@ export default async function PlanPage() {
                           name="focus"
                           defaultValue={workout.focus ?? ''}
                           placeholder="Pecho · Hombros · Tríceps"
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
                         />
                       </label>
 
@@ -408,14 +413,14 @@ export default async function PlanPage() {
                           min={10}
                           max={180}
                           defaultValue={workout.estimated_duration_minutes ?? ''}
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
                         />
                       </label>
 
                       <SubmitButton
                         label="Guardar entrenamiento"
                         pendingLabel="Guardando entrenamiento"
-                        className="h-10 w-full bg-violet-500 text-white hover:bg-violet-600"
+                        className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
                       />
                     </form>
                   </details>

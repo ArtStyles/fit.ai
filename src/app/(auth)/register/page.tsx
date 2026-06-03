@@ -42,10 +42,21 @@ export default function RegisterPage() {
       {/* ── Right: Branding panel ── */}
       <div className="relative hidden lg:flex lg:w-[45%] flex-col justify-between p-12 bg-gradient-to-br from-violet-950 via-indigo-950 to-violet-900 overflow-hidden">
 
+        {/* Grid pattern */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0
+            bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),
+                linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)]
+            bg-[size:40px_40px]
+            [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_40%,transparent_100%)]"
+        />
+
         {/* Background glow */}
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-32 -right-32 h-96 w-96 rounded-full bg-violet-600/20 blur-3xl" />
-          <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" />
+          <div className="absolute -top-32 -right-32 h-96 w-96 rounded-full bg-violet-600/25 blur-3xl" />
+          <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-indigo-600/25 blur-3xl" />
+          <div className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/10 blur-2xl" />
         </div>
 
         {/* Logo */}

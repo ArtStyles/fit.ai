@@ -269,7 +269,7 @@ export function ExerciseProgressionSection({ exercises }: Props) {
           <button
             type="button"
             onClick={() => setOpen(v => !v)}
-            className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/60 px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-violet-500/40"
+            className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/60 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:border-violet-500/40"
           >
             <span className="truncate">{selected?.name ?? 'Seleccionar ejercicio'}</span>
             <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -301,7 +301,7 @@ export function ExerciseProgressionSection({ exercises }: Props) {
               key={key}
               type="button"
               onClick={() => setTimeframe(key)}
-              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
                 timeframe === key
                   ? 'bg-violet-600 text-white'
                   : 'text-muted-foreground hover:text-foreground'

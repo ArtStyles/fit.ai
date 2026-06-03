@@ -28,12 +28,13 @@ export function PreSessionScreen({ progressions, onApply, onSkip }: Props) {
         <div className="mx-auto max-w-lg px-4 pt-14 pb-6 space-y-6">
 
           {/* Header */}
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/15">
-              <TrendingUp className="h-7 w-7 text-violet-400" />
+          <div className="flex flex-col items-center gap-3 text-center animate-in fade-in slide-in-from-bottom-3 duration-500">
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/15">
+              <div aria-hidden className="pointer-events-none absolute -inset-3 rounded-full bg-violet-500/25 blur-2xl" />
+              <TrendingUp className="relative h-8 w-8 text-violet-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">Puedes mejorar hoy</h1>
+              <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">Puedes mejorar hoy</h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Tu historial sugiere subir peso en{' '}
                 <span className="font-medium text-foreground">
@@ -45,10 +46,11 @@ export function PreSessionScreen({ progressions, onApply, onSkip }: Props) {
 
           {/* Cards de progresión */}
           <div className="space-y-2.5">
-            {progressions.map(p => (
+            {progressions.map((p, i) => (
               <div
                 key={p.weId}
-                className="rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3.5 space-y-2"
+                className="animate-in fade-in slide-in-from-bottom-2 rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3.5 space-y-2 duration-500"
+                style={{ animationDelay: `${80 + i * 60}ms` }}
               >
                 <div>
                   <p className="text-sm font-semibold text-foreground">{p.name}</p>

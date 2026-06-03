@@ -51,7 +51,7 @@ export function SetRow({
           'h-11 w-full rounded-lg border border-border/60 bg-background/80',
           'px-2 text-center text-sm font-medium tabular-nums',
           'placeholder:text-muted-foreground/40',
-          'focus:outline-none focus:ring-1 focus:ring-indigo-500',
+          'focus:outline-none focus:ring-2 focus:ring-indigo-500/70',
           'disabled:opacity-40 disabled:cursor-default',
           completed && 'border-green-500/30 text-green-300',
         )}
@@ -70,7 +70,7 @@ export function SetRow({
           'h-11 w-full rounded-lg border border-border/60 bg-background/80',
           'px-2 text-center text-sm font-medium tabular-nums',
           'placeholder:text-muted-foreground/40',
-          'focus:outline-none focus:ring-1 focus:ring-indigo-500',
+          'focus:outline-none focus:ring-2 focus:ring-indigo-500/70',
           'disabled:opacity-40 disabled:cursor-default',
           completed && 'border-green-500/30 text-green-300',
         )}
@@ -93,7 +93,7 @@ export function SetRow({
           'h-11 w-11 rounded-full border-2 flex items-center justify-center',
           'transition-all active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
           completed
-            ? 'border-green-500 bg-green-500/10 text-green-400 cursor-default'
+            ? 'border-green-500 bg-green-500/10 text-green-400 cursor-default shadow-[0_0_12px_rgba(34,197,94,0.45)]'
             : 'border-border/60 text-muted-foreground hover:border-indigo-500 hover:text-indigo-400',
           (!isActive && !completed) && 'opacity-30 cursor-default',
         )}

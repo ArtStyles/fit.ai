@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronDown, ChevronUp, History, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronUp, History, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
 import { cn }    from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { SetRow } from './SetRow'
@@ -20,8 +20,9 @@ const SKIP_REASONS = ['Sin equipo', 'Fatiga', 'Dolor', 'Tiempo']
 function StatusBadge({ status }: { status: ExerciseSession['status'] }) {
   if (status === 'completed') {
     return (
-      <span className="text-[11px] font-semibold text-green-400">
-        ✓ Completado
+      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-400">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Completado
       </span>
     )
   }
@@ -82,7 +83,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
   return (
     <div className={cn(
       'rounded-xl border transition-all overflow-hidden',
-      isActive    && 'border-indigo-500/60 bg-indigo-500/5 shadow-sm shadow-indigo-900/20',
+      isActive    && 'border-indigo-500/70 bg-indigo-500/[0.07] shadow-[0_0_0_1px_rgba(99,102,241,0.25),0_10px_30px_-12px_rgba(79,70,229,0.5)]',
       isCompleted && 'border-green-500/20 bg-green-500/5',
       isSkipped   && 'border-border/30 bg-transparent opacity-50',
       !isActive && !isCompleted && !isSkipped && 'border-border/40 bg-muted/5',
@@ -101,7 +102,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
         {/* Indicador de estado lateral */}
         <div className={cn(
           'shrink-0 w-1 h-8 rounded-full',
-          isActive    && 'bg-indigo-500',
+          isActive    && 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]',
           isCompleted && 'bg-green-500',
           isSkipped   && 'bg-muted-foreground/20',
           !isActive && !isCompleted && !isSkipped && 'bg-border/40',
@@ -263,7 +264,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
                     key={reason}
                     type="button"
                     onClick={() => skipExercise(weId, reason)}
-                    className="flex items-center justify-center gap-1.5 rounded-md border border-border/50 bg-muted/10 px-2 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                    className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-border/50 bg-muted/10 px-2 py-2.5 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground"
                   >
                     <SkipForward className="h-3.5 w-3.5" />
                     {reason}
