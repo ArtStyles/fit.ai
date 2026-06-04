@@ -74,3 +74,21 @@ export function aggregateLogsToDays(
 
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date))
 }
+
+// ─── Intensidad (cuantiles del propio usuario) ────────────────────────────────
+export type IntensityThresholds = [number, number, number] // p25, p50, p75
+
+export function computeIntensityThresholds(days: DayAggregate[]): IntensityThresholds {
+  const volumes = days.map(d => d.volumeKg).filter(v => v > 0).sort((a, b) => a - b)
+  if (volumes.length === 0) return [0, 0, 0]
+  const q = (p: number) => volumes[Math.min(volumes.length - 1, Math.floor(p * volumes.length))]
+  return [q(0.25), q(0.5), q(0.75)]
+}
+
+export function intensityLevel(volumeKg: number, thresholds: IntensityThresholds): 1 | 2 | 3 | 4 {
+  const [p25, p50, p75] = thresholds
+  if (volumeKg > p75) return 4
+  if (volumeKg > p50) return 3
+  if (volumeKg > p25) return 2
+  return 1
+}

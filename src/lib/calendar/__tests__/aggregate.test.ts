@@ -3,6 +3,8 @@ import {
   aggregateLogsToDays,
   shiftDateStr,
   daysBetween,
+  computeIntensityThresholds,
+  intensityLevel,
 } from '../aggregate'
 
 describe('shiftDateStr', () => {
@@ -49,5 +51,33 @@ describe('aggregateLogsToDays', () => {
     const result = aggregateLogsToDays(logs, [{ progress_log_id: 'x', weights_kg: null, reps_completed: null }], TZ)
     expect(result.map(d => d.date)).toEqual(['2026-01-05', '2026-02-05'])
     expect(result[1]).toMatchObject({ volumeKg: 0, durationMin: 0 })
+  })
+})
+
+describe('computeIntensityThresholds + intensityLevel', () => {
+  const days = Array.from({ length: 8 }, (_, i) => ({
+    date: `2026-02-0${i + 1}`,
+    sessions: 1,
+    volumeKg: (i + 1) * 100, // 100..800
+    durationMin: 30,
+    logIds: ['l'],
+  }))
+
+  it('derives p25/p50/p75 from trained-day volumes (ignoring zeros)', () => {
+    const t = computeIntensityThresholds(days)
+    expect(t).toEqual([300, 500, 700])
+  })
+
+  it('maps volume to levels 1..4 (a trained day is never level 0)', () => {
+    const t = computeIntensityThresholds(days)
+    expect(intensityLevel(0, t)).toBe(1)
+    expect(intensityLevel(300, t)).toBe(1)
+    expect(intensityLevel(400, t)).toBe(2)
+    expect(intensityLevel(600, t)).toBe(3)
+    expect(intensityLevel(800, t)).toBe(4)
+  })
+
+  it('returns zero thresholds when there is no positive volume', () => {
+    expect(computeIntensityThresholds([])).toEqual([0, 0, 0])
   })
 })
