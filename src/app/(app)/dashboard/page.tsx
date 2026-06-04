@@ -535,12 +535,20 @@ export default async function DashboardPage() {
             style={{ animationDelay: '320ms' }}
           >
             <WeekCalendar days={weekDays} todayIso={todayIso} />
-            <PendingLink
-              href="/plan"
-              className="mt-4 inline-flex text-sm font-medium text-violet-400 underline-offset-4 hover:underline"
-            >
-              Ver plan completo →
-            </PendingLink>
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+              <PendingLink
+                href="/plan"
+                className="inline-flex text-sm font-medium text-violet-400 underline-offset-4 hover:underline"
+              >
+                Ver plan completo →
+              </PendingLink>
+              <PendingLink
+                href="/calendario"
+                className="inline-flex text-sm font-medium text-violet-400 underline-offset-4 hover:underline"
+              >
+                Ver calendario →
+              </PendingLink>
+            </div>
           </section>
         )}
 

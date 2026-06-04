@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  CalendarRange,
   History,
   Medal,
   Trophy,
@@ -235,14 +236,24 @@ export default async function HistoryPage() {
   return (
     <div className="min-h-screen bg-background pb-16">
       <main className="mx-auto max-w-lg px-4 py-8">
-        <PendingLink
-          href="/dashboard"
-          className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-          showSpinner={false}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Dashboard
-        </PendingLink>
+        <div className="flex items-center justify-between">
+          <PendingLink
+            href="/dashboard"
+            className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
+            showSpinner={false}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Dashboard
+          </PendingLink>
+          <PendingLink
+            href="/calendario"
+            className="inline-flex items-center text-sm font-medium text-violet-400 hover:underline"
+            showSpinner={false}
+          >
+            <CalendarRange className="mr-1.5 h-4 w-4" />
+            Calendario
+          </PendingLink>
+        </div>
 
         <header className="mt-6">
           <div className="flex items-center gap-3">
