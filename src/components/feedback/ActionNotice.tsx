@@ -37,6 +37,10 @@ const NOTICES: Record<string, { title: string; description?: string }> = {
     title: 'Ajustes guardados',
     description: 'Tu perfil quedó actualizado.',
   },
+  account_deleted: {
+    title: 'Cuenta eliminada',
+    description: 'Tu cuenta y todos tus datos se borraron de forma permanente.',
+  },
 }
 
 const ERRORS: Record<string, { title: string; description?: string }> = {
@@ -55,6 +59,14 @@ const ERRORS: Record<string, { title: string; description?: string }> = {
   workout_unavailable: {
     title: 'Rutina no disponible',
     description: 'Solo puedes iniciar la rutina programada para hoy.',
+  },
+  delete_confirm: {
+    title: 'Confirmación incorrecta',
+    description: 'Escribe ELIMINAR exactamente para borrar tu cuenta.',
+  },
+  delete_failed: {
+    title: 'No se pudo eliminar la cuenta',
+    description: 'Hubo un problema al borrar tus datos. Intenta de nuevo.',
   },
 }
 

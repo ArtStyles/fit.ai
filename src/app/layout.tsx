@@ -4,6 +4,7 @@ import { Barlow_Condensed, Plus_Jakarta_Sans } from 'next/font/google'
 import { RouteTransitionIndicator } from '@/components/navigation/RouteTransitionIndicator'
 import { ToastProvider } from '@/components/feedback/ToastProvider'
 import { ActionNotice } from '@/components/feedback/ActionNotice'
+import { NativeAppInit } from '@/components/native/NativeAppInit'
 import '@/styles/globals.css'
 
 const barlowCondensed = Barlow_Condensed({
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es" className={`dark ${barlowCondensed.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
       <body className="bg-background font-sans text-foreground antialiased">
+        <NativeAppInit />
         <ToastProvider>
           <Suspense fallback={null}>
             <RouteTransitionIndicator />

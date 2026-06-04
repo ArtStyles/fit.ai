@@ -28,6 +28,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useSessionStore } from '@/store/sessionStore'
+import { hapticSuccess } from '@/lib/native/haptics'
 import { saveSession } from '@/app/actions/saveSession'
 import type { PRRecord } from '@/app/actions/saveSession'
 import type { ProgressionSuggestion } from '@/lib/progression'
@@ -334,8 +335,8 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
           completedSets,
           isPerfect,
         }))
-        // Haptic: short-pause-long = success pattern
-        navigator.vibrate?.([60, 40, 120])
+        // Haptic de éxito (nativo: notificación Success; web: navigator.vibrate)
+        void hapticSuccess()
         const progressionCount = result.progressions.filter(
           suggestion => suggestion.nextWeightKg !== null && suggestion.confidence !== 'low',
         ).length

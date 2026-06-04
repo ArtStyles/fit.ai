@@ -2,6 +2,7 @@
 
 import { Check } from 'lucide-react'
 import { cn }    from '@/lib/utils'
+import { hapticImpact } from '@/lib/native/haptics'
 import { RPESelector } from './RPESelector'
 import type { SetData } from '@/store/sessionStore'
 
@@ -86,7 +87,7 @@ export function SetRow({
       {/* Botón completar */}
       <button
         type="button"
-        onClick={onComplete}
+        onClick={() => { void hapticImpact('medium'); onComplete() }}
         disabled={!isActive || completed}
         aria-label={completed ? 'Serie completada' : 'Completar serie'}
         className={cn(

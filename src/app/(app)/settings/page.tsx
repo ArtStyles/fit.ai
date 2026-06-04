@@ -1,6 +1,9 @@
+import Link from 'next/link'
 import { ArrowLeft, LogOut, Save, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
+import { WorkoutReminders } from '@/components/settings/WorkoutReminders'
+import { DeleteAccountSection } from '@/components/settings/DeleteAccountSection'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { signOut } from '@/app/(auth)/actions'
@@ -276,6 +279,10 @@ export default async function SettingsPage() {
           </SubmitButton>
         </form>
 
+        <div className="mt-6">
+          <WorkoutReminders preferredWorkoutDays={profile?.preferred_workout_days ?? []} />
+        </div>
+
         <form action={signOut} className="mt-4">
           <Button
             type="submit"
@@ -286,6 +293,16 @@ export default async function SettingsPage() {
             Cerrar sesión
           </Button>
         </form>
+
+        <div className="mt-8">
+          <DeleteAccountSection />
+        </div>
+
+        <p className="mt-8 text-center text-xs text-muted-foreground">
+          <Link href="/privacy" className="underline transition-colors hover:text-foreground">
+            Política de privacidad
+          </Link>
+        </p>
       </main>
     </div>
   )

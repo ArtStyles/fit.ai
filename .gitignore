@@ -29,8 +29,13 @@ coverage
 *.sln
 *.sw?
 
+# Generated PWA build output
+public/sw.js
+public/workbox-*.js
+public/swe-worker-*.js
+
 # Android / Capacitor
-android/
+# The native project is tracked. android/.gitignore excludes local/build output.
 
 # Local browser/test artifacts
 .chrome-*/

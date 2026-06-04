@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { Dumbbell, Zap, BarChart3, Brain } from 'lucide-react'
 import { LoginForm } from './LoginForm'
 
@@ -102,6 +103,14 @@ export default function LoginPage() {
           </div>
 
           <LoginForm />
+
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            Al continuar aceptas nuestra{' '}
+            <Link href="/privacy" className="underline transition-colors hover:text-foreground">
+              Política de privacidad
+            </Link>
+            .
+          </p>
         </div>
       </div>
     </div>

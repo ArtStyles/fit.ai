@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect }       from 'react'
+import { useEffect, useRef } from 'react'
 import { X }               from 'lucide-react'
 import { cn }              from '@/lib/utils'
+import { hapticPattern }   from '@/lib/native/haptics'
 import { useSessionStore } from '@/store/sessionStore'
 
 // ─── Formato mm:ss ────────────────────────────────────────────────────────────
@@ -20,25 +21,28 @@ export function RestTimer() {
   const extendTimer  = useSessionStore(s => s.extendRestTimer)
   const clearTimer   = useSessionStore(s => s.clearRestTimer)
 
-  // Vibración en hitos clave del countdown
+  // Haptic en hitos clave del countdown (nativo: plugin; web: navigator.vibrate)
   useEffect(() => {
-    if (!restTimer || !('vibrate' in navigator)) return
+    if (!restTimer) return
     const { remainingSeconds } = restTimer
     if (remainingSeconds === 10 || remainingSeconds === 5) {
-      navigator.vibrate(80)
+      void hapticPattern(80)
     } else if (remainingSeconds === 3) {
-      navigator.vibrate([80, 40, 80])
+      void hapticPattern([80, 40, 80])
     }
   }, [restTimer?.remainingSeconds]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Vibración al terminar (timer desaparece → remainingSeconds llegó a 0)
+  // Haptic al terminar el descanso. Un ref evita disparar en el montaje inicial
+  // (cuando restTimer ya es null) y solo reacciona a la transición activo → fin.
+  const hadTimerRef = useRef(false)
   useEffect(() => {
-    if (!restTimer && 'vibrate' in navigator) {
-      navigator.vibrate([100, 60, 100, 60, 150])
+    if (restTimer) {
+      hadTimerRef.current = true
+    } else if (hadTimerRef.current) {
+      hadTimerRef.current = false
+      void hapticPattern([100, 60, 100, 60, 150])
     }
-  // Solo disparar cuando el timer pasa de existir a null
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restTimer === null])
+  }, [restTimer])
 
   if (!restTimer) return null
 
