@@ -92,3 +92,49 @@ export function intensityLevel(volumeKg: number, thresholds: IntensityThresholds
   if (volumeKg > p25) return 2
   return 1
 }
+
+// ─── Rachas y resumen ─────────────────────────────────────────────────────────
+export interface CalendarStats {
+  trainedDays:   number
+  currentStreak: number
+  maxStreak:     number
+  avgPerWeek:    number
+  totalVolumeKg: number
+}
+
+export function computeStreaks(
+  trainedDates: Set<string>,
+  todayStr: string,
+): { current: number; max: number } {
+  let current = 0
+  let cursor = trainedDates.has(todayStr) ? todayStr : shiftDateStr(todayStr, -1)
+  while (trainedDates.has(cursor)) {
+    current++
+    cursor = shiftDateStr(cursor, -1)
+  }
+
+  let max = 0
+  let run = 0
+  let prev: string | null = null
+  for (const date of Array.from(trainedDates).sort()) {
+    run = prev !== null && shiftDateStr(prev, 1) === date ? run + 1 : 1
+    if (run > max) max = run
+    prev = date
+  }
+
+  return { current, max }
+}
+
+export function computeCalendarStats(days: DayAggregate[], todayStr: string): CalendarStats {
+  const trainedDays = days.length
+  const totalVolumeKg = Math.round(days.reduce((sum, d) => sum + d.volumeKg, 0))
+  const { current, max } = computeStreaks(new Set(days.map(d => d.date)), todayStr)
+
+  let avgPerWeek = 0
+  if (days.length > 0) {
+    const spanDays = daysBetween(days[0].date, todayStr) + 1
+    avgPerWeek = Math.round((trainedDays / Math.max(1, spanDays / 7)) * 10) / 10
+  }
+
+  return { trainedDays, currentStreak: current, maxStreak: max, avgPerWeek, totalVolumeKg }
+}

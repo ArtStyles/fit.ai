@@ -5,6 +5,8 @@ import {
   daysBetween,
   computeIntensityThresholds,
   intensityLevel,
+  computeStreaks,
+  computeCalendarStats,
 } from '../aggregate'
 
 describe('shiftDateStr', () => {
@@ -79,5 +81,44 @@ describe('computeIntensityThresholds + intensityLevel', () => {
 
   it('returns zero thresholds when there is no positive volume', () => {
     expect(computeIntensityThresholds([])).toEqual([0, 0, 0])
+  })
+})
+
+describe('computeStreaks', () => {
+  it('counts current streak through today', () => {
+    const dates = new Set(['2026-02-08', '2026-02-09', '2026-02-10'])
+    expect(computeStreaks(dates, '2026-02-10')).toEqual({ current: 3, max: 3 })
+  })
+
+  it('keeps the current streak when today is not trained but yesterday was', () => {
+    const dates = new Set(['2026-02-08', '2026-02-09'])
+    expect(computeStreaks(dates, '2026-02-10').current).toBe(2)
+  })
+
+  it('breaks the current streak after a full missed day', () => {
+    const dates = new Set(['2026-02-01', '2026-02-02', '2026-02-08'])
+    const result = computeStreaks(dates, '2026-02-10')
+    expect(result.current).toBe(0)
+    expect(result.max).toBe(2)
+  })
+})
+
+describe('computeCalendarStats', () => {
+  it('summarises trained days, streaks, average per week and volume', () => {
+    const days = [
+      { date: '2026-02-02', sessions: 1, volumeKg: 1000, durationMin: 60, logIds: ['a'] },
+      { date: '2026-02-04', sessions: 1, volumeKg: 1500, durationMin: 50, logIds: ['b'] },
+    ]
+    const stats = computeCalendarStats(days, '2026-02-08')
+    expect(stats.trainedDays).toBe(2)
+    expect(stats.totalVolumeKg).toBe(2500)
+    expect(stats.maxStreak).toBe(1)
+    expect(stats.avgPerWeek).toBe(2) // 2 días en una semana de span
+  })
+
+  it('returns zeros for an empty history', () => {
+    expect(computeCalendarStats([], '2026-02-08')).toEqual({
+      trainedDays: 0, currentStreak: 0, maxStreak: 0, avgPerWeek: 0, totalVolumeKg: 0,
+    })
   })
 })
