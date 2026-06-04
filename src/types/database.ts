@@ -564,6 +564,19 @@ export interface Database {
           }[]
         }
       }
+      get_calendar_payload: {
+        Args: {
+          p_time_zone?: string
+          p_from?: string | null
+        }
+        Returns: {
+          date: string
+          sessions: number
+          duration_min: number
+          volume_kg: number | string
+          log_ids: string[]
+        }[]
+      }
       get_exercise_detail_payload: {
         Args: {
           p_exercise_id: string
