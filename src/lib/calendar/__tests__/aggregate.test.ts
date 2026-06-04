@@ -7,6 +7,8 @@ import {
   intensityLevel,
   computeStreaks,
   computeCalendarStats,
+  buildMonthGrid,
+  buildHeatmapWeeks,
 } from '../aggregate'
 
 describe('shiftDateStr', () => {
@@ -120,5 +122,38 @@ describe('computeCalendarStats', () => {
     expect(computeCalendarStats([], '2026-02-08')).toEqual({
       trainedDays: 0, currentStreak: 0, maxStreak: 0, avgPerWeek: 0, totalVolumeKg: 0,
     })
+  })
+})
+
+describe('buildMonthGrid', () => {
+  it('pads to whole weeks, Monday-first, and flags today/future', () => {
+    // Febrero 2026: 1 de feb es domingo → 6 huecos iniciales (L..S)
+    const cells = buildMonthGrid(2026, 2, '2026-02-15')
+    expect(cells.length % 7).toBe(0)
+    expect(cells.slice(0, 6).every(c => c.date === null)).toBe(true)
+    expect(cells[6]).toMatchObject({ date: '2026-02-01', dayNum: 1 })
+
+    const today = cells.find(c => c.date === '2026-02-15')
+    expect(today?.isToday).toBe(true)
+    expect(cells.find(c => c.date === '2026-02-20')?.isFuture).toBe(true)
+    expect(cells.find(c => c.date === '2026-02-10')?.isFuture).toBe(false)
+  })
+})
+
+describe('buildHeatmapWeeks', () => {
+  it('returns Monday-first columns covering from..to with future padding as null', () => {
+    const weeks = buildHeatmapWeeks('2026-02-04', '2026-02-15') // mié → dom
+    expect(weeks).toHaveLength(2)
+    expect(weeks[0][0]).toBe('2026-02-02') // lunes de la primera semana
+    expect(weeks[0][6]).toBe('2026-02-08') // domingo
+    expect(weeks[1][0]).toBe('2026-02-09')
+    expect(weeks[1][6]).toBe('2026-02-15')
+  })
+
+  it('fills days after toDate with null', () => {
+    const weeks = buildHeatmapWeeks('2026-02-09', '2026-02-11') // lun → mié
+    expect(weeks).toHaveLength(1)
+    expect(weeks[0].slice(0, 3)).toEqual(['2026-02-09', '2026-02-10', '2026-02-11'])
+    expect(weeks[0].slice(3)).toEqual([null, null, null, null])
   })
 })

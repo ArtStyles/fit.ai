@@ -138,3 +138,58 @@ export function computeCalendarStats(days: DayAggregate[], todayStr: string): Ca
 
   return { trainedDays, currentStreak: current, maxStreak: max, avgPerWeek, totalVolumeKg }
 }
+
+// ─── Generación de rejillas ───────────────────────────────────────────────────
+export interface MonthCell {
+  date:     string | null
+  dayNum:   number | null
+  isToday:  boolean
+  isFuture: boolean
+}
+
+export type HeatmapWeek = (string | null)[] // longitud 7, L→D
+
+function mondayOfStr(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7 // 0 = lunes
+  return shiftDateStr(dateStr, -dow)
+}
+
+export function buildMonthGrid(year: number, month: number, todayStr: string): MonthCell[] {
+  const first = new Date(Date.UTC(year, month - 1, 1))
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const firstWeekday = (first.getUTCDay() + 6) % 7
+  const cells: MonthCell[] = []
+
+  for (let i = 0; i < firstWeekday; i++) {
+    cells.push({ date: null, dayNum: null, isToday: false, isFuture: false })
+  }
+
+  const mm = String(month).padStart(2, '0')
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = `${year}-${mm}-${String(d).padStart(2, '0')}`
+    cells.push({ date, dayNum: d, isToday: date === todayStr, isFuture: date > todayStr })
+  }
+
+  while (cells.length % 7 !== 0) {
+    cells.push({ date: null, dayNum: null, isToday: false, isFuture: false })
+  }
+
+  return cells
+}
+
+export function buildHeatmapWeeks(fromDateStr: string, toDateStr: string): HeatmapWeek[] {
+  const weeks: HeatmapWeek[] = []
+  let cursor = mondayOfStr(fromDateStr)
+
+  while (cursor <= toDateStr) {
+    const week: HeatmapWeek = []
+    for (let i = 0; i < 7; i++) {
+      week.push(cursor > toDateStr ? null : cursor)
+      cursor = shiftDateStr(cursor, 1)
+    }
+    weeks.push(week)
+  }
+
+  return weeks
+}
