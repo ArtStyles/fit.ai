@@ -115,7 +115,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           src={imageUrl}
           alt={name}
           variant="thumb"
-          className={cn('h-10 w-10 shrink-0', isSkipped && 'opacity-50')}
+          className="h-10 w-10 shrink-0"
         />
 
         {/* Info principal */}
