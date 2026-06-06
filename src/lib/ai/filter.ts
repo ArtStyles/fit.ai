@@ -35,7 +35,7 @@ const BODYWEIGHT_TERMS = new Set([
   'body weight', 'bodyweight', 'no equipment', 'none', '',
   'body only',
   'gym mat', 'exercise mat', 'mat',
-  'swiss ball', 'stability ball', 'exercise ball',
+  'swiss ball', 'stability ball', 'exercise ball', 'medicine ball',
   'foam roller', 'foam roll',
 ])
 
@@ -49,7 +49,7 @@ const EQUIPMENT_MAP: Record<string, string[]> = {
   bench:           ['bench', 'weight bench', 'incline bench'],
   kettlebell:      ['kettlebell', 'kettlebells'],
   resistance_bands:['band', 'bands', 'resistance band', 'elastic band'],
-  cable_machine:   ['cable', 'cables', 'pulley', 'machine'],
+  cable_machine:   ['cable', 'cables', 'pulley', 'machine'], // 'machine' es amplio; la IA refina
   pull_up_bar:     ['pull-up bar', 'pullup bar', 'pull up bar', 'chin-up bar'],
   trx:             ['trx', 'suspension', 'gymnastic rings'],
 }
