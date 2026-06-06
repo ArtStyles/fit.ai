@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Dumbbell } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,12 @@ export function ExerciseImage({
   className?: string
 }) {
   const [errored, setErrored] = useState(false)
+
+  // Si cambia el src (instancia reutilizada), olvidar un error previo.
+  useEffect(() => {
+    setErrored(false)
+  }, [src])
+
   const resolved = resolveExerciseImage(src)
   const cfg = VARIANT_CFG[variant]
   const showImage = resolved.kind === 'image' && !errored
