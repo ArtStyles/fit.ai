@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { cn } from '@/lib/utils'
+import { VerifyCodeStep } from './VerifyCodeStep'
 
 type RegisterFieldErrors = {
   fullName?: string
@@ -14,10 +15,6 @@ type RegisterFieldErrors = {
   password?: string
   confirmPassword?: string
 }
-
-type SuccessState =
-  | { type: 'created'; email: string }
-  | { type: 'check_email'; email: string }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -159,7 +156,7 @@ export function RegisterForm() {
   const { showToast } = useToast()
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({})
-  const [success, setSuccess] = useState<SuccessState | null>(null)
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -200,7 +197,6 @@ export function RegisterForm() {
       password,
       options: {
         data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/onboarding`,
       },
     })
 
@@ -229,17 +225,16 @@ export function RegisterForm() {
     }
 
     if (!data.session) {
-      setSuccess({ type: 'check_email', email })
+      setVerifyEmail(email)
       showToast({
         title: 'Revisa tu correo',
-        description: 'Te enviamos un enlace para confirmar tu cuenta.',
+        description: 'Te enviamos un código de 6 dígitos para confirmar tu cuenta.',
         variant: 'success',
       })
       setLoading(false)
       return
     }
 
-    setSuccess({ type: 'created', email })
     showToast({
       title: 'Cuenta creada',
       description: 'Completa tu perfil para generar tu primer plan.',
@@ -250,30 +245,8 @@ export function RegisterForm() {
     router.refresh()
   }
 
-  if (success) {
-    return (
-      <div role="status" className="space-y-4 rounded-xl border border-green-500/30 bg-green-500/10 px-5 py-4 text-sm text-green-300">
-        <div>
-          <p className="font-semibold">
-            {success.type === 'check_email' ? 'Revisa tu correo' : 'Cuenta creada'}
-          </p>
-          <p className="mt-1 text-green-300/75">
-            {success.type === 'check_email'
-              ? `Enviamos un enlace de confirmación a ${success.email}.`
-              : 'Te llevamos al onboarding para completar tu perfil.'}
-          </p>
-        </div>
-        {success.type === 'check_email' && (
-          <PendingLink
-            href="/login"
-            className="inline-flex items-center text-xs font-semibold text-green-200 underline underline-offset-4 hover:text-white"
-            spinnerClassName="h-3.5 w-3.5"
-          >
-            Ya confirmé mi correo
-          </PendingLink>
-        )}
-      </div>
-    )
+  if (verifyEmail) {
+    return <VerifyCodeStep email={verifyEmail} />
   }
 
   return (
