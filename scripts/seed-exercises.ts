@@ -52,7 +52,7 @@ async function rehostImage(
   const key = storageObjectKey(wgerId, sourceUrl)
 
   if (!existingKeys.has(key)) {
-    const res = await fetch(sourceUrl)
+    const res = await fetch(sourceUrl, { signal: AbortSignal.timeout(30_000) })
     if (!res.ok) throw new Error(`download ${res.status}`)
     const bytes = Buffer.from(await res.arrayBuffer())
     const contentType = res.headers.get('content-type') ?? 'image/jpeg'
@@ -61,8 +61,15 @@ async function rehostImage(
       .from(IMAGE_BUCKET)
       .upload(key, bytes, { contentType, upsert: false })
 
-    if (error && !error.message.toLowerCase().includes('already exists')) {
-      throw new Error(`upload: ${error.message}`)
+    if (error) {
+      const errStatus = error as { status?: number; statusCode?: string }
+      const alreadyExists =
+        errStatus.status === 409 ||
+        errStatus.statusCode === '409' ||
+        error.message.toLowerCase().includes('already exists')
+      if (!alreadyExists) {
+        throw new Error(`upload: ${error.message}`)
+      }
     }
     existingKeys.add(key)
   }
@@ -209,8 +216,12 @@ async function main() {
         ex.images.find(img => img.is_main) ?? ex.images[0] ?? null
       let imageUrl: string | null = null
       if (mainImage?.image) {
+        const sourceImage = mainImage.image
         try {
-          imageUrl = await rehostImage(supabase, ex.id, mainImage.image, existingImageKeys)
+          imageUrl = await withRetry(
+            () => rehostImage(supabase, ex.id, sourceImage, existingImageKeys),
+            `image ${ex.id}`,
+          )
         } catch (err) {
           errors.push(`image ${ex.id}: ${(err as Error).message}`)
           imageUrl = null
