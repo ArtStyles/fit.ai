@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { TYPE_CFG, DIFF_CFG } from './config'
+import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import type { Exercise } from '@/types/exercise'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -38,13 +39,11 @@ function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
         transition-all duration-200 select-none
       "
     >
-      {/* Icon + compound */}
-      <div className="flex items-start justify-between gap-2">
-        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 ${cfg?.iconBg ?? 'bg-zinc-800'}`}>
-          {cfg?.emoji ?? '💪'}
-        </div>
+      {/* Thumbnail + compound */}
+      <div className="relative">
+        <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" />
         {ex.is_compound && (
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-600 mt-1 shrink-0">
+          <span className="absolute top-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-200">
             Compound
           </span>
         )}
@@ -150,6 +149,9 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
         className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/70 flex flex-col max-h-[88vh] overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
+        {/* ── Hero image ────────────────────────────────────────────────── */}
+        <ExerciseImage src={ex.image_url} alt={ex.name} variant="hero" className="w-full rounded-none border-0" />
+
         {/* ── Header (sticky) ───────────────────────────────────────────── */}
         <div className={`relative px-5 pt-5 pb-4 border-b border-zinc-800 bg-gradient-to-br ${cfg?.sectionBg ?? 'from-zinc-800/30'} to-transparent shrink-0`}>
           {/* Close */}
