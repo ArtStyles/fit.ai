@@ -9,7 +9,7 @@
  *   pnpm seed:exercises
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import {
   fetchExercises,
   fetchMuscles,
@@ -18,7 +18,57 @@ import {
   type WgerMuscle,
   type WgerEquipment,
 } from '../src/lib/wger/client'
+import { storageObjectKey } from '../src/lib/wger/imageStorage'
 import type { Database } from '../src/types/database'
+
+const IMAGE_BUCKET = 'exercise-images'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SeedSupabase = SupabaseClient<any, any, any>
+
+/** Lista todas las claves ya presentes en el bucket (para no re-subir en cada corrida). */
+async function listExistingImageKeys(supabase: SeedSupabase): Promise<Set<string>> {
+  const keys = new Set<string>()
+  const PAGE = 1000
+  let offset = 0
+  while (true) {
+    const { data, error } = await supabase.storage.from(IMAGE_BUCKET).list('', { limit: PAGE, offset })
+    if (error) throw new Error(`storage.list: ${error.message}`)
+    if (!data || data.length === 0) break
+    for (const obj of data) keys.add(obj.name)
+    if (data.length < PAGE) break
+    offset += PAGE
+  }
+  return keys
+}
+
+/** Descarga la imagen de wger (si no está ya) y devuelve la URL pública de Supabase Storage. */
+async function rehostImage(
+  supabase: SeedSupabase,
+  wgerId: number,
+  sourceUrl: string,
+  existingKeys: Set<string>,
+): Promise<string> {
+  const key = storageObjectKey(wgerId, sourceUrl)
+
+  if (!existingKeys.has(key)) {
+    const res = await fetch(sourceUrl)
+    if (!res.ok) throw new Error(`download ${res.status}`)
+    const bytes = Buffer.from(await res.arrayBuffer())
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg'
+
+    const { error } = await supabase.storage
+      .from(IMAGE_BUCKET)
+      .upload(key, bytes, { contentType, upsert: false })
+
+    if (error && !error.message.toLowerCase().includes('already exists')) {
+      throw new Error(`upload: ${error.message}`)
+    }
+    existingKeys.add(key)
+  }
+
+  return supabase.storage.from(IMAGE_BUCKET).getPublicUrl(key).data.publicUrl
+}
 
 // Local alias for readability; used to type-check toUpsert records
 type ExerciseInsert = Database['public']['Tables']['exercises']['Insert']
@@ -131,6 +181,10 @@ async function main() {
   let skipped = 0
   const errors: string[] = []
 
+  console.log('Listing existing images in storage…')
+  const existingImageKeys = await listExistingImageKeys(supabase)
+  console.log(`  already in bucket: ${existingImageKeys.size}`)
+
   let page = firstPage
   let offset = 0
 
@@ -153,7 +207,15 @@ async function main() {
       // Main image (prefer is_main=true, fall back to first image)
       const mainImage =
         ex.images.find(img => img.is_main) ?? ex.images[0] ?? null
-      const imageUrl = mainImage?.image ?? null
+      let imageUrl: string | null = null
+      if (mainImage?.image) {
+        try {
+          imageUrl = await rehostImage(supabase, ex.id, mainImage.image, existingImageKeys)
+        } catch (err) {
+          errors.push(`image ${ex.id}: ${(err as Error).message}`)
+          imageUrl = null
+        }
+      }
 
       // Muscle groups (primary + secondary combined for is_compound check)
       const primaryMuscles = muscleNames(ex.muscles)
