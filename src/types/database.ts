@@ -97,6 +97,8 @@ export interface Database {
           video_url: string | null
           image_url: string | null
           is_public: boolean
+          source: string | null
+          external_id: string | null
           created_at: string
         }
         Insert: {
@@ -113,6 +115,8 @@ export interface Database {
           video_url?: string | null
           image_url?: string | null
           is_public?: boolean
+          source?: string | null
+          external_id?: string | null
         }
         Update: {
           wger_id?: number | null
@@ -127,6 +131,8 @@ export interface Database {
           video_url?: string | null
           image_url?: string | null
           is_public?: boolean
+          source?: string | null
+          external_id?: string | null
         }
         Relationships: []
       }
