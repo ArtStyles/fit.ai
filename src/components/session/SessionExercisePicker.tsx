@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import type { SessionExerciseDraft } from '@/store/sessionStore'
 
 type SessionExercisePickerProps = {
@@ -58,14 +59,22 @@ export function SessionExercisePicker({
                 onSelect(option)
                 setQuery('')
               }}
-              className="rounded-lg border border-border/50 bg-muted/10 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-indigo-500/40 hover:bg-indigo-500/10"
+              className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/10 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-indigo-500/40 hover:bg-indigo-500/10"
             >
-              <span className="font-semibold">{option.name}</span>
-              {meta && (
-                <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
-                  {meta}
-                </span>
-              )}
+              <ExerciseImage
+                src={option.imageUrl}
+                alt={option.name}
+                variant="thumb"
+                className="h-9 w-9 shrink-0"
+              />
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">{option.name}</span>
+                {meta && (
+                  <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+                    {meta}
+                  </span>
+                )}
+              </span>
             </button>
           )
         })}
