@@ -33,9 +33,10 @@ const MIN_POOL = 30   // mínimo de ejercicios en el pool antes de enviar a la I
  */
 const BODYWEIGHT_TERMS = new Set([
   'body weight', 'bodyweight', 'no equipment', 'none', '',
+  'body only',
   'gym mat', 'exercise mat', 'mat',
-  'swiss ball', 'stability ball',
-  'foam roller',
+  'swiss ball', 'stability ball', 'exercise ball',
+  'foam roller', 'foam roll',
 ])
 
 /**
@@ -44,11 +45,11 @@ const BODYWEIGHT_TERMS = new Set([
  */
 const EQUIPMENT_MAP: Record<string, string[]> = {
   dumbbells:       ['dumbbell', 'dumbbells'],
-  barbell:         ['barbell', 'bar', 'ez-bar', 'sz-bar', 'ez bar'],
+  barbell:         ['barbell', 'bar', 'ez-bar', 'sz-bar', 'ez bar', 'e-z curl bar'],
   bench:           ['bench', 'weight bench', 'incline bench'],
   kettlebell:      ['kettlebell', 'kettlebells'],
   resistance_bands:['band', 'bands', 'resistance band', 'elastic band'],
-  cable_machine:   ['cable', 'cables', 'pulley'],
+  cable_machine:   ['cable', 'cables', 'pulley', 'machine'],
   pull_up_bar:     ['pull-up bar', 'pullup bar', 'pull up bar', 'chin-up bar'],
   trx:             ['trx', 'suspension', 'gymnastic rings'],
 }
