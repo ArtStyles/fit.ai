@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "type-check": "tsc --noEmit --incremental false",
-    "seed:exercises": "tsx --env-file=.env.local scripts/seed-exercises.ts",
+    "seed:exercises": "tsx --env-file=.env.local scripts/seed-free-exercise-db.ts --reset",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
