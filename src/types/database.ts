@@ -593,6 +593,7 @@ export interface Database {
             is_compound: boolean | null
             instructions: string | null
             video_url: string | null
+            image_url: string | null
           } | null
           logs: {
             id: string
