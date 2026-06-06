@@ -21,6 +21,7 @@ export function VerifyCodeStep({ email }: { email: string }) {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
+  const [resending, setResending] = useState(false)
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS)
 
   useEffect(() => {
@@ -68,8 +69,9 @@ export function VerifyCodeStep({ email }: { email: string }) {
   }
 
   async function handleResend() {
-    if (cooldown > 0) return
+    if (cooldown > 0 || resending) return
     setError(null)
+    setResending(true)
 
     const supabase = createClient()
     const { error: resendError } = await supabase.auth.resend({ type: 'signup', email })
@@ -77,9 +79,11 @@ export function VerifyCodeStep({ email }: { email: string }) {
     if (resendError) {
       const message = getResendErrorMessage(resendError.message)
       showToast({ title: 'No se pudo reenviar', description: message, variant: 'error' })
+      setResending(false)
       return
     }
 
+    setResending(false)
     setCooldown(RESEND_COOLDOWN_SECONDS)
     showToast({
       title: 'Código reenviado',
@@ -103,7 +107,7 @@ export function VerifyCodeStep({ email }: { email: string }) {
 
       <form onSubmit={handleVerify} noValidate className="space-y-4">
         {error && (
-          <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          <div id="otp-error" role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
             {error}
           </div>
         )}
@@ -129,6 +133,7 @@ export function VerifyCodeStep({ email }: { email: string }) {
             value={code}
             onChange={e => setCode(normalizeCode(e.target.value))}
             aria-invalid={Boolean(error)}
+            aria-describedby={error ? 'otp-error' : undefined}
             className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-center text-lg font-semibold tracking-[0.5em] text-foreground placeholder:tracking-[0.5em] placeholder:text-muted-foreground/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70"
           />
         </div>
@@ -147,7 +152,7 @@ export function VerifyCodeStep({ email }: { email: string }) {
         <button
           type="button"
           onClick={handleResend}
-          disabled={cooldown > 0}
+          disabled={cooldown > 0 || resending}
           className="font-semibold text-indigo-400 transition-colors hover:text-indigo-300 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
         >
           {cooldown > 0 ? `Reenviar código en ${cooldown}s` : 'Reenviar código'}
