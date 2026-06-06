@@ -3,6 +3,7 @@
 import { CheckCircle2, ChevronDown, ChevronUp, History, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
 import { cn }    from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import { SetRow } from './SetRow'
 import { SessionExercisePicker } from '@/components/session/SessionExercisePicker'
 import { useSessionStore } from '@/store/sessionStore'
@@ -50,6 +51,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
     expanded,
     sets,
     name,
+    imageUrl,
     muscleGroups,
     notes,
     targetReps,
@@ -107,6 +109,14 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           isSkipped   && 'bg-muted-foreground/20',
           !isActive && !isCompleted && !isSkipped && 'bg-border/40',
         )} />
+
+        {/* Miniatura del ejercicio */}
+        <ExerciseImage
+          src={imageUrl}
+          alt={name}
+          variant="thumb"
+          className={cn('h-10 w-10 shrink-0', isSkipped && 'opacity-50')}
+        />
 
         {/* Info principal */}
         <div className="flex-1 min-w-0">
