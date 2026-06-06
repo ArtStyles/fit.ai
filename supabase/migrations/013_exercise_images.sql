@@ -2,22 +2,22 @@
 -- Bucket público para imágenes de ejercicios + image_url en el payload de la ficha.
 
 -- 1. Bucket público
-insert into storage.buckets (id, name, public)
-values ('exercise-images', 'exercise-images', true)
-on conflict (id) do nothing;
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('exercise-images', 'exercise-images', true)
+ON CONFLICT (id) DO NOTHING;
 
 -- 2. Añadir image_url al payload de detalle de ejercicio
-create or replace function public.get_exercise_detail_payload(
+CREATE OR REPLACE FUNCTION public.get_exercise_detail_payload(
   p_exercise_id uuid
 )
-returns jsonb
-language sql
-stable
-security invoker
-set search_path = public
-as $$
-with target_exercise as (
-  select
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+WITH target_exercise AS (
+  SELECT
     e.id,
     e.name,
     e.description,
@@ -29,13 +29,13 @@ with target_exercise as (
     e.instructions,
     e.video_url,
     e.image_url
-  from exercises e
-  where e.id = p_exercise_id
-    and e.is_public = true
-  limit 1
+  FROM exercises e
+  WHERE e.id = p_exercise_id
+    AND e.is_public = true
+  LIMIT 1
 ),
-exercise_rows as (
-  select
+exercise_rows AS (
+  SELECT
     el.id,
     el.progress_log_id,
     el.sets_completed,
@@ -49,43 +49,46 @@ exercise_rows as (
       'completed_at', pl.completed_at,
       'duration_minutes', pl.duration_minutes,
       'mood_rating', pl.mood_rating
-    ) as progress_log,
-    pl.completed_at as progress_completed_at
-  from exercise_logs el
-  join progress_logs pl on pl.id = el.progress_log_id
-  where el.exercise_id = p_exercise_id
-    and pl.user_id = auth.uid()
-  order by pl.completed_at desc
+    ) AS progress_log,
+    pl.completed_at AS progress_completed_at
+  FROM exercise_logs el
+  JOIN progress_logs pl ON pl.id = el.progress_log_id
+  WHERE el.exercise_id = p_exercise_id
+    AND pl.user_id = auth.uid()
+  ORDER BY pl.completed_at DESC
 ),
-workout_rows as (
-  select distinct
+workout_rows AS (
+  SELECT DISTINCT
     w.id,
     w.name,
     w.focus
-  from exercise_logs el
-  join progress_logs pl on pl.id = el.progress_log_id
-  join workouts w
-    on w.id = pl.workout_id
-   and w.user_id = auth.uid()
-  where el.exercise_id = p_exercise_id
-    and pl.user_id = auth.uid()
-    and pl.workout_id is not null
+  FROM exercise_logs el
+  JOIN progress_logs pl ON pl.id = el.progress_log_id
+  JOIN workouts w
+    ON w.id = pl.workout_id
+   AND w.user_id = auth.uid()
+  WHERE el.exercise_id = p_exercise_id
+    AND pl.user_id = auth.uid()
+    AND pl.workout_id IS NOT NULL
 )
-select jsonb_build_object(
+SELECT jsonb_build_object(
   'exercise', (
-    select to_jsonb(te)
-    from target_exercise te
+    SELECT to_jsonb(te)
+    FROM target_exercise te
   ),
-  'logs', coalesce((
-    select jsonb_agg((to_jsonb(er) - 'progress_completed_at') order by er.progress_completed_at desc)
-    from exercise_rows er
+  'logs', COALESCE((
+    SELECT jsonb_agg((to_jsonb(er) - 'progress_completed_at') ORDER BY er.progress_completed_at DESC)
+    FROM exercise_rows er
   ), '[]'::jsonb),
-  'workouts', coalesce((
-    select jsonb_agg(to_jsonb(wr) order by wr.name)
-    from workout_rows wr
+  'workouts', COALESCE((
+    SELECT jsonb_agg(to_jsonb(wr) ORDER BY wr.name)
+    FROM workout_rows wr
   ), '[]'::jsonb)
 );
 $$;
 
-grant execute on function public.get_exercise_detail_payload(uuid)
-  to authenticated;
+GRANT EXECUTE ON FUNCTION public.get_exercise_detail_payload(uuid)
+  TO authenticated;
+
+COMMENT ON FUNCTION public.get_exercise_detail_payload(uuid) IS
+  'Returns one exercise (including image_url), its authenticated user logs, and related workouts for the exercise detail screen.';
