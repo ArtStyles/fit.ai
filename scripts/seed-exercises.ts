@@ -31,12 +31,13 @@ async function listExistingImageKeys(supabase: SeedSupabase): Promise<Set<string
   const keys = new Set<string>()
   const PAGE = 1000
   let offset = 0
-  while (true) {
+  let hasMore = true
+  while (hasMore) {
     const { data, error } = await supabase.storage.from(IMAGE_BUCKET).list('', { limit: PAGE, offset })
     if (error) throw new Error(`storage.list: ${error.message}`)
-    if (!data || data.length === 0) break
-    for (const obj of data) keys.add(obj.name)
-    if (data.length < PAGE) break
+    const batch = data ?? []
+    for (const obj of batch) keys.add(obj.name)
+    hasMore = batch.length === PAGE
     offset += PAGE
   }
   return keys
