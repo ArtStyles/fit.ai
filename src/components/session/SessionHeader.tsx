@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { useSessionStore } from '@/store/sessionStore'
 import { SyncStatusIndicator } from '@/components/session/SyncStatusIndicator'
+import { useBackHandler } from '@/lib/native/backHandlers'
 
 // ─── Elapsed timer ────────────────────────────────────────────────────────────
 
@@ -54,6 +55,20 @@ export function SessionHeader({ onFinish }: Props) {
     (acc, e) => acc + e.sets.filter(s => s.completed).length, 0,
   )
   const totalSets = exercises.reduce((acc, e) => acc + e.sets.length, 0)
+
+  // Gesto/botón atrás de Android: cerrar el diálogo si está abierto, o pedir
+  // confirmación antes de abandonar un entreno con progreso (igual que el botón).
+  useBackHandler(() => {
+    if (showExitDialog) {
+      setShowExitDialog(false)
+      return true
+    }
+    if (completedSets > 0) {
+      setShowExitDialog(true)
+      return true
+    }
+    return false
+  })
 
   function handleBack() {
     if (completedSets > 0) {
