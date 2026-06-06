@@ -58,11 +58,11 @@ export function mapExerciseType(category: string): ExerciseType {
   }
 }
 
-/** equipment (string único) → array; 'body only'/vacío/null → []. */
+/** equipment (string único) → array; 'body only'/'other'/vacío/null → []. */
 export function mapEquipment(equipment: string | null): string[] {
   if (!equipment) return []
   const trimmed = equipment.trim()
-  if (trimmed === '' || trimmed === 'body only') return []
+  if (trimmed === '' || trimmed === 'body only' || trimmed === 'other') return []
   return [trimmed]
 }
 

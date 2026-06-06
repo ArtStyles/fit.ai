@@ -36,8 +36,9 @@ describe('mapEquipment', () => {
   it('wraps a real equipment string into an array', () => {
     expect(mapEquipment('dumbbell')).toEqual(['dumbbell'])
   })
-  it('treats body only / empty / null as no equipment', () => {
+  it('treats body only / other / empty / null as no equipment', () => {
     expect(mapEquipment('body only')).toEqual([])
+    expect(mapEquipment('other')).toEqual([])
     expect(mapEquipment('')).toEqual([])
     expect(mapEquipment(null)).toEqual([])
   })
