@@ -14,6 +14,7 @@ import {
   Weight,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
@@ -32,6 +33,7 @@ type ExerciseRow = {
   is_compound: boolean | null
   instructions: string | null
   video_url: string | null
+  image_url: string | null
 }
 
 type EmbeddedProgressLog = {
@@ -134,7 +136,7 @@ async function loadExerciseDetailPayloadFallback(
 ): Promise<ExerciseDetailPayloadResult> {
   const { data: exercise } = await supabase
     .from('exercises')
-    .select('id, name, description, muscle_groups, equipment, difficulty, exercise_type, is_compound, instructions, video_url')
+    .select('id, name, description, muscle_groups, equipment, difficulty, exercise_type, is_compound, instructions, video_url, image_url')
     .eq('id', exerciseId)
     .eq('is_public', true)
     .maybeSingle() as unknown as { data: ExerciseRow | null }
@@ -495,6 +497,13 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
             </div>
           </div>
         </header>
+
+        <ExerciseImage
+          src={exercise.image_url}
+          alt={exercise.name}
+          variant="hero"
+          className="animate-in fade-in slide-in-from-bottom-3 mt-6 w-full duration-500"
+        />
 
         <section className="animate-in fade-in slide-in-from-bottom-3 mt-8 grid grid-cols-2 gap-2 duration-500">
           <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
