@@ -133,6 +133,9 @@ async function main() {
   const res = await withRetry(() => fetch(DATASET_URL, { signal: AbortSignal.timeout(60_000) }), 'dataset')
   if (!res.ok) throw new Error(`dataset download ${res.status}`)
   const dataset = (await res.json()) as FreeExercise[]
+  if (!Array.isArray(dataset) || dataset.length === 0) {
+    throw new Error('dataset is empty or not an array')
+  }
   console.log(`  exercises in dataset: ${dataset.length}`)
 
   console.log('Resetting training data (DESTRUCTIVE)…')
@@ -190,6 +193,7 @@ async function main() {
     console.log(`   Errors     : ${errors.length}`)
     errors.slice(0, 20).forEach(e => console.log(`     • ${e}`))
     if (errors.length > 20) console.log(`     … and ${errors.length - 20} more`)
+    process.exit(1)
   }
 }
 
