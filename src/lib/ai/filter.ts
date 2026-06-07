@@ -40,7 +40,7 @@ const BODYWEIGHT_TERMS = new Set([
 ])
 
 /**
- * Mapeo de nombres de equipamiento del onboarding → términos en la DB (wger).
+ * Mapeo de nombres de equipamiento del onboarding → términos en la DB (free-exercise-db).
  * La DB puede tener variantes; se comprueba por substring case-insensitive.
  */
 const EQUIPMENT_MAP: Record<string, string[]> = {

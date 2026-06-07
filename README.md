@@ -39,7 +39,7 @@ conectado de extremo a extremo:
   eliminacion completa de cuenta.
 - PWA instalable y proyecto Android con Capacitor, splash screen, haptics y
   notificaciones locales.
-- Biblioteca de ejercicios sincronizable desde wger.
+- Biblioteca de ejercicios desde free-exercise-db con imagenes re-alojadas en Supabase Storage.
 - RLS en Supabase, RPCs optimizadas para dashboard e historial, y fallback a
   queries directas cuando una RPC no esta disponible.
 
@@ -114,21 +114,24 @@ Aplica las migraciones SQL en este orden:
 008_plan_lifecycle.sql
 010_add_exercise_log_rpe_values.sql
 011_history_and_exercise_payloads.sql
+012_calendar_payload.sql
+013_exercise_images.sql
+014_exercise_source_columns.sql
 ```
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
 normal. `009_reset_test_accounts.sql` es destructiva, contiene una cuenta de
 prueba concreta y solo debe ejecutarse de forma intencional en desarrollo.
 
-El esquema inicial incluye ejercicios basicos. Para importar una biblioteca mas
-amplia desde wger:
+El esquema inicial incluye ejercicios basicos. Para importar el catalogo completo
+desde free-exercise-db:
 
 ```bash
 pnpm seed:exercises
 ```
 
 El seed requiere `SUPABASE_SERVICE_ROLE_KEY` y la migracion
-`002_wger_columns.sql`.
+`014_exercise_source_columns.sql`.
 
 ### Desarrollo
 
@@ -177,7 +180,7 @@ pnpm cap:android
 | `pnpm test` | Ejecuta Vitest una vez. |
 | `pnpm test:watch` | Ejecuta Vitest en modo watch. |
 | `pnpm test:ui` | Abre la interfaz de Vitest. |
-| `pnpm seed:exercises` | Sincroniza ejercicios desde wger a Supabase. |
+| `pnpm seed:exercises` | Reemplaza el catálogo de ejercicios con free-exercise-db (resetea datos de entrenamiento de prueba). |
 | `pnpm cap:sync` | Sincroniza recursos y plugins de Capacitor. |
 | `pnpm cap:android` | Abre el proyecto Android. |
 

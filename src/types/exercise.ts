@@ -27,6 +27,8 @@ export interface Exercise {
   video_url: string | null
   image_url: string | null
   is_public: boolean
+  source: string | null
+  external_id: string | null
   created_at: string
 }
 

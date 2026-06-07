@@ -266,7 +266,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <div className="px-5 py-3.5 border-t border-zinc-800 shrink-0 flex items-center justify-between">
           <span className="text-[10px] text-zinc-700 font-mono">
-            {ex.wger_id ? `wger #${ex.wger_id}` : ex.id.slice(0, 8)}
+            {ex.external_id ?? ex.id.slice(0, 8)}
           </span>
           <button
             onClick={onClose}
