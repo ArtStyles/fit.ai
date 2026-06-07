@@ -99,7 +99,7 @@ export function VerifyCodeStep({ email }: { email: string }) {
         <div>
           <p className="text-sm font-semibold text-foreground">Verifica tu correo</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Enviamos un código de 6 dígitos a <span className="font-medium text-foreground">{email}</span>.
+            Enviamos un código de 8 dígitos a <span className="font-medium text-foreground">{email}</span>.
             Caduca en 10 minutos.
           </p>
         </div>
@@ -128,8 +128,8 @@ export function VerifyCodeStep({ email }: { email: string }) {
             disabled={verifying}
             inputMode="numeric"
             autoComplete="one-time-code"
-            maxLength={6}
-            placeholder="000000"
+            maxLength={8}
+            placeholder="00000000"
             value={code}
             onChange={e => setCode(normalizeCode(e.target.value))}
             aria-invalid={Boolean(error)}

@@ -7,23 +7,23 @@ import {
 } from '../verification'
 
 describe('normalizeCode', () => {
-  it('keeps only digits and caps at 6', () => {
-    expect(normalizeCode('12 34-56')).toBe('123456')
-    expect(normalizeCode('1234567')).toBe('123456')
+  it('keeps only digits and caps at 8', () => {
+    expect(normalizeCode('12 34-56-78')).toBe('12345678')
+    expect(normalizeCode('123456789')).toBe('12345678')
     expect(normalizeCode('abc12')).toBe('12')
     expect(normalizeCode('')).toBe('')
   })
 })
 
 describe('validateCode', () => {
-  it('returns null for exactly 6 digits', () => {
-    expect(validateCode('123456')).toBeNull()
+  it('returns null for exactly 8 digits', () => {
+    expect(validateCode('12345678')).toBeNull()
   })
 
   it('returns an error message for wrong length or non-digits', () => {
-    expect(validateCode('123')).toBe('Ingresa el código de 6 dígitos.')
-    expect(validateCode('12345a')).toBe('Ingresa el código de 6 dígitos.')
-    expect(validateCode('')).toBe('Ingresa el código de 6 dígitos.')
+    expect(validateCode('123456')).toBe('Ingresa el código de 8 dígitos.')
+    expect(validateCode('1234567a')).toBe('Ingresa el código de 8 dígitos.')
+    expect(validateCode('')).toBe('Ingresa el código de 8 dígitos.')
   })
 })
 

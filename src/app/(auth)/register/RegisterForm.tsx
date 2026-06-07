@@ -228,7 +228,7 @@ export function RegisterForm() {
       setVerifyEmail(email)
       showToast({
         title: 'Revisa tu correo',
-        description: 'Te enviamos un código de 6 dígitos para confirmar tu cuenta.',
+        description: 'Te enviamos un código de 8 dígitos para confirmar tu cuenta.',
         variant: 'success',
       })
       setLoading(false)

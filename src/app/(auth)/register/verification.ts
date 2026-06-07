@@ -1,11 +1,11 @@
-/** Deja solo dígitos y recorta a 6 caracteres. */
+/** Deja solo dígitos y recorta a 8 caracteres. */
 export function normalizeCode(input: string): string {
-  return input.replace(/\D/g, '').slice(0, 6)
+  return input.replace(/\D/g, '').slice(0, 8)
 }
 
-/** Devuelve un mensaje de error si el código no son exactamente 6 dígitos, o null si es válido. */
+/** Devuelve un mensaje de error si el código no son exactamente 8 dígitos, o null si es válido. */
 export function validateCode(code: string): string | null {
-  return /^\d{6}$/.test(code) ? null : 'Ingresa el código de 6 dígitos.'
+  return /^\d{8}$/.test(code) ? null : 'Ingresa el código de 8 dígitos.'
 }
 
 /** Traduce el error de `verifyOtp` a un mensaje para el usuario. */
