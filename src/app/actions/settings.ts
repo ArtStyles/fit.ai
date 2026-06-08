@@ -31,7 +31,33 @@ function csvList(formData: FormData, key: string): string[] {
     .filter(Boolean)
 }
 
-export async function updateSettings(formData: FormData) {
+// Datos personales (/settings/perfil): solo escribe sus columnas para no
+// pisar el resto del perfil al guardar desde una página separada.
+export async function updatePersonalData(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login?error=auth_required')
+
+  const { error } = await (supabase
+    .from('profiles') as any)
+    .update({
+      full_name: nullableText(formData, 'fullName'),
+      height_cm: nullableNumber(formData, 'heightCm'),
+      weight_kg: nullableNumber(formData, 'weightKg'),
+      date_of_birth: nullableText(formData, 'dateOfBirth'),
+      gender: nullableText(formData, 'gender'),
+    })
+    .eq('id', user.id)
+
+  if (error) redirect('/settings/perfil?error=save_failed')
+
+  revalidatePath('/settings/perfil')
+  revalidatePath('/dashboard')
+  redirect('/settings/perfil?notice=settings_saved')
+}
+
+// Entrenamiento (/settings/entrenamiento): objetivos, disponibilidad y equipo.
+export async function updateTrainingSettings(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login?error=auth_required')
@@ -44,11 +70,6 @@ export async function updateSettings(formData: FormData) {
   const { error } = await (supabase
     .from('profiles') as any)
     .update({
-      full_name: nullableText(formData, 'fullName'),
-      height_cm: nullableNumber(formData, 'heightCm'),
-      weight_kg: nullableNumber(formData, 'weightKg'),
-      date_of_birth: nullableText(formData, 'dateOfBirth'),
-      gender: nullableText(formData, 'gender'),
       fitness_level: nullableText(formData, 'fitnessLevel'),
       primary_goal: nullableText(formData, 'primaryGoal'),
       days_per_week: nullableInteger(formData, 'daysPerWeek'),
@@ -60,10 +81,10 @@ export async function updateSettings(formData: FormData) {
     })
     .eq('id', user.id)
 
-  if (error) redirect('/settings?error=save_failed')
+  if (error) redirect('/settings/entrenamiento?error=save_failed')
 
-  revalidatePath('/settings')
+  revalidatePath('/settings/entrenamiento')
   revalidatePath('/dashboard')
   revalidatePath('/plan')
-  redirect('/settings?notice=settings_saved')
+  redirect('/settings/entrenamiento?notice=settings_saved')
 }
