@@ -75,6 +75,11 @@
   * {
     @apply border-border;
   }
+  /* Evita el "stretch overscroll" nativo (Android 12+) que deforma la barra fija al final del scroll */
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
   body {
     @apply bg-background text-foreground;
   }
