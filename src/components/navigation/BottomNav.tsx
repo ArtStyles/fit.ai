@@ -43,30 +43,19 @@ export function BottomNav() {
               key={href}
               href={href}
               showSpinner={false}
-              className="group relative flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-[4.5rem]"
+              aria-label={label}
+              className="group relative flex flex-col items-center justify-center px-1 py-1.5 min-w-[4.5rem]"
             >
               {/* icon bubble */}
               <span
                 className={cn(
-                  'flex h-9 w-9 items-center justify-center rounded-[14px] transition-all duration-200',
+                  'flex h-11 w-11 items-center justify-center rounded-[14px] transition-all duration-200',
                   isActive
                     ? 'bg-white/12 text-foreground ring-1 ring-white/10'
                     : 'text-muted-foreground group-hover:text-foreground/70',
                 )}
               >
-                <Icon className="h-[18px] w-[18px]" />
-              </span>
-
-              {/* label */}
-              <span
-                className={cn(
-                  'text-[10px] leading-none transition-colors',
-                  isActive
-                    ? 'font-semibold text-foreground'
-                    : 'text-muted-foreground/80',
-                )}
-              >
-                {label}
+                <Icon className="h-[22px] w-[22px]" />
               </span>
 
               {/* active dot indicator */}
