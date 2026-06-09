@@ -52,19 +52,28 @@ export function SessionExercisePicker({
           const meta = getMeta(option)
 
           return (
-            <button
+            <div
               key={option.exerciseId}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 onSelect(option)
                 setQuery('')
               }}
-              className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/10 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-indigo-500/40 hover:bg-indigo-500/10"
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(option)
+                  setQuery('')
+                }
+              }}
+              className="flex cursor-pointer items-center gap-3 rounded-lg border border-border/50 bg-muted/10 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
             >
               <ExerciseImage
                 src={option.imageUrl}
                 alt={option.name}
                 variant="thumb"
+                zoomable
                 className="h-9 w-9 shrink-0"
               />
               <span className="min-w-0">
@@ -75,7 +84,7 @@ export function SessionExercisePicker({
                   </span>
                 )}
               </span>
-            </button>
+            </div>
           )
         })}
       </div>
