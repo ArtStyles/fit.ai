@@ -108,6 +108,8 @@ export function ExerciseImage({
   return (
     <Dialog>
       <DialogTrigger asChild>
+        {/* stopPropagation en click/keydown: evita disparar la acción del contenedor
+            clickeable (card que navega, fila que selecciona) al tocar la imagen. */}
         <button
           type="button"
           aria-label={`Ampliar imagen de ${alt}`}
@@ -129,7 +131,7 @@ export function ExerciseImage({
 
       <DialogContent
         aria-describedby={undefined}
-        className="grid h-[100dvh] w-screen max-w-none place-items-center border-0 bg-transparent p-0 shadow-none sm:rounded-none"
+        className="grid h-[100dvh] w-screen max-w-none place-items-center border-0 bg-transparent p-0 text-white shadow-none sm:rounded-none"
       >
         <div className="flex w-[92vw] max-w-3xl flex-col items-center">
           <div className="relative h-[78vh] w-full">
@@ -137,7 +139,7 @@ export function ExerciseImage({
               src={resolved.src}
               alt={alt}
               fill
-              sizes="92vw"
+              sizes="(max-width: 52rem) 92vw, 48rem"
               className="object-contain"
             />
           </div>
