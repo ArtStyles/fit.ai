@@ -502,6 +502,7 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
           src={exercise.image_url}
           alt={exercise.name}
           variant="hero"
+          zoomable
           className="animate-in fade-in slide-in-from-bottom-3 mt-6 w-full duration-500"
         />
 
