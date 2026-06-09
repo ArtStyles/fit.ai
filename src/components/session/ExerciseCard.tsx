@@ -91,16 +91,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
       !isActive && !isCompleted && !isSkipped && 'border-border/40 bg-muted/5',
     )}>
       {/* ── Cabecera del card ─────────────────────────────────────────────── */}
-      <button
-        type="button"
-        onClick={() => canExpand && toggleExpanded(weId)}
-        disabled={!canExpand}
-        className={cn(
-          'w-full flex items-center gap-3 px-4 py-3.5 text-left',
-          'focus-visible:outline-none',
-          canExpand && 'cursor-pointer',
-        )}
-      >
+      <div className="flex w-full items-center gap-3 px-4 py-3.5">
         {/* Indicador de estado lateral */}
         <div className={cn(
           'shrink-0 w-1 h-8 rounded-full',
@@ -110,67 +101,80 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           !isActive && !isCompleted && !isSkipped && 'bg-border/40',
         )} />
 
-        {/* Miniatura del ejercicio */}
+        {/* Miniatura del ejercicio (ampliable) */}
         <ExerciseImage
           src={imageUrl}
           alt={name}
           variant="thumb"
+          zoomable
           className="h-10 w-10 shrink-0"
         />
 
-        {/* Info principal */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={cn(
-              'text-sm font-semibold truncate',
-              isActive    && 'text-indigo-200',
-              isCompleted && 'text-green-300',
-              isSkipped   && 'text-muted-foreground line-through',
-              !isActive && !isCompleted && !isSkipped && 'text-foreground/80',
-            )}>
-              {name}
-            </span>
-            {isCompound && (
-              <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-4 border-0 bg-muted/30 text-muted-foreground">
-                compuesto
-              </Badge>
-            )}
-            {source !== 'planned' && (
-              <Badge variant="ghost" className="shrink-0 border border-violet-500/20 bg-violet-500/10 px-1.5 py-0 text-[10px] text-violet-200">
-                solo hoy
-              </Badge>
-            )}
+        {/* Zona de expandir/colapsar */}
+        <button
+          type="button"
+          onClick={() => canExpand && toggleExpanded(weId)}
+          disabled={!canExpand}
+          className={cn(
+            'flex flex-1 items-center gap-3 text-left',
+            'focus-visible:outline-none',
+            canExpand && 'cursor-pointer',
+          )}
+        >
+          {/* Info principal */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className={cn(
+                'text-sm font-semibold truncate',
+                isActive    && 'text-indigo-200',
+                isCompleted && 'text-green-300',
+                isSkipped   && 'text-muted-foreground line-through',
+                !isActive && !isCompleted && !isSkipped && 'text-foreground/80',
+              )}>
+                {name}
+              </span>
+              {isCompound && (
+                <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-4 border-0 bg-muted/30 text-muted-foreground">
+                  compuesto
+                </Badge>
+              )}
+              {source !== 'planned' && (
+                <Badge variant="ghost" className="shrink-0 border border-violet-500/20 bg-violet-500/10 px-1.5 py-0 text-[10px] text-violet-200">
+                  solo hoy
+                </Badge>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {muscleGroups.slice(0, 2).map(g => (
+                <span key={g} className="text-[11px] text-muted-foreground capitalize">
+                  {g}
+                </span>
+              ))}
+              {muscleGroups.length > 2 && (
+                <span className="text-[11px] text-muted-foreground">
+                  +{muscleGroups.length - 2}
+                </span>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {muscleGroups.slice(0, 2).map(g => (
-              <span key={g} className="text-[11px] text-muted-foreground capitalize">
-                {g}
-              </span>
-            ))}
-            {muscleGroups.length > 2 && (
-              <span className="text-[11px] text-muted-foreground">
-                +{muscleGroups.length - 2}
+          {/* Estado + progreso */}
+          <div className="flex items-center gap-2 shrink-0">
+            <StatusBadge status={status} />
+            {!isSkipped && (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {completedSets}/{sets.length}
               </span>
             )}
+            {canExpand && (
+              expanded
+                ? <ChevronUp  className="h-4 w-4 text-muted-foreground" />
+                : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
           </div>
-        </div>
-
-        {/* Estado + progreso */}
-        <div className="flex items-center gap-2 shrink-0">
-          <StatusBadge status={status} />
-          {!isSkipped && (
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {completedSets}/{sets.length}
-            </span>
-          )}
-          {canExpand && (
-            expanded
-              ? <ChevronUp  className="h-4 w-4 text-muted-foreground" />
-              : <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </div>
-      </button>
+        </button>
+      </div>
 
       {/* ── Contenido expandido ───────────────────────────────────────────── */}
       {expanded && !isSkipped && (
