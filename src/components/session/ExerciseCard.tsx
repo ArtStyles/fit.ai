@@ -113,11 +113,12 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
         {/* Zona de expandir/colapsar */}
         <button
           type="button"
+          aria-label={name}
           onClick={() => canExpand && toggleExpanded(weId)}
           disabled={!canExpand}
           className={cn(
-            'flex flex-1 items-center gap-3 text-left',
-            'focus-visible:outline-none',
+            'flex flex-1 items-center gap-3 rounded-lg text-left',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40',
             canExpand && 'cursor-pointer',
           )}
         >
