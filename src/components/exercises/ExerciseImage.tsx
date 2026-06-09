@@ -69,6 +69,7 @@ export function ExerciseImage({
   alt,
   variant = 'thumb',
   className,
+  frameClassName,
   zoomable = false,
   zoomFocusable = true,
 }: {
@@ -76,6 +77,10 @@ export function ExerciseImage({
   alt: string
   variant?: Variant
   className?: string
+  /** Clases para el marco visual interno (borde, redondeo, fondo). En modo
+   *  normal van junto a `className`; en modo zoom siguen aplicándose al marco
+   *  aunque `className` se mueva al botón contenedor. */
+  frameClassName?: string
   zoomable?: boolean
   /** Si es false, el botón de zoom no entra en el orden de tabulación
    *  (para cuando la imagen va anidada en un contenedor clickeable). */
@@ -99,7 +104,7 @@ export function ExerciseImage({
       showImage={showImage}
       alt={alt}
       cfg={cfg}
-      className={zoom ? 'h-full w-full' : className}
+      className={zoom ? cn('h-full w-full', frameClassName) : cn(className, frameClassName)}
       onError={() => setErrored(true)}
     />
   )

@@ -114,6 +114,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
         <button
           type="button"
           aria-label={name}
+          aria-expanded={canExpand ? expanded : undefined}
           onClick={() => canExpand && toggleExpanded(weId)}
           disabled={!canExpand}
           className={cn(

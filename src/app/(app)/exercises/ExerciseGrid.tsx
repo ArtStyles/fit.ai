@@ -151,7 +151,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
         onClick={e => e.stopPropagation()}
       >
         {/* ── Hero image ────────────────────────────────────────────────── */}
-        <ExerciseImage src={ex.image_url} alt={ex.name} variant="hero" zoomable className="w-full rounded-none border-0" />
+        <ExerciseImage src={ex.image_url} alt={ex.name} variant="hero" zoomable className="w-full" frameClassName="rounded-none border-0" />
 
         {/* ── Header (sticky) ───────────────────────────────────────────── */}
         <div className={`relative px-5 pt-5 pb-4 border-b border-zinc-800 bg-gradient-to-br ${cfg?.sectionBg ?? 'from-zinc-800/30'} to-transparent shrink-0`}>
