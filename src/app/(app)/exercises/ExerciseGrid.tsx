@@ -28,8 +28,9 @@ function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
     <article
       role="button"
       tabIndex={0}
+      aria-label={ex.name}
       onClick={onClick}
-      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onClick()}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       className="
         group flex flex-col gap-3 rounded-2xl bg-zinc-900 p-4
         border border-zinc-800 cursor-pointer
@@ -41,7 +42,7 @@ function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
     >
       {/* Thumbnail + compound */}
       <div className="relative">
-        <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" zoomable />
+        <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" zoomable zoomFocusable={false} />
         {ex.is_compound && (
           <span className="absolute top-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-200">
             Compound

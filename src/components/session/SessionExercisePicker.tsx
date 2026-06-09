@@ -56,6 +56,7 @@ export function SessionExercisePicker({
               key={option.exerciseId}
               role="button"
               tabIndex={0}
+              aria-label={option.name}
               onClick={() => {
                 onSelect(option)
                 setQuery('')
@@ -74,6 +75,7 @@ export function SessionExercisePicker({
                 alt={option.name}
                 variant="thumb"
                 zoomable
+                zoomFocusable={false}
                 className="h-9 w-9 shrink-0"
               />
               <span className="min-w-0">

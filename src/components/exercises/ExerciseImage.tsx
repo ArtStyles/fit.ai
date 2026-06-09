@@ -70,12 +70,16 @@ export function ExerciseImage({
   variant = 'thumb',
   className,
   zoomable = false,
+  zoomFocusable = true,
 }: {
   src: string | null | undefined
   alt: string
   variant?: Variant
   className?: string
   zoomable?: boolean
+  /** Si es false, el botón de zoom no entra en el orden de tabulación
+   *  (para cuando la imagen va anidada en un contenedor clickeable). */
+  zoomFocusable?: boolean
 }) {
   const [errored, setErrored] = useState(false)
 
@@ -113,6 +117,7 @@ export function ExerciseImage({
         <button
           type="button"
           aria-label={`Ampliar imagen de ${alt}`}
+          tabIndex={zoomFocusable ? undefined : -1}
           onClick={e => e.stopPropagation()}
           onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
