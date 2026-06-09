@@ -41,7 +41,7 @@ function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
     >
       {/* Thumbnail + compound */}
       <div className="relative">
-        <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" />
+        <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" zoomable />
         {ex.is_compound && (
           <span className="absolute top-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-200">
             Compound
