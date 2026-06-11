@@ -1,7 +1,7 @@
 const DEFAULT_APP_TIME_ZONE = 'America/Havana'
 
 export const WORKOUT_ACCESS_POLICY = {
-  missedWorkoutRecoveryDays: 0,
+  missedWorkoutRecoveryDays: 2,
   advanceStartDays: 0,
 } as const
 
@@ -165,4 +165,35 @@ export function canStartWorkoutToday(
   timeZone = getAppTimeZone(),
 ): boolean {
   return workoutIsoDay === getIsoWeekday(date, timeZone)
+}
+
+export type WorkoutStartWindow =
+  | { status: 'today' }
+  | { status: 'recoverable'; daysLate: number; scheduledDate: string }
+  | { status: 'unavailable' }
+
+export function getWorkoutStartWindow(
+  workoutIsoDay: number | null,
+  date = new Date(),
+  timeZone = getAppTimeZone(),
+): WorkoutStartWindow {
+  if (workoutIsoDay === null) return { status: 'unavailable' }
+
+  const todayIso = getIsoWeekday(date, timeZone)
+  // Días transcurridos desde la última ocurrencia del día programado.
+  // Los días futuros de la semana quedan a 5-6 "días de retraso" y caen
+  // fuera de la ventana, por lo que no necesitan caso aparte.
+  const daysLate = (todayIso - workoutIsoDay + 7) % 7
+
+  if (daysLate === 0) return { status: 'today' }
+
+  if (daysLate > WORKOUT_ACCESS_POLICY.missedWorkoutRecoveryDays) {
+    return { status: 'unavailable' }
+  }
+
+  return {
+    status: 'recoverable',
+    daysLate,
+    scheduledDate: getLocalDateString(addDays(date, -daysLate, timeZone), timeZone),
+  }
 }

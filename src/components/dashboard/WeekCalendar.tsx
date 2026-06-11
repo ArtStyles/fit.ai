@@ -12,7 +12,7 @@ interface Props {
   todayIso: number
 }
 
-type DayState = 'completed' | 'today' | 'scheduled' | 'rest' | 'skipped'
+type DayState = 'completed' | 'today' | 'scheduled' | 'rest' | 'skipped' | 'recoverable'
 
 export function WeekCalendar({ days, todayIso }: Props) {
   const [activeMessageDay, setActiveMessageDay] = useState<number | null>(null)
@@ -70,6 +70,7 @@ function getDayState(day: DayData, todayIso: number): DayState {
   if (day.isCompleted) return 'completed'
   if (!day.workout) return 'rest'
   if (day.isoDay === todayIso || day.isToday) return 'today'
+  if (day.isRecoverable) return 'recoverable'
   if (day.isoDay < todayIso) return 'skipped'
   return 'scheduled'
 }
@@ -82,13 +83,14 @@ function getTooltip(day: DayData, state: DayState): string {
       : ''
     return `✓ Completado${duration}`
   }
+  if (state === 'recoverable') return `Recuperable · ${day.workout.name}`
   return day.workout.name
 }
 
 function getUnavailableMessage(day: DayData, state: DayState): string {
   if (!day.workout) return 'Dia de descanso, aprovecha para recuperar'
   if (state === 'completed') return 'Esta rutina ya fue completada.'
-  if (state === 'skipped') return 'Esta rutina ya paso. Solo puedes iniciar la rutina de hoy.'
+  if (state === 'skipped') return 'Esta rutina quedo fuera de la ventana de recuperacion.'
   if (state === 'scheduled') return 'Esta rutina aun no esta disponible. Solo puedes iniciar la rutina de hoy.'
   return day.workout.name
 }
@@ -109,7 +111,7 @@ function DayCell({
   onUnavailableTap: () => void
 }) {
   const workout = day.workout
-  const canStart = state === 'today' && workout !== null
+  const canStart = (state === 'today' || state === 'recoverable') && workout !== null
   const tooltip = showMessage
     ? getUnavailableMessage(day, state)
     : getTooltip(day, state)
@@ -123,6 +125,7 @@ function DayCell({
         state === 'scheduled' && 'border-border/60 bg-muted/10',
         state === 'rest' && 'border-border/30 bg-transparent opacity-50 hover:opacity-70',
         state === 'skipped' && 'border-border/40 bg-muted/5 opacity-60',
+        state === 'recoverable' && 'border-amber-500/40 bg-amber-500/5',
         canStart ? 'cursor-pointer hover:bg-violet-500/15 hover:scale-[1.03]' : 'cursor-not-allowed',
         state === 'rest' && 'cursor-default',
       )}
@@ -164,7 +167,11 @@ function DayCell({
       <PendingLink
         href={`/session/${workout.id}`}
         className="focus-visible:outline-none"
-        aria-label={day.isToday ? `Continuar ${workout.name}` : workout.name}
+        aria-label={
+          state === 'recoverable'
+            ? `Recuperar ${workout.name}`
+            : day.isToday ? `Continuar ${workout.name}` : workout.name
+        }
         title={getTooltip(day, state)}
         showSpinner={false}
       >
@@ -204,6 +211,10 @@ function StatusIndicator({ state }: { state: DayState }) {
 
   if (state === 'skipped') {
     return <span className="text-xs font-semibold leading-none text-muted-foreground/40">✕</span>
+  }
+
+  if (state === 'recoverable') {
+    return <span className="text-xs font-bold leading-none text-amber-400">↻</span>
   }
 
   return <span className="text-xs font-medium leading-none text-muted-foreground/30">—</span>

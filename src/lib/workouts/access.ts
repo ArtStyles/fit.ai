@@ -1,10 +1,13 @@
-import { canStartWorkoutToday, getLocalDayBounds } from './schedule'
+import { addDays, getLocalDayBounds, getWorkoutStartWindow } from './schedule'
+import type { WorkoutStartWindow } from './schedule'
 
 export type WorkoutStartAccessReason =
   | 'not_found'
   | 'not_today'
   | 'inactive_plan'
   | 'completed_today'
+  | 'already_completed'
+  | 'another_session_today'
 
 export type WorkoutStartAccessWorkout = {
   id: string
@@ -19,6 +22,7 @@ export type WorkoutStartAccessResult =
   | {
       allowed: true
       workout: WorkoutStartAccessWorkout
+      window: WorkoutStartWindow
     }
   | {
       allowed: false
@@ -52,7 +56,9 @@ export async function getWorkoutStartAccess({
     return { allowed: false, reason: 'not_found' }
   }
 
-  if (!workout.plan_id || !canStartWorkoutToday(workout.day_of_week, date)) {
+  const window = getWorkoutStartWindow(workout.day_of_week, date)
+
+  if (!workout.plan_id || window.status === 'unavailable') {
     return { allowed: false, reason: 'not_today', workout }
   }
 
@@ -68,19 +74,42 @@ export async function getWorkoutStartAccess({
     return { allowed: false, reason: 'inactive_plan', workout }
   }
 
-  const { start, end } = getLocalDayBounds(date)
+  const { start: todayStart, end: todayEnd } = getLocalDayBounds(date)
+  const windowStart = window.status === 'recoverable'
+    ? getLocalDayBounds(addDays(date, -window.daysLate)).start
+    : todayStart
+
+  // ¿Esta rutina ya fue registrada desde su día programado?
   const { data: existingLog } = await (supabase
     .from('progress_logs') as any)
     .select('id')
     .eq('user_id', userId)
     .eq('workout_id', workoutId)
-    .gte('completed_at', start.toISOString())
-    .lt('completed_at', end.toISOString())
+    .gte('completed_at', windowStart.toISOString())
+    .lt('completed_at', todayEnd.toISOString())
     .limit(1) as { data: { id: string }[] | null }
 
   if ((existingLog?.length ?? 0) > 0) {
-    return { allowed: false, reason: 'completed_today', workout }
+    return {
+      allowed: false,
+      reason: window.status === 'today' ? 'completed_today' : 'already_completed',
+      workout,
+    }
   }
 
-  return { allowed: true, workout }
+  // Máximo una sesión por día, sin importar qué rutina sea.
+  const { data: todaySession } = await (supabase
+    .from('progress_logs') as any)
+    .select('id')
+    .eq('user_id', userId)
+    .not('workout_id', 'is', null)
+    .gte('completed_at', todayStart.toISOString())
+    .lt('completed_at', todayEnd.toISOString())
+    .limit(1) as { data: { id: string }[] | null }
+
+  if ((todaySession?.length ?? 0) > 0) {
+    return { allowed: false, reason: 'another_session_today', workout }
+  }
+
+  return { allowed: true, workout, window }
 }

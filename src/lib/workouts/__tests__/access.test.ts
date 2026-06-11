@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { getWorkoutStartAccess } from '../access'
 
-const NOW = new Date('2026-05-27T16:00:00.000Z')
+const NOW = new Date('2026-05-27T16:00:00.000Z') // miércoles (ISO 3) en America/Havana
 
 function query(result: { data: unknown }) {
   const builder: Record<string, unknown> = {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    not: vi.fn(() => builder),
     gte: vi.fn(() => builder),
     lt: vi.fn(() => builder),
     limit: vi.fn(() => builder),
@@ -51,17 +52,20 @@ describe('getWorkoutStartAccess()', () => {
     })).resolves.toEqual({ allowed: false, reason: 'not_found' })
   })
 
-  it('blocks workouts from previous or future days', async () => {
-    const supabase = createSupabaseMock({
-      workouts: [{ data: { ...workout, day_of_week: 2 } }],
-    })
+  it('blocks workouts outside the recovery window', async () => {
+    // Domingo (ISO 7) quedó a 3 días; viernes (ISO 5) aún no llega
+    for (const dayOfWeek of [7, 5]) {
+      const supabase = createSupabaseMock({
+        workouts: [{ data: { ...workout, day_of_week: dayOfWeek } }],
+      })
 
-    await expect(getWorkoutStartAccess({
-      supabase,
-      userId: 'user-1',
-      workoutId: 'workout-1',
-      date: NOW,
-    })).resolves.toMatchObject({ allowed: false, reason: 'not_today' })
+      await expect(getWorkoutStartAccess({
+        supabase,
+        userId: 'user-1',
+        workoutId: 'workout-1',
+        date: NOW,
+      })).resolves.toMatchObject({ allowed: false, reason: 'not_today' })
+    }
   })
 
   it('blocks workouts outside the active plan', async () => {
@@ -97,7 +101,7 @@ describe('getWorkoutStartAccess()', () => {
     const supabase = createSupabaseMock({
       workouts: [{ data: workout }],
       workout_plans: [{ data: { id: 'plan-1' } }],
-      progress_logs: [{ data: [] }],
+      progress_logs: [{ data: [] }, { data: [] }],
     })
 
     await expect(getWorkoutStartAccess({
@@ -105,6 +109,73 @@ describe('getWorkoutStartAccess()', () => {
       userId: 'user-1',
       workoutId: 'workout-1',
       date: NOW,
-    })).resolves.toMatchObject({ allowed: true, workout })
+    })).resolves.toMatchObject({
+      allowed: true,
+      workout,
+      window: { status: 'today' },
+    })
+  })
+
+  it('allows recovering a missed workout within the window', async () => {
+    const supabase = createSupabaseMock({
+      workouts: [{ data: { ...workout, day_of_week: 1 } }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [] }, { data: [] }],
+    })
+
+    await expect(getWorkoutStartAccess({
+      supabase,
+      userId: 'user-1',
+      workoutId: 'workout-1',
+      date: NOW,
+    })).resolves.toMatchObject({
+      allowed: true,
+      window: { status: 'recoverable', daysLate: 2, scheduledDate: '2026-05-25' },
+    })
+  })
+
+  it('blocks recovery when the workout was already logged since its scheduled day', async () => {
+    const supabase = createSupabaseMock({
+      workouts: [{ data: { ...workout, day_of_week: 2 } }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [{ id: 'log-1' }] }],
+    })
+
+    await expect(getWorkoutStartAccess({
+      supabase,
+      userId: 'user-1',
+      workoutId: 'workout-1',
+      date: NOW,
+    })).resolves.toMatchObject({ allowed: false, reason: 'already_completed' })
+  })
+
+  it('enforces one session per day even for recoveries', async () => {
+    const supabase = createSupabaseMock({
+      workouts: [{ data: { ...workout, day_of_week: 2 } }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [] }, { data: [{ id: 'log-other' }] }],
+    })
+
+    await expect(getWorkoutStartAccess({
+      supabase,
+      userId: 'user-1',
+      workoutId: 'workout-1',
+      date: NOW,
+    })).resolves.toMatchObject({ allowed: false, reason: 'another_session_today' })
+  })
+
+  it('enforces one session per day for the workout scheduled today', async () => {
+    const supabase = createSupabaseMock({
+      workouts: [{ data: workout }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [] }, { data: [{ id: 'log-other' }] }],
+    })
+
+    await expect(getWorkoutStartAccess({
+      supabase,
+      userId: 'user-1',
+      workoutId: 'workout-1',
+      date: NOW,
+    })).resolves.toMatchObject({ allowed: false, reason: 'another_session_today' })
   })
 })

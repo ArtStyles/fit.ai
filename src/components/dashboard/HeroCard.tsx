@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import {
   CheckCircle2, ChevronRight, Clock, Dumbbell,
-  Flame, Moon, Sparkles, TrendingUp,
+  Flame, Moon, RotateCcw, Sparkles, TrendingUp,
 } from 'lucide-react'
 import type { WorkoutSummary } from '@/app/(app)/dashboard/page'
 
@@ -14,14 +14,16 @@ const DAY_NAMES: Record<number, string> = {
 }
 
 interface Props {
-  todayWorkout:      WorkoutSummary | null
-  isCompletedToday:  boolean
-  planExists:        boolean
-  nextWorkout:       WorkoutSummary | null
-  nextWorkoutIsoDay: number | null
-  streak:            number
-  weekDone:          number
-  weekTotal:         number
+  todayWorkout:        WorkoutSummary | null
+  isCompletedToday:    boolean
+  planExists:          boolean
+  nextWorkout:         WorkoutSummary | null
+  nextWorkoutIsoDay:   number | null
+  recoverableWorkout:  WorkoutSummary | null
+  recoverableIsoDay:   number | null
+  streak:              number
+  weekDone:            number
+  weekTotal:           number
 }
 
 // ── Week progress bar (static SVG arc) ────────────────────────────────────────
@@ -70,7 +72,8 @@ function WeekRing({ done, total }: { done: number; total: number }) {
 
 export function HeroCard({
   todayWorkout, isCompletedToday, planExists,
-  nextWorkout, nextWorkoutIsoDay, streak,
+  nextWorkout, nextWorkoutIsoDay,
+  recoverableWorkout, recoverableIsoDay, streak,
   weekDone, weekTotal,
 }: Props) {
 
@@ -154,6 +157,27 @@ export function HeroCard({
         <p className="relative text-sm text-muted-foreground leading-relaxed">
           Los músculos crecen mientras descansas. Aprovecha para recuperarte.
         </p>
+        {recoverableWorkout && recoverableIsoDay && (
+          <PendingLink
+            href={`/session/${recoverableWorkout.id}`}
+            className="relative flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 transition-colors hover:bg-amber-500/10"
+            aria-label={`Recuperar ${recoverableWorkout.name}`}
+          >
+            <div>
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-400">
+                <RotateCcw className="h-3 w-3" />
+                Sesión pendiente
+              </p>
+              <p className="mt-0.5 text-sm font-semibold text-foreground">
+                {recoverableWorkout.name}
+                <span className="ml-1.5 font-normal text-muted-foreground capitalize">
+                  · de{' '}{DAY_NAMES[recoverableIsoDay]}
+                </span>
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-amber-400" />
+          </PendingLink>
+        )}
         {nextWorkout && nextWorkoutIsoDay && (
           <div className="relative flex items-center justify-between rounded-xl border border-border/50 bg-background/40 px-4 py-3 backdrop-blur-sm">
             <div>

@@ -8,6 +8,7 @@ function query(result: { data: unknown; error?: unknown }) {
   const builder: Record<string, unknown> = {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    not: vi.fn(() => builder),
     gte: vi.fn(() => builder),
     lt: vi.fn(() => builder),
     limit: vi.fn(() => builder),
@@ -79,14 +80,15 @@ describe('saveSession access guard', () => {
     })
   })
 
-  it('rejects workouts that are not scheduled for today', async () => {
+  it('rejects workouts outside the recovery window', async () => {
+    // Viernes (ISO 5) todavía no llega con "hoy" = miércoles
     createClientMock.mockResolvedValue(createSupabaseMock({
-      workouts: [{ data: { ...workout, day_of_week: 2 } }],
+      workouts: [{ data: { ...workout, day_of_week: 5 } }],
     }))
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: false,
-      error: 'Solo puedes registrar la rutina programada para hoy.',
+      error: 'Solo puedes registrar la rutina de hoy o recuperar una sesión perdida reciente.',
     })
   })
 
@@ -98,7 +100,7 @@ describe('saveSession access guard', () => {
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: false,
-      error: 'Solo puedes registrar la rutina programada para hoy.',
+      error: 'Solo puedes registrar la rutina de hoy o recuperar una sesión perdida reciente.',
     })
   })
 
@@ -112,6 +114,95 @@ describe('saveSession access guard', () => {
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: false,
       error: 'Esta rutina ya fue completada hoy.',
+    })
+  })
+
+  it('rejects recoveries when the workout was already logged since its scheduled day', async () => {
+    createClientMock.mockResolvedValue(createSupabaseMock({
+      workouts: [{ data: { ...workout, day_of_week: 2 } }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [{ id: 'log-1' }] }],
+    }))
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: 'Esta rutina ya fue registrada desde su día programado.',
+    })
+  })
+
+  it('rejects implausible weights before touching the database', async () => {
+    const supabase = createSupabaseMock({})
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession({
+      ...payload,
+      exercises: [{
+        workoutExerciseId: 'we-1',
+        exerciseId: 'ex-1',
+        name: 'Press Banca',
+        sets: [{ weightKg: '1500', reps: '10', rpe: 7, completed: true }],
+        status: 'completed',
+      }],
+    })).resolves.toMatchObject({
+      success: false,
+      error: expect.stringContaining('Press Banca'),
+    })
+
+    expect(supabase.from).not.toHaveBeenCalledWith('progress_logs')
+  })
+
+  it('rejects implausible rep counts', async () => {
+    createClientMock.mockResolvedValue(createSupabaseMock({}))
+
+    await expect(saveSession({
+      ...payload,
+      exercises: [{
+        workoutExerciseId: 'we-1',
+        exerciseId: 'ex-1',
+        name: 'Curl',
+        sets: [{ weightKg: '10', reps: '250', rpe: 7, completed: true }],
+        status: 'completed',
+      }],
+    })).resolves.toMatchObject({
+      success: false,
+      error: expect.stringContaining('Curl'),
+    })
+  })
+
+  it('ignores implausible values on sets that were not completed', async () => {
+    // El set inválido no está completado → la validación no debe dispararlo.
+    // El guardado sigue su curso y falla después por mocks vacíos, pero no
+    // con el error de validación.
+    createClientMock.mockResolvedValue(createSupabaseMock({
+      workouts: [{ data: workout }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [] }, { data: [] }, { data: null, error: { message: 'mock insert' } }],
+    }))
+
+    const result = await saveSession({
+      ...payload,
+      exercises: [{
+        workoutExerciseId: 'we-1',
+        exerciseId: 'ex-1',
+        name: 'Press Banca',
+        sets: [{ weightKg: '9999', reps: '10', rpe: 7, completed: false }],
+        status: 'completed',
+      }],
+    })
+
+    expect(result.error).not.toMatch(/Press Banca/)
+  })
+
+  it('rejects a second session in the same day', async () => {
+    createClientMock.mockResolvedValue(createSupabaseMock({
+      workouts: [{ data: workout }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [] }, { data: [{ id: 'log-other' }] }],
+    }))
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: 'Ya registraste una sesión hoy. Máximo una sesión por día.',
     })
   })
 })

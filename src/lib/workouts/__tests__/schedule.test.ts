@@ -6,15 +6,16 @@ import {
   getLocalDateString,
   getLocalDayBounds,
   getWeekMonday,
+  getWorkoutStartWindow,
   WORKOUT_ACCESS_POLICY,
 } from '../schedule'
 
 const TZ = 'America/Havana'
 
 describe('workout schedule helpers', () => {
-  it('documents the strict current-day access policy', () => {
+  it('documents the access policy with missed-workout recovery', () => {
     expect(WORKOUT_ACCESS_POLICY).toEqual({
-      missedWorkoutRecoveryDays: 0,
+      missedWorkoutRecoveryDays: 2,
       advanceStartDays: 0,
     })
   })
@@ -61,5 +62,60 @@ describe('workout schedule helpers', () => {
     expect(canStartWorkoutToday(2, wednesday, TZ)).toBe(false)
     expect(canStartWorkoutToday(4, wednesday, TZ)).toBe(false)
     expect(canStartWorkoutToday(null, wednesday, TZ)).toBe(false)
+  })
+})
+
+describe('getWorkoutStartWindow()', () => {
+  // 2026-05-27 es miércoles (ISO 3) en America/Havana
+  const wednesday = new Date('2026-05-27T16:00:00.000Z')
+
+  it('marks the workout scheduled for today as today', () => {
+    expect(getWorkoutStartWindow(3, wednesday, TZ)).toEqual({ status: 'today' })
+  })
+
+  it('marks workouts missed within the recovery window as recoverable', () => {
+    expect(getWorkoutStartWindow(2, wednesday, TZ)).toEqual({
+      status: 'recoverable',
+      daysLate: 1,
+      scheduledDate: '2026-05-26',
+    })
+    expect(getWorkoutStartWindow(1, wednesday, TZ)).toEqual({
+      status: 'recoverable',
+      daysLate: 2,
+      scheduledDate: '2026-05-25',
+    })
+  })
+
+  it('blocks workouts missed beyond the recovery window', () => {
+    // Domingo (ISO 7) quedó a 3 días del miércoles
+    expect(getWorkoutStartWindow(7, wednesday, TZ)).toEqual({ status: 'unavailable' })
+  })
+
+  it('blocks future workouts and missing schedules', () => {
+    expect(getWorkoutStartWindow(4, wednesday, TZ)).toEqual({ status: 'unavailable' })
+    expect(getWorkoutStartWindow(null, wednesday, TZ)).toEqual({ status: 'unavailable' })
+  })
+
+  it('recovers across the week boundary', () => {
+    // 2026-05-25 es lunes (ISO 1); el domingo anterior fue 2026-05-24
+    const monday = new Date('2026-05-25T16:00:00.000Z')
+
+    expect(getWorkoutStartWindow(7, monday, TZ)).toEqual({
+      status: 'recoverable',
+      daysLate: 1,
+      scheduledDate: '2026-05-24',
+    })
+  })
+
+  it('resolves the weekday in the app timezone', () => {
+    // 03:30 UTC del 27 todavía es martes 26 en La Habana
+    const lateNightInHavana = new Date('2026-05-27T03:30:00.000Z')
+
+    expect(getWorkoutStartWindow(2, lateNightInHavana, TZ)).toEqual({ status: 'today' })
+    expect(getWorkoutStartWindow(1, lateNightInHavana, TZ)).toEqual({
+      status: 'recoverable',
+      daysLate: 1,
+      scheduledDate: '2026-05-25',
+    })
   })
 })

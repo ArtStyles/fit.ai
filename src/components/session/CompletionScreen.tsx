@@ -116,6 +116,12 @@ function MoodSelector({
   )
 }
 
+function prDetail(pr: PRRecord): string {
+  if (pr.kind === 'e1rm') return `1RM estimado: ${pr.e1rmKg} kg`
+  if (pr.kind === 'reps') return `${pr.reps} reps`
+  return `${pr.weightKg} kg`
+}
+
 function PRBadge({ pr, index }: { pr: PRRecord; index: number }) {
   return (
     <motion.div
@@ -132,7 +138,7 @@ function PRBadge({ pr, index }: { pr: PRRecord; index: number }) {
         <p className="truncate text-sm font-semibold leading-tight text-yellow-200">
           Nuevo PR — {pr.exerciseName}
         </p>
-        <p className="text-xs text-yellow-500/80">{pr.weightKg} kg</p>
+        <p className="text-xs text-yellow-500/80">{prDetail(pr)}</p>
       </div>
       <Sparkles className="fitai-pop h-4 w-4 shrink-0 text-yellow-300" />
     </motion.div>
@@ -151,11 +157,27 @@ function ProgressionIcon({ action }: { action: ProgressionSuggestion['action'] }
   return <Minus className="h-4 w-4 text-muted-foreground" />
 }
 
+function formatReps(reps: number | null): string {
+  if (reps === null) return 'pendiente'
+  return `${reps} reps`
+}
+
 function progressionSummary(suggestion: ProgressionSuggestion): string {
-  if (suggestion.action === 'increase') return `Sube a ${formatWeight(suggestion.nextWeightKg)}`
-  if (suggestion.action === 'decrease') return `Baja a ${formatWeight(suggestion.nextWeightKg)}`
-  if (suggestion.action === 'baseline') return `Baseline: ${formatWeight(suggestion.nextWeightKg)}`
-  return `Mantén ${formatWeight(suggestion.nextWeightKg)}`
+  const target = suggestion.progressionType === 'reps'
+    ? formatReps(suggestion.nextTargetReps)
+    : formatWeight(suggestion.nextWeightKg)
+
+  if (suggestion.action === 'increase') return `Sube a ${target}`
+  if (suggestion.action === 'decrease') return `Baja a ${target}`
+  if (suggestion.action === 'baseline') return `Baseline: ${target}`
+  return `Mantén ${target}`
+}
+
+function isActionableProgression(suggestion: ProgressionSuggestion): boolean {
+  return (
+    (suggestion.nextWeightKg !== null || suggestion.nextTargetReps !== null) &&
+    suggestion.confidence !== 'low'
+  )
 }
 
 function ProgressionCard({ suggestion }: { suggestion: ProgressionSuggestion }) {
@@ -288,7 +310,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
   const visiblePrs = prs.slice(0, 3)
   const hiddenPrCount = Math.max(0, prs.length - visiblePrs.length)
   const visibleProgressions = progressions
-    .filter(suggestion => suggestion.nextWeightKg !== null && suggestion.confidence !== 'low')
+    .filter(isActionableProgression)
     .slice(0, 3)
 
   const doSave = useCallback(async () => {
@@ -325,9 +347,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
         setProgressions(result.progressions)
         setSaved(true)
         setSyncStatus('saved')
-        const qualityProgressions = result.progressions.filter(
-          s => s.nextWeightKg !== null && s.confidence !== 'low',
-        ).length
+        const qualityProgressions = result.progressions.filter(isActionableProgression).length
         setInsight(generateSessionInsight({
           prCount:          result.prs.length,
           progressionCount: qualityProgressions,
@@ -337,9 +357,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
         }))
         // Haptic de éxito (nativo: notificación Success; web: navigator.vibrate)
         void hapticSuccess()
-        const progressionCount = result.progressions.filter(
-          suggestion => suggestion.nextWeightKg !== null && suggestion.confidence !== 'low',
-        ).length
+        const progressionCount = qualityProgressions
         showToast({
           title: 'Sesión guardada',
           description: result.prs.length > 0

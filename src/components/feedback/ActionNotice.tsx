@@ -58,7 +58,7 @@ const ERRORS: Record<string, { title: string; description?: string }> = {
   },
   workout_unavailable: {
     title: 'Rutina no disponible',
-    description: 'Solo puedes iniciar la rutina programada para hoy.',
+    description: 'Solo puedes iniciar la rutina de hoy o recuperar una sesión perdida reciente, con máximo una sesión por día.',
   },
   delete_confirm: {
     title: 'Confirmación incorrecta',

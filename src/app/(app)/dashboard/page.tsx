@@ -13,6 +13,7 @@ import {
   getIsoWeekday,
   getLocalDateString,
   getWeekMonday as getCurrentWeekMonday,
+  WORKOUT_ACCESS_POLICY,
 } from '@/lib/workouts/schedule'
 import { generateDailyBrief } from '@/lib/ai/mock-briefGenerator'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
@@ -64,6 +65,7 @@ export interface DayData {
   workout:                  WorkoutSummary | null
   isCompleted:              boolean
   isToday:                  boolean
+  isRecoverable:            boolean       // perdida pero dentro de la ventana de recuperación
   completedDurationMinutes: number | null
 }
 
@@ -430,24 +432,34 @@ export default async function DashboardPage() {
   }).find(d => d.iso !== todayIso && d.workout)
 
   // ── Datos del calendario semanal ──────────────────────────────────────────
+  const hasSessionToday = weekLogs.some(l =>
+    getLocalDateString(new Date(l.completed_at)) === todayStr,
+  )
+
   const weekDays: DayData[] = Array.from({ length: 7 }, (_, i) => {
     const date    = addCalendarDays(weekStart, i)
     const dateStr = getLocalDateString(date)
     const iso     = i + 1
     const workout = workouts.find(w => w.day_of_week === iso) ?? null
-    const log     = weekLogs.find(l =>
-      l.workout_id === workout?.id &&
-      getLocalDateString(new Date(l.completed_at)) === dateStr,
-    )
+    // Una sesión recuperada cuenta para el día programado de la rutina,
+    // aunque se haya registrado uno o dos días más tarde.
+    const log     = workout
+      ? weekLogs.find(l => l.workout_id === workout.id)
+      : undefined
+    const daysLate = todayIso - iso
     return {
       isoDay: iso,
       dateStr,
       workout,
       isCompleted: !!log,
       isToday: iso === todayIso,
+      isRecoverable: !!workout && !log && !hasSessionToday &&
+        daysLate >= 1 && daysLate <= WORKOUT_ACCESS_POLICY.missedWorkoutRecoveryDays,
       completedDurationMinutes: log?.duration_minutes ?? null,
     }
   })
+
+  const recoverableDay = weekDays.find(d => d.isRecoverable) ?? null
 
   // ── Quick stats ────────────────────────────────────────────────────────────
   const sessionsThisWeek   = weekLogs.filter(l => l.workout_id !== null).length
@@ -523,6 +535,8 @@ export default async function DashboardPage() {
             planExists={!!planRaw}
             nextWorkout={nextWorkoutDay?.workout ?? null}
             nextWorkoutIsoDay={nextWorkoutDay?.iso ?? null}
+            recoverableWorkout={recoverableDay?.workout ?? null}
+            recoverableIsoDay={recoverableDay?.isoDay ?? null}
             streak={streak}
             weekDone={sessionsThisWeek}
             weekTotal={scheduledThisWeek}
