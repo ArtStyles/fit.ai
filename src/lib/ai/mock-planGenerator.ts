@@ -14,7 +14,9 @@
  */
 
 import 'server-only'
-import type { AIPlanResponse, UserContext, FilteredExercise } from './types'
+import { applyDeloadToPlan, describeWeeklySummary } from '@/lib/plans/periodization'
+import type { WeekContext } from '@/lib/plans/periodization'
+import type { AIPlan, AIPlanResponse, UserContext, FilteredExercise } from './types'
 
 // ─── Splits por días por semana ────────────────────────────────────────────────
 
@@ -199,8 +201,9 @@ const SPLIT_NAMES: Record<number, string> = {
  * @param exercises Pool de ejercicios ya filtrado por filter.ts
  */
 export async function mockGenerateInitialPlan(
-  user:      UserContext,
-  exercises: FilteredExercise[],
+  user:        UserContext,
+  exercises:   FilteredExercise[],
+  weekContext?: WeekContext,
 ): Promise<AIPlanResponse> {
   // Simular latencia realista (Claude tarda 5-15 s en planes complejos)
   await new Promise<void>(r => setTimeout(r, 2000 + Math.random() * 3000))
@@ -223,8 +226,10 @@ export async function mockGenerateInitialPlan(
       const sets        = isCompound ? lp.sets : 3
       const repCount    = isCompound ? reps.compound : reps.isolation
       const restSeconds = isCompound ? lp.restCompound : lp.restIsolation
-      // El primer ejercicio del día (calentamiento) va 1 RPE por debajo
-      const targetRpe   = Math.min(10, lp.rpeBase + (i === 0 ? 0 : 1))
+      // El primer ejercicio del día (calentamiento) va 1 RPE por debajo;
+      // en semana de intensificación todo sube un punto.
+      const intensityBoost = weekContext?.cyclePhase === 'intensify' ? 1 : 0
+      const targetRpe   = Math.min(10, lp.rpeBase + (i === 0 ? 0 : 1) + intensityBoost)
 
       return {
         exercise_id:             ex.id,
@@ -258,15 +263,34 @@ export async function mockGenerateInitialPlan(
   const goalLabel  = GOAL_LABELS[user.primary_goal] ?? 'fitness'
   const splitName  = SPLIT_NAMES[user.days_per_week] ?? 'Personalizado'
 
-  return {
-    plan: {
-      display_name: `Plan ${levelLabel} · ${user.days_per_week} días`,
-      ai_notes:
-        `[MOCK] Plan generado en modo desarrollo sin IA real. ` +
-        `Estructura ${splitName} optimizada para ${goalLabel}. ` +
-        `Cuando configures ANTHROPIC_API_KEY este mensaje será reemplazado ` +
-        `por una nota personalizada de tu entrenador IA.`,
-      days,
-    },
+  const noteParts = [
+    `[MOCK] Plan generado en modo desarrollo sin IA real. ` +
+    `Estructura ${splitName} optimizada para ${goalLabel}.`,
+  ]
+
+  if (weekContext?.cyclePhase === 'deload') {
+    noteParts.push(
+      'Semana de descarga: reducimos series y esfuerzo para asimilar el progreso acumulado.',
+    )
+  } else if (weekContext?.cyclePhase === 'intensify') {
+    noteParts.push('Semana de intensificación: misma estructura con un punto más de esfuerzo.')
   }
+
+  if (weekContext?.previousWeek) {
+    noteParts.push(describeWeeklySummary(weekContext.previousWeek))
+  }
+
+  let plan: AIPlan = {
+    display_name: weekContext && weekContext.weekNumber > 1
+      ? `Plan ${levelLabel} · Semana ${weekContext.weekNumber}`
+      : `Plan ${levelLabel} · ${user.days_per_week} días`,
+    ai_notes: noteParts.join(' '),
+    days,
+  }
+
+  if (weekContext?.cyclePhase === 'deload') {
+    plan = applyDeloadToPlan(plan)
+  }
+
+  return { plan }
 }

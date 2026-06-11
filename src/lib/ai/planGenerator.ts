@@ -17,6 +17,7 @@ import 'server-only'
 import { mockGenerateInitialPlan } from './mock-planGenerator'
 import { callClaudeForPlan }       from './real-planGenerator'
 import type { AIOperation }        from './usage-tracking'
+import type { WeekContext }        from '@/lib/plans/periodization'
 import type { UserContext, FilteredExercise, PlanGenerationResult } from './types'
 
 export type { PlanGenerationResult }
@@ -32,16 +33,18 @@ export type { PlanGenerationResult }
  * Los rate-limit checks se realizan ANTES de llamar a esta función, en el
  * endpoint (checkUserRateLimit / checkGlobalDailyBudget de rate-limits.ts).
  *
- * @param opts.userId    — UUID del usuario (para logging de uso en modo real)
- * @param opts.operation — Tipo de operación (para rate-limit diferenciado)
- * @param opts.user      — Perfil completo del usuario
- * @param opts.exercises — Pool de ejercicios ya filtrado por filterExercisesForUser()
+ * @param opts.userId      — UUID del usuario (para logging de uso en modo real)
+ * @param opts.operation   — Tipo de operación (para rate-limit diferenciado)
+ * @param opts.user        — Perfil completo del usuario
+ * @param opts.exercises   — Pool de ejercicios ya filtrado por filterExercisesForUser()
+ * @param opts.weekContext — Fase del ciclo + resumen de la semana anterior (regeneraciones)
  */
 export async function generateInitialPlan(opts: {
-  userId:    string
-  operation: AIOperation
-  user:      UserContext
-  exercises: FilteredExercise[]
+  userId:      string
+  operation:   AIOperation
+  user:        UserContext
+  exercises:   FilteredExercise[]
+  weekContext?: WeekContext
 }): Promise<PlanGenerationResult> {
 
   const useMock =
@@ -55,7 +58,7 @@ export async function generateInitialPlan(opts: {
         ? '(USE_AI_MOCK=true)'
         : '(ANTHROPIC_API_KEY no configurada)'),
     )
-    const plan = await mockGenerateInitialPlan(opts.user, opts.exercises)
+    const plan = await mockGenerateInitialPlan(opts.user, opts.exercises, opts.weekContext)
     return {
       plan,
       isMock:           true,
@@ -70,6 +73,7 @@ export async function generateInitialPlan(opts: {
     operation:   opts.operation,
     userContext: opts.user,
     exercises:   opts.exercises,
+    weekContext: opts.weekContext,
   })
 
   return {

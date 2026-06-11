@@ -186,3 +186,54 @@ describe('mockGenerateInitialPlan()', () => {
     expect(result.plan.ai_notes).toContain('[MOCK]')
   }, 15_000)
 })
+
+describe('mockGenerateInitialPlan() — periodización', () => {
+
+  it('aplica la descarga en la semana de deload', async () => {
+    const result = await mockGenerateInitialPlan(BASE_USER, TEST_EXERCISES, {
+      weekNumber: 4,
+      cyclePhase: 'deload',
+      previousWeek: null,
+    })
+
+    for (const day of result.plan.days) {
+      for (const ex of day.exercises) {
+        expect(ex.sets).toBeLessThanOrEqual(3)
+        expect(ex.target_rpe).toBeLessThanOrEqual(6)
+      }
+    }
+
+    expect(result.plan.ai_notes.toLowerCase()).toContain('descarga')
+  }, 15_000)
+
+  it('sube un punto de RPE en la semana de intensificación', async () => {
+    const result = await mockGenerateInitialPlan(BASE_USER, TEST_EXERCISES, {
+      weekNumber: 3,
+      cyclePhase: 'intensify',
+      previousWeek: null,
+    })
+
+    // Intermedio: base 7 → primer ejercicio 8, resto 9
+    for (const day of result.plan.days) {
+      day.exercises.forEach((ex, i) => {
+        expect(ex.target_rpe).toBe(i === 0 ? 8 : 9)
+      })
+    }
+  }, 15_000)
+
+  it('menciona la adherencia de la semana anterior en las notas', async () => {
+    const result = await mockGenerateInitialPlan(BASE_USER, TEST_EXERCISES, {
+      weekNumber: 2,
+      cyclePhase: 'build',
+      previousWeek: {
+        scheduledSessions: 4,
+        completedSessions: 3,
+        adherenceRatio: 0.75,
+        avgRpe: 7.5,
+        skippedExercises: [],
+      },
+    })
+
+    expect(result.plan.ai_notes).toContain('3/4')
+  }, 15_000)
+})

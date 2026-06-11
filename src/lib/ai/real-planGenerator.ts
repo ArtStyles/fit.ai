@@ -27,6 +27,8 @@ import { getAnthropicClient } from '@/lib/anthropic/client'
 import { AI_MODELS } from '@/lib/anthropic/models'
 import { PLAN_SYSTEM_PROMPT, buildCatalogContent, buildContextContent } from './prompts/system'
 import { logAIUsage, calculateCost } from './usage-tracking'
+import { describeCyclePhase, describeWeeklySummary } from '@/lib/plans/periodization'
+import type { WeekContext } from '@/lib/plans/periodization'
 import type { AIOperation, AIErrorType } from './usage-tracking'
 import type { AIPlanResponse, UserContext, FilteredExercise } from './types'
 import { estimateWeight } from './weights'
@@ -260,11 +262,23 @@ export interface RealGenerateResult {
 
 // ─── Función pública ──────────────────────────────────────────────────────────
 
+function buildWeekContextText(weekContext: WeekContext | undefined): string | undefined {
+  if (!weekContext) return undefined
+
+  const parts = [describeCyclePhase(weekContext.cyclePhase, weekContext.weekNumber)]
+  if (weekContext.previousWeek) {
+    parts.push(`Resumen de la semana anterior: ${describeWeeklySummary(weekContext.previousWeek)}`)
+  }
+
+  return parts.join('\n')
+}
+
 export async function callClaudeForPlan(opts: {
   userId:      string
   operation:   AIOperation
   userContext: UserContext
   exercises:   FilteredExercise[]
+  weekContext?: WeekContext
 }): Promise<RealGenerateResult> {
   const client = getAnthropicClient()
 
@@ -276,7 +290,10 @@ export async function callClaudeForPlan(opts: {
     exercises:   JSON.stringify(opts.exercises, null, 2),
     weightHints: JSON.stringify(weightHints, null, 2),
   })
-  const contextText = buildContextContent(JSON.stringify(opts.userContext, null, 2))
+  const contextText = buildContextContent(
+    JSON.stringify(opts.userContext, null, 2),
+    buildWeekContextText(opts.weekContext),
+  )
 
   const messages: Message[] = [
     {

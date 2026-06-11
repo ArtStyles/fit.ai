@@ -107,7 +107,14 @@ REGLAS DE DISEÑO DEL PLAN:
    - build_muscle: hipertrofia clásica, volumen moderado-alto, descansos específicos.
    - gain_strength: periodización de fuerza, compounds primero, poco volumen de asistencia.
    - improve_endurance: cardio y HIIT predominantes, fuerza como complemento.
-   - stay_active: equilibrio general, nada demasiado intenso, variedad.`
+   - stay_active: equilibrio general, nada demasiado intenso, variedad.
+
+9. PERIODIZACIÓN SEMANAL (solo si el contexto incluye "CONTEXTO DE LA SEMANA"):
+   - El ciclo dura 4 semanas: construcción (1-2), intensificación (3), descarga (4).
+   - Construcción: volumen y progresión normales según nivel.
+   - Intensificación: mantén o baja ligeramente el volumen y sube el RPE objetivo +1.
+   - Descarga: reduce ~40% el volumen (menos series por ejercicio) y deja el RPE objetivo en 6 o menos. Mantén los mismos patrones de movimiento. Menciona la descarga en ai_notes.
+   - Usa el resumen de la semana anterior: si la adherencia fue baja, simplifica el plan (menos ejercicios por día); si un ejercicio fue saltado repetidamente, sustitúyelo por una alternativa del pool que trabaje los mismos músculos y comenta el cambio en ai_notes.`
 
 /**
  * Parte cacheable: catálogo de ejercicios + estimaciones de peso.
@@ -133,9 +140,13 @@ ${params.weightHints}`
  * Contiene datos personales (objetivo, lesiones, peso, edad, etc.) que varían
  * entre usuarios y requests. Nunca debe marcarse con cache_control.
  */
-export function buildContextContent(userContext: string): string {
+export function buildContextContent(userContext: string, weekContext?: string): string {
+  const weekSection = weekContext
+    ? `\n\nCONTEXTO DE LA SEMANA:\n${weekContext}`
+    : ''
+
   return `CONTEXTO DEL USUARIO:
-${userContext}
+${userContext}${weekSection}
 
 Genera el plan de entrenamiento completo siguiendo todas las reglas del sistema.`
 }

@@ -4,6 +4,8 @@ import { createClient }            from '@/lib/supabase/server'
 import { generateInitialPlan }     from '@/lib/ai/planGenerator'
 import { filterExercisesForUser }  from '@/lib/ai/filter'
 import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
+import { buildWeeklySummary, getCyclePhase } from '@/lib/plans/periodization'
+import type { WeekContext, WeeklySummary, WeeklyExerciseRow } from '@/lib/plans/periodization'
 import type { UserContext }        from '@/lib/ai/types'
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
@@ -37,6 +39,62 @@ function assignIsoDays(
   }
   // Por defecto: lun, mar, mié… hasta completar dayCount
   return Array.from({ length: dayCount }, (_, i) => i + 1)
+}
+
+// ─── Helper: resumen de la semana anterior ────────────────────────────────────
+//
+// Rendimiento de los últimos 7 días respecto al plan activo: adherencia,
+// RPE promedio y ejercicios saltados con motivo. Alimenta la regeneración.
+
+async function buildPreviousWeekSummary(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  planId: string,
+): Promise<WeeklySummary | null> {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+
+  const [{ data: planWorkouts }, { data: weekLogs }] = await Promise.all([
+    (supabase.from('workouts') as any)
+      .select('id')
+      .eq('plan_id', planId) as Promise<{ data: { id: string }[] | null }>,
+    (supabase.from('progress_logs') as any)
+      .select('id')
+      .eq('user_id', userId)
+      .not('workout_id', 'is', null)
+      .gte('completed_at', since.toISOString()) as Promise<{ data: { id: string }[] | null }>,
+  ])
+
+  const scheduledSessions = planWorkouts?.length ?? 0
+  const logIds = (weekLogs ?? []).map(log => log.id)
+
+  if (scheduledSessions === 0 && logIds.length === 0) return null
+
+  type ExerciseLogRow = {
+    rpe_values: (number | null)[] | null
+    notes: string | null
+    exercise: { name: string } | { name: string }[] | null
+  }
+
+  let exerciseRows: WeeklyExerciseRow[] = []
+  if (logIds.length > 0) {
+    const { data: exLogs } = await (supabase.from('exercise_logs') as any)
+      .select('rpe_values, notes, exercise:exercises(name)')
+      .in('progress_log_id', logIds) as { data: ExerciseLogRow[] | null }
+
+    exerciseRows = (exLogs ?? []).map(row => ({
+      exerciseName: Array.isArray(row.exercise)
+        ? row.exercise[0]?.name ?? null
+        : row.exercise?.name ?? null,
+      rpeValues: row.rpe_values,
+      note: row.notes,
+    }))
+  }
+
+  return buildWeeklySummary({
+    scheduledSessions,
+    completedSessions: logIds.length,
+    exerciseRows,
+  })
 }
 
 // ─── Server Action principal ──────────────────────────────────────────────────
@@ -156,6 +214,22 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
   }
 
   // ── 5. Generar plan (mock o real) ──────────────────────────────────────────
+
+  // Contexto de periodización: fase del ciclo + rendimiento de la semana
+  // anterior. Solo aplica en regeneraciones semanales.
+  let weekContext: WeekContext | undefined
+  if (mode === 'weekly_regeneration') {
+    const previousWeek = activePlan
+      ? await buildPreviousWeekSummary(supabase, user.id, activePlan.id)
+      : null
+
+    weekContext = {
+      weekNumber: nextWeekNumber,
+      cyclePhase: getCyclePhase(nextWeekNumber),
+      previousWeek,
+    }
+  }
+
   let result
   try {
     result = await generateInitialPlan({
@@ -163,6 +237,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
       operation,
       user:      userCtx,
       exercises,
+      weekContext,
     })
   } catch (err) {
     console.error('[generatePlan] generateInitialPlan falló:', err)
