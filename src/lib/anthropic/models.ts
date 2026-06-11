@@ -13,4 +13,6 @@
 export const AI_MODELS = {
   primary:  process.env.ANTHROPIC_MODEL_PRIMARY  ?? 'claude-sonnet-4-5',
   fallback: process.env.ANTHROPIC_MODEL_FALLBACK ?? 'claude-opus-4-5',
+  /** Chat y ajustes del coach: alto volumen, respuestas cortas → modelo barato. */
+  coach:    process.env.ANTHROPIC_MODEL_COACH    ?? 'claude-haiku-4-5',
 } as const

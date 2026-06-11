@@ -452,7 +452,7 @@ export interface Database {
           id:                    string
           user_id:               string | null          // nullable: ON DELETE SET NULL
           model:                 string
-          operation:             'initial_plan_generation' | 'weekly_plan_regeneration' | 'plan_adjustment' | 'other'
+          operation:             'initial_plan_generation' | 'weekly_plan_regeneration' | 'plan_adjustment' | 'coach_chat' | 'other'
           attempt_number:        number                 // 1–5
           input_tokens:          number
           output_tokens:         number
@@ -469,7 +469,7 @@ export interface Database {
           id?:                    string
           user_id?:               string | null
           model:                  string
-          operation:              'initial_plan_generation' | 'weekly_plan_regeneration' | 'plan_adjustment' | 'other'
+          operation:              'initial_plan_generation' | 'weekly_plan_regeneration' | 'plan_adjustment' | 'coach_chat' | 'other'
           attempt_number:         number
           input_tokens?:          number
           output_tokens?:         number

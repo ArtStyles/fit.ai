@@ -51,6 +51,7 @@ export type AIOperation =
   | 'initial_plan_generation'
   | 'weekly_plan_regeneration'
   | 'plan_adjustment'
+  | 'coach_chat'
   | 'other'
 
 /** Clasificación del error para análisis de fallos en el dashboard. */

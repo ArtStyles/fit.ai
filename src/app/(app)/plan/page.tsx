@@ -355,19 +355,7 @@ export default async function PlanPage() {
                     )}
                     <WorkoutAdjustButton
                       workoutId={workout.id}
-                      context={{
-                        workoutName: workout.displayName,
-                        workoutFocus: workout.focus,
-                        exercises: exercises.map(ex => {
-                          const exData = Array.isArray(ex.exercise) ? ex.exercise[0] : ex.exercise
-                          return {
-                            name: exData?.name ?? 'Ejercicio',
-                            sets: ex.sets,
-                            reps: ex.reps,
-                            targetRpe: ex.target_rpe,
-                          }
-                        }),
-                      }}
+                      workoutName={workout.displayName}
                     />
                   </div>
 

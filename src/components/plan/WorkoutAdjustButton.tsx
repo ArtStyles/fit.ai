@@ -1,14 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Sparkles, Send, ChevronRight } from 'lucide-react'
+import { Check, ChevronRight, Send, Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { suggestWorkoutAdjustment } from '@/app/actions/adjustPlan'
-import type { AdjustmentContext } from '@/lib/ai/mock-adjustmentGenerator'
+import { useToast } from '@/components/feedback/ToastProvider'
+import { applyWorkoutAdjustment, suggestWorkoutAdjustment } from '@/app/actions/adjustPlan'
+import type { AdjustmentChange } from '@/lib/ai/adjustments'
 
 interface Props {
   workoutId: string
-  context: AdjustmentContext
+  workoutName: string
 }
 
 // Converts **text** to bold spans and newlines to <br>
@@ -40,35 +41,62 @@ const QUICK_REQUESTS = [
   'Dame una variante más fácil',
 ]
 
-export function WorkoutAdjustButton({ workoutId, context }: Props) {
-  const [open, setOpen]           = useState(false)
-  const [request, setRequest]     = useState('')
-  const [suggestion, setSuggestion] = useState<string | null>(null)
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState<string | null>(null)
+export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
+  const [open, setOpen]                     = useState(false)
+  const [request, setRequest]               = useState('')
+  const [suggestion, setSuggestion]         = useState<string | null>(null)
+  const [changes, setChanges]               = useState<AdjustmentChange[]>([])
+  const [changesSummary, setChangesSummary] = useState<string[]>([])
+  const [loading, setLoading]               = useState(false)
+  const [applying, setApplying]             = useState(false)
+  const [error, setError]                   = useState<string | null>(null)
+  const { showToast }                       = useToast()
 
   async function handleSubmit(req: string) {
     if (!req.trim() || loading) return
     setLoading(true)
     setError(null)
     setSuggestion(null)
+    setChanges([])
+    setChangesSummary([])
 
-    const result = await suggestWorkoutAdjustment(workoutId, req, context)
+    const result = await suggestWorkoutAdjustment(workoutId, req)
     setLoading(false)
 
     if (!result.success) { setError(result.error ?? 'Error al generar la sugerencia'); return }
     setSuggestion(result.suggestion ?? '')
+    setChanges(result.changes ?? [])
+    setChangesSummary(result.changesSummary ?? [])
+  }
+
+  async function handleApply() {
+    if (applying || changes.length === 0) return
+    setApplying(true)
+    setError(null)
+
+    const result = await applyWorkoutAdjustment(workoutId, changes)
+    setApplying(false)
+
+    if (!result.success) {
+      setError(result.error ?? 'No se pudieron aplicar los cambios')
+      return
+    }
+
+    showToast({
+      title: 'Ajuste aplicado',
+      description: `${result.appliedCount} cambio${result.appliedCount === 1 ? '' : 's'} en ${workoutName}.`,
+      variant: 'success',
+    })
+    setOpen(false)
   }
 
   function handleOpen() {
     setOpen(true)
     setRequest('')
     setSuggestion(null)
+    setChanges([])
+    setChangesSummary([])
     setError(null)
-  }
-
-  function handleClose() {
-    setOpen(false)
   }
 
   return (
@@ -87,7 +115,7 @@ export function WorkoutAdjustButton({ workoutId, context }: Props) {
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-sm text-white">
               <Sparkles className="h-4 w-4 text-violet-400" />
-              Ajuste IA — {context.workoutName}
+              Ajuste IA — {workoutName}
             </DialogTitle>
           </DialogHeader>
 
@@ -98,19 +126,46 @@ export function WorkoutAdjustButton({ workoutId, context }: Props) {
                 <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
                   <FormatSuggestion text={suggestion} />
                 </div>
-                <p className="text-center text-xs text-gray-600">
-                  Sugerencia de IA · aplica los cambios manualmente usando las opciones del plan
-                </p>
+
+                {changesSummary.length > 0 ? (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+                      Cambios propuestos
+                    </p>
+                    <ul className="space-y-1.5">
+                      {changesSummary.map((line, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-center text-xs text-gray-600">
+                    Sugerencia informativa · aplica los cambios manualmente usando las opciones del plan
+                  </p>
+                )}
+
+                {error && <p className="text-xs text-red-400">{error}</p>}
+
                 <div className="flex gap-2">
                   <button type="button"
-                    onClick={() => { setSuggestion(null); setRequest('') }}
+                    onClick={() => { setSuggestion(null); setChanges([]); setChangesSummary([]); setRequest('') }}
                     className="flex-1 rounded-lg border border-border/50 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
                     Otra pregunta
                   </button>
-                  <button type="button" onClick={handleClose}
-                    className="flex-1 rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500">
-                    Cerrar
-                  </button>
+                  {changesSummary.length > 0 ? (
+                    <button type="button" onClick={handleApply} disabled={applying}
+                      className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60">
+                      {applying ? 'Aplicando…' : 'Aplicar cambios'}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => setOpen(false)}
+                      className="flex-1 rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500">
+                      Cerrar
+                    </button>
+                  )}
                 </div>
               </>
             ) : (

@@ -1,13 +1,11 @@
 import 'server-only'
+import type { AdjustmentChange, AdjustmentContext } from './adjustments'
 
-export interface AdjustmentContext {
-  workoutName: string
-  workoutFocus: string | null
-  exercises: { name: string; sets: number | null; reps: number | null; targetRpe: number | null }[]
-}
+export type { AdjustmentContext } from './adjustments'
 
 export interface MockAdjustmentResponse {
   suggestion: string
+  changes: AdjustmentChange[]
   isMock: true
 }
 
@@ -32,7 +30,7 @@ function detectIntent(request: string): Intent {
 
 // ─── Generadores de respuesta por intención ────────────────────────────────────
 
-function buildHarder(ctx: AdjustmentContext, request: string): string {
+function buildHarder(ctx: AdjustmentContext): string {
   const ex = ctx.exercises[0]?.name ?? 'los ejercicios principales'
   const currentRpe = ctx.exercises.find(e => e.targetRpe !== null)?.targetRpe ?? 7
   const newRpe = Math.min(10, currentRpe + 1)
@@ -48,7 +46,6 @@ Aplica estos cambios solo si llevas al menos 3-4 semanas con el volumen actual. 
 }
 
 function buildEasier(ctx: AdjustmentContext): string {
-  const ex = ctx.exercises.slice(0, 2).map(e => e.name).join(' y ') || 'los ejercicios'
   return `Para aligerar "${ctx.workoutName}" te propongo estos ajustes:
 
 1. **Baja el RPE objetivo a 6-7/10** en todos los ejercicios. Terminar cada serie sintiéndote cómodo es perfectamente válido, especialmente en semanas de acumulación de fatiga.
@@ -127,6 +124,41 @@ ${hasGoodVolume
 ¿Tienes algo más específico que quieras ajustar?`
 }
 
+// ─── Cambios estructurados por intención ───────────────────────────────────────
+
+function buildChanges(intent: Intent, ctx: AdjustmentContext): AdjustmentChange[] {
+  if (intent === 'harder') {
+    return ctx.exercises.slice(0, 2).map(exercise => ({
+      type: 'update_exercise' as const,
+      workoutExerciseId: exercise.workoutExerciseId,
+      sets: Math.min(10, (exercise.sets ?? 3) + 1),
+      targetRpe: Math.min(10, (exercise.targetRpe ?? 7) + 1),
+    }))
+  }
+
+  if (intent === 'easier') {
+    return ctx.exercises.map(exercise => ({
+      type: 'update_exercise' as const,
+      workoutExerciseId: exercise.workoutExerciseId,
+      sets: Math.max(1, (exercise.sets ?? 3) - 1),
+      targetRpe: Math.max(5, (exercise.targetRpe ?? 7) - 1),
+    }))
+  }
+
+  if (intent === 'shorter') {
+    // Quita hasta 2 ejercicios del final, sin bajar de 3 en la sesión.
+    const removeCount = Math.max(0, Math.min(2, ctx.exercises.length - 3))
+    return ctx.exercises.slice(ctx.exercises.length - removeCount).map(exercise => ({
+      type: 'remove_exercise' as const,
+      workoutExerciseId: exercise.workoutExerciseId,
+    }))
+  }
+
+  // Lesiones, enfoque muscular y consultas generales requieren decisión
+  // humana o reemplazos del pool: solo texto, sin cambios automáticos.
+  return []
+}
+
 // ─── Función principal ─────────────────────────────────────────────────────────
 
 export async function mockAdjustmentSuggestion(
@@ -139,7 +171,7 @@ export async function mockAdjustmentSuggestion(
   let suggestion: string
 
   switch (intent) {
-    case 'harder':       suggestion = buildHarder(context, request); break
+    case 'harder':       suggestion = buildHarder(context); break
     case 'easier':       suggestion = buildEasier(context); break
     case 'shorter':      suggestion = buildShorter(context); break
     case 'injury':       suggestion = buildInjury(context, request); break
@@ -147,5 +179,5 @@ export async function mockAdjustmentSuggestion(
     default:             suggestion = buildGeneral(context)
   }
 
-  return { suggestion, isMock: true }
+  return { suggestion, changes: buildChanges(intent, context), isMock: true }
 }

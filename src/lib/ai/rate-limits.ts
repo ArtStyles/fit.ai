@@ -40,9 +40,18 @@ const RATE_LIMITS: Partial<Record<AIOperation, {
   maxCount:    number
   windowHours: number
 }>> = {
-  initial_plan_generation:  { maxCount: 3, windowHours: 24      },
-  weekly_plan_regeneration: { maxCount: 2, windowHours: 24 * 7  },
-  // plan_adjustment y 'other' no tienen límite configurado
+  initial_plan_generation:  { maxCount: 3,  windowHours: 24      },
+  weekly_plan_regeneration: { maxCount: 2,  windowHours: 24 * 7  },
+  plan_adjustment:          { maxCount: 10, windowHours: 24      },
+  coach_chat:               { maxCount: 30, windowHours: 24      },
+  // 'other' no tiene límite configurado
+}
+
+const OPERATION_LABELS: Partial<Record<AIOperation, string>> = {
+  initial_plan_generation:  'planes iniciales',
+  weekly_plan_regeneration: 'regeneraciones semanales',
+  plan_adjustment:          'ajustes de IA',
+  coach_chat:               'mensajes al coach',
 }
 
 // ─── checkUserRateLimit ───────────────────────────────────────────────────────
@@ -107,9 +116,7 @@ export async function checkUserRateLimit(
       (retryAfter.getTime() - Date.now()) / (60 * 60 * 1000),
     ))
 
-    const operationLabel = operation === 'initial_plan_generation'
-      ? 'planes iniciales'
-      : 'regeneraciones semanales'
+    const operationLabel = OPERATION_LABELS[operation] ?? 'operaciones de IA'
 
     const windowText = limit.windowHours < 48 ? '24 horas' : '7 días'
 

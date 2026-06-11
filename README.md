@@ -45,9 +45,12 @@ conectado de extremo a extremo:
 
 ### Parcial o pendiente
 
-- El coach de chat usa respuestas mock.
-- Las sugerencias de ajuste de entrenamiento usan respuestas mock.
-- El resumen diario del dashboard se genera localmente con un generador mock.
+- El coach de chat y las sugerencias de ajuste usan Claude real cuando hay
+  `ANTHROPIC_API_KEY` (modelo configurable con `ANTHROPIC_MODEL_COACH`); sin
+  API key caen al mock local. Los ajustes devuelven cambios estructurados
+  aplicables con un tap.
+- El resumen diario del dashboard se genera localmente por diseño (gratuito y
+  determinista).
 - La ruta `/exercises` funciona como herramienta de desarrollo/admin; en
   produccion requiere que el email exista en `ADMIN_EMAILS`.
 - La politica de privacidad mantiene `soporte@fitai.app` como correo placeholder.
@@ -97,6 +100,7 @@ Configura `.env.local` antes de iniciar la app.
 | `MAX_DAILY_API_SPEND_USD` | Limite global opcional de gasto diario de Anthropic. |
 | `ANTHROPIC_MODEL_PRIMARY` | Modelo primario opcional. Default: `claude-sonnet-4-5`. |
 | `ANTHROPIC_MODEL_FALLBACK` | Modelo fallback opcional. Default: `claude-opus-4-5`. |
+| `ANTHROPIC_MODEL_COACH` | Modelo opcional del coach (chat y ajustes). Default: `claude-haiku-4-5`. |
 | `ADMIN_EMAILS` | Emails separados por coma con acceso a `/exercises` en produccion. |
 
 ### Base de datos

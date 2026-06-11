@@ -1,7 +1,10 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { mockChatResponse } from '@/lib/ai/mock-chatGenerator'
+import { generateCoachReply } from '@/lib/ai/chatGenerator'
+import { loadCoachContextText } from '@/lib/ai/coachContextLoader'
+import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
+import type { CoachHistoryMessage } from '@/lib/ai/real-coachGenerator'
 
 export type ConversationContext = 'general' | 'workout_plan' | 'nutrition' | 'progress'
 
@@ -114,6 +117,27 @@ export async function sendMessage(
 
   if (!conv) return { success: false, error: 'Conversación no encontrada' }
 
+  // ── Rate limits (solo cuentan llamadas reales registradas en ai_usage_logs) ─
+  const [userLimit, globalBudget] = await Promise.all([
+    checkUserRateLimit(user.id, 'coach_chat'),
+    checkGlobalDailyBudget(),
+  ])
+  if (!userLimit.allowed) return { success: false, error: userLimit.reason }
+  if (!globalBudget.allowed) return { success: false, error: globalBudget.reason }
+
+  // ── Contexto del coach + historial reciente de la conversación ─────────────
+  const [contextText, { data: historyRows }] = await Promise.all([
+    loadCoachContextText(supabase, user.id),
+    (supabase
+      .from('ai_messages') as any)
+      .select('role, content')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(12) as Promise<{ data: CoachHistoryMessage[] | null }>,
+  ])
+
+  const history = (historyRows ?? []).reverse()
+
   const { data: userMsg, error: userMsgError } = await (supabase
     .from('ai_messages') as any)
     .insert({ conversation_id: conversationId, role: 'user', content: trimmed })
@@ -124,7 +148,24 @@ export async function sendMessage(
     return { success: false, error: userMsgError?.message ?? 'No se pudo guardar el mensaje' }
   }
 
-  const aiResponse = await mockChatResponse(trimmed, conv.context ?? 'general')
+  let aiResponse
+  try {
+    aiResponse = await generateCoachReply({
+      userId: user.id,
+      message: trimmed,
+      history,
+      contextText,
+      conversationContext: conv.context ?? 'general',
+    })
+  } catch (err) {
+    console.error('[chat] generateCoachReply falló:', err)
+    // Sin respuesta no dejamos el mensaje colgado: el usuario reintenta limpio.
+    await (supabase.from('ai_messages') as any).delete().eq('id', userMsg.id)
+    return {
+      success: false,
+      error: 'El coach no está disponible en este momento. Inténtalo de nuevo en unos minutos.',
+    }
+  }
 
   const { data: assistantMsg, error: assistantMsgError } = await (supabase
     .from('ai_messages') as any)
