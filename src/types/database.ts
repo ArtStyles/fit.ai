@@ -37,6 +37,8 @@ export interface Database {
           injuries: string | null
           preferred_workout_days: number[] | null   // migration 004 — 1=lunes…7=domingo
           onboarding_done: boolean
+          timezone: string | null                    // migration 016 — IANA, null = zona de la app
+          last_check_in_at: string | null            // migration 017 — último check-in de perfil
           created_at: string
           updated_at: string
         }
@@ -58,6 +60,8 @@ export interface Database {
           injuries?: string | null
           preferred_workout_days?: number[] | null
           onboarding_done?: boolean
+          timezone?: string | null
+          last_check_in_at?: string | null
         }
         Update: {
           username?: string | null
@@ -76,6 +80,8 @@ export interface Database {
           injuries?: string | null
           preferred_workout_days?: number[] | null
           onboarding_done?: boolean
+          timezone?: string | null
+          last_check_in_at?: string | null
         }
         Relationships: []
       }

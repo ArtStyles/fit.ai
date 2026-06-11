@@ -46,6 +46,7 @@ export async function updatePersonalData(formData: FormData) {
       weight_kg: nullableNumber(formData, 'weightKg'),
       date_of_birth: nullableText(formData, 'dateOfBirth'),
       gender: nullableText(formData, 'gender'),
+      last_check_in_at: new Date().toISOString(),
     })
     .eq('id', user.id)
 
@@ -78,6 +79,7 @@ export async function updateTrainingSettings(formData: FormData) {
       available_equipment: csvList(formData, 'availableEquipment'),
       injuries: nullableText(formData, 'injuries'),
       preferred_workout_days: preferredWorkoutDays.length > 0 ? preferredWorkoutDays : null,
+      last_check_in_at: new Date().toISOString(),
     })
     .eq('id', user.id)
 

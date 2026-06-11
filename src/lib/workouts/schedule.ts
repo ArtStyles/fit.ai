@@ -19,17 +19,29 @@ function env(name: string): string | undefined {
   return process.env[name]
 }
 
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(new Date())
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function getAppTimeZone(): string {
   const configured = env('NEXT_PUBLIC_APP_TIME_ZONE') ?? env('APP_TIME_ZONE')
 
-  if (!configured) return DEFAULT_APP_TIME_ZONE
+  if (!configured || !isValidTimeZone(configured)) return DEFAULT_APP_TIME_ZONE
+  return configured
+}
 
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: configured }).format(new Date())
-    return configured
-  } catch {
-    return DEFAULT_APP_TIME_ZONE
-  }
+/**
+ * Zona horaria efectiva del usuario: la IANA guardada en su perfil si es
+ * válida; si no, la zona por defecto de la app.
+ */
+export function resolveUserTimeZone(stored: string | null | undefined): string {
+  if (stored && isValidTimeZone(stored)) return stored
+  return getAppTimeZone()
 }
 
 function getZonedParts(date: Date, timeZone = getAppTimeZone()): ZonedDateParts {

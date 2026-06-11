@@ -4,6 +4,7 @@ import { SessionClient }      from './SessionClient'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 import { buildInitialExercises } from '@/store/sessionStore'
 import { getWorkoutStartAccess } from '@/lib/workouts/access'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 // ─── Tipos de datos crudos del servidor ──────────────────────────────────────
 
@@ -46,12 +47,13 @@ interface PageProps {
 export default async function SessionPage({ params }: PageProps) {
   const { workoutId } = params
 
-  const { supabase, user } = await requireAppUserContext()
+  const { supabase, user, profile } = await requireAppUserContext()
 
   const access = await getWorkoutStartAccess({
     supabase,
     userId: user.id,
     workoutId,
+    timeZone: resolveUserTimeZone(profile.timezone),
   })
 
   if (!access.allowed) {

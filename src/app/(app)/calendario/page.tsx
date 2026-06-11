@@ -3,7 +3,7 @@ import { PendingLink } from '@/components/navigation/PendingLink'
 import { CalendarView } from '@/components/calendar/CalendarView'
 import { EmptyCalendar } from '@/components/calendar/EmptyCalendar'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { addDays, getAppTimeZone, getLocalDateString } from '@/lib/workouts/schedule'
+import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import {
   aggregateLogsToDays,
   type DayAggregate,
@@ -85,9 +85,9 @@ async function loadCalendarDays(
 }
 
 export default async function CalendarPage() {
-  const { supabase, user } = await requireAppUserContext()
-  const timeZone = getAppTimeZone()
-  const todayStr = getLocalDateString()
+  const { supabase, user, profile } = await requireAppUserContext()
+  const timeZone = resolveUserTimeZone(profile.timezone)
+  const todayStr = getLocalDateString(new Date(), timeZone)
   const days = await loadCalendarDays(supabase, user.id, timeZone)
 
   return (

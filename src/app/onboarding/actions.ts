@@ -32,6 +32,7 @@ export async function saveOnboardingAnswers(answers: OnboardingAnswers): Promise
     date_of_birth,
     gender:                    answers.gender as ProfileUpdate['gender'],
     onboarding_done:           true,
+    last_check_in_at:          new Date().toISOString(),
   }
 
   // cast needed: supabase-js v2 generic inference issue with hand-crafted DB types

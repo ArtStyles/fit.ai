@@ -178,4 +178,36 @@ describe('getWorkoutStartAccess()', () => {
       date: NOW,
     })).resolves.toMatchObject({ allowed: false, reason: 'another_session_today' })
   })
+
+  it('resolves "today" in the user timezone', async () => {
+    // 2026-05-28T02:00Z: aún miércoles 27 en La Habana, ya jueves 28 en Madrid
+    const lateNight = new Date('2026-05-28T02:00:00.000Z')
+    const thursdayWorkout = { ...workout, day_of_week: 4 }
+
+    const inMadrid = createSupabaseMock({
+      workouts: [{ data: thursdayWorkout }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      progress_logs: [{ data: [] }, { data: [] }],
+    })
+
+    await expect(getWorkoutStartAccess({
+      supabase: inMadrid,
+      userId: 'user-1',
+      workoutId: 'workout-1',
+      date: lateNight,
+      timeZone: 'Europe/Madrid',
+    })).resolves.toMatchObject({ allowed: true, window: { status: 'today' } })
+
+    const inHavana = createSupabaseMock({
+      workouts: [{ data: thursdayWorkout }],
+    })
+
+    await expect(getWorkoutStartAccess({
+      supabase: inHavana,
+      userId: 'user-1',
+      workoutId: 'workout-1',
+      date: lateNight,
+      timeZone: 'America/Havana',
+    })).resolves.toMatchObject({ allowed: false, reason: 'not_today' })
+  })
 })

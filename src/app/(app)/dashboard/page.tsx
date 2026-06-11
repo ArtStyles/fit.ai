@@ -3,6 +3,7 @@ import { HeroCard }           from '@/components/dashboard/HeroCard'
 import { WeekCalendar }       from '@/components/dashboard/WeekCalendar'
 import { QuickStats }         from '@/components/dashboard/QuickStats'
 import { AINotesBanner }      from '@/components/dashboard/AINotesBanner'
+import { CheckInBanner }      from '@/components/dashboard/CheckInBanner'
 import { ProgressHighlights } from '@/components/dashboard/ProgressHighlights'
 import { DailyBrief }         from '@/components/dashboard/DailyBrief'
 import { PendingLink }        from '@/components/navigation/PendingLink'
@@ -13,9 +14,11 @@ import {
   getIsoWeekday,
   getLocalDateString,
   getWeekMonday as getCurrentWeekMonday,
+  resolveUserTimeZone,
   WORKOUT_ACCESS_POLICY,
 } from '@/lib/workouts/schedule'
 import { generateDailyBrief } from '@/lib/ai/mock-briefGenerator'
+import { isCheckInDue } from '@/lib/profile/checkin'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 import type { Database } from '@/types/database'
 
@@ -366,16 +369,17 @@ export default async function DashboardPage() {
     ?? user.email?.split('@')[0]
     ?? 'Campeón'
 
-  const todayIso  = getIsoWeekday()
-  const weekStart = getCurrentWeekMonday()
-  const todayStr  = getLocalDateString()
+  const tz        = resolveUserTimeZone(profile?.timezone)
+  const todayIso  = getIsoWeekday(new Date(), tz)
+  const weekStart = getCurrentWeekMonday(new Date(), tz)
+  const todayStr  = getLocalDateString(new Date(), tz)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
   const dashboardPayload = await loadDashboardPayload(
     supabase,
     user.id,
     weekStart,
-    addCalendarDays(new Date(), -30),
+    addCalendarDays(new Date(), -30, tz),
   )
   const {
     planRaw,
@@ -409,11 +413,11 @@ export default async function DashboardPage() {
   // ── Racha (30 días hacia atrás) ────────────────────────────────────────────
   let streak = 0
   if (allRecentLogs.length > 0) {
-    const logDateSet = new Set(allRecentLogs.map(l => getLocalDateString(new Date(l.completed_at))))
+    const logDateSet = new Set(allRecentLogs.map(l => getLocalDateString(new Date(l.completed_at), tz)))
     let check = new Date()
-    while (logDateSet.has(getLocalDateString(check))) {
+    while (logDateSet.has(getLocalDateString(check, tz))) {
       streak++
-      check = addCalendarDays(check, -1)
+      check = addCalendarDays(check, -1, tz)
     }
   }
 
@@ -422,7 +426,7 @@ export default async function DashboardPage() {
 
   const todayLog = weekLogs.find(l =>
     l.workout_id === todayWorkout?.id &&
-    getLocalDateString(new Date(l.completed_at)) === todayStr,
+    getLocalDateString(new Date(l.completed_at), tz) === todayStr,
   )
 
   // ── Siguiente workout (para día de descanso) ───────────────────────────────
@@ -433,12 +437,12 @@ export default async function DashboardPage() {
 
   // ── Datos del calendario semanal ──────────────────────────────────────────
   const hasSessionToday = weekLogs.some(l =>
-    getLocalDateString(new Date(l.completed_at)) === todayStr,
+    getLocalDateString(new Date(l.completed_at), tz) === todayStr,
   )
 
   const weekDays: DayData[] = Array.from({ length: 7 }, (_, i) => {
-    const date    = addCalendarDays(weekStart, i)
-    const dateStr = getLocalDateString(date)
+    const date    = addCalendarDays(weekStart, i, tz)
+    const dateStr = getLocalDateString(date, tz)
     const iso     = i + 1
     const workout = workouts.find(w => w.day_of_week === iso) ?? null
     // Una sesión recuperada cuenta para el día programado de la rutina,
@@ -470,7 +474,7 @@ export default async function DashboardPage() {
   // ── Banner de IA: si el plan tiene ai_notes y se creó en los últimos 7 días ─
   const showAiBanner = !!(
     planRaw?.ai_notes &&
-    new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7).getTime()
+    new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7, tz).getTime()
   )
 
   // ── Momentum Score (0-100) ────────────────────────────────────────────────
@@ -522,6 +526,15 @@ export default async function DashboardPage() {
             style={{ animationDelay: showAiBanner ? '160ms' : '80ms' }}
           >
             <DailyBrief message={dailyBriefMessage} />
+          </section>
+        )}
+
+        {isCheckInDue(profile?.last_check_in_at ?? null) && (
+          <section
+            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
+            style={{ animationDelay: '200ms' }}
+          >
+            <CheckInBanner />
           </section>
         )}
 

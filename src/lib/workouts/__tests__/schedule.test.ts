@@ -7,6 +7,7 @@ import {
   getLocalDayBounds,
   getWeekMonday,
   getWorkoutStartWindow,
+  resolveUserTimeZone,
   WORKOUT_ACCESS_POLICY,
 } from '../schedule'
 
@@ -62,6 +63,20 @@ describe('workout schedule helpers', () => {
     expect(canStartWorkoutToday(2, wednesday, TZ)).toBe(false)
     expect(canStartWorkoutToday(4, wednesday, TZ)).toBe(false)
     expect(canStartWorkoutToday(null, wednesday, TZ)).toBe(false)
+  })
+})
+
+describe('resolveUserTimeZone()', () => {
+  it('uses the stored IANA timezone when valid', () => {
+    expect(resolveUserTimeZone('Europe/Madrid')).toBe('Europe/Madrid')
+    expect(resolveUserTimeZone('America/Mexico_City')).toBe('America/Mexico_City')
+  })
+
+  it('falls back to the app timezone for invalid or missing values', () => {
+    expect(resolveUserTimeZone('Not/AZone')).toBe(TZ)
+    expect(resolveUserTimeZone('')).toBe(TZ)
+    expect(resolveUserTimeZone(null)).toBe(TZ)
+    expect(resolveUserTimeZone(undefined)).toBe(TZ)
   })
 })
 

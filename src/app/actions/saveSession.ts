@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { buildProgressionSuggestions } from '@/lib/progression'
 import { detectPersonalRecord } from '@/lib/progression/records'
 import { getWorkoutStartAccess } from '@/lib/workouts/access'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 import type { WorkoutStartAccessReason } from '@/lib/workouts/access'
 import type { ProgressionSuggestion } from '@/lib/progression'
 import type { PRRecord } from '@/lib/progression/records'
@@ -224,10 +225,17 @@ export async function saveSession(
     }
   }
 
+  const { data: profileRow } = await (supabase
+    .from('profiles') as any)
+    .select('timezone')
+    .eq('id', user.id)
+    .maybeSingle() as { data: { timezone: string | null } | null }
+
   const access = await getWorkoutStartAccess({
     supabase,
     userId: user.id,
     workoutId: payload.workoutId,
+    timeZone: resolveUserTimeZone(profileRow?.timezone),
   })
 
   if (!access.allowed) {

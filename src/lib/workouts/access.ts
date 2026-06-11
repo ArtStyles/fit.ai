@@ -1,4 +1,4 @@
-import { addDays, getLocalDayBounds, getWorkoutStartWindow } from './schedule'
+import { addDays, getAppTimeZone, getLocalDayBounds, getWorkoutStartWindow } from './schedule'
 import type { WorkoutStartWindow } from './schedule'
 
 export type WorkoutStartAccessReason =
@@ -39,11 +39,13 @@ export async function getWorkoutStartAccess({
   userId,
   workoutId,
   date = new Date(),
+  timeZone = getAppTimeZone(),
 }: {
   supabase: SupabaseLike
   userId: string
   workoutId: string
   date?: Date
+  timeZone?: string
 }): Promise<WorkoutStartAccessResult> {
   const { data: workout } = await (supabase
     .from('workouts') as any)
@@ -56,7 +58,7 @@ export async function getWorkoutStartAccess({
     return { allowed: false, reason: 'not_found' }
   }
 
-  const window = getWorkoutStartWindow(workout.day_of_week, date)
+  const window = getWorkoutStartWindow(workout.day_of_week, date, timeZone)
 
   if (!workout.plan_id || window.status === 'unavailable') {
     return { allowed: false, reason: 'not_today', workout }
@@ -74,9 +76,9 @@ export async function getWorkoutStartAccess({
     return { allowed: false, reason: 'inactive_plan', workout }
   }
 
-  const { start: todayStart, end: todayEnd } = getLocalDayBounds(date)
+  const { start: todayStart, end: todayEnd } = getLocalDayBounds(date, timeZone)
   const windowStart = window.status === 'recoverable'
-    ? getLocalDayBounds(addDays(date, -window.daysLate)).start
+    ? getLocalDayBounds(addDays(date, -window.daysLate, timeZone), timeZone).start
     : todayStart
 
   // ¿Esta rutina ya fue registrada desde su día programado?

@@ -23,7 +23,7 @@ import {
   Target,
   Timer,
 } from 'lucide-react'
-import { getIsoWeekday } from '@/lib/workouts/schedule'
+import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata = { title: 'Plan completo · FitAI' }
 
@@ -82,7 +82,7 @@ function formatDuration(minutes: number | null): string {
 }
 
 export default async function PlanPage() {
-  const { supabase, user } = await requireAppUserContext()
+  const { supabase, user, profile } = await requireAppUserContext()
 
   const { data: planRaw } = await supabase
     .from('workout_plans')
@@ -175,7 +175,7 @@ export default async function PlanPage() {
     acc[row.workout_id].push(row)
     return acc
   }, {})
-  const todayIso = getIsoWeekday()
+  const todayIso = getIsoWeekday(new Date(), resolveUserTimeZone(profile.timezone))
   const hasTodayWorkout = workouts.some(workout => workout.day_of_week === todayIso)
 
   return (

@@ -42,6 +42,10 @@ conectado de extremo a extremo:
 - Biblioteca de ejercicios desde free-exercise-db con imagenes re-alojadas en Supabase Storage.
 - RLS en Supabase, RPCs optimizadas para dashboard e historial, y fallback a
   queries directas cuando una RPC no esta disponible.
+- Zona horaria por usuario (autodetectada del dispositivo y sincronizada al
+  perfil) para el gating de sesiones y el calendario.
+- Check-in periodico: cada 4 semanas el dashboard invita a actualizar peso,
+  objetivo y lesiones; guardar ajustes u onboarding lo registra.
 
 ### Parcial o pendiente
 
@@ -54,8 +58,9 @@ conectado de extremo a extremo:
 - La ruta `/exercises` funciona como herramienta de desarrollo/admin; en
   produccion requiere que el email exista en `ADMIN_EMAILS`.
 - La politica de privacidad mantiene `soporte@fitai.app` como correo placeholder.
-- `.env.example` incluye `NEXT_PUBLIC_APP_URL` y `NEXT_PUBLIC_APP_TIME_ZONE`, pero
-  el codigo actual no consume esas variables.
+- `.env.example` incluye `NEXT_PUBLIC_APP_URL`, pero el codigo actual no consume
+  esa variable. `NEXT_PUBLIC_APP_TIME_ZONE` actua como zona de fallback cuando el
+  perfil no tiene zona horaria propia.
 - No hay pruebas end-to-end; la cobertura actual se concentra en generacion mock,
   scheduling, acceso a sesiones, guardado y progresion.
 
