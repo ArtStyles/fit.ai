@@ -3,12 +3,14 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   ArrowLeft, Plus, Scale, Trash2, ChevronDown, ChevronUp,
-  TrendingDown, TrendingUp, Minus,
+  TrendingDown, TrendingUp, Minus, Pencil,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { LongPressMenu, type LongPressAction } from '@/components/ui'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import {
   logMeasurement,
+  updateMeasurement,
   deleteMeasurement,
   type MeasurementRow,
   type LogMeasurementPayload,
@@ -159,12 +161,19 @@ function WeightChart({ data }: { data: MeasurementRow[] }) {
 // ─── Form de registro ────────────────────────────────────────────────────────
 
 function LogForm({
+  initial,
   onSaved,
   onClose,
-}: { onSaved: (row: MeasurementRow) => void; onClose: () => void }) {
+}: {
+  initial?: MeasurementRow
+  onSaved: (row: MeasurementRow) => void
+  onClose: () => void
+}) {
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState<string | null>(null)
-  const [extra, setExtra]     = useState(false)
+  const [extra, setExtra]     = useState(
+    Boolean(initial && (initial.chest_cm ?? initial.hips_cm ?? initial.arms_cm ?? initial.legs_cm)),
+  )
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -186,14 +195,16 @@ function LogForm({
       notes:               String(fd.get('notes') ?? '').trim() || null,
     }
 
-    const result = await logMeasurement(payload)
+    const result = initial
+      ? await updateMeasurement(initial.id, payload)
+      : await logMeasurement(payload)
     setSaving(false)
 
     if (!result.success) { setError(result.error ?? 'Error al guardar'); return }
 
     onSaved({
       id: result.id!,
-      recorded_at: new Date().toISOString(),
+      recorded_at: initial?.recorded_at ?? new Date().toISOString(),
       ...payload,
     } as MeasurementRow)
     onClose()
@@ -206,10 +217,10 @@ function LogForm({
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <InputField name="weight_kg"           label="Peso (kg)"       step="0.1" />
-        <InputField name="body_fat_percentage" label="Grasa corporal (%)" step="0.1" />
-        <InputField name="waist_cm"            label="Cintura (cm)"    step="0.5" />
-        <InputField name="muscle_mass_kg"      label="Masa muscular (kg)" step="0.1" />
+        <InputField name="weight_kg"           label="Peso (kg)"          step="0.1" defaultValue={initial?.weight_kg} />
+        <InputField name="body_fat_percentage" label="Grasa corporal (%)" step="0.1" defaultValue={initial?.body_fat_percentage} />
+        <InputField name="waist_cm"            label="Cintura (cm)"       step="0.5" defaultValue={initial?.waist_cm} />
+        <InputField name="muscle_mass_kg"      label="Masa muscular (kg)" step="0.1" defaultValue={initial?.muscle_mass_kg} />
       </div>
 
       <button type="button" onClick={() => setExtra(v => !v)}
@@ -220,14 +231,14 @@ function LogForm({
 
       {extra && (
         <div className="grid grid-cols-2 gap-3">
-          <InputField name="chest_cm" label="Pecho (cm)"  step="0.5" />
-          <InputField name="hips_cm"  label="Cadera (cm)" step="0.5" />
-          <InputField name="arms_cm"  label="Brazos (cm)" step="0.5" />
-          <InputField name="legs_cm"  label="Piernas (cm)" step="0.5" />
+          <InputField name="chest_cm" label="Pecho (cm)"   step="0.5" defaultValue={initial?.chest_cm} />
+          <InputField name="hips_cm"  label="Cadera (cm)"  step="0.5" defaultValue={initial?.hips_cm} />
+          <InputField name="arms_cm"  label="Brazos (cm)"  step="0.5" defaultValue={initial?.arms_cm} />
+          <InputField name="legs_cm"  label="Piernas (cm)" step="0.5" defaultValue={initial?.legs_cm} />
         </div>
       )}
 
-      <textarea name="notes" rows={2} placeholder="Notas opcionales..."
+      <textarea name="notes" rows={2} placeholder="Notas opcionales..." defaultValue={initial?.notes ?? ''}
         className="w-full resize-none rounded-lg border border-border/50 bg-white/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-violet-500/60" />
 
       <div className="flex gap-2">
@@ -237,18 +248,21 @@ function LogForm({
         </button>
         <button type="submit" disabled={saving}
           className="flex-1 rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:opacity-50">
-          {saving ? 'Guardando…' : 'Guardar'}
+          {saving ? 'Guardando…' : (initial ? 'Actualizar' : 'Guardar')}
         </button>
       </div>
     </form>
   )
 }
 
-function InputField({ name, label, step }: { name: string; label: string; step?: string }) {
+function InputField({ name, label, step, defaultValue }: {
+  name: string; label: string; step?: string; defaultValue?: number | null
+}) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-xs text-muted-foreground">{label}</span>
       <input type="number" name={name} step={step ?? '1'} min="0" placeholder="—"
+        defaultValue={defaultValue ?? undefined}
         className="h-9 w-full rounded-lg border border-border/50 bg-white/5 px-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-violet-500/60" />
     </label>
   )
@@ -287,14 +301,17 @@ interface Props {
 
 export function MeasurementsClient({ initialMeasurements }: Props) {
   const [measurements, setMeasurements] = useState<MeasurementRow[]>(initialMeasurements)
-  const [showForm, setShowForm]         = useState(false)
+  const [formState, setFormState] = useState<{ open: boolean; editing?: MeasurementRow }>({ open: false })
   const [showAll, setShowAll]           = useState(false)
 
   const latest = measurements[0] ?? null
   const prev   = measurements[1] ?? null
 
   function handleSaved(row: MeasurementRow) {
-    setMeasurements(m => [row, ...m])
+    setMeasurements(m => {
+      const exists = m.some(r => r.id === row.id)
+      return exists ? m.map(r => (r.id === row.id ? row : r)) : [row, ...m]
+    })
   }
 
   async function handleDelete(id: string) {
@@ -316,7 +333,7 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
             </PendingLink>
             <h1 className="text-base font-semibold text-white">Medidas corporales</h1>
           </div>
-          <button type="button" onClick={() => setShowForm(true)}
+          <button type="button" onClick={() => setFormState({ open: true })}
             className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700">
             <Plus className="h-4 w-4" />
             Registrar
@@ -336,7 +353,7 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
               <p className="font-semibold text-white">Sin medidas registradas</p>
               <p className="mt-1 text-sm text-gray-400">Registra tu peso y medidas para ver tu evolución</p>
             </div>
-            <button type="button" onClick={() => setShowForm(true)}
+            <button type="button" onClick={() => setFormState({ open: true })}
               className="mt-2 flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500">
               <Plus className="h-4 w-4" />
               Primera medida
@@ -372,7 +389,9 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
               <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Historial</p>
               <ul className="flex flex-col gap-2">
                 {visible.map((row, i) => (
-                  <HistoryRow key={row.id} row={row} isLatest={i === 0} onDelete={handleDelete} />
+                  <HistoryRow key={row.id} row={row} isLatest={i === 0}
+                    onDelete={handleDelete}
+                    onEdit={() => setFormState({ open: true, editing: row })} />
                 ))}
               </ul>
               {measurements.length > 5 && (
@@ -387,12 +406,18 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
       </main>
 
       {/* Form dialog */}
-      <Dialog open={showForm} onOpenChange={setShowForm}>
+      <Dialog open={formState.open} onOpenChange={(o) => setFormState(s => ({ ...s, open: o }))}>
         <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
-            <DialogTitle className="text-base text-white">Registrar medidas</DialogTitle>
+            <DialogTitle className="text-base text-white">
+              {formState.editing ? 'Editar medida' : 'Registrar medidas'}
+            </DialogTitle>
           </DialogHeader>
-          <LogForm onSaved={handleSaved} onClose={() => setShowForm(false)} />
+          <LogForm
+            initial={formState.editing}
+            onSaved={handleSaved}
+            onClose={() => setFormState({ open: false })}
+          />
         </DialogContent>
       </Dialog>
     </div>
@@ -400,8 +425,11 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
 }
 
 function HistoryRow({
-  row, isLatest, onDelete,
-}: { row: MeasurementRow; isLatest: boolean; onDelete: (id: string) => void }) {
+  row, isLatest, onDelete, onEdit,
+}: {
+  row: MeasurementRow; isLatest: boolean
+  onDelete: (id: string) => void; onEdit: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
   const extras = [
     row.chest_cm  !== null && `Pecho: ${fmt(row.chest_cm, ' cm')}`,
@@ -410,42 +438,44 @@ function HistoryRow({
     row.legs_cm   !== null && `Piernas: ${fmt(row.legs_cm, ' cm')}`,
   ].filter(Boolean) as string[]
 
-  return (
-    <li className="group rounded-xl border border-border/40 bg-white/5 p-3.5">
-      <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={() => setExpanded(v => !v)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-white">{fmtDate(row.recorded_at)}</p>
-              {isLatest && <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-semibold text-violet-300">Última</span>}
-            </div>
-            <p className="mt-0.5 text-xs text-gray-500">
-              {[
-                row.weight_kg           !== null && `${fmt(row.weight_kg, ' kg')}`,
-                row.body_fat_percentage !== null && `${fmt(row.body_fat_percentage, '% grasa')}`,
-                row.waist_cm            !== null && `${fmt(row.waist_cm, ' cm cintura')}`,
-              ].filter(Boolean).join(' · ') || 'Sin datos principales'}
-            </p>
-          </div>
-          {extras.length > 0 && (
-            <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-          )}
-        </button>
-        <button type="button" onClick={() => onDelete(row.id)}
-          className="shrink-0 rounded-lg p-1.5 text-gray-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
-          aria-label="Eliminar">
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
+  const actions: LongPressAction[] = [
+    { id: 'edit', label: 'Editar', icon: Pencil, onSelect: onEdit },
+    { id: 'delete', label: 'Eliminar', icon: Trash2, variant: 'danger', onSelect: () => onDelete(row.id) },
+  ]
 
-      {expanded && extras.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-2 border-t border-border/30 pt-2.5">
-          {extras.map(e => (
-            <span key={e} className="rounded-md bg-white/5 px-2 py-1 text-xs text-gray-400">{e}</span>
-          ))}
-          {row.notes && <p className="mt-1 w-full text-xs text-gray-500 italic">"{row.notes}"</p>}
+  return (
+    <li>
+      <LongPressMenu actions={actions} label={`Medida del ${fmtDate(row.recorded_at)}`}>
+        <div className="rounded-xl border border-border/40 bg-white/5 p-3.5">
+          <button type="button" onClick={() => setExpanded(v => !v)} className="flex w-full min-w-0 items-center gap-3 text-left">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-white">{fmtDate(row.recorded_at)}</p>
+                {isLatest && <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-semibold text-violet-300">Última</span>}
+              </div>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {[
+                  row.weight_kg           !== null && `${fmt(row.weight_kg, ' kg')}`,
+                  row.body_fat_percentage !== null && `${fmt(row.body_fat_percentage, '% grasa')}`,
+                  row.waist_cm            !== null && `${fmt(row.waist_cm, ' cm cintura')}`,
+                ].filter(Boolean).join(' · ') || 'Sin datos principales'}
+              </p>
+            </div>
+            {extras.length > 0 && (
+              <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            )}
+          </button>
+
+          {expanded && extras.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap gap-2 border-t border-border/30 pt-2.5">
+              {extras.map(e => (
+                <span key={e} className="rounded-md bg-white/5 px-2 py-1 text-xs text-gray-400">{e}</span>
+              ))}
+              {row.notes && <p className="mt-1 w-full text-xs text-gray-500 italic">"{row.notes}"</p>}
+            </div>
+          )}
         </div>
-      )}
+      </LongPressMenu>
     </li>
   )
 }
