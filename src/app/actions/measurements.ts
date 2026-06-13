@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { payloadHasValue } from './measurements.logic'
 
 export interface MeasurementRow {
   id: string
@@ -57,8 +58,7 @@ export async function logMeasurement(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
 
-  const hasValue = Object.values(payload).some(v => v !== null && v !== undefined && v !== '')
-  if (!hasValue) return { success: false, error: 'Introduce al menos un valor' }
+  if (!payloadHasValue(payload)) return { success: false, error: 'Introduce al menos un valor' }
 
   const { data, error } = await (supabase
     .from('measurements') as any)
@@ -91,4 +91,26 @@ export async function deleteMeasurement(id: string): Promise<{ success: boolean 
 
   revalidatePath('/medidas')
   return { success: true }
+}
+
+export async function updateMeasurement(
+  id: string,
+  payload: LogMeasurementPayload,
+): Promise<LogMeasurementResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: 'No autenticado' }
+
+  if (!payloadHasValue(payload)) return { success: false, error: 'Introduce al menos un valor' }
+
+  const { error } = await (supabase
+    .from('measurements') as any)
+    .update(payload)
+    .eq('id', id)
+    .eq('user_id', user.id) as { error: { message: string } | null }
+
+  if (error) return { success: false, error: error.message }
+
+  revalidatePath('/medidas')
+  return { success: true, id }
 }
