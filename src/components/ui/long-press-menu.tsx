@@ -45,6 +45,7 @@ export function LongPressMenu({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startRef = useRef<{ x: number; y: number } | null>(null)
   const suppressClickRef = useRef(false)
+  const srButtonRef = useRef<HTMLButtonElement>(null)
 
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
@@ -58,6 +59,7 @@ export function LongPressMenu({
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    startRef.current = null
     setPressing(false)
   }, [])
 
@@ -79,7 +81,7 @@ export function LongPressMenu({
     setOpen(false)
     setRect(null)
     setPos(null)
-    wrapperRef.current?.focus?.()
+    srButtonRef.current?.focus()
   }, [])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -141,6 +143,7 @@ export function LongPressMenu({
   }, [open, close])
 
   const onMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Tab') { e.preventDefault(); close(); return }
     const items = Array.from(
       menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not([disabled])') ?? [],
     )
@@ -148,7 +151,7 @@ export function LongPressMenu({
     const idx = items.indexOf(document.activeElement as HTMLButtonElement)
     if (e.key === 'ArrowDown') { e.preventDefault(); items[(idx + 1) % items.length].focus() }
     if (e.key === 'ArrowUp') { e.preventDefault(); items[(idx - 1 + items.length) % items.length].focus() }
-  }, [])
+  }, [close])
 
   async function runAction(a: LongPressAction) {
     close()
@@ -156,13 +159,13 @@ export function LongPressMenu({
   }
 
   const overlay = open && rect ? (
-    <div role="presentation"
+    <motion.div key="lpm-overlay" role="presentation"
       className="fixed inset-0 z-[60]"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.16 }}
       onClick={close}
       onContextMenu={(e) => { e.preventDefault(); close() }}>
-      <motion.div className="absolute inset-0 bg-black/55"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        transition={{ duration: 0.16 }} />
+      <div className="absolute inset-0 bg-black/55" />
 
       <motion.div
         ref={liftRef}
@@ -174,6 +177,7 @@ export function LongPressMenu({
 
       <motion.div
         ref={menuRef}
+        key={pos?.placement ?? 'pending'}
         role="menu"
         id={menuId}
         aria-label={label}
@@ -206,7 +210,7 @@ export function LongPressMenu({
           )
         })}
       </motion.div>
-    </div>
+    </motion.div>
   ) : null
 
   return (
@@ -231,6 +235,7 @@ export function LongPressMenu({
             pressing ? 'w-full' : 'w-0',
           )} />
         <button
+          ref={srButtonRef}
           data-lpm-clone-hide
           type="button"
           aria-haspopup="menu"
