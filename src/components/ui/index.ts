@@ -11,3 +11,4 @@ export * from "./navigation-menu";
 export * from "./select";
 export * from "./tabs";
 export * from "./table";
+export { LongPressMenu, type LongPressAction } from './long-press-menu'
