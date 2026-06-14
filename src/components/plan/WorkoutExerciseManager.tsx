@@ -88,9 +88,10 @@ function PrescriptionFields({ row }: { row?: PlanWorkoutExerciseRow }) {
 }
 
 export function WorkoutExerciseManager({
-  planId, exercises, exerciseOptions,
+  planId, workoutId, exercises, exerciseOptions,
 }: {
   planId: string
+  workoutId: string
   exercises: PlanWorkoutExerciseRow[]
   exerciseOptions: PlanExerciseOption[]
 }) {
@@ -106,13 +107,14 @@ export function WorkoutExerciseManager({
 
   function persistOrder(next: PlanWorkoutExerciseRow[]) {
     const ids = next.map(r => r.id)
-    startTransition(() => { void reorderWorkoutExercises(planId, next[0]?.workout_id ?? '', ids) })
+    startTransition(() => { void reorderWorkoutExercises(planId, workoutId, ids) })
   }
 
   function removeRow(row: PlanWorkoutExerciseRow) {
     const fd = new FormData()
     fd.set('planId', planId)
     fd.set('workoutExerciseId', row.id)
+    setOrder(prev => prev.filter(r => r.id !== row.id))
     startTransition(() => { void removeWorkoutExercise(fd) })
   }
 
@@ -224,7 +226,7 @@ function ExerciseRow({
       <LongPressMenu actions={actions} label={`${exercise?.name ?? 'Ejercicio'}`}>
         <div className="flex items-start gap-2 rounded-xl border border-border/40 bg-background/50 p-3.5">
           <button type="button" aria-label="Arrastrar para reordenar"
-            onPointerDown={(e) => dragControls.start(e)}
+            onPointerDown={(e) => { e.stopPropagation(); dragControls.start(e) }}
             className="mt-0.5 shrink-0 cursor-grab touch-none text-muted-foreground/60 hover:text-foreground active:cursor-grabbing">
             <GripVertical className="h-5 w-5" />
           </button>

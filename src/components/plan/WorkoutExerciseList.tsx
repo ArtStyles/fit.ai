@@ -64,7 +64,7 @@ export function WorkoutExerciseList({
 
   return (
     <div className="mt-4">
-      <WorkoutExerciseManager planId={planId} exercises={exercises} exerciseOptions={exerciseOptions} />
+      <WorkoutExerciseManager planId={planId} workoutId={workoutId} exercises={exercises} exerciseOptions={exerciseOptions} />
 
       <details className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
         <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-violet-200">
