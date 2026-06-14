@@ -47,7 +47,6 @@ export function LongPressMenu({
   const liftRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startRef = useRef<{ x: number; y: number } | null>(null)
-  const suppressClickRef = useRef(false)
   const srButtonRef = useRef<HTMLButtonElement>(null)
 
   const [mounted, setMounted] = useState(false)
@@ -85,7 +84,6 @@ export function LongPressMenu({
     setRect({ top: r.top, left: r.left, width: r.width, height: r.height })
     setPos(null)
     setOpen(true)
-    suppressClickRef.current = true
     setShowHint(false)
     void hapticImpact('medium')
     if (typeof window !== 'undefined' && !localStorage.getItem(HINT_KEY)) {
@@ -120,13 +118,6 @@ export function LongPressMenu({
     clearTimer()
     openMenu()
   }, [disabled, clearTimer, openMenu])
-
-  const onClickCapture = useCallback((e: React.MouseEvent) => {
-    if (suppressClickRef.current) {
-      e.preventDefault(); e.stopPropagation()
-      suppressClickRef.current = false
-    }
-  }, [])
 
   useLayoutEffect(() => {
     if (!open || !rect || !menuRef.current) return
@@ -179,8 +170,8 @@ export function LongPressMenu({
       className="fixed inset-0 z-[60]"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.16 }}
-      onClick={close}
-      onContextMenu={(e) => { e.preventDefault(); close() }}>
+      onPointerDown={close}
+      onContextMenu={(e) => e.preventDefault()}>
       <div className="absolute inset-0 bg-black/55" />
 
       <motion.div
@@ -188,8 +179,7 @@ export function LongPressMenu({
         className="absolute origin-center rounded-2xl"
         style={{ top: rect.top, left: rect.left, width: rect.width }}
         initial={{ scale: 1 }} animate={{ scale: 1.03 }}
-        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        onClick={(e) => { e.stopPropagation(); close() }} />
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
 
       <motion.div
         ref={menuRef}
@@ -198,6 +188,7 @@ export function LongPressMenu({
         id={menuId}
         aria-label={label}
         onKeyDown={onMenuKeyDown}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         className="absolute flex flex-col gap-0.5 rounded-2xl border border-white/10 bg-popover/95 p-1.5 shadow-xl backdrop-blur-md"
         style={{
@@ -234,15 +225,14 @@ export function LongPressMenu({
       <div
         ref={wrapperRef}
         tabIndex={-1}
-        className={cn('relative outline-none', pressing && 'scale-[0.975] transition-transform', className)}
-        style={{ touchAction: 'pan-y' }}
+        className={cn('relative select-none outline-none', pressing && 'scale-[0.975] transition-transform', className)}
+        style={{ touchAction: 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={clearTimer}
         onPointerLeave={clearTimer}
         onPointerCancel={clearTimer}
-        onContextMenu={onContextMenu}
-        onClickCapture={onClickCapture}>
+        onContextMenu={onContextMenu}>
         {children}
         <span
           data-lpm-clone-hide
