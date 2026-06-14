@@ -18,6 +18,7 @@ import {
   type ConversationRow,
   type MessageRow,
 } from '@/app/actions/chat'
+import { LongPressMenu, type LongPressAction } from '@/components/ui'
 import { MessageBubble } from './MessageBubble'
 import { ChatInputBar } from './ChatInputBar'
 
@@ -298,29 +299,27 @@ function ConversationItem({
   const label = conversation.context ? CONTEXT_LABELS[conversation.context] : 'General'
   const date  = new Date(conversation.updated_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
 
+  const actions: LongPressAction[] = [
+    { id: 'delete', label: 'Eliminar', icon: Trash2, variant: 'danger', onSelect: onDelete },
+  ]
+
   return (
-    <li className="group flex items-center gap-3 rounded-xl border border-border/40 bg-muted/10 p-3.5 transition-colors hover:border-violet-500/30 hover:bg-violet-500/5">
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex min-w-0 flex-1 items-center gap-3 text-left"
-      >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400">
-          <MessageSquare className="h-4 w-4" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-white">{conversation.title}</p>
-          <p className="text-xs text-muted-foreground/70">{label} · {date}</p>
-        </div>
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-red-500/10 hover:text-red-400"
-        aria-label="Eliminar conversación"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+    <li>
+      <LongPressMenu actions={actions} label={conversation.title}>
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-border/40 bg-muted/10 p-3.5 text-left transition-colors hover:border-violet-500/30 hover:bg-violet-500/5"
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400">
+            <MessageSquare className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-white">{conversation.title}</p>
+            <p className="text-xs text-muted-foreground/70">{label} · {date}</p>
+          </div>
+        </button>
+      </LongPressMenu>
     </li>
   )
 }
