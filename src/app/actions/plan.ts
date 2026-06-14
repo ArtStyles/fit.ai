@@ -400,7 +400,7 @@ export async function reorderWorkoutExercises(
     return { success: false }
   }
 
-  await Promise.all(
+  const updates = await Promise.all(
     orderedIdsToUpdates(orderedIds).map(u =>
       (supabase.from('workout_exercises') as any)
         .update({ order_index: u.order_index })
@@ -408,6 +408,8 @@ export async function reorderWorkoutExercises(
         .eq('workout_id', workoutId),
     ),
   )
+
+  if (updates.some(result => result.error)) return { success: false }
 
   await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(workoutId)
