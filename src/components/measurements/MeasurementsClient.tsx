@@ -406,7 +406,7 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
       </main>
 
       {/* Form dialog */}
-      <Dialog open={formState.open} onOpenChange={(o) => setFormState(s => ({ ...s, open: o }))}>
+      <Dialog open={formState.open} onOpenChange={(o) => { if (!o) setFormState({ open: false }) }}>
         <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="text-base text-white">
@@ -447,7 +447,7 @@ function HistoryRow({
     <li>
       <LongPressMenu actions={actions} label={`Medida del ${fmtDate(row.recorded_at)}`}>
         <div className="rounded-xl border border-border/40 bg-white/5 p-3.5">
-          <button type="button" onClick={() => setExpanded(v => !v)} className="flex w-full min-w-0 items-center gap-3 text-left">
+          <button type="button" onClick={() => setExpanded(v => !v)} aria-expanded={expanded} className="flex w-full min-w-0 items-center gap-3 text-left">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium text-white">{fmtDate(row.recorded_at)}</p>
