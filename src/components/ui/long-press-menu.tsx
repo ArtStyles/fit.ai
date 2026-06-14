@@ -5,7 +5,7 @@ import {
   useCallback, useEffect, useId, useLayoutEffect, useRef, useState,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { LucideIcon } from 'lucide-react'
+import { Hand, type LucideIcon } from 'lucide-react'
 import { hapticImpact } from '@/lib/native/haptics'
 import { cn } from '@/lib/utils'
 import { computeMenuPosition, movedBeyondTolerance, type Rect } from './long-press-menu.logic'
@@ -14,6 +14,9 @@ const HINT_KEY = 'fitai:lpm-hint-seen'
 const HOLD_MS = 400
 const MOVE_TOLERANCE = 10
 const MENU_WIDTH = 224
+
+// Solo una instancia muestra el tip por sesión, aunque haya muchas listas montadas.
+let hintClaimed = false
 
 export type LongPressAction = {
   id: string
@@ -52,10 +55,22 @@ export function LongPressMenu({
   const [rect, setRect] = useState<Rect | null>(null)
   const [pos, setPos] = useState<Position | null>(null)
   const [pressing, setPressing] = useState(false)
+  const [showHint, setShowHint] = useState(false)
 
   const menuId = useId()
 
   useEffect(() => { setMounted(true) }, [])
+
+  // Pista de descubrimiento la primera vez (una sola vez, persistida en localStorage).
+  useEffect(() => {
+    if (typeof window === 'undefined' || hintClaimed) return
+    if (localStorage.getItem(HINT_KEY)) return
+    hintClaimed = true
+    localStorage.setItem(HINT_KEY, '1')
+    setShowHint(true)
+    const t = setTimeout(() => setShowHint(false), 4500)
+    return () => clearTimeout(t)
+  }, [])
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
@@ -71,6 +86,7 @@ export function LongPressMenu({
     setPos(null)
     setOpen(true)
     suppressClickRef.current = true
+    setShowHint(false)
     void hapticImpact('medium')
     if (typeof window !== 'undefined' && !localStorage.getItem(HINT_KEY)) {
       localStorage.setItem(HINT_KEY, '1')
@@ -247,6 +263,25 @@ export function LongPressMenu({
       </div>
 
       {mounted && createPortal(<AnimatePresence>{overlay}</AnimatePresence>, document.body)}
+
+      {mounted && createPortal(
+        <AnimatePresence>
+          {showHint && (
+            <motion.div
+              className="pointer-events-none fixed inset-x-0 bottom-24 z-[55] flex justify-center px-4"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.2 }}>
+              <span className="flex items-center gap-2 rounded-full border border-violet-500/30 bg-popover/95 px-4 py-2 text-xs font-medium text-violet-200 shadow-lg backdrop-blur">
+                <Hand className="h-3.5 w-3.5" />
+                Mantén pulsado para más opciones
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </>
   )
 }
