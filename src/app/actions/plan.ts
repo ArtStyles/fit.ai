@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { orderedIdsToUpdates } from './plan.logic'
 
 function asNullableString(value: FormDataEntryValue | null): string | null {
   const text = typeof value === 'string' ? value.trim() : ''
@@ -376,4 +377,39 @@ export async function moveWorkoutExercise(formData: FormData) {
   await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(row.workout_id)
   redirect('/plan?notice=exercise_moved')
+}
+
+export async function reorderWorkoutExercises(
+  planId: string,
+  workoutId: string,
+  orderedIds: string[],
+): Promise<{ success: boolean }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false }
+
+  const workout = await getOwnedWorkout(supabase, workoutId, user.id)
+  if (!workout || workout.plan_id !== planId) return { success: false }
+
+  const { data } = await (supabase.from('workout_exercises') as any)
+    .select('id')
+    .eq('workout_id', workoutId)
+
+  const owned = new Set(((data ?? []) as { id: string }[]).map(r => r.id))
+  if (orderedIds.length !== owned.size || !orderedIds.every(id => owned.has(id))) {
+    return { success: false }
+  }
+
+  await Promise.all(
+    orderedIdsToUpdates(orderedIds).map(u =>
+      (supabase.from('workout_exercises') as any)
+        .update({ order_index: u.order_index })
+        .eq('id', u.id)
+        .eq('workout_id', workoutId),
+    ),
+  )
+
+  await touchManualPlan(supabase, planId, user.id)
+  revalidatePlanSurfaces(workoutId)
+  return { success: true }
 }
