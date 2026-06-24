@@ -1204,23 +1204,34 @@ export async function clonePlanFromPost(postId: string): Promise<ActionResult<{ 
     }
   if (planErr || !plan) return { ok: false, error: 'No se pudo crear el plan.' }
 
+  const planId = plan.id
+  const userId = user.id
+
+  // Limpieza compensatoria si una inserción falla a medio clonar: evita planes huérfanos.
+  // workouts.plan_id es ON DELETE SET NULL, así que borramos los workouts explícitamente
+  // (cascada a workout_exercises) y luego el plan.
+  async function rollback(): Promise<void> {
+    await (supabase.from('workouts') as any).delete().eq('plan_id', planId).eq('user_id', userId)
+    await (supabase.from('workout_plans') as any).delete().eq('id', planId).eq('user_id', userId)
+  }
+
   for (let i = 0; i < snapshot.workouts.length; i++) {
     const sw = snapshot.workouts[i]
     const { data: w, error: wErr } = await (supabase.from('workouts') as any)
-      .insert(buildWorkoutInsert(sw, plan.id, user.id, i)).select('id').single() as {
+      .insert(buildWorkoutInsert(sw, planId, userId, i)).select('id').single() as {
         data: { id: string } | null; error: unknown
       }
-    if (wErr || !w) return { ok: false, error: 'No se pudo clonar un día.' }
+    if (wErr || !w) { await rollback(); return { ok: false, error: 'No se pudo clonar un día.' } }
 
     const exInserts = buildWorkoutExerciseInserts(sw, w.id)
     if (exInserts.length) {
       const { error: exErr } = await (supabase.from('workout_exercises') as any).insert(exInserts)
-      if (exErr) return { ok: false, error: 'No se pudieron clonar los ejercicios.' }
+      if (exErr) { await rollback(); return { ok: false, error: 'No se pudieron clonar los ejercicios.' } }
     }
   }
 
   revalidatePath('/plan')
-  return { ok: true, planId: plan.id }
+  return { ok: true, planId }
 }
 ```
 
