@@ -63,6 +63,10 @@ CREATE TABLE user_blocks (
   CONSTRAINT no_self_block CHECK (blocker_id <> blocked_id)
 );
 
+-- Índice para la dirección inversa del predicado de bloqueo (la PK cubre
+-- blocker_id; esto cubre blocked_id, usado en cada política de visibilidad).
+CREATE INDEX idx_user_blocks_blocked ON user_blocks(blocked_id, blocker_id);
+
 -- ─── CONTADORES (triggers) ────────────────────────────────
 CREATE OR REPLACE FUNCTION bump_post_like_count()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$

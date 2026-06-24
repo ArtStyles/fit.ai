@@ -28,12 +28,27 @@ CREATE POLICY "posts: delete own" ON posts
 -- LIKES: lectura autenticada; escritura/borrado propio
 CREATE POLICY "post_likes: read" ON post_likes
   FOR SELECT TO authenticated USING (true);
+-- INSERT valida también que el post sea visible (no removido y sin bloqueo mutuo),
+-- porque las políticas SELECT de 'posts' no restringen los INSERT de otras tablas.
 CREATE POLICY "post_likes: insert own" ON post_likes
-  FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+  FOR INSERT TO authenticated WITH CHECK (
+    auth.uid() = user_id
+    AND EXISTS (
+      SELECT 1 FROM posts p
+      WHERE p.id = post_likes.post_id
+        AND p.removed_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM user_blocks b
+          WHERE (b.blocker_id = auth.uid() AND b.blocked_id = p.user_id)
+             OR (b.blocker_id = p.user_id AND b.blocked_id = auth.uid())
+        )
+    )
+  );
 CREATE POLICY "post_likes: delete own" ON post_likes
   FOR DELETE TO authenticated USING (auth.uid() = user_id);
 
 -- COMENTARIOS: lectura visible (sin removidos ni bloqueos); escritura/borrado propio
+-- Nota: removed_at (moderación) se fija solo desde Server Actions con service-role (bypass RLS).
 CREATE POLICY "post_comments: read visible" ON post_comments
   FOR SELECT TO authenticated
   USING (
@@ -45,7 +60,19 @@ CREATE POLICY "post_comments: read visible" ON post_comments
     )
   );
 CREATE POLICY "post_comments: insert own" ON post_comments
-  FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+  FOR INSERT TO authenticated WITH CHECK (
+    auth.uid() = user_id
+    AND EXISTS (
+      SELECT 1 FROM posts p
+      WHERE p.id = post_comments.post_id
+        AND p.removed_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM user_blocks b
+          WHERE (b.blocker_id = auth.uid() AND b.blocked_id = p.user_id)
+             OR (b.blocker_id = p.user_id AND b.blocked_id = auth.uid())
+        )
+    )
+  );
 CREATE POLICY "post_comments: delete own" ON post_comments
   FOR DELETE TO authenticated USING (auth.uid() = user_id);
 
@@ -59,6 +86,10 @@ CREATE POLICY "user_blocks: own" ON user_blocks
   USING (auth.uid() = blocker_id) WITH CHECK (auth.uid() = blocker_id);
 
 -- VISTA: perfiles públicos (solo columnas no sensibles)
+-- Vista con seguridad de propietario (NO security_invoker): es intencional. Expone
+-- solo 4 columnas no sensibles a cualquier autenticado, manteniendo el RLS solo-dueño
+-- de 'profiles' para el resto de columnas (peso, altura, etc.). No ampliar la lista
+-- de columnas sin revisar privacidad.
 CREATE VIEW public_profiles AS
   SELECT id, username, full_name, avatar_url FROM profiles;
 GRANT SELECT ON public_profiles TO authenticated;
