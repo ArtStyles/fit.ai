@@ -19,8 +19,16 @@ export function LikeButton({ postId, initialLiked, initialCount }: {
     setCount(c => c + (next ? 1 : -1))
     startTransition(async () => {
       const res = await toggleLike(postId)
-      if (!res.ok) { setLiked(!next); setCount(c => c + (next ? -1 : 1)) }
-      else if (res.liked !== next) { setLiked(res.liked); }
+      if (!res.ok) {
+        setLiked(!next)
+        setCount(c => c + (next ? -1 : 1))
+      } else if (res.liked !== next) {
+        // El servidor terminó en un estado distinto al optimista (p.ej. desync entre
+        // pestañas): reconcilia el like y corrige el contador quitando el delta optimista
+        // y aplicando el real.
+        setLiked(res.liked)
+        setCount(c => c + (res.liked ? 1 : -1) - (next ? 1 : -1))
+      }
     })
   }
 

@@ -8,18 +8,22 @@ import { blockUser } from '@/app/actions/moderation'
 import { deletePost } from '@/app/actions/posts'
 import { ReportDialog } from './ReportDialog'
 import { useToast } from '@/components/feedback/ToastProvider'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 
 export function PostMenu({ postId, authorId, isMine }: {
   postId: string; authorId: string; isMine: boolean
 }) {
-  const [open, setOpen] = useState(false)
   const [report, setReport] = useState(false)
   const [, startTransition] = useTransition()
   const router = useRouter()
   const { showToast } = useToast()
 
   function onBlock() {
-    setOpen(false)
     startTransition(async () => {
       const res = await blockUser(authorId)
       showToast({ title: res.ok ? 'Usuario bloqueado.' : res.error, variant: res.ok ? 'success' : 'error' })
@@ -27,7 +31,6 @@ export function PostMenu({ postId, authorId, isMine }: {
     })
   }
   function onDelete() {
-    setOpen(false)
     startTransition(async () => {
       const res = await deletePost(postId)
       showToast({ title: res.ok ? 'Publicación eliminada.' : res.error, variant: res.ok ? 'success' : 'error' })
@@ -37,28 +40,36 @@ export function PostMenu({ postId, authorId, isMine }: {
 
   return (
     <div className="relative">
-      <button type="button" aria-label="Más opciones" onClick={() => setOpen(o => !o)}
-        className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-white/5">
-        <MoreHorizontal className="h-5 w-5" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-10 z-40 w-44 overflow-hidden rounded-xl border border-border bg-background py-1 text-sm shadow-lg">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Más opciones"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-white/5"
+          >
+            <MoreHorizontal className="h-5 w-5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
           {isMine ? (
-            <button onClick={onDelete} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-red-400 hover:bg-white/5">
+            <DropdownMenuItem
+              onSelect={onDelete}
+              className="gap-2 text-red-400 focus:text-red-400"
+            >
               <Trash2 className="h-4 w-4" /> Eliminar
-            </button>
+            </DropdownMenuItem>
           ) : (
             <>
-              <button onClick={() => { setOpen(false); setReport(true) }} className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-white/5">
+              <DropdownMenuItem onSelect={() => setReport(true)} className="gap-2">
                 <Flag className="h-4 w-4" /> Reportar
-              </button>
-              <button onClick={onBlock} className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-white/5">
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onBlock} className="gap-2">
                 <Ban className="h-4 w-4" /> Bloquear usuario
-              </button>
+              </DropdownMenuItem>
             </>
           )}
-        </div>
-      )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {report && <ReportDialog postId={postId} onClose={() => setReport(false)} />}
     </div>
   )
