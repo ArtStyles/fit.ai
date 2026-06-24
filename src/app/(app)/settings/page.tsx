@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 export const metadata = { title: 'Ajustes · FitAI' }
 
 const SECTIONS = [
+  { href: '/settings/perfil',         label: 'Perfil',           icon: UserRound },
   { href: '/settings/datos',          label: 'Datos personales', icon: UserRound },
   { href: '/settings/entrenamiento',  label: 'Entrenamiento',    icon: Dumbbell  },
   { href: '/medidas',                 label: 'Medidas',          icon: Ruler     },

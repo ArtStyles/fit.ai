@@ -89,3 +89,21 @@ export async function updateTrainingSettings(formData: FormData) {
   revalidatePath('/plan')
   redirect('/settings/entrenamiento?notice=settings_saved')
 }
+
+// Perfil (/settings/perfil): solo el nombre (la foto va por su propia acción).
+export async function updateProfileName(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login?error=auth_required')
+
+  const { error } = await (supabase
+    .from('profiles') as any)
+    .update({ full_name: nullableText(formData, 'fullName') })
+    .eq('id', user.id)
+
+  if (error) redirect('/settings/perfil?error=save_failed')
+
+  revalidatePath('/settings/perfil')
+  revalidatePath('/dashboard')
+  redirect('/settings/perfil?notice=settings_saved')
+}
