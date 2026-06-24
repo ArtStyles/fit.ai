@@ -491,6 +491,68 @@ export interface Database {
         Relationships: []
       }
 
+      // ─── social (migration 019/020) ────────────────────────────────────────
+
+      posts: {
+        Row: {
+          id: string
+          user_id: string
+          body: string | null
+          photo_urls: string[]
+          session_snapshot: Json | null
+          routine_snapshot: Json | null
+          like_count: number
+          comment_count: number
+          removed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          body?: string | null
+          photo_urls?: string[]
+          session_snapshot?: Json | null
+          routine_snapshot?: Json | null
+          like_count?: number
+          comment_count?: number
+          removed_at?: string | null
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['posts']['Insert']>
+        Relationships: []
+      }
+      post_likes: {
+        Row: { post_id: string; user_id: string; created_at: string }
+        Insert: { post_id: string; user_id: string; created_at?: string }
+        Update: Partial<{ post_id: string; user_id: string; created_at: string }>
+        Relationships: []
+      }
+      post_comments: {
+        Row: { id: string; post_id: string; user_id: string; body: string; removed_at: string | null; created_at: string }
+        Insert: { id?: string; post_id: string; user_id: string; body: string; removed_at?: string | null; created_at?: string }
+        Update: Partial<{ id: string; post_id: string; user_id: string; body: string; removed_at: string | null; created_at: string }>
+        Relationships: []
+      }
+      post_reports: {
+        Row: { id: string; post_id: string | null; comment_id: string | null; reporter_id: string; reason: string; created_at: string }
+        Insert: { id?: string; post_id?: string | null; comment_id?: string | null; reporter_id: string; reason: string; created_at?: string }
+        Update: Partial<{ id: string; post_id: string | null; comment_id: string | null; reporter_id: string; reason: string; created_at: string }>
+        Relationships: []
+      }
+      user_blocks: {
+        Row: { blocker_id: string; blocked_id: string; created_at: string }
+        Insert: { blocker_id: string; blocked_id: string; created_at?: string }
+        Update: Partial<{ blocker_id: string; blocked_id: string; created_at: string }>
+        Relationships: []
+      }
+      // Vista de solo lectura (se trata como tabla para tipado de queries):
+      public_profiles: {
+        Row: { id: string; username: string | null; full_name: string | null; avatar_url: string | null }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+
     }
 
     Views: {
