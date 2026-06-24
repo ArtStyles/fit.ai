@@ -37,6 +37,20 @@ describe('buildSessionSnapshot', () => {
     expect(snap.exercises[0].sets).toEqual([])
     expect(snap.exercises[0].is_pr).toBe(false)
   })
+
+  it('tolera arrays desiguales (más reps que pesos): peso faltante = null, volumen sin él', () => {
+    const snap = buildSessionSnapshot(
+      { completed_at: '2026-06-24T18:00:00Z', duration_minutes: 45 },
+      'Push A',
+      [{ exercise_id: 'e1', reps_completed: [8, 8], weights_kg: [80] }], // solo la 1ª serie pondera
+      names,
+    )
+    expect(snap.exercises[0].sets).toEqual([
+      { reps: 8, weight_kg: 80 },
+      { reps: 8, weight_kg: null },
+    ])
+    expect(snap.total_volume_kg).toBe(640) // 80*8 + 0*8
+  })
 })
 
 describe('buildRoutineSnapshot', () => {
