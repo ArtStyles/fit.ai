@@ -31,7 +31,7 @@ function csvList(formData: FormData, key: string): string[] {
     .filter(Boolean)
 }
 
-// Datos personales (/settings/perfil): solo escribe sus columnas para no
+// Datos personales (/settings/datos): solo escribe sus columnas para no
 // pisar el resto del perfil al guardar desde una página separada.
 export async function updatePersonalData(formData: FormData) {
   const supabase = await createClient()
@@ -41,7 +41,6 @@ export async function updatePersonalData(formData: FormData) {
   const { error } = await (supabase
     .from('profiles') as any)
     .update({
-      full_name: nullableText(formData, 'fullName'),
       height_cm: nullableNumber(formData, 'heightCm'),
       weight_kg: nullableNumber(formData, 'weightKg'),
       date_of_birth: nullableText(formData, 'dateOfBirth'),
@@ -50,11 +49,11 @@ export async function updatePersonalData(formData: FormData) {
     })
     .eq('id', user.id)
 
-  if (error) redirect('/settings/perfil?error=save_failed')
+  if (error) redirect('/settings/datos?error=save_failed')
 
-  revalidatePath('/settings/perfil')
+  revalidatePath('/settings/datos')
   revalidatePath('/dashboard')
-  redirect('/settings/perfil?notice=settings_saved')
+  redirect('/settings/datos?notice=settings_saved')
 }
 
 // Entrenamiento (/settings/entrenamiento): objetivos, disponibilidad y equipo.

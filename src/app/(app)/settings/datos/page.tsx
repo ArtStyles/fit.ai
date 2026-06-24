@@ -8,7 +8,6 @@ import { updatePersonalData } from '@/app/actions/settings'
 export const metadata = { title: 'Datos personales · FitAI' }
 
 type PersonalProfile = {
-  full_name: string | null
   height_cm: number | null
   weight_kg: number | null
   date_of_birth: string | null
@@ -20,7 +19,7 @@ export default async function PersonalDataPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, height_cm, weight_kg, date_of_birth, gender')
+    .select('height_cm, weight_kg, date_of_birth, gender')
     .eq('id', user.id)
     .single() as unknown as { data: PersonalProfile | null }
 
@@ -34,15 +33,6 @@ export default async function PersonalDataPage() {
       <form action={updatePersonalData} className="space-y-6">
         <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
           <div className="space-y-3">
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Nombre</span>
-              <input
-                name="fullName"
-                defaultValue={profile?.full_name ?? ''}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-              />
-            </label>
-
             <div className="grid grid-cols-2 gap-3">
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-muted-foreground">Altura cm</span>

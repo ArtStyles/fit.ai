@@ -1,4 +1,4 @@
-import { BellRing, ChevronRight, Dumbbell, UserCog, UserRound } from 'lucide-react'
+import { BellRing, ChevronRight, Dumbbell, Ruler, UserCog, UserRound } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -7,8 +7,9 @@ import { cn } from '@/lib/utils'
 export const metadata = { title: 'Ajustes · FitAI' }
 
 const SECTIONS = [
-  { href: '/settings/perfil',         label: 'Datos personales', icon: UserRound },
+  { href: '/settings/datos',          label: 'Datos personales', icon: UserRound },
   { href: '/settings/entrenamiento',  label: 'Entrenamiento',    icon: Dumbbell  },
+  { href: '/medidas',                 label: 'Medidas',          icon: Ruler     },
   { href: '/settings/notificaciones', label: 'Notificaciones',   icon: BellRing  },
   { href: '/settings/cuenta',         label: 'Cuenta',           icon: UserCog   },
 ]

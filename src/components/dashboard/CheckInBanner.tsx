@@ -22,7 +22,7 @@ export function CheckInBanner() {
           </p>
           <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
             <PendingLink
-              href="/settings/perfil"
+              href="/settings/datos"
               className="inline-flex items-center gap-0.5 text-xs font-semibold text-sky-400 hover:text-sky-300"
             >
               Datos personales
