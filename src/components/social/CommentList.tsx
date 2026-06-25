@@ -6,10 +6,12 @@ import { Trash2 } from 'lucide-react'
 import type { PostCommentView } from '@/lib/social/types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { deleteComment } from '@/app/actions/engagement'
+import { useToast } from '@/components/feedback/ToastProvider'
 
 export function CommentList({ comments, postId }: { comments: PostCommentView[]; postId: string }) {
-  const [, startTransition] = useTransition()
+  const [pending, startTransition] = useTransition()
   const router = useRouter()
+  const { showToast } = useToast()
 
   if (!comments.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sé el primero en comentar.</p>
@@ -19,6 +21,7 @@ export function CommentList({ comments, postId }: { comments: PostCommentView[];
     startTransition(async () => {
       const res = await deleteComment(id, postId)
       if (res.ok) router.refresh()
+      else showToast({ title: res.error, variant: 'error' })
     })
   }
 
@@ -37,7 +40,12 @@ export function CommentList({ comments, postId }: { comments: PostCommentView[];
               <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{c.body}</p>
             </div>
             {c.is_mine && (
-              <button onClick={() => remove(c.id)} aria-label="Eliminar comentario" className="text-muted-foreground hover:text-red-400">
+              <button
+                onClick={() => remove(c.id)}
+                aria-label="Eliminar comentario"
+                disabled={pending}
+                className="text-muted-foreground hover:text-red-400 disabled:opacity-50"
+              >
                 <Trash2 className="h-4 w-4" />
               </button>
             )}
