@@ -69,7 +69,7 @@ CREATE INDEX idx_user_blocks_blocked ON user_blocks(blocked_id, blocker_id);
 
 -- ─── CONTADORES (triggers) ────────────────────────────────
 CREATE OR REPLACE FUNCTION bump_post_like_count()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   IF (TG_OP = 'INSERT') THEN
     UPDATE posts SET like_count = like_count + 1 WHERE id = NEW.post_id;
@@ -84,7 +84,7 @@ CREATE TRIGGER trg_post_likes_count
   FOR EACH ROW EXECUTE FUNCTION bump_post_like_count();
 
 CREATE OR REPLACE FUNCTION bump_post_comment_count()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   IF (TG_OP = 'INSERT') THEN
     UPDATE posts SET comment_count = comment_count + 1 WHERE id = NEW.post_id;

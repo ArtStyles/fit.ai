@@ -137,7 +137,7 @@ CREATE INDEX idx_user_blocks_blocked ON user_blocks(blocked_id, blocker_id);
 
 -- ─── CONTADORES (triggers) ────────────────────────────────
 CREATE OR REPLACE FUNCTION bump_post_like_count()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   IF (TG_OP = 'INSERT') THEN
     UPDATE posts SET like_count = like_count + 1 WHERE id = NEW.post_id;
@@ -152,7 +152,7 @@ CREATE TRIGGER trg_post_likes_count
   FOR EACH ROW EXECUTE FUNCTION bump_post_like_count();
 
 CREATE OR REPLACE FUNCTION bump_post_comment_count()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
   IF (TG_OP = 'INSERT') THEN
     UPDATE posts SET comment_count = comment_count + 1 WHERE id = NEW.post_id;
@@ -218,8 +218,10 @@ CREATE POLICY "posts: read visible" ON posts
   );
 CREATE POLICY "posts: insert own" ON posts
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "posts: update own" ON posts
-  FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+-- (Sin política UPDATE para 'authenticated': no hay edición de posts en Fase 1.
+--  Los contadores los actualiza un trigger SECURITY DEFINER (bypassa RLS) y
+--  removed_at (moderación) se fija solo desde service-role. Así un autor no puede
+--  des-ocultar su propio post moderado.)
 CREATE POLICY "posts: delete own" ON posts
   FOR DELETE TO authenticated USING (auth.uid() = user_id);
 

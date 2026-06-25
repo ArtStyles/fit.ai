@@ -20,8 +20,10 @@ CREATE POLICY "posts: read visible" ON posts
   );
 CREATE POLICY "posts: insert own" ON posts
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "posts: update own" ON posts
-  FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+-- (Sin política UPDATE para 'authenticated': no hay edición de posts en Fase 1.
+--  Los contadores los actualiza un trigger SECURITY DEFINER (bypassa RLS) y
+--  removed_at (moderación) se fija solo desde service-role. Así un autor no puede
+--  des-ocultar su propio post moderado.)
 CREATE POLICY "posts: delete own" ON posts
   FOR DELETE TO authenticated USING (auth.uid() = user_id);
 
