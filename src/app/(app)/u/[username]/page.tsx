@@ -1,11 +1,12 @@
 import { notFound } from 'next/navigation'
-import { getUserPosts } from '@/app/actions/feed'
+import { getProfile } from '@/app/actions/feed'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { PostCard } from '@/components/social/PostCard'
+import { FollowButton } from '@/components/social/FollowButton'
 
 export default async function PublicProfilePage({ params }: { params: { username: string } }) {
   const { username } = params
-  const { author, posts } = await getUserPosts(username)
+  const { author, posts, followerCount, followingCount, isFollowing, isMe } = await getProfile(username)
   if (!author) notFound()
 
   const name = author.full_name || author.username || 'Usuario'
@@ -21,7 +22,12 @@ export default async function PublicProfilePage({ params }: { params: { username
           <h1 className="text-xl font-bold">{name}</h1>
           {author.username && <p className="text-sm text-muted-foreground">@{author.username}</p>}
         </div>
-        <p className="text-sm text-muted-foreground">{posts.length} publicaciones</p>
+        <div className="flex gap-6 text-sm">
+          <span><strong>{posts.length}</strong> <span className="text-muted-foreground">publicaciones</span></span>
+          <span><strong>{followerCount}</strong> <span className="text-muted-foreground">seguidores</span></span>
+          <span><strong>{followingCount}</strong> <span className="text-muted-foreground">siguiendo</span></span>
+        </div>
+        {!isMe && <FollowButton targetId={author.id} initialFollowing={isFollowing} />}
       </header>
       {posts.length === 0
         ? <p className="px-4 py-16 text-center text-sm text-muted-foreground">Sin publicaciones todavía.</p>
