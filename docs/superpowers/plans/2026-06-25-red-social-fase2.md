@@ -245,6 +245,10 @@ export async function getProfile(username: string): Promise<{
   const liked = await loadMyLikes(supabase, user.id, page.map(r => r.id))
   const posts = page.map(r => toFeedPost(r, authors, liked, user.id))
 
+  // Contadores globales y públicos del perfil (no se filtran por bloqueo): el nº de
+  // seguidores de un usuario es un dato público, mientras que la lista de posts sí la
+  // filtra el RLS de 'posts' según bloqueos. La diferencia solo es visible entre pares
+  // bloqueados y es intencional.
   const { count: followerCount } = await (supabase.from('follows') as any)
     .select('*', { count: 'exact', head: true }).eq('following_id', author.id) as { count: number | null }
   const { count: followingCount } = await (supabase.from('follows') as any)
@@ -508,9 +512,14 @@ export function FeedTabs({ discover, following }: { discover: FeedPage; followin
 
   return (
     <div>
-      <div className="flex border-b border-border/40">
+      <div className="flex border-b border-border/40" role="tablist" aria-label="Feeds">
         <button
           onClick={() => setTab('descubrir')}
+          role="tab"
+          aria-selected={tab === 'descubrir'}
+          id="tab-descubrir"
+          aria-controls="panel-descubrir"
+          tabIndex={tab === 'descubrir' ? 0 : -1}
           className={cn('h-11 flex-1 text-sm font-medium transition-colors',
             tab === 'descubrir' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}
         >
@@ -518,6 +527,11 @@ export function FeedTabs({ discover, following }: { discover: FeedPage; followin
         </button>
         <button
           onClick={() => setTab('siguiendo')}
+          role="tab"
+          aria-selected={tab === 'siguiendo'}
+          id="tab-siguiendo"
+          aria-controls="panel-siguiendo"
+          tabIndex={tab === 'siguiendo' ? 0 : -1}
           className={cn('h-11 flex-1 text-sm font-medium transition-colors',
             tab === 'siguiendo' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}
         >
@@ -525,24 +539,26 @@ export function FeedTabs({ discover, following }: { discover: FeedPage; followin
         </button>
       </div>
 
-      {tab === 'descubrir' ? (
-        <PostFeed key="descubrir" initialPosts={discover.posts} initialCursor={discover.nextCursor} fetchPage={getDiscoverFeed} />
-      ) : (
-        <PostFeed
-          key="siguiendo"
-          initialPosts={following.posts}
-          initialCursor={following.nextCursor}
-          fetchPage={getFollowingFeed}
-          emptyMessage={
-            <div className="px-4 py-16 text-center text-sm text-muted-foreground">
-              <p>Sigue a gente para ver sus rutinas aquí.</p>
-              <button onClick={() => setTab('descubrir')} className="mt-3 font-medium text-primary">
-                Explorar Descubrir
-              </button>
-            </div>
-          }
-        />
-      )}
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === 'descubrir' ? (
+          <PostFeed key="descubrir" initialPosts={discover.posts} initialCursor={discover.nextCursor} fetchPage={getDiscoverFeed} />
+        ) : (
+          <PostFeed
+            key="siguiendo"
+            initialPosts={following.posts}
+            initialCursor={following.nextCursor}
+            fetchPage={getFollowingFeed}
+            emptyMessage={
+              <div className="px-4 py-16 text-center text-sm text-muted-foreground">
+                <p>Sigue a gente para ver sus rutinas aquí.</p>
+                <button onClick={() => setTab('descubrir')} className="mt-3 font-medium text-primary">
+                  Explorar Descubrir
+                </button>
+              </div>
+            }
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -558,6 +574,9 @@ import { getDiscoverFeed, getFollowingFeed } from '@/app/actions/feed'
 import { FeedTabs } from '@/components/social/FeedTabs'
 
 export default async function FeedPage() {
+  // Cargamos ambos feeds en paralelo (latencia = máx, no suma). getFollowingFeed es
+  // barato si no sigues a nadie, y precargarlo hace que cambiar a la pestaña Siguiendo
+  // sea instantáneo (sin flash de carga). Decisión deliberada para Fase 2.
   const [discover, following] = await Promise.all([getDiscoverFeed(), getFollowingFeed()])
 
   return (

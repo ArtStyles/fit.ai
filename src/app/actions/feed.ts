@@ -165,6 +165,10 @@ export async function getProfile(username: string): Promise<{
   const liked = await loadMyLikes(supabase, user.id, page.map(r => r.id))
   const posts = page.map(r => toFeedPost(r, authors, liked, user.id))
 
+  // Contadores globales y públicos del perfil (no se filtran por bloqueo): el nº de
+  // seguidores de un usuario es un dato público, mientras que la lista de posts sí la
+  // filtra el RLS de 'posts' según bloqueos. La diferencia solo es visible entre pares
+  // bloqueados y es intencional.
   const { count: followerCount } = await (supabase.from('follows') as any)
     .select('*', { count: 'exact', head: true }).eq('following_id', author.id) as { count: number | null }
   const { count: followingCount } = await (supabase.from('follows') as any)

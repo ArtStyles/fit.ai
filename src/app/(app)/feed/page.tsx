@@ -4,6 +4,9 @@ import { getDiscoverFeed, getFollowingFeed } from '@/app/actions/feed'
 import { FeedTabs } from '@/components/social/FeedTabs'
 
 export default async function FeedPage() {
+  // Cargamos ambos feeds en paralelo (latencia = máx, no suma). getFollowingFeed es
+  // barato si no sigues a nadie, y precargarlo hace que cambiar a la pestaña Siguiendo
+  // sea instantáneo (sin flash de carga). Decisión deliberada para Fase 2.
   const [discover, following] = await Promise.all([getDiscoverFeed(), getFollowingFeed()])
 
   return (
