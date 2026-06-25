@@ -3,6 +3,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import type { ActionResult } from './posts'
 
 export interface ReportInput {
@@ -39,6 +40,13 @@ export async function blockUser(blockedId: string): Promise<ActionResult> {
   const { error } = await (supabase.from('user_blocks') as any)
     .upsert({ blocker_id: user.id, blocked_id: blockedId })
   if (error) return { ok: false, error: 'No se pudo bloquear.' }
+
+  // Bloquear implica auto-unfollow en ambos sentidos. La dirección bloqueado→yo
+  // no se puede borrar con el cliente de usuario (RLS solo permite follower propio),
+  // así que se usa service-role.
+  const service = createServiceClient()
+  await (service.from('follows') as any).delete().eq('follower_id', user.id).eq('following_id', blockedId)
+  await (service.from('follows') as any).delete().eq('follower_id', blockedId).eq('following_id', user.id)
 
   revalidatePath('/feed')
   return { ok: true }
