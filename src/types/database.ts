@@ -552,6 +552,12 @@ export interface Database {
         Update: never
         Relationships: []
       }
+      follows: {
+        Row: { follower_id: string; following_id: string; created_at: string }
+        Insert: { follower_id: string; following_id: string; created_at?: string }
+        Update: Partial<{ follower_id: string; following_id: string; created_at: string }>
+        Relationships: []
+      }
 
     }
 
