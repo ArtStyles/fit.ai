@@ -5,11 +5,11 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { buildSessionSnapshot } from '@/lib/social/snapshots'
+import { buildSessionSnapshot, buildRoutineSnapshot } from '@/lib/social/snapshots'
 import {
   buildPlanInsert, buildWorkoutInsert, buildWorkoutExerciseInserts,
 } from '@/lib/social/clone'
-import type { RoutineSnapshot, SessionSnapshot } from '@/lib/social/snapshots'
+import type { RoutineSnapshot, RoutineSnapshotExercise, SessionSnapshot } from '@/lib/social/snapshots'
 import { postStoragePath } from '@/lib/images/post'
 
 const BUCKET = 'posts'
@@ -117,6 +117,78 @@ export async function createPostFromSession(
     session_snapshot: snapshot,
   })
   if (error) return { ok: false, error: 'No se pudo compartir la sesión.' }
+
+  revalidatePath('/feed')
+  return { ok: true, id: postId }
+}
+
+// Comparte una rutina/plan propio: construye el routine_snapshot desde el plan del usuario.
+export async function createPostFromPlan(
+  planId: string,
+  body?: string,
+): Promise<ActionResult<{ id: string }>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sesión no válida.' }
+
+  const { data: plan } = await (supabase.from('workout_plans') as any)
+    .select('id, name, goal, days_per_week, difficulty')
+    .eq('id', planId)
+    .eq('user_id', user.id)
+    .maybeSingle() as {
+      data: { id: string; name: string; goal: string | null; days_per_week: number | null; difficulty: string | null } | null
+    }
+  if (!plan) return { ok: false, error: 'Rutina no encontrada.' }
+
+  const { data: workouts } = await (supabase.from('workouts') as any)
+    .select('id, name, day_of_week, order_in_plan')
+    .eq('plan_id', planId)
+    .eq('user_id', user.id) as {
+      data: { id: string; name: string; day_of_week: number | null; order_in_plan: number | null }[] | null
+    }
+  const wks = workouts ?? []
+
+  const exercisesByWorkout = new Map<string, RoutineSnapshotExercise[]>()
+  if (wks.length) {
+    const { data: wexs } = await (supabase.from('workout_exercises') as any)
+      .select('workout_id, exercise_id, order_index, sets, reps, rest_seconds, weight_kg')
+      .in('workout_id', wks.map(w => w.id)) as {
+        data: {
+          workout_id: string; exercise_id: string; order_index: number
+          sets: number | null; reps: number | null; rest_seconds: number | null; weight_kg: number | null
+        }[] | null
+      }
+    const rows = wexs ?? []
+    const exIds = Array.from(new Set(rows.map(r => r.exercise_id)))
+    const names = new Map<string, string>()
+    if (exIds.length) {
+      const { data: exs } = await (supabase.from('exercises') as any)
+        .select('id, name').in('id', exIds) as { data: { id: string; name: string }[] | null }
+      for (const e of exs ?? []) names.set(e.id, e.name)
+    }
+    for (const r of rows) {
+      const list = exercisesByWorkout.get(r.workout_id) ?? []
+      list.push({
+        exercise_id: r.exercise_id,
+        name: names.get(r.exercise_id) ?? 'Ejercicio',
+        order_index: r.order_index,
+        sets: r.sets, reps: r.reps, rest_seconds: r.rest_seconds, weight_kg: r.weight_kg,
+      })
+      exercisesByWorkout.set(r.workout_id, list)
+    }
+  }
+
+  const snapshot = buildRoutineSnapshot(plan, wks, exercisesByWorkout)
+
+  const service = createServiceClient()
+  const postId = randomUUID()
+  const { error } = await (service.from('posts') as any).insert({
+    id: postId,
+    user_id: user.id,
+    body: (body?.trim()) || null,
+    routine_snapshot: snapshot,
+  })
+  if (error) return { ok: false, error: 'No se pudo compartir la rutina.' }
 
   revalidatePath('/feed')
   return { ok: true, id: postId }

@@ -4,6 +4,7 @@ import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
 import { WorkoutAdjustButton } from '@/components/plan/WorkoutAdjustButton'
+import { ShareRoutineButton } from '@/components/social/ShareRoutineButton'
 import {
   WorkoutExerciseList,
   type PlanExerciseOption,
@@ -241,6 +242,10 @@ export default async function PlanPage() {
                 Historial
               </PendingLink>
             </Button>
+          </div>
+
+          <div className="mt-2">
+            <ShareRoutineButton planId={planRaw.id} />
           </div>
         </header>
 

@@ -2617,6 +2617,156 @@ git commit -m "test(social): verificación de suite y checklist RLS de Fase 1"
 
 ---
 
+## Task 24: Compartir rutina (createPostFromPlan + ShareRoutineButton)
+
+**Contexto:** la revisión final detectó que `buildRoutineSnapshot` (Task 5) era código muerto — nada construía un post con `routine_snapshot` a partir de un plan propio, así que "Clonar rutina" (Task 10/19) era inalcanzable salvo desde el compositor manual. Esta tarea añade el camino simétrico a `createPostFromSession` + `ShareSessionButton` (Task 22), pero para rutinas.
+
+**Files:**
+- Modify: `src/app/actions/posts.ts` (nueva acción `createPostFromPlan`)
+- Create: `src/components/social/ShareRoutineButton.tsx`
+- Modify: `src/app/(app)/plan/page.tsx` (botón en la cabecera del plan activo)
+
+- [ ] **Step 1: Server Action `createPostFromPlan`**
+
+En `src/app/actions/posts.ts`, ampliar el import de `@/lib/social/snapshots` con `buildRoutineSnapshot` y el tipo `RoutineSnapshotExercise`, y añadir (junto a `createPostFromSession`):
+
+```ts
+// Comparte una rutina/plan propio: construye el routine_snapshot desde el plan del usuario.
+export async function createPostFromPlan(
+  planId: string,
+  body?: string,
+): Promise<ActionResult<{ id: string }>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sesión no válida.' }
+
+  const { data: plan } = await (supabase.from('workout_plans') as any)
+    .select('id, name, goal, days_per_week, difficulty')
+    .eq('id', planId)
+    .eq('user_id', user.id)
+    .maybeSingle() as {
+      data: { id: string; name: string; goal: string | null; days_per_week: number | null; difficulty: string | null } | null
+    }
+  if (!plan) return { ok: false, error: 'Rutina no encontrada.' }
+
+  const { data: workouts } = await (supabase.from('workouts') as any)
+    .select('id, name, day_of_week, order_in_plan')
+    .eq('plan_id', planId)
+    .eq('user_id', user.id) as {
+      data: { id: string; name: string; day_of_week: number | null; order_in_plan: number | null }[] | null
+    }
+  const wks = workouts ?? []
+
+  const exercisesByWorkout = new Map<string, RoutineSnapshotExercise[]>()
+  if (wks.length) {
+    const { data: wexs } = await (supabase.from('workout_exercises') as any)
+      .select('workout_id, exercise_id, order_index, sets, reps, rest_seconds, weight_kg')
+      .in('workout_id', wks.map(w => w.id)) as {
+        data: {
+          workout_id: string; exercise_id: string; order_index: number
+          sets: number | null; reps: number | null; rest_seconds: number | null; weight_kg: number | null
+        }[] | null
+      }
+    const rows = wexs ?? []
+    const exIds = Array.from(new Set(rows.map(r => r.exercise_id)))
+    const names = new Map<string, string>()
+    if (exIds.length) {
+      const { data: exs } = await (supabase.from('exercises') as any)
+        .select('id, name').in('id', exIds) as { data: { id: string; name: string }[] | null }
+      for (const e of exs ?? []) names.set(e.id, e.name)
+    }
+    for (const r of rows) {
+      const list = exercisesByWorkout.get(r.workout_id) ?? []
+      list.push({
+        exercise_id: r.exercise_id,
+        name: names.get(r.exercise_id) ?? 'Ejercicio',
+        order_index: r.order_index,
+        sets: r.sets, reps: r.reps, rest_seconds: r.rest_seconds, weight_kg: r.weight_kg,
+      })
+      exercisesByWorkout.set(r.workout_id, list)
+    }
+  }
+
+  const snapshot = buildRoutineSnapshot(plan, wks, exercisesByWorkout)
+
+  const service = createServiceClient()
+  const postId = randomUUID()
+  const { error } = await (service.from('posts') as any).insert({
+    id: postId,
+    user_id: user.id,
+    body: (body?.trim()) || null,
+    routine_snapshot: snapshot,
+  })
+  if (error) return { ok: false, error: 'No se pudo compartir la rutina.' }
+
+  revalidatePath('/feed')
+  return { ok: true, id: postId }
+}
+```
+
+- [ ] **Step 2: `ShareRoutineButton.tsx`**
+
+Mismo patrón que `ShareSessionButton.tsx` (Task 22), cambiando `progressLogId` → `planId` y `createPostFromSession` → `createPostFromPlan`:
+
+```tsx
+'use client'
+
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { Share2, Loader2 } from 'lucide-react'
+import { createPostFromPlan } from '@/app/actions/posts'
+import { useToast } from '@/components/feedback/ToastProvider'
+
+export function ShareRoutineButton({ planId }: { planId: string }) {
+  const [pending, startTransition] = useTransition()
+  const [done, setDone] = useState(false)
+  const router = useRouter()
+  const { showToast } = useToast()
+
+  function share() {
+    startTransition(async () => {
+      const res = await createPostFromPlan(planId)
+      if (res.ok) { setDone(true); showToast({ title: 'Rutina compartida en Comunidad.', variant: 'success' }); router.push(`/post/${res.id}`) }
+      else showToast({ title: res.error, variant: 'error' })
+    })
+  }
+
+  return (
+    <button onClick={share} disabled={pending || done}
+      className="inline-flex h-11 items-center gap-2 rounded-lg border border-border px-4 text-sm font-medium disabled:opacity-60">
+      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+      {done ? 'Compartida' : 'Compartir rutina'}
+    </button>
+  )
+}
+```
+
+- [ ] **Step 3: Wiring en `src/app/(app)/plan/page.tsx`**
+
+El plan activo se carga como `planRaw` (`workout_plans` filtrado por `user_id` + `is_active = true`), con `planRaw.id` disponible. Si no hay plan activo, la página retorna antes (pantalla "No encontramos un plan activo") y el botón no se renderiza — solo aplica cuando hay rutina que compartir.
+
+Se importó `ShareRoutineButton` y se renderizó en la cabecera (`<header>`), debajo de la grilla `PlanRegenerateButton` / "Historial":
+
+```tsx
+<div className="mt-2">
+  <ShareRoutineButton planId={planRaw.id} />
+</div>
+```
+
+- [ ] **Step 4: Verificar tipos y tests**
+
+Run: `pnpm type-check && pnpm test`
+Expected: type-check PASS; 171 tests PASS (sin tests nuevos — la acción reutiliza `buildRoutineSnapshot`, ya cubierto en `src/lib/social/__tests__/snapshots.test.ts`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/app/actions/posts.ts src/components/social/ShareRoutineButton.tsx "src/app/(app)/plan/page.tsx" docs/superpowers/plans/2026-06-24-red-social-fase1.md
+git commit -m "feat(social): publicar rutina propia a la comunidad (createPostFromPlan)"
+```
+
+---
+
 ## Self-Review (cobertura del spec)
 
 - Modelo de datos (posts/likes/comments/reports/blocks + snapshots) → Tasks 1, 4, 5.
@@ -2624,7 +2774,7 @@ git commit -m "test(social): verificación de suite y checklist RLS de Fase 1"
 - Bucket de fotos → Task 3; helpers → Task 8; subida → Task 10.
 - Snapshots de sesión/rutina → Task 5; clonado → Task 6, 10.
 - Feed Descubrir + keyset → Tasks 7, 13, 17.
-- Server Actions (crear/compartir/eliminar/clonar/like/comentar/reportar/bloquear) → Tasks 10–13.
+- Server Actions (crear/compartir/eliminar/clonar/like/comentar/reportar/bloquear) → Tasks 10–13, 24.
 - UI (PostCard, tarjetas, like, menú, reporte, compositor, comentarios, perfil) → Tasks 14–20, 22.
 - Moderación (reportar/bloquear/ocultar/borrar propio) → Tasks 12, 15.
 - Navegación → Task 21.
