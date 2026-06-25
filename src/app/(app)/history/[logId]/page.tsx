@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 
@@ -261,6 +262,10 @@ export default async function HistoryDetailPage({ params }: PageProps) {
                 {skippedCount} saltado{skippedCount === 1 ? '' : 's'}
               </Badge>
             )}
+          </div>
+
+          <div className="mt-4">
+            <ShareSessionButton progressLogId={params.logId} />
           </div>
         </header>
 
