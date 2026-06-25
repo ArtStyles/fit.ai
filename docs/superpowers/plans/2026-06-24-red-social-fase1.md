@@ -2054,8 +2054,13 @@ export function DiscoverFeed({ initialPosts, initialCursor }: {
   return (
     <div>
       {posts.map(p => <PostCard key={p.id} post={p} />)}
-      <div ref={sentinel} className="flex h-12 items-center justify-center">
-        {loading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+      <div ref={sentinel} aria-live="polite" className="flex h-12 items-center justify-center">
+        {loading && (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="sr-only">Cargando más publicaciones</span>
+          </>
+        )}
       </div>
     </div>
   )
@@ -2114,7 +2119,7 @@ git commit -m "feat(social): feed Descubrir con scroll infinito y ruta /feed"
 // src/components/social/PostComposer.tsx
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ImagePlus, Loader2, X } from 'lucide-react'
 import { createPost } from '@/app/actions/posts'
@@ -2129,21 +2134,29 @@ export function PostComposer() {
   const router = useRouter()
   const { showToast } = useToast()
 
+  // Genera las miniaturas a partir de los archivos y revoca las URLs al cambiar
+  // o al desmontar (evita fugas de blob URLs). Mismo patrón que AvatarUploader.
+  useEffect(() => {
+    const urls = files.map(f => URL.createObjectURL(f))
+    setPreviews(urls)
+    return () => urls.forEach(u => URL.revokeObjectURL(u))
+  }, [files])
+
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files ?? [])
+    const valid: File[] = []
+    let rejected = false
     for (const f of picked) {
-      const v = validatePostImage(f.type, f.size)
-      if (!v.ok) { showToast({ title: v.error, variant: 'error' }); return }
+      if (validatePostImage(f.type, f.size).ok) valid.push(f)
+      else rejected = true
     }
-    const next = [...files, ...picked].slice(0, MAX_POST_IMAGES)
-    setFiles(next)
-    setPreviews(next.map(f => URL.createObjectURL(f)))
+    if (rejected) showToast({ title: 'Alguna imagen no es válida o supera 8 MB.', variant: 'error' })
+    if (valid.length) setFiles(prev => [...prev, ...valid].slice(0, MAX_POST_IMAGES))
+    e.target.value = ''
   }
 
   function removeAt(i: number) {
-    const next = files.filter((_, idx) => idx !== i)
-    setFiles(next)
-    setPreviews(next.map(f => URL.createObjectURL(f)))
+    setFiles(prev => prev.filter((_, idx) => idx !== i))
   }
 
   function submit() {
@@ -2151,16 +2164,20 @@ export function PostComposer() {
       showToast({ title: 'Escribe algo o añade una foto.', variant: 'error' }); return
     }
     startTransition(async () => {
-      const fd = new FormData()
-      fd.set('body', body)
-      for (const f of files) {
-        const { blob, contentType } = await resizePostImage(f)
-        const ext = contentType === 'image/webp' ? 'webp' : 'jpg'
-        fd.append('file', new File([blob], `photo.${ext}`, { type: contentType }))
+      try {
+        const fd = new FormData()
+        fd.set('body', body)
+        for (const f of files) {
+          const { blob, contentType } = await resizePostImage(f)
+          const ext = contentType === 'image/webp' ? 'webp' : 'jpg'
+          fd.append('file', new File([blob], `photo.${ext}`, { type: contentType }))
+        }
+        const res = await createPost(fd)
+        if (res.ok) { showToast({ title: 'Publicado.', variant: 'success' }); router.push('/feed'); router.refresh() }
+        else showToast({ title: res.error, variant: 'error' })
+      } catch {
+        showToast({ title: 'No se pudo procesar una imagen. Inténtalo de nuevo.', variant: 'error' })
       }
-      const res = await createPost(fd)
-      if (res.ok) { showToast({ title: 'Publicado.', variant: 'success' }); router.push('/feed'); router.refresh() }
-      else showToast({ title: res.error, variant: 'error' })
     })
   }
 
@@ -2170,6 +2187,7 @@ export function PostComposer() {
         value={body}
         onChange={e => setBody(e.target.value)}
         placeholder="¿Qué quieres compartir con la comunidad?"
+        aria-label="Contenido de la publicación"
         className="h-32 w-full rounded-xl border border-border bg-card/40 p-3 text-sm"
       />
       {previews.length > 0 && (

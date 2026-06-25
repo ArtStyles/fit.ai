@@ -39,8 +39,13 @@ export function DiscoverFeed({ initialPosts, initialCursor }: {
   return (
     <div>
       {posts.map(p => <PostCard key={p.id} post={p} />)}
-      <div ref={sentinel} className="flex h-12 items-center justify-center">
-        {loading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+      <div ref={sentinel} aria-live="polite" className="flex h-12 items-center justify-center">
+        {loading && (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="sr-only">Cargando más publicaciones</span>
+          </>
+        )}
       </div>
     </div>
   )
