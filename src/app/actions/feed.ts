@@ -98,25 +98,94 @@ export async function getDiscoverFeed(cursorToken?: string | null): Promise<Feed
   return { posts, nextCursor }
 }
 
-export async function getUserPosts(username: string): Promise<{ author: PostAuthor | null; posts: FeedPost[] }> {
+export async function getFollowingFeed(cursorToken?: string | null): Promise<FeedPage> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { author: null, posts: [] }
+  if (!user) return { posts: [], nextCursor: null }
+
+  const { data: followRows } = await (supabase.from('follows') as any)
+    .select('following_id').eq('follower_id', user.id) as {
+      data: { following_id: string }[] | null
+    }
+  const followingIds = (followRows ?? []).map(f => f.following_id)
+  if (followingIds.length === 0) return { posts: [], nextCursor: null }
+
+  const cursor = decodeCursor(cursorToken)
+  let query = (supabase.from('posts') as any)
+    .select(POST_COLS)
+    .in('user_id', followingIds)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(FEED_PAGE_SIZE + 1)
+
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+    )
+  }
+
+  const { data: rows } = await query as { data: PostRow[] | null }
+  const page = rows ?? []
+  const hasMore = page.length > FEED_PAGE_SIZE
+  const visible = hasMore ? page.slice(0, FEED_PAGE_SIZE) : page
+
+  const authors = await loadAuthors(supabase, visible.map(r => r.user_id))
+  const liked = await loadMyLikes(supabase, user.id, visible.map(r => r.id))
+  const posts = visible.map(r => toFeedPost(r, authors, liked, user.id))
+
+  const last = visible[visible.length - 1]
+  const nextCursor = hasMore && last ? encodeCursor({ createdAt: last.created_at, id: last.id }) : null
+  return { posts, nextCursor }
+}
+
+export async function getProfile(username: string): Promise<{
+  author: PostAuthor | null
+  posts: FeedPost[]
+  followerCount: number
+  followingCount: number
+  isFollowing: boolean
+  isMe: boolean
+}> {
+  const empty = { author: null, posts: [], followerCount: 0, followingCount: 0, isFollowing: false, isMe: false }
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return empty
 
   const { data: author } = await (supabase.from('public_profiles') as any)
     .select('id, username, full_name, avatar_url').eq('username', username).maybeSingle() as {
       data: PostAuthor | null
     }
-  if (!author) return { author: null, posts: [] }
+  if (!author) return empty
 
   const { data: rows } = await (supabase.from('posts') as any)
     .select(POST_COLS).eq('user_id', author.id)
     .order('created_at', { ascending: false }).limit(60) as { data: PostRow[] | null }
   const page = rows ?? []
-
   const authors = new Map([[author.id, author]])
   const liked = await loadMyLikes(supabase, user.id, page.map(r => r.id))
-  return { author, posts: page.map(r => toFeedPost(r, authors, liked, user.id)) }
+  const posts = page.map(r => toFeedPost(r, authors, liked, user.id))
+
+  const { count: followerCount } = await (supabase.from('follows') as any)
+    .select('*', { count: 'exact', head: true }).eq('following_id', author.id) as { count: number | null }
+  const { count: followingCount } = await (supabase.from('follows') as any)
+    .select('*', { count: 'exact', head: true }).eq('follower_id', author.id) as { count: number | null }
+
+  const isMe = author.id === user.id
+  let isFollowing = false
+  if (!isMe) {
+    const { data: rel } = await (supabase.from('follows') as any)
+      .select('following_id').eq('follower_id', user.id).eq('following_id', author.id).maybeSingle() as {
+        data: { following_id: string } | null
+      }
+    isFollowing = !!rel
+  }
+
+  return {
+    author, posts,
+    followerCount: followerCount ?? 0,
+    followingCount: followingCount ?? 0,
+    isFollowing, isMe,
+  }
 }
 
 export async function getPostDetail(postId: string): Promise<PostDetail | null> {
