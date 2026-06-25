@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { usePathname } from 'next/navigation'
-import { BarChart2, CalendarDays, Home, Settings } from 'lucide-react'
+import { BarChart2, CalendarDays, Home, Settings, Users } from 'lucide-react'
 import { PendingLink } from './PendingLink'
 import { cn } from '@/lib/utils'
 
@@ -16,10 +16,11 @@ type Tab = {
 }
 
 const TABS: Tab[] = [
-  { href: '/dashboard', label: 'Inicio',    icon: Home         },
-  { href: '/plan',      label: 'Plan',      icon: CalendarDays },
-  { href: '/settings',  label: 'Ajustes',   icon: Settings     },
-  { href: '/history',   label: 'Historial', icon: BarChart2    },
+  { href: '/dashboard', label: 'Inicio',     icon: Home         },
+  { href: '/plan',      label: 'Plan',       icon: CalendarDays },
+  { href: '/feed',      label: 'Comunidad',  icon: Users        },
+  { href: '/settings',  label: 'Ajustes',    icon: Settings     },
+  { href: '/history',   label: 'Historial',  icon: BarChart2    },
 ]
 
 export function BottomNav() {
