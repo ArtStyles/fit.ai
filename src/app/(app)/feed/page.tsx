@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { PlusCircle } from 'lucide-react'
-import { getDiscoverFeed } from '@/app/actions/feed'
-import { DiscoverFeed } from '@/components/social/DiscoverFeed'
+import { getDiscoverFeed, getFollowingFeed } from '@/app/actions/feed'
+import { FeedTabs } from '@/components/social/FeedTabs'
 
 export default async function FeedPage() {
-  const { posts, nextCursor } = await getDiscoverFeed()
+  const [discover, following] = await Promise.all([getDiscoverFeed(), getFollowingFeed()])
 
   return (
     <div className="mx-auto max-w-lg pb-24">
@@ -14,7 +14,7 @@ export default async function FeedPage() {
           <PlusCircle className="h-5 w-5" /> Publicar
         </Link>
       </header>
-      <DiscoverFeed initialPosts={posts} initialCursor={nextCursor} />
+      <FeedTabs discover={discover} following={following} />
     </div>
   )
 }
