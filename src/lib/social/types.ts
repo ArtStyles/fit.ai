@@ -40,3 +40,5 @@ export interface PostDetail {
   post: FeedPost
   comments: PostCommentView[]
 }
+
+export type SuggestedUser = PostAuthor & { isFollowing: boolean }
