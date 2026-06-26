@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DevModeBanner } from '@/components/DevModeBanner'
@@ -10,6 +11,7 @@ interface Props {
   firstName:     string
   avatarUrl:     string | null
   momentumScore: number
+  username:      string | null
 }
 
 // ─── Momentum chip ────────────────────────────────────────────────────────────
@@ -24,7 +26,7 @@ function getMomentumStyle(score: number) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function DashboardHeader({ greeting, firstName, avatarUrl, momentumScore }: Props) {
+export function DashboardHeader({ greeting, firstName, avatarUrl, momentumScore, username }: Props) {
   const initials = firstName.slice(0, 2).toUpperCase()
   const momentum = getMomentumStyle(momentumScore)
 
@@ -34,7 +36,13 @@ export function DashboardHeader({ greeting, firstName, avatarUrl, momentumScore 
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-normal text-muted-foreground">{greeting},</p>
-        <p className="truncate text-xl font-semibold leading-tight text-foreground">{firstName}</p>
+        {username ? (
+          <Link href={`/u/${username}`} className="truncate text-xl font-semibold leading-tight text-foreground hover:underline">
+            {firstName}
+          </Link>
+        ) : (
+          <p className="truncate text-xl font-semibold leading-tight text-foreground">{firstName}</p>
+        )}
 
         <div className="mt-1.5 flex items-center gap-1.5">
           <span className={cn(
