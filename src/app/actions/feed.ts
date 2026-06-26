@@ -104,7 +104,7 @@ export async function getFollowingFeed(cursorToken?: string | null): Promise<Fee
   if (!user) return { posts: [], nextCursor: null }
 
   const { data: followRows } = await (supabase.from('follows') as any)
-    .select('following_id').eq('follower_id', user.id) as {
+    .select('following_id').eq('follower_id', user.id).eq('status', 'accepted') as {
       data: { following_id: string }[] | null
     }
   const followingIds = (followRows ?? []).map(f => f.following_id)
@@ -141,54 +141,71 @@ export async function getFollowingFeed(cursorToken?: string | null): Promise<Fee
 export async function getProfile(username: string): Promise<{
   author: PostAuthor | null
   posts: FeedPost[]
+  postCount: number
   followerCount: number
   followingCount: number
-  isFollowing: boolean
+  followState: import('@/lib/social/follow').FollowState
+  isPrivate: boolean
+  canViewPosts: boolean
   isMe: boolean
 }> {
-  const empty = { author: null, posts: [], followerCount: 0, followingCount: 0, isFollowing: false, isMe: false }
+  const empty = {
+    author: null, posts: [], postCount: 0, followerCount: 0, followingCount: 0,
+    followState: 'follow' as import('@/lib/social/follow').FollowState,
+    isPrivate: false, canViewPosts: false, isMe: false,
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return empty
 
   const { data: author } = await (supabase.from('public_profiles') as any)
-    .select('id, username, full_name, avatar_url').eq('username', username).maybeSingle() as {
-      data: PostAuthor | null
+    .select('id, username, full_name, avatar_url, is_private, post_count').eq('username', username).maybeSingle() as {
+      data: (PostAuthor & { is_private: boolean; post_count: number }) | null
     }
   if (!author) return empty
 
-  const { data: rows } = await (supabase.from('posts') as any)
-    .select(POST_COLS).eq('user_id', author.id)
-    .order('created_at', { ascending: false }).limit(60) as { data: PostRow[] | null }
-  const page = rows ?? []
-  const authors = new Map([[author.id, author]])
-  const liked = await loadMyLikes(supabase, user.id, page.map(r => r.id))
-  const posts = page.map(r => toFeedPost(r, authors, liked, user.id))
-
-  // Contadores globales y públicos del perfil (no se filtran por bloqueo): el nº de
-  // seguidores de un usuario es un dato público, mientras que la lista de posts sí la
-  // filtra el RLS de 'posts' según bloqueos. La diferencia solo es visible entre pares
-  // bloqueados y es intencional.
-  const { count: followerCount } = await (supabase.from('follows') as any)
-    .select('*', { count: 'exact', head: true }).eq('following_id', author.id) as { count: number | null }
-  const { count: followingCount } = await (supabase.from('follows') as any)
-    .select('*', { count: 'exact', head: true }).eq('follower_id', author.id) as { count: number | null }
-
   const isMe = author.id === user.id
-  let isFollowing = false
+  const isPrivate = author.is_private
+
+  // estado de seguimiento del visitante hacia el autor
+  let status: 'none' | 'pending' | 'accepted' = 'none'
   if (!isMe) {
     const { data: rel } = await (supabase.from('follows') as any)
-      .select('following_id').eq('follower_id', user.id).eq('following_id', author.id).maybeSingle() as {
-        data: { following_id: string } | null
+      .select('status').eq('follower_id', user.id).eq('following_id', author.id).maybeSingle() as {
+        data: { status: 'pending' | 'accepted' } | null
       }
-    isFollowing = !!rel
+    if (rel) status = rel.status
+  }
+  const { followButtonState } = await import('@/lib/social/follow')
+  const followState = followButtonState({ isPrivate, status })
+
+  const canViewPosts = !isPrivate || isMe || status === 'accepted'
+
+  let posts: FeedPost[] = []
+  if (canViewPosts) {
+    const { data: rows } = await (supabase.from('posts') as any)
+      .select(POST_COLS).eq('user_id', author.id)
+      .order('created_at', { ascending: false }).limit(60) as { data: PostRow[] | null }
+    const page = rows ?? []
+    const authors = new Map([[author.id, { id: author.id, username: author.username, full_name: author.full_name, avatar_url: author.avatar_url }]])
+    const liked = await loadMyLikes(supabase, user.id, page.map(r => r.id))
+    posts = page.map(r => toFeedPost(r, authors, liked, user.id))
   }
 
+  const { count: followerCount } = await (supabase.from('follows') as any)
+    .select('*', { count: 'exact', head: true }).eq('following_id', author.id).eq('status', 'accepted') as { count: number | null }
+  const { count: followingCount } = await (supabase.from('follows') as any)
+    .select('*', { count: 'exact', head: true }).eq('follower_id', author.id).eq('status', 'accepted') as { count: number | null }
+
+  const authorPublic: PostAuthor = {
+    id: author.id, username: author.username, full_name: author.full_name, avatar_url: author.avatar_url,
+  }
   return {
-    author, posts,
+    author: authorPublic, posts,
+    postCount: author.post_count,
     followerCount: followerCount ?? 0,
     followingCount: followingCount ?? 0,
-    isFollowing, isMe,
+    followState, isPrivate, canViewPosts, isMe,
   }
 }
 
