@@ -39,6 +39,8 @@ export interface Database {
           onboarding_done: boolean
           timezone: string | null                    // migration 016 — IANA, null = zona de la app
           last_check_in_at: string | null            // migration 017 — último check-in de perfil
+          is_private: boolean                        // migration 024 — cuenta privada
+          post_count: number                          // migration 024 — contador de posts (trigger)
           created_at: string
           updated_at: string
         }
@@ -62,6 +64,8 @@ export interface Database {
           onboarding_done?: boolean
           timezone?: string | null
           last_check_in_at?: string | null
+          is_private?: boolean
+          post_count?: number
         }
         Update: {
           username?: string | null
@@ -547,15 +551,15 @@ export interface Database {
       }
       // Vista de solo lectura (se trata como tabla para tipado de queries):
       public_profiles: {
-        Row: { id: string; username: string | null; full_name: string | null; avatar_url: string | null }
+        Row: { id: string; username: string | null; full_name: string | null; avatar_url: string | null; is_private: boolean; post_count: number }
         Insert: never
         Update: never
         Relationships: []
       }
       follows: {
-        Row: { follower_id: string; following_id: string; created_at: string }
-        Insert: { follower_id: string; following_id: string; created_at?: string }
-        Update: Partial<{ follower_id: string; following_id: string; created_at: string }>
+        Row: { follower_id: string; following_id: string; status: 'accepted' | 'pending'; created_at: string }
+        Insert: { follower_id: string; following_id: string; status?: 'accepted' | 'pending'; created_at?: string }
+        Update: Partial<{ follower_id: string; following_id: string; status: 'accepted' | 'pending'; created_at: string }>
         Relationships: []
       }
 
