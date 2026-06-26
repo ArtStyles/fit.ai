@@ -3,21 +3,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, Dumbbell } from 'lucide-react'
+import { ArrowLeft, Check, Dumbbell, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { saveOnboardingAnswers } from './actions'
 import { generatePlan, type GeneratePlanResult } from '@/app/actions/generatePlan'
 import { type OnboardingAnswers, defaultAnswers } from './types'
+import { checkUsernameAvailable, updateUsername } from '@/app/actions/username'
+import { validateUsername } from '@/lib/social/username'
 
 // ─── Step sequence ────────────────────────────────────────────────────────────
 
 type StepKey =
-  | 'goal' | 'level' | 'days' | 'duration'
+  | 'username' | 'goal' | 'level' | 'days' | 'duration'
   | 'location' | 'equipment' | 'injuries' | 'physical'
   | 'generating'
 
 function buildSteps(answers: OnboardingAnswers): StepKey[] {
-  const base: StepKey[] = ['goal', 'level', 'days', 'duration', 'location']
+  const base: StepKey[] = ['username', 'goal', 'level', 'days', 'duration', 'location']
   if (answers.gym_type === 'home_basic' || answers.gym_type === 'full_gym') {
     base.push('equipment')
   }
@@ -156,6 +158,71 @@ function StepShell({
 }
 
 // ─── Steps ────────────────────────────────────────────────────────────────────
+
+function Step0Username({ onNext, onBack, isFirst }: StepProps) {
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [available, setAvailable] = useState<boolean | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const reqId = useRef(0)
+
+  useEffect(() => {
+    setAvailable(null)
+    const v = validateUsername(value)
+    if (!v.ok) { setError(value ? v.error : null); setChecking(false); return }
+    setError(null)
+    setChecking(true)
+    const id = ++reqId.current
+    const t = setTimeout(async () => {
+      const res = await checkUsernameAvailable(v.value)
+      if (id !== reqId.current) return
+      setAvailable(res.available)
+      if (!res.available) setError(res.error ?? 'Ese nombre de usuario ya está en uso.')
+      setChecking(false)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [value])
+
+  const canProceed = available === true && !checking && !saving
+
+  async function handleNext() {
+    setSaving(true)
+    const res = await updateUsername(value)
+    setSaving(false)
+    if (res.ok) onNext()
+    else setError(res.error)
+  }
+
+  return (
+    <StepShell
+      title="Elige tu nombre de usuario"
+      subtitle="Así te encontrarán y verán tu perfil. Podrás cambiarlo más adelante."
+      isFirst={isFirst} onNext={handleNext} onBack={onBack}
+      canProceed={canProceed}
+      ctaLabel={saving ? 'Guardando…' : 'Continuar'}
+    >
+      <div className="space-y-2">
+        <div className="flex items-center rounded-xl border-2 border-border bg-muted/20 px-4">
+          <span className="text-muted-foreground">@</span>
+          <input
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            autoFocus
+            autoCapitalize="none"
+            maxLength={20}
+            placeholder="tu_usuario"
+            className="h-12 flex-1 bg-transparent px-2 text-base text-foreground outline-none placeholder:text-muted-foreground/40"
+          />
+          {checking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          {!checking && available === true && <Check className="h-4 w-4 text-green-500" />}
+        </div>
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        {!error && available === true && <p className="text-xs text-green-500">Disponible</p>}
+      </div>
+    </StepShell>
+  )
+}
 
 function Step1Goal({ answers, update, onNext, onBack, isFirst }: StepProps) {
   const options = [
@@ -572,7 +639,7 @@ const slideVariants = {
 export default function OnboardingWizard() {
   const router = useRouter()
   const [answers, setAnswers] = useState<OnboardingAnswers>(defaultAnswers)
-  const [stepKey, setStepKey] = useState<StepKey>('goal')
+  const [stepKey, setStepKey] = useState<StepKey>('username')
   const [direction, setDirection] = useState<1 | -1>(1)
   const [hydrated, setHydrated] = useState(false)
 
@@ -652,6 +719,7 @@ export default function OnboardingWizard() {
   }
 
   const stepMap: Record<StepKey, React.ReactNode> = {
+    username:   <Step0Username  {...stepProps} />,
     goal:       <Step1Goal      {...stepProps} />,
     level:      <Step2Level     {...stepProps} />,
     days:       <Step3Days      {...stepProps} />,
