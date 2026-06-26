@@ -42,3 +42,5 @@ export interface PostDetail {
 }
 
 export type SuggestedUser = PostAuthor & { isFollowing: boolean }
+
+export type RequestUser = PostAuthor & { isPrivate: boolean }

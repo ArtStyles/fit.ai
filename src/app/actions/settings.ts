@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import type { ActionResult } from './posts'
 
 function nullableText(formData: FormData, key: string): string | null {
   const value = formData.get(key)
@@ -106,4 +107,15 @@ export async function updateProfileName(formData: FormData) {
   revalidatePath('/settings/perfil')
   revalidatePath('/dashboard')
   redirect('/settings/perfil?notice=settings_saved')
+}
+
+export async function setPrivacy(isPrivate: boolean): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sesión no válida.' }
+  const { error } = await (supabase.from('profiles') as any)
+    .update({ is_private: isPrivate }).eq('id', user.id)
+  if (error) return { ok: false, error: 'No se pudo actualizar la privacidad.' }
+  revalidatePath('/settings/perfil')
+  return { ok: true }
 }
