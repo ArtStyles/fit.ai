@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sanitizeSearch, dedupePreservingOrder } from '../discovery'
+import { sanitizeSearch, dedupePreservingOrder, MAX_SEARCH_LENGTH } from '../discovery'
 
 describe('sanitizeSearch', () => {
   it('recorta y colapsa espacios', () => {
@@ -11,6 +11,9 @@ describe('sanitizeSearch', () => {
   it('devuelve cadena vacía si no queda contenido útil', () => {
     expect(sanitizeSearch('   ')).toBe('')
     expect(sanitizeSearch(' , ( ) ')).toBe('')
+  })
+  it('limita la longitud (defensa server-side)', () => {
+    expect(sanitizeSearch('a'.repeat(200)).length).toBe(MAX_SEARCH_LENGTH)
   })
 })
 
