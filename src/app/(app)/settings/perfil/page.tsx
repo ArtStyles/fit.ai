@@ -1,7 +1,9 @@
+import Link from 'next/link'
 import { Save, UserRound } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { AvatarUploader } from '@/components/profile/AvatarUploader'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
+import { UsernameField } from '@/components/settings/UsernameField'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { updateProfileName } from '@/app/actions/settings'
 
@@ -28,6 +30,18 @@ export default async function ProfilePage() {
           showRemove
         />
       </section>
+
+      <div className="mt-6">
+        <UsernameField initialUsername={profile?.username ?? ''} />
+      </div>
+      {profile?.username && (
+        <Link
+          href={`/u/${profile.username}`}
+          className="mt-3 flex h-10 items-center justify-center rounded-md border border-border/60 text-sm font-medium text-foreground"
+        >
+          Ver mi perfil
+        </Link>
+      )}
 
       <form action={updateProfileName} className="mt-6 space-y-6">
         <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
