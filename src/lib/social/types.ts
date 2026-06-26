@@ -41,6 +41,7 @@ export interface PostDetail {
   comments: PostCommentView[]
 }
 
-export type SuggestedUser = PostAuthor & { isFollowing: boolean }
+import type { FollowState } from './follow'
+export type SuggestedUser = PostAuthor & { isPrivate: boolean; followState: FollowState }
 
 export type RequestUser = PostAuthor & { isPrivate: boolean }
