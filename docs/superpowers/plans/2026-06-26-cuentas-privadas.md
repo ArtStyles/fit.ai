@@ -309,7 +309,7 @@ export async function rejectFollowRequest(followerId: string): Promise<ActionRes
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
   const { error } = await (supabase.from('follows') as any)
-    .delete().eq('follower_id', followerId).eq('following_id', user.id)
+    .delete().eq('follower_id', followerId).eq('following_id', user.id).eq('status', 'pending')
   if (error) return { ok: false, error: 'No se pudo rechazar.' }
   revalidatePath('/solicitudes')
   return { ok: true }
@@ -414,10 +414,10 @@ export async function getProfile(username: string): Promise<{
     posts = page.map(r => toFeedPost(r, authors, liked, user.id))
   }
 
-  const { count: followerCount } = await (supabase.from('follows') as any)
-    .select('*', { count: 'exact', head: true }).eq('following_id', author.id).eq('status', 'accepted') as { count: number | null }
-  const { count: followingCount } = await (supabase.from('follows') as any)
-    .select('*', { count: 'exact', head: true }).eq('follower_id', author.id).eq('status', 'accepted') as { count: number | null }
+  const [{ count: followerCount }, { count: followingCount }] = await Promise.all([
+    (supabase.from('follows') as any).select('*', { count: 'exact', head: true }).eq('following_id', author.id).eq('status', 'accepted') as Promise<{ count: number | null }>,
+    (supabase.from('follows') as any).select('*', { count: 'exact', head: true }).eq('follower_id', author.id).eq('status', 'accepted') as Promise<{ count: number | null }>,
+  ])
 
   const authorPublic: PostAuthor = {
     id: author.id, username: author.username, full_name: author.full_name, avatar_url: author.avatar_url,
@@ -523,7 +523,7 @@ En `getSuggestedUsers`: tras obtener `candidateIds`, cargar perfiles con `is_pri
       data: (PostAuthor & { is_private: boolean })[] | null
     }
   const byId = new Map((rows ?? []).map(p => [p.id, p]))
-  const statusMap = await loadFollowStatusMap(supabase, user.id)
+  // `statusMap` se calcula UNA sola vez antes (al filtrar candidatos con `!statusMap.has(id)`) y se reutiliza aquí.
   return candidateIds
     .map(id => byId.get(id))
     .filter((p): p is PostAuthor & { is_private: boolean } => !!p)

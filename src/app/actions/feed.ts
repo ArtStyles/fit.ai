@@ -192,10 +192,10 @@ export async function getProfile(username: string): Promise<{
     posts = page.map(r => toFeedPost(r, authors, liked, user.id))
   }
 
-  const { count: followerCount } = await (supabase.from('follows') as any)
-    .select('*', { count: 'exact', head: true }).eq('following_id', author.id).eq('status', 'accepted') as { count: number | null }
-  const { count: followingCount } = await (supabase.from('follows') as any)
-    .select('*', { count: 'exact', head: true }).eq('follower_id', author.id).eq('status', 'accepted') as { count: number | null }
+  const [{ count: followerCount }, { count: followingCount }] = await Promise.all([
+    (supabase.from('follows') as any).select('*', { count: 'exact', head: true }).eq('following_id', author.id).eq('status', 'accepted') as Promise<{ count: number | null }>,
+    (supabase.from('follows') as any).select('*', { count: 'exact', head: true }).eq('follower_id', author.id).eq('status', 'accepted') as Promise<{ count: number | null }>,
+  ])
 
   const authorPublic: PostAuthor = {
     id: author.id, username: author.username, full_name: author.full_name, avatar_url: author.avatar_url,

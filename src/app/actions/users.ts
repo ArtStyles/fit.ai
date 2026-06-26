@@ -84,9 +84,9 @@ export async function getSuggestedUsers(): Promise<SuggestedUser[]> {
   if (recentAuthorIds.length === 0) return []
 
   const blocked = await loadBlockedIds(supabase, user.id)
-  const followingStatusMap = await loadFollowStatusMap(supabase, user.id)
+  const statusMap = await loadFollowStatusMap(supabase, user.id)
   const candidateIds = recentAuthorIds
-    .filter(id => id !== user.id && !blocked.has(id) && !followingStatusMap.has(id))
+    .filter(id => id !== user.id && !blocked.has(id) && !statusMap.has(id))
     .slice(0, SUGGEST_LIMIT)
   if (candidateIds.length === 0) return []
 
@@ -95,7 +95,6 @@ export async function getSuggestedUsers(): Promise<SuggestedUser[]> {
       data: (PostAuthor & { is_private: boolean })[] | null
     }
   const byId = new Map((rows ?? []).map(p => [p.id, p]))
-  const statusMap = await loadFollowStatusMap(supabase, user.id)
   // .in() no preserva orden: re-ordenar por recencia (orden de candidateIds).
   return candidateIds
     .map(id => byId.get(id))

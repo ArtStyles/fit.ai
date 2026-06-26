@@ -86,7 +86,7 @@ export async function rejectFollowRequest(followerId: string): Promise<ActionRes
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
   const { error } = await (supabase.from('follows') as any)
-    .delete().eq('follower_id', followerId).eq('following_id', user.id)
+    .delete().eq('follower_id', followerId).eq('following_id', user.id).eq('status', 'pending')
   if (error) return { ok: false, error: 'No se pudo rechazar.' }
   revalidatePath('/solicitudes')
   return { ok: true }
