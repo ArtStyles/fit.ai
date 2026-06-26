@@ -1,13 +1,15 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { Lock } from 'lucide-react'
 import { getProfile } from '@/app/actions/feed'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { FollowButton } from '@/components/social/FollowButton'
 import { ProfilePostGrid } from '@/components/social/ProfilePostGrid'
+import { PrivateProfileNotice } from '@/components/social/PrivateProfileNotice'
 
 export default async function PublicProfilePage({ params }: { params: { username: string } }) {
   const { username } = params
-  const { author, posts, followerCount, followingCount, isFollowing, isMe } = await getProfile(username)
+  const { author, posts, postCount, followerCount, followingCount, followState, isPrivate, canViewPosts, isMe } = await getProfile(username)
   if (!author) notFound()
 
   const name = author.full_name || author.username || 'Usuario'
@@ -21,16 +23,17 @@ export default async function PublicProfilePage({ params }: { params: { username
             <AvatarFallback className="text-2xl">{name.slice(0, 1).toUpperCase()}</AvatarFallback>
           </Avatar>
           <div className="flex flex-1 justify-around text-center">
-            <div><div className="text-lg font-bold">{posts.length}</div><div className="text-xs text-muted-foreground">publicaciones</div></div>
+            <div><div className="text-lg font-bold">{postCount}</div><div className="text-xs text-muted-foreground">publicaciones</div></div>
             <div><div className="text-lg font-bold">{followerCount}</div><div className="text-xs text-muted-foreground">seguidores</div></div>
             <div><div className="text-lg font-bold">{followingCount}</div><div className="text-xs text-muted-foreground">siguiendo</div></div>
           </div>
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3 flex items-center gap-1.5">
           <p className="text-sm font-semibold">{name}</p>
-          {author.username && <p className="text-sm text-muted-foreground">@{author.username}</p>}
+          {isPrivate && <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-label="Cuenta privada" />}
         </div>
+        {author.username && <p className="text-sm text-muted-foreground">@{author.username}</p>}
 
         <div className="mt-4">
           {isMe ? (
@@ -38,12 +41,12 @@ export default async function PublicProfilePage({ params }: { params: { username
               Editar perfil
             </Link>
           ) : (
-            <FollowButton targetId={author.id} initialFollowing={isFollowing} />
+            <FollowButton targetId={author.id} isPrivate={isPrivate} initialState={followState} />
           )}
         </div>
       </header>
 
-      <ProfilePostGrid posts={posts} />
+      {canViewPosts ? <ProfilePostGrid posts={posts} /> : <PrivateProfileNotice />}
     </div>
   )
 }

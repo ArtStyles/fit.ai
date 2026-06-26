@@ -4,6 +4,7 @@ import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { AvatarUploader } from '@/components/profile/AvatarUploader'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { UsernameField } from '@/components/settings/UsernameField'
+import { PrivacyToggle } from '@/components/settings/PrivacyToggle'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { updateProfileName } from '@/app/actions/settings'
 
@@ -33,6 +34,9 @@ export default async function ProfilePage() {
 
       <div className="mt-6">
         <UsernameField initialUsername={profile?.username ?? ''} />
+      </div>
+      <div className="mt-4">
+        <PrivacyToggle initialPrivate={profile?.is_private ?? false} />
       </div>
       {profile?.username && (
         <Link

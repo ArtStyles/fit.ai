@@ -29,7 +29,7 @@ export function FollowButton({ targetId, isPrivate, initialState }: {
     startTransition(async () => {
       const res = isFollowAction ? await followUser(targetId) : await unfollowUser(targetId)
       if (!res.ok) { setState(prev); showToast({ title: res.error, variant: 'error' }); return }
-      if (isFollowAction && res.ok) setState(res.status === 'accepted' ? 'following' : 'requested')
+      if (isFollowAction && res.ok && 'status' in res) setState(res.status === 'accepted' ? 'following' : 'requested')
       router.refresh()
     })
   }

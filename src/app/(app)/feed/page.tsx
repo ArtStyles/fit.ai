@@ -1,19 +1,30 @@
 import Link from 'next/link'
-import { PlusCircle, Search } from 'lucide-react'
+import { Bell, PlusCircle, Search } from 'lucide-react'
 import { getDiscoverFeed, getFollowingFeed } from '@/app/actions/feed'
+import { getPendingRequestCount } from '@/app/actions/follows'
 import { FeedTabs } from '@/components/social/FeedTabs'
 
 export default async function FeedPage() {
   // Cargamos ambos feeds en paralelo (latencia = máx, no suma). getFollowingFeed es
   // barato si no sigues a nadie, y precargarlo hace que cambiar a la pestaña Siguiendo
   // sea instantáneo (sin flash de carga). Decisión deliberada para Fase 2.
-  const [discover, following] = await Promise.all([getDiscoverFeed(), getFollowingFeed()])
+  const [discover, following, pendingRequests] = await Promise.all([
+    getDiscoverFeed(), getFollowingFeed(), getPendingRequestCount(),
+  ])
 
   return (
     <div className="mx-auto max-w-lg pb-24">
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur-md">
         <h1 className="text-lg font-bold">Comunidad</h1>
         <div className="flex items-center gap-1">
+          <Link href="/solicitudes" aria-label="Solicitudes de seguimiento" className="relative flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground">
+            <Bell className="h-5 w-5" />
+            {pendingRequests > 0 && (
+              <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                {pendingRequests}
+              </span>
+            )}
+          </Link>
           <Link href="/buscar" aria-label="Buscar usuarios" className="flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground">
             <Search className="h-5 w-5" />
           </Link>
