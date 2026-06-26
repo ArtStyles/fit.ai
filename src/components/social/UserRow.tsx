@@ -21,7 +21,7 @@ export function UserRow({ user }: { user: SuggestedUser }) {
           {user.username && <p className="truncate text-xs text-muted-foreground">@{user.username}</p>}
         </div>
       </Link>
-      <FollowButton targetId={user.id} initialFollowing={user.isFollowing} />
+      <FollowButton targetId={user.id} isPrivate={user.isPrivate} initialState={user.followState} />
     </div>
   )
 }
