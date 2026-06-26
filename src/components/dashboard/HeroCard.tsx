@@ -1,4 +1,3 @@
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import {
@@ -196,35 +195,63 @@ export function HeroCard({
   }
 
   // ── Workout programado para hoy ───────────────────────────────────────────
-  return (
-    <div className="relative overflow-hidden rounded-2xl p-5 text-white shadow-[0_22px_55px_-15px_rgba(91,33,182,0.65)] space-y-4">
-      {/* Aurora animada + profundidad */}
-      <div className="absolute inset-0 bg-gradient-to-br from-violet-700 via-indigo-600 to-purple-800" />
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <span className="fitai-aurora-blob fitai-aurora-blob--1 bg-fuchsia-500/40" />
-        <span className="fitai-aurora-blob fitai-aurora-blob--2 bg-indigo-400/40" />
-        <span className="fitai-aurora-blob fitai-aurora-blob--3 bg-orange-500/30" />
-      </div>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_75%_at_50%_-15%,_rgba(255,255,255,0.20),_transparent_60%)]" />
-      <div className="fitai-grain pointer-events-none absolute inset-0 opacity-[0.08]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/25" />
+  // Palabra fantasma de fondo: primer grupo muscular del focus (o del nombre)
+  const ghostWord = (todayWorkout.focus || todayWorkout.name)
+    .split(/[—\-·|,/]/)[0]
+    .trim()
+    .split(/\s+/)[0]
+    ?.toUpperCase() ?? ''
 
-      <div className="relative space-y-4">
-        {/* Top row: badge + week ring */}
+  return (
+    <div className="relative overflow-hidden rounded-3xl p-5 text-white shadow-[0_28px_70px_-20px_rgba(91,33,182,0.75)] ring-1 ring-white/10 space-y-5">
+      {/* Base con más profundidad: oscuro → violeta → azul nocturno */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#3b0f7a] via-[#5b21b6] to-[#1e1b4b]" />
+      {/* Aurora animada */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <span className="fitai-aurora-blob fitai-aurora-blob--1 bg-fuchsia-500/45" />
+        <span className="fitai-aurora-blob fitai-aurora-blob--2 bg-indigo-400/45" />
+        <span className="fitai-aurora-blob fitai-aurora-blob--3 bg-orange-500/35" />
+      </div>
+      {/* Palabra fantasma del grupo muscular (estilo cartel) */}
+      {ghostWord && (
+        <span
+          aria-hidden
+          className="font-display pointer-events-none absolute -bottom-6 -right-3 select-none text-[7rem] font-black uppercase leading-[0.8] tracking-tight text-white/[0.06]"
+        >
+          {ghostWord}
+        </span>
+      )}
+      {/* Luz cenital + viñeta inferior para dar volumen */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_-20%,_rgba(255,255,255,0.22),_transparent_55%)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/35 to-transparent" />
+      <div className="fitai-grain pointer-events-none absolute inset-0 opacity-[0.08]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/30" />
+
+      <div className="relative space-y-5">
+        {/* Top row: badge "live" + week ring */}
         <div className="flex items-start justify-between">
-          <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] ring-1 ring-white/15 backdrop-blur-sm">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-300" />
+            </span>
             Hoy
           </span>
           <WeekRing done={weekDone} total={weekTotal} />
         </div>
 
-        <div className="space-y-1">
-          <p className="font-display text-[1.7rem] font-extrabold leading-[1.05] tracking-tight drop-shadow-sm">{todayWorkout.name}</p>
+        {/* Título + focus como antetítulo */}
+        <div className="space-y-1.5">
           {todayWorkout.focus && (
-            <p className="text-indigo-200 text-sm">{todayWorkout.focus}</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-200/80">
+              {todayWorkout.focus}
+            </p>
           )}
+          <p className="font-display text-[2rem] font-extrabold leading-[1.02] tracking-tight drop-shadow-sm">
+            {todayWorkout.name}
+          </p>
           {todayWorkout.progression_suggestion_count > 0 && (
-            <p className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-indigo-100">
+            <p className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-indigo-100 ring-1 ring-white/10">
               <TrendingUp className="h-3.5 w-3.5" />
               {todayWorkout.progression_suggestion_count}{' '}
               {todayWorkout.progression_suggestion_count === 1 ? 'progresión sugerida' : 'progresiones sugeridas'}
@@ -232,30 +259,35 @@ export function HeroCard({
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Meta en línea con separador */}
+        <div className="flex items-center gap-3 text-sm font-semibold text-white/90">
           {todayWorkout.exercise_count > 0 && (
-            <Badge variant="secondary" className="bg-white/15 text-white border-0 text-xs">
-              <Dumbbell className="mr-1 h-3 w-3" />
+            <span className="inline-flex items-center gap-1.5">
+              <Dumbbell className="h-4 w-4 text-violet-200" />
               {todayWorkout.exercise_count} ejercicios
-            </Badge>
+            </span>
+          )}
+          {todayWorkout.exercise_count > 0 && todayWorkout.estimated_duration_minutes && (
+            <span className="h-1 w-1 rounded-full bg-white/30" />
           )}
           {todayWorkout.estimated_duration_minutes && (
-            <Badge variant="secondary" className="bg-white/15 text-white border-0 text-xs">
-              <Clock className="mr-1 h-3 w-3" />
+            <span className="inline-flex items-center gap-1.5">
+              <Clock className="h-4 w-4 text-violet-200" />
               {todayWorkout.estimated_duration_minutes} min
-            </Badge>
+            </span>
           )}
         </div>
 
         <Button
-          className="fitai-cta-ring w-full h-14 bg-white text-violet-700 hover:bg-white/90 font-bold text-base
-            shadow-[0_0_24px_rgba(255,255,255,0.22)] hover:shadow-[0_0_36px_rgba(255,255,255,0.38)]
-            transition-shadow duration-300"
+          className="fitai-cta-ring group/cta w-full h-14 rounded-2xl bg-white text-violet-700 hover:bg-white font-bold text-base
+            shadow-[0_10px_30px_-8px_rgba(0,0,0,0.45)] transition-all duration-300"
           asChild
         >
           <PendingLink href={`/session/${todayWorkout.id}`}>
             Empezar entrenamiento
-            <ChevronRight className="ml-1 h-5 w-5" />
+            <span className="ml-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-700 text-white transition-transform duration-300 group-hover/cta:translate-x-0.5">
+              <ChevronRight className="h-4 w-4" />
+            </span>
           </PendingLink>
         </Button>
       </div>

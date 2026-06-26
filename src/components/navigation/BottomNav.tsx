@@ -52,17 +52,12 @@ export function BottomNav() {
                 className={cn(
                   'flex h-11 w-11 items-center justify-center rounded-[14px] transition-all duration-200',
                   isActive
-                    ? 'bg-white/12 text-foreground ring-1 ring-white/10'
+                    ? 'text-primary'
                     : 'text-muted-foreground group-hover:text-foreground/70',
                 )}
               >
                 <Icon className="h-[22px] w-[22px]" />
               </span>
-
-              {/* active dot indicator */}
-              {isActive && (
-                <span className="absolute bottom-0 h-0.5 w-5 rounded-full bg-current opacity-50" />
-              )}
             </PendingLink>
           )
         })}
