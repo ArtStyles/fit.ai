@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Suspense } from 'react'
 import { Barlow_Condensed, Plus_Jakarta_Sans } from 'next/font/google'
-import { RouteTransitionIndicator } from '@/components/navigation/RouteTransitionIndicator'
 import { ToastProvider } from '@/components/feedback/ToastProvider'
 import { ActionNotice } from '@/components/feedback/ActionNotice'
 import { NativeAppInit } from '@/components/native/NativeAppInit'
@@ -53,7 +52,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <NativeAppInit />
         <ToastProvider>
           <Suspense fallback={null}>
-            <RouteTransitionIndicator />
             <ActionNotice />
           </Suspense>
           {children}
