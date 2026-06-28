@@ -21,7 +21,13 @@ export function UserRow({ user }: { user: SuggestedUser }) {
           {user.username && <p className="truncate text-xs text-muted-foreground">@{user.username}</p>}
         </div>
       </Link>
-      <FollowButton targetId={user.id} isPrivate={user.isPrivate} initialState={user.followState} />
+      {user.isMe ? (
+        <span className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
+          Tú
+        </span>
+      ) : (
+        <FollowButton targetId={user.id} isPrivate={user.isPrivate} initialState={user.followState} />
+      )}
     </div>
   )
 }

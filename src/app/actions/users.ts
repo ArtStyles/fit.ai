@@ -9,6 +9,10 @@ import { followButtonState } from '@/lib/social/follow'
 const SEARCH_LIMIT = 20
 const SUGGEST_LIMIT = 10
 const RECENT_POSTS_SCAN = 50
+const CONNECTION_LIST_LIMIT = 50
+const CONNECTION_SEARCH_SCAN_LIMIT = 500
+
+type ProfileConnectionType = 'followers' | 'following'
 
 // ids bloqueados en cualquier dirección respecto a `userId` (userId es UUID de auth, no input).
 async function loadBlockedIds(
@@ -38,12 +42,18 @@ async function loadFollowStatusMap(
   return map
 }
 
-function toSuggested(p: PostAuthor & { is_private: boolean }, statusMap: Map<string, 'pending' | 'accepted'>): SuggestedUser {
-  const status = statusMap.get(p.id) ?? 'none'
+function toSuggested(
+  p: PostAuthor & { is_private: boolean },
+  statusMap: Map<string, 'pending' | 'accepted'>,
+  viewerId?: string,
+): SuggestedUser {
+  const isMe = p.id === viewerId
+  const status = isMe ? 'accepted' : statusMap.get(p.id) ?? 'none'
   return {
     id: p.id, username: p.username, full_name: p.full_name, avatar_url: p.avatar_url,
     isPrivate: p.is_private,
     followState: followButtonState({ isPrivate: p.is_private, status }),
+    isMe,
   }
 }
 
@@ -68,7 +78,7 @@ export async function searchUsers(rawQuery: string): Promise<SuggestedUser[]> {
   if (visible.length === 0) return []
 
   const statusMap = await loadFollowStatusMap(supabase, user.id)
-  return visible.map(p => toSuggested(p, statusMap))
+  return visible.map(p => toSuggested(p, statusMap, user.id))
 }
 
 export async function getSuggestedUsers(): Promise<SuggestedUser[]> {
@@ -99,5 +109,72 @@ export async function getSuggestedUsers(): Promise<SuggestedUser[]> {
   return candidateIds
     .map(id => byId.get(id))
     .filter((p): p is PostAuthor & { is_private: boolean } => !!p)
-    .map(p => toSuggested(p, statusMap))
+    .map(p => toSuggested(p, statusMap, user.id))
+}
+
+export async function getProfileConnections(
+  username: string,
+  type: ProfileConnectionType,
+  rawQuery = '',
+): Promise<SuggestedUser[]> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+
+  const { data: author } = await (supabase.from('public_profiles') as any)
+    .select('id, is_private')
+    .eq('username', username)
+    .maybeSingle() as { data: { id: string; is_private: boolean } | null }
+  if (!author) return []
+
+  const isMe = author.id === user.id
+  let profileFollowStatus: 'none' | 'pending' | 'accepted' = 'none'
+  if (!isMe) {
+    const { data: relation } = await (supabase.from('follows') as any)
+      .select('status')
+      .eq('follower_id', user.id)
+      .eq('following_id', author.id)
+      .maybeSingle() as { data: { status: 'pending' | 'accepted' } | null }
+    if (relation) profileFollowStatus = relation.status
+  }
+
+  const canViewConnections = !author.is_private || isMe || profileFollowStatus === 'accepted'
+  if (!canViewConnections) return []
+
+  const q = sanitizeSearch(rawQuery)
+  const idColumn = type === 'followers' ? 'follower_id' : 'following_id'
+  const ownerColumn = type === 'followers' ? 'following_id' : 'follower_id'
+  const scanLimit = q ? CONNECTION_SEARCH_SCAN_LIMIT : CONNECTION_LIST_LIMIT
+
+  const { data: rows } = await (supabase.from('follows') as any)
+    .select(idColumn)
+    .eq(ownerColumn, author.id)
+    .eq('status', 'accepted')
+    .order('created_at', { ascending: false })
+    .limit(scanLimit) as { data: Record<typeof idColumn, string>[] | null }
+  const ids = (rows ?? []).map(row => row[idColumn])
+  if (ids.length === 0) return []
+
+  const blocked = await loadBlockedIds(supabase, user.id)
+  const visibleIds = ids.filter(id => !blocked.has(id))
+  if (visibleIds.length === 0) return []
+
+  let profilesQuery = (supabase.from('public_profiles') as any)
+    .select('id, username, full_name, avatar_url, is_private')
+    .in('id', visibleIds)
+    .limit(CONNECTION_LIST_LIMIT)
+  if (q) profilesQuery = profilesQuery.or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
+
+  const { data: profiles } = await profilesQuery as {
+    data: (PostAuthor & { is_private: boolean })[] | null
+  }
+  const byId = new Map((profiles ?? []).map(profile => [profile.id, profile]))
+  const orderedProfiles = visibleIds
+    .map(id => byId.get(id))
+    .filter((profile): profile is PostAuthor & { is_private: boolean } => !!profile)
+    .slice(0, CONNECTION_LIST_LIMIT)
+  if (orderedProfiles.length === 0) return []
+
+  const statusMap = await loadFollowStatusMap(supabase, user.id)
+  return orderedProfiles.map(profile => toSuggested(profile, statusMap, user.id))
 }

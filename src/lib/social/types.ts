@@ -42,6 +42,6 @@ export interface PostDetail {
 }
 
 import type { FollowState } from './follow'
-export type SuggestedUser = PostAuthor & { isPrivate: boolean; followState: FollowState }
+export type SuggestedUser = PostAuthor & { isPrivate: boolean; followState: FollowState; isMe?: boolean }
 
 export type RequestUser = PostAuthor & { isPrivate: boolean }

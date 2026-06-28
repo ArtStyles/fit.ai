@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { FollowButton } from '@/components/social/FollowButton'
 import { ProfilePostGrid } from '@/components/social/ProfilePostGrid'
 import { PrivateProfileNotice } from '@/components/social/PrivateProfileNotice'
+import { ProfileConnectionsStats } from '@/components/social/ProfileConnectionsStats'
 
 export default async function PublicProfilePage({ params }: { params: { username: string } }) {
   const { username } = params
@@ -22,11 +23,13 @@ export default async function PublicProfilePage({ params }: { params: { username
             {author.avatar_url && <AvatarImage src={author.avatar_url} alt={name} />}
             <AvatarFallback className="text-2xl">{name.slice(0, 1).toUpperCase()}</AvatarFallback>
           </Avatar>
-          <div className="flex flex-1 justify-around text-center">
-            <div><div className="text-lg font-bold">{postCount}</div><div className="text-xs text-muted-foreground">publicaciones</div></div>
-            <div><div className="text-lg font-bold">{followerCount}</div><div className="text-xs text-muted-foreground">seguidores</div></div>
-            <div><div className="text-lg font-bold">{followingCount}</div><div className="text-xs text-muted-foreground">siguiendo</div></div>
-          </div>
+          <ProfileConnectionsStats
+            username={username}
+            postCount={postCount}
+            followerCount={followerCount}
+            followingCount={followingCount}
+            canViewConnections={canViewPosts}
+          />
         </div>
 
         <div className="mt-3 flex items-center gap-1.5">
