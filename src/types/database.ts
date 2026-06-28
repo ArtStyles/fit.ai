@@ -562,6 +562,72 @@ export interface Database {
         Update: Partial<{ follower_id: string; following_id: string; status: 'accepted' | 'pending'; created_at: string }>
         Relationships: []
       }
+      social_push_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          token: string
+          platform: 'android' | 'ios'
+          device_id: string | null
+          enabled: boolean
+          last_seen_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          token: string
+          platform: 'android' | 'ios'
+          device_id?: string | null
+          enabled?: boolean
+          last_seen_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<{
+          id: string
+          user_id: string
+          token: string
+          platform: 'android' | 'ios'
+          device_id: string | null
+          enabled: boolean
+          last_seen_at: string
+          created_at: string
+          updated_at: string
+        }>
+        Relationships: []
+      }
+      social_notification_preferences: {
+        Row: {
+          user_id: string
+          likes_enabled: boolean
+          comments_enabled: boolean
+          follows_enabled: boolean
+          follow_requests_enabled: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          likes_enabled?: boolean
+          comments_enabled?: boolean
+          follows_enabled?: boolean
+          follow_requests_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<{
+          user_id: string
+          likes_enabled: boolean
+          comments_enabled: boolean
+          follows_enabled: boolean
+          follow_requests_enabled: boolean
+          created_at: string
+          updated_at: string
+        }>
+        Relationships: []
+      }
 
     }
 

@@ -3,6 +3,7 @@ import { PageTransition } from '@/components/navigation/PageTransition'
 import { BottomNav } from '@/components/navigation/BottomNav'
 import { ChatFab } from '@/components/navigation/ChatFab'
 import { AndroidBackHandler } from '@/components/native/AndroidBackHandler'
+import { SocialPushNotificationsInit } from '@/components/native/SocialPushNotificationsInit'
 import { TimezoneSync } from '@/components/profile/TimezoneSync'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -11,6 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen flex flex-col">
       <AndroidBackHandler />
+      <SocialPushNotificationsInit />
       <TimezoneSync current={profile.timezone} />
       <main className="flex-1 overflow-x-hidden">
         <PageTransition>{children}</PageTransition>

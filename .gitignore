@@ -36,6 +36,7 @@ public/swe-worker-*.js
 
 # Android / Capacitor
 # The native project is tracked. android/.gitignore excludes local/build output.
+android/app/google-services.json
 
 # Local browser/test artifacts
 .chrome-*/

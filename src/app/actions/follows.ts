@@ -3,6 +3,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { notifyFollowAccepted, notifyFollowCreated } from '@/lib/notifications/socialPush'
 import type { ActionResult } from './posts'
 import type { PostAuthor, RequestUser } from '@/lib/social/types'
 
@@ -20,6 +21,11 @@ export async function followUser(targetId: string): Promise<ActionResult<{ statu
     .upsert({ follower_id: user.id, following_id: targetId, status })
   if (error) return { ok: false, error: 'No se pudo seguir.' }
 
+  try {
+    await notifyFollowCreated(targetId, user.id, status)
+  } catch {
+    /* La notificacion push no debe bloquear el follow. */
+  }
   revalidatePath('/feed')
   return { ok: true, status }
 }
@@ -77,6 +83,11 @@ export async function acceptFollowRequest(followerId: string): Promise<ActionRes
     .update({ status: 'accepted' })
     .eq('follower_id', followerId).eq('following_id', user.id).eq('status', 'pending')
   if (error) return { ok: false, error: 'No se pudo aceptar.' }
+  try {
+    await notifyFollowAccepted(followerId, user.id)
+  } catch {
+    /* La notificacion push no debe bloquear la aceptacion. */
+  }
   revalidatePath('/solicitudes'); revalidatePath('/feed')
   return { ok: true }
 }

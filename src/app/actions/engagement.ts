@@ -3,6 +3,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { notifyPostCommented, notifyPostLiked } from '@/lib/notifications/socialPush'
 import type { ActionResult } from './posts'
 
 export async function toggleLike(postId: string): Promise<ActionResult<{ liked: boolean }>> {
@@ -25,6 +26,11 @@ export async function toggleLike(postId: string): Promise<ActionResult<{ liked: 
   const { error } = await (supabase.from('post_likes') as any)
     .insert({ post_id: postId, user_id: user.id })
   if (error) return { ok: false, error: 'No se pudo dar like.' }
+  try {
+    await notifyPostLiked(postId, user.id)
+  } catch {
+    /* La notificacion push no debe bloquear el like. */
+  }
   return { ok: true, liked: true }
 }
 
@@ -42,6 +48,11 @@ export async function addComment(postId: string, body: string): Promise<ActionRe
     }
   if (error || !data) return { ok: false, error: 'No se pudo comentar.' }
 
+  try {
+    await notifyPostCommented(postId, user.id)
+  } catch {
+    /* La notificacion push no debe bloquear el comentario. */
+  }
   revalidatePath(`/post/${postId}`)
   return { ok: true, id: data.id }
 }
