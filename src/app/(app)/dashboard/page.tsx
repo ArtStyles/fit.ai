@@ -70,6 +70,7 @@ export interface DayData {
   isToday:                  boolean
   isRecoverable:            boolean       // perdida pero dentro de la ventana de recuperación
   completedDurationMinutes: number | null
+  completedLogId:           string | null // ID del log para navegar al historial
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof requireAppUserContext>>['supabase']
@@ -460,6 +461,7 @@ export default async function DashboardPage() {
       isRecoverable: !!workout && !log && !hasSessionToday &&
         daysLate >= 1 && daysLate <= WORKOUT_ACCESS_POLICY.missedWorkoutRecoveryDays,
       completedDurationMinutes: log?.duration_minutes ?? null,
+      completedLogId: log?.id ?? null,
     }
   })
 

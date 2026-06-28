@@ -89,7 +89,7 @@ function getTooltip(day: DayData, state: DayState): string {
 
 function getUnavailableMessage(day: DayData, state: DayState): string {
   if (!day.workout) return 'Dia de descanso, aprovecha para recuperar'
-  if (state === 'completed') return 'Esta rutina ya fue completada.'
+  if (state === 'completed') return 'Ver detalle de rutina completada'
   if (state === 'skipped') return 'Esta rutina quedo fuera de la ventana de recuperacion.'
   if (state === 'scheduled') return 'Esta rutina aun no esta disponible. Solo puedes iniciar la rutina de hoy.'
   return day.workout.name
@@ -112,6 +112,7 @@ function DayCell({
 }) {
   const workout = day.workout
   const canStart = (state === 'today' || state === 'recoverable') && workout !== null
+  const canViewHistory = state === 'completed' && day.completedLogId !== null && workout !== null
   const tooltip = showMessage
     ? getUnavailableMessage(day, state)
     : getTooltip(day, state)
@@ -126,7 +127,7 @@ function DayCell({
         state === 'rest' && 'border-border/30 bg-transparent opacity-50 hover:opacity-70',
         state === 'skipped' && 'border-border/40 bg-muted/5 opacity-60',
         state === 'recoverable' && 'border-amber-500/40 bg-amber-500/5',
-        canStart ? 'cursor-pointer hover:bg-violet-500/15 hover:scale-[1.03]' : 'cursor-not-allowed',
+        canStart || canViewHistory ? 'cursor-pointer' : 'cursor-not-allowed',
         state === 'rest' && 'cursor-default',
       )}
     >
@@ -173,6 +174,20 @@ function DayCell({
             : day.isToday ? `Continuar ${workout.name}` : workout.name
         }
         title={getTooltip(day, state)}
+        showSpinner={false}
+      >
+        {inner}
+      </PendingLink>
+    )
+  }
+
+  if (canViewHistory) {
+    return (
+      <PendingLink
+        href={`/history/${day.completedLogId}`}
+        className="focus-visible:outline-none"
+        aria-label={`Ver historial de ${workout.name}`}
+        title={`Ver detalle de ${workout.name} completada`}
         showSpinner={false}
       >
         {inner}
