@@ -13,10 +13,11 @@ const snap: RoutineSnapshot = {
 
 describe('buildPlanInsert', () => {
   it('crea un plan inactivo y no-IA para el usuario', () => {
-    expect(buildPlanInsert(snap, 'u1')).toEqual({
+    expect(buildPlanInsert(snap, 'u1', { postId: 'post1', userId: 'author1' })).toEqual({
       user_id: 'u1', name: 'Full Body', goal: 'build_muscle',
       days_per_week: 3, difficulty: 'intermediate',
       generated_by_ai: false, is_active: false,
+      source_type: 'shared_post', source_post_id: 'post1', source_user_id: 'author1',
     })
   })
 })

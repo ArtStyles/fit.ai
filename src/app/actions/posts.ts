@@ -9,6 +9,7 @@ import { buildSessionSnapshot, buildRoutineSnapshot } from '@/lib/social/snapsho
 import {
   buildPlanInsert, buildWorkoutInsert, buildWorkoutExerciseInserts,
 } from '@/lib/social/clone'
+import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
 import type { RoutineSnapshot, RoutineSnapshotExercise, SessionSnapshot } from '@/lib/social/snapshots'
 import { postStoragePath } from '@/lib/images/post'
 
@@ -219,18 +220,24 @@ export async function deletePost(postId: string): Promise<ActionResult> {
 export async function clonePlanFromPost(postId: string): Promise<ActionResult<{ planId: string }>> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { ok: false, error: 'Sesión no válida.' }
+  if (!user) return { ok: false, error: 'Sesion no valida.' }
+
+  const createPolicy = await getPlanCreatePolicy(supabase, user.id)
+  if (!createPolicy.allowed) return { ok: false, error: createPolicy.reason }
 
   const { data: post } = await (supabase.from('posts') as any)
-    .select('routine_snapshot').eq('id', postId).maybeSingle() as {
-      data: { routine_snapshot: RoutineSnapshot | null } | null
+    .select('user_id, routine_snapshot')
+    .eq('id', postId)
+    .maybeSingle() as {
+      data: { user_id: string; routine_snapshot: RoutineSnapshot | null } | null
     }
-  if (!post?.routine_snapshot) return { ok: false, error: 'Esta publicación no tiene rutina.' }
+  if (!post?.routine_snapshot) return { ok: false, error: 'Esta publicacion no tiene rutina.' }
   const snapshot = post.routine_snapshot
 
-  // Inserta plan → workouts → ejercicios (cliente de usuario: RLS solo-dueño).
   const { data: plan, error: planErr } = await (supabase.from('workout_plans') as any)
-    .insert(buildPlanInsert(snapshot, user.id)).select('id').single() as {
+    .insert(buildPlanInsert(snapshot, user.id, { postId, userId: post.user_id }))
+    .select('id')
+    .single() as {
       data: { id: string } | null; error: unknown
     }
   if (planErr || !plan) return { ok: false, error: 'No se pudo crear el plan.' }
@@ -238,9 +245,6 @@ export async function clonePlanFromPost(postId: string): Promise<ActionResult<{ 
   const planId = plan.id
   const userId = user.id
 
-  // Limpieza compensatoria si una inserción falla a medio clonar: evita planes huérfanos.
-  // workouts.plan_id es ON DELETE SET NULL, así que borramos los workouts explícitamente
-  // (cascada a workout_exercises) y luego el plan.
   async function rollback(): Promise<void> {
     await (supabase.from('workouts') as any).delete().eq('plan_id', planId).eq('user_id', userId)
     await (supabase.from('workout_plans') as any).delete().eq('id', planId).eq('user_id', userId)
@@ -252,7 +256,7 @@ export async function clonePlanFromPost(postId: string): Promise<ActionResult<{ 
       .insert(buildWorkoutInsert(sw, planId, userId, i)).select('id').single() as {
         data: { id: string } | null; error: unknown
       }
-    if (wErr || !w) { await rollback(); return { ok: false, error: 'No se pudo clonar un día.' } }
+    if (wErr || !w) { await rollback(); return { ok: false, error: 'No se pudo clonar un dia.' } }
 
     const exInserts = buildWorkoutExerciseInserts(sw, w.id)
     if (exInserts.length) {

@@ -5,6 +5,7 @@ import { generateInitialPlan }     from '@/lib/ai/planGenerator'
 import { filterExercisesForUser }  from '@/lib/ai/filter'
 import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
 import { buildWeeklySummary, getCyclePhase } from '@/lib/plans/periodization'
+import { getPlanCreatePolicy, removeOtherPlansForFreeUser } from '@/lib/plans/entitlements'
 import type { WeekContext, WeeklySummary, WeeklyExerciseRow } from '@/lib/plans/periodization'
 import type { UserContext }        from '@/lib/ai/types'
 
@@ -23,6 +24,7 @@ export interface GeneratePlanResult {
 
 export interface GeneratePlanOptions {
   mode?: 'initial' | 'weekly_regeneration'
+  replaceExisting?: boolean
 }
 
 // ─── Helper: asignar días de la semana ───────────────────────────────────────
@@ -105,9 +107,17 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
   if (!user) return { success: false, error: 'No autenticado' }
 
   const mode = options.mode ?? 'initial'
+  const replaceExisting = options.replaceExisting ?? mode === 'weekly_regeneration'
   const operation = mode === 'weekly_regeneration'
     ? 'weekly_plan_regeneration'
     : 'initial_plan_generation'
+
+  const createPolicy = await getPlanCreatePolicy(supabase, user.id, {
+    replaceExistingForFree: replaceExisting,
+  })
+  if (!createPolicy.allowed) {
+    return { success: false, error: createPolicy.reason }
+  }
 
   const { data: activePlan } = await (supabase
     .from('workout_plans') as any)
@@ -268,6 +278,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
       week_number:     nextWeekNumber,
       plan_context:    mode === 'weekly_regeneration' ? 'weekly_regeneration' : 'first_plan',
       parent_plan_id:  mode === 'weekly_regeneration' ? activePlan?.id ?? null : null,
+      source_type:     'ai',
     })
     .select('id')
     .single() as { data: { id: string } | null; error: { message: string } | null }
@@ -333,6 +344,10 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
         console.error(`[generatePlan] Error creando workout_exercises día ${day.day_number}:`, weErr)
       }
     }
+  }
+
+  if (createPolicy.replacingExisting) {
+    await removeOtherPlansForFreeUser(supabase, user.id, newPlan.id)
   }
 
   return {

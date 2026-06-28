@@ -41,6 +41,7 @@ export interface Database {
           last_check_in_at: string | null            // migration 017 — último check-in de perfil
           is_private: boolean                        // migration 024 — cuenta privada
           post_count: number                          // migration 024 — contador de posts (trigger)
+          subscription_tier: 'free' | 'pro'
           created_at: string
           updated_at: string
         }
@@ -66,6 +67,7 @@ export interface Database {
           last_check_in_at?: string | null
           is_private?: boolean
           post_count?: number
+          subscription_tier?: 'free' | 'pro'
         }
         Update: {
           username?: string | null
@@ -86,6 +88,7 @@ export interface Database {
           onboarding_done?: boolean
           timezone?: string | null
           last_check_in_at?: string | null
+          subscription_tier?: 'free' | 'pro'
         }
         Relationships: []
       }
@@ -167,6 +170,9 @@ export interface Database {
           plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id: string | null
           manually_updated_at: string | null
+          source_type: 'ai' | 'manual' | 'imported' | 'shared_post'
+          source_post_id: string | null
+          source_user_id: string | null
           created_at: string
           updated_at: string
         }
@@ -187,6 +193,9 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
+          source_type?: 'ai' | 'manual' | 'imported' | 'shared_post'
+          source_post_id?: string | null
+          source_user_id?: string | null
         }
         Update: {
           name?: string
@@ -203,6 +212,9 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
+          source_type?: 'ai' | 'manual' | 'imported' | 'shared_post'
+          source_post_id?: string | null
+          source_user_id?: string | null
         }
         Relationships: []
       }

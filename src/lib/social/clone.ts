@@ -11,6 +11,9 @@ export interface PlanInsert {
   difficulty: string | null
   generated_by_ai: boolean
   is_active: boolean
+  source_type: 'shared_post'
+  source_post_id: string
+  source_user_id: string | null
 }
 export interface WorkoutInsert {
   plan_id: string
@@ -29,7 +32,11 @@ export interface WorkoutExerciseInsert {
   weight_kg: number | null
 }
 
-export function buildPlanInsert(snapshot: RoutineSnapshot, userId: string): PlanInsert {
+export function buildPlanInsert(
+  snapshot: RoutineSnapshot,
+  userId: string,
+  source: { postId: string; userId: string | null },
+): PlanInsert {
   return {
     user_id: userId,
     name: snapshot.name,
@@ -38,6 +45,9 @@ export function buildPlanInsert(snapshot: RoutineSnapshot, userId: string): Plan
     difficulty: snapshot.difficulty,
     generated_by_ai: false,
     is_active: false,
+    source_type: 'shared_post',
+    source_post_id: source.postId,
+    source_user_id: source.userId,
   }
 }
 

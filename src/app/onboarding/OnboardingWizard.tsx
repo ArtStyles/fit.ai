@@ -16,14 +16,14 @@ import { validateUsername } from '@/lib/social/username'
 type StepKey =
   | 'username' | 'goal' | 'level' | 'days' | 'duration'
   | 'location' | 'equipment' | 'injuries' | 'physical'
-  | 'generating'
+  | 'planChoice' | 'generating'
 
 function buildSteps(answers: OnboardingAnswers): StepKey[] {
   const base: StepKey[] = ['username', 'goal', 'level', 'days', 'duration', 'location']
   if (answers.gym_type === 'home_basic' || answers.gym_type === 'full_gym') {
     base.push('equipment')
   }
-  return [...base, 'injuries', 'physical', 'generating']
+  return [...base, 'injuries', 'physical', 'planChoice', 'generating']
 }
 
 const STORAGE_KEY = 'fitai_onboarding_v1'
@@ -511,6 +511,62 @@ const AUTO_GENERATION_MSGS = [
   'Preparando tu dashboard...',
 ]
 
+function Step9PlanChoice({
+  onGenerate,
+  onManual,
+  onBack,
+}: {
+  onGenerate: () => void
+  onManual: () => void
+  onBack: () => void
+}) {
+  return (
+    <div className="flex min-h-[calc(100vh-3rem)] flex-col px-5 pb-10 pt-4">
+      <div className="h-9">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span className="text-sm font-medium">Atras</span>
+        </button>
+      </div>
+
+      <div className="mx-auto mt-12 w-full max-w-md">
+        <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-3xl border-2 border-primary/30 bg-primary/10">
+          <Dumbbell className="h-8 w-8 text-primary" />
+        </div>
+        <h2 className="text-[1.6rem] font-bold leading-tight text-foreground">
+          Como quieres empezar?
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Puedes generar una rutina con IA ahora o guardar tu perfil y crear el plan manualmente.
+        </p>
+
+        <div className="mt-8 space-y-3">
+          <button
+            type="button"
+            onClick={onGenerate}
+            className="w-full rounded-2xl bg-primary px-5 py-4 text-left text-primary-foreground shadow-lg shadow-primary/20 active:scale-[0.98]"
+          >
+            <p className="font-bold">Generar con IA</p>
+            <p className="mt-1 text-xs opacity-80">Usa tu perfil para crear una primera semana lista.</p>
+          </button>
+          <button
+            type="button"
+            onClick={onManual}
+            className="w-full rounded-2xl border-2 border-border bg-muted/20 px-5 py-4 text-left active:scale-[0.98]"
+          >
+            <p className="font-bold text-foreground">Crear manualmente</p>
+            <p className="mt-1 text-xs text-muted-foreground">Guarda el perfil y arma tus dias y ejercicios a tu ritmo.</p>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Step9GeneratingAuto({ onFinish }: { onFinish: () => Promise<GeneratePlanResult> }) {
   const [msgIdx, setMsgIdx] = useState(0)
   const [status, setStatus] = useState<'loading' | 'error'>('loading')
@@ -711,6 +767,17 @@ export default function OnboardingWizard() {
     return result
   }, [answers, router])
 
+  const handleManualStart = useCallback(async () => {
+    try {
+      await saveOnboardingAnswers(answers)
+      localStorage.removeItem(STORAGE_KEY)
+      router.replace('/plan')
+      router.refresh()
+    } catch (err) {
+      console.error('Error saving onboarding:', err)
+    }
+  }, [answers, router])
+
   if (!hydrated) return null
 
   const stepProps: StepProps = {
@@ -728,6 +795,7 @@ export default function OnboardingWizard() {
     equipment:  <Step6Equipment {...stepProps} />,
     injuries:   <Step7Injuries  {...stepProps} />,
     physical:   <Step8Physical  {...stepProps} />,
+    planChoice: <Step9PlanChoice onGenerate={goNext} onManual={handleManualStart} onBack={goBack} />,
     generating: <Step9GeneratingAuto onFinish={handleFinish} />,
   }
 

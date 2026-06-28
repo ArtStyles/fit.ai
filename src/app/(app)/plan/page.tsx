@@ -12,7 +12,13 @@ import {
 } from '@/components/plan/WorkoutExerciseList'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
-import { updatePlanSummary, updateWorkoutSummary } from '@/app/actions/plan'
+import {
+  activatePlan,
+  createManualPlan,
+  deletePlan,
+  updatePlanSummary,
+  updateWorkoutSummary,
+} from '@/app/actions/plan'
 import {
   ArrowLeft,
   CalendarDays,
@@ -20,6 +26,7 @@ import {
   ChevronRight,
   Dumbbell,
   History,
+  Plus,
   Sparkles,
   Target,
   Timer,
@@ -52,7 +59,12 @@ type PlanRow = {
   duration_weeks: number | null
   days_per_week: number | null
   difficulty: string | null
+  source_type: 'ai' | 'manual' | 'imported' | 'shared_post'
   created_at: string
+}
+
+type PlanListRow = Pick<PlanRow, 'id' | 'name' | 'goal' | 'days_per_week' | 'difficulty' | 'source_type' | 'created_at'> & {
+  is_active: boolean
 }
 
 type WorkoutRow = {
@@ -82,17 +94,138 @@ function formatDuration(minutes: number | null): string {
   return `${minutes} min`
 }
 
+function formatSource(value: PlanRow['source_type']): string {
+  if (value === 'manual') return 'Manual'
+  if (value === 'shared_post') return 'Copiado'
+  if (value === 'imported') return 'Importado'
+  return 'IA'
+}
+
+function PlanLibrary({ plans, tier }: { plans: PlanListRow[]; tier: 'free' | 'pro' }) {
+  const canCreate = tier === 'pro' || plans.length === 0
+
+  return (
+    <section className="animate-in fade-in slide-in-from-bottom-3 mt-8 rounded-2xl border border-border/60 bg-muted/10 p-5 duration-500">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-foreground">Mis planes</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Cambia el plan activo sin perder tu racha ni tu historial.
+          </p>
+        </div>
+        <Badge variant="ghost" className="border border-border/50 uppercase">{tier}</Badge>
+      </div>
+
+      {plans.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {plans.map(plan => (
+            <div key={plan.id} className={`rounded-xl border px-3 py-3 ${plan.is_active ? 'border-violet-500/40 bg-violet-500/10' : 'border-border/50 bg-background/40'}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{plan.name}</p>
+                    {plan.is_active && (
+                      <Badge variant="ghost" className="border border-violet-500/30 px-2 py-0 text-[11px] text-violet-100">
+                        Activo
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatSource(plan.source_type)}
+                    {plan.days_per_week ? ` · ${plan.days_per_week} dias/sem` : ''}
+                    {plan.difficulty ? ` · ${formatDifficulty(plan.difficulty)}` : ''}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {!plan.is_active && (
+                    <form action={activatePlan}>
+                      <input type="hidden" name="planId" value={plan.id} />
+                      <button className="h-9 rounded-lg bg-violet-500 px-3 text-xs font-semibold text-white hover:bg-violet-600">
+                        Activar
+                      </button>
+                    </form>
+                  )}
+                  <form action={deletePlan}>
+                    <input type="hidden" name="planId" value={plan.id} />
+                    <button className="h-9 rounded-lg border border-border/60 px-3 text-xs font-medium text-muted-foreground hover:text-foreground">
+                      Borrar
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        <Button asChild className="h-11 bg-violet-500 text-white hover:bg-violet-600">
+          <PendingLink href={canCreate ? '/plans/generate' : '/plan?error=plan_limit'}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            Generar
+          </PendingLink>
+        </Button>
+        <details>
+          <summary className={`flex h-11 cursor-pointer list-none items-center justify-center rounded-md border text-sm font-semibold [&::-webkit-details-marker]:hidden ${canCreate ? 'border-border/60 bg-muted/10 text-foreground hover:bg-muted/20' : 'border-border/40 bg-muted/5 text-muted-foreground'}`}>
+            <Plus className="mr-2 h-4 w-4" />
+            Manual
+          </summary>
+          {canCreate ? (
+            <form action={createManualPlan} className="mt-3 space-y-3 rounded-xl border border-border/50 bg-background/40 p-3">
+              <input name="name" required placeholder="Nombre del plan" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+              <input name="goal" placeholder="Objetivo visible" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+              <div className="grid grid-cols-2 gap-2">
+                <select name="daysPerWeek" defaultValue="3" className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500">
+                  {[1, 2, 3, 4, 5, 6, 7].map(day => <option key={day} value={day}>{day} dias</option>)}
+                </select>
+                <select name="difficulty" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500">
+                  <option value="">Nivel</option>
+                  <option value="beginner">Principiante</option>
+                  <option value="intermediate">Intermedio</option>
+                  <option value="advanced">Avanzado</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input name="makeActive" type="checkbox" defaultChecked className="h-4 w-4 accent-violet-500" />
+                Activarlo ahora
+              </label>
+              <button className="h-10 w-full rounded-md bg-violet-500 text-sm font-semibold text-white hover:bg-violet-600">
+                Crear plan manual
+              </button>
+            </form>
+          ) : (
+            <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              Tu cuenta free solo permite guardar un plan.
+            </p>
+          )}
+        </details>
+      </div>
+    </section>
+  )
+}
+
 export default async function PlanPage() {
   const { supabase, user, profile } = await requireAppUserContext()
 
-  const { data: planRaw } = await supabase
+  const [{ data: planRaw }, { data: planRows }] = await Promise.all([
+    supabase
     .from('workout_plans')
-    .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, created_at')
+      .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, source_type, created_at')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle() as unknown as { data: PlanRow | null }
+      .maybeSingle() as unknown as Promise<{ data: PlanRow | null }>,
+    supabase
+      .from('workout_plans')
+      .select('id, name, goal, days_per_week, difficulty, source_type, created_at, is_active')
+      .eq('user_id', user.id)
+      .order('is_active', { ascending: false })
+      .order('created_at', { ascending: false }) as unknown as Promise<{ data: PlanListRow[] | null }>,
+  ])
+
+  const plans = planRows ?? []
+  const tier = profile.subscription_tier ?? 'free'
 
   if (!planRaw) {
     return (
@@ -106,6 +239,8 @@ export default async function PlanPage() {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Dashboard
           </PendingLink>
+
+          <PlanLibrary plans={plans} tier={tier} />
 
           <section className="mt-8 rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/10">
@@ -248,6 +383,8 @@ export default async function PlanPage() {
             <ShareRoutineButton planId={planRaw.id} />
           </div>
         </header>
+
+        <PlanLibrary plans={plans} tier={tier} />
 
         <section
           className="animate-in fade-in slide-in-from-bottom-3 mt-6 rounded-2xl border border-border/60 bg-muted/10 p-5 duration-500"
