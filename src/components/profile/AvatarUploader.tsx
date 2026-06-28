@@ -17,7 +17,7 @@ type Props = {
 }
 
 const SIZES = {
-  header: { box: 'h-16 w-16', text: 'text-lg',  badge: 'h-5 w-5', icon: 'h-3 w-3'    },
+  header: { box: 'h-20 w-20', text: 'text-xl',  badge: 'h-6 w-6',  icon: 'h-3.5 w-3.5' },
   lg:     { box: 'h-24 w-24', text: 'text-2xl', badge: 'h-7 w-7', icon: 'h-3.5 w-3.5' },
 }
 
