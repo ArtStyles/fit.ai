@@ -5,8 +5,8 @@ import { useCallback, useRef, useTransition } from 'react'
 import type { Difficulty, ExerciseType } from '@/types/exercise'
 
 interface Props {
-  muscleGroups:  string[]
-  equipmentList: string[]
+  muscleGroups:  { value: string; label: string }[]
+  equipmentList: { value: string; label: string }[]
   current: {
     search:         string
     difficulty:     string
@@ -34,18 +34,18 @@ const SELECT_ACTIVE_CLS = `
 `
 
 const DIFF_OPTS: { v: Difficulty | ''; label: string }[] = [
-  { v: '',             label: 'All levels'    },
-  { v: 'beginner',     label: 'Beginner'      },
+  { v: '',             label: 'Todos los niveles' },
+  { v: 'beginner',     label: 'Principiante'  },
   { v: 'intermediate', label: 'Intermediate'  },
-  { v: 'advanced',     label: 'Advanced'      },
+  { v: 'advanced',     label: 'Avanzado'      },
 ]
 
 const TYPE_OPTS: { v: ExerciseType | ''; label: string }[] = [
-  { v: '',            label: 'All types'   },
-  { v: 'strength',    label: 'Strength'    },
+  { v: '',            label: 'Todos los tipos' },
+  { v: 'strength',    label: 'Fuerza'      },
   { v: 'cardio',      label: 'Cardio'      },
-  { v: 'flexibility', label: 'Flexibility' },
-  { v: 'balance',     label: 'Balance'     },
+  { v: 'flexibility', label: 'Flexibilidad' },
+  { v: 'balance',     label: 'Equilibrio'   },
   { v: 'hiit',        label: 'HIIT'        },
 ]
 
@@ -99,7 +99,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             ref={inputRef}
             name="search"
             defaultValue={current.search}
-            placeholder="Search exercises…"
+            placeholder="Buscar ejercicios…"
             className={`w-full pl-8 pr-3 h-9 rounded-xl border text-sm bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-500 hover:bg-zinc-700/70 hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500/50 transition-colors ${current.search ? 'border-orange-500/50 bg-orange-500/10 text-orange-100 placeholder:text-orange-300/40' : ''}`}
           />
         </form>
@@ -141,8 +141,8 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             value={current.muscle_group}
             onChange={e => push({ muscle_group: e.target.value })}
           >
-            <option value="">All muscles</option>
-            {muscleGroups.map(m => <option key={m} value={m} className="capitalize">{m}</option>)}
+            <option value="">Todos los músculos</option>
+            {muscleGroups.map(option => <option key={option.value} value={option.value} className="capitalize">{option.label}</option>)}
           </select>
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,8 +157,8 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             value={current.equipment}
             onChange={e => push({ equipment: e.target.value })}
           >
-            <option value="">All equipment</option>
-            {equipmentList.map(eq => <option key={eq} value={eq} className="capitalize">{eq}</option>)}
+            <option value="">Todo el equipo</option>
+            {equipmentList.map(option => <option key={option.value} value={option.value} className="capitalize">{option.label}</option>)}
           </select>
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -172,7 +172,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             onClick={() => { if (inputRef.current) inputRef.current.value = ''; push({ search: '', difficulty: '', exercise_type: '', muscle_group: '', equipment: '' }) }}
             className="h-9 px-3 text-sm text-zinc-500 hover:text-white rounded-xl border border-transparent hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
           >
-            ✕ Clear
+            ✕ Limpiar
           </button>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { BellRing, ChevronRight, Dumbbell, Ruler, UserCog, UserRound } from 'lucide-react'
+import { BellRing, ChevronRight, Dumbbell, Languages, Ruler, UserCog, UserRound } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -12,6 +12,7 @@ const SECTIONS = [
   { href: '/settings/entrenamiento',  label: 'Entrenamiento',    icon: Dumbbell  },
   { href: '/medidas',                 label: 'Medidas',          icon: Ruler     },
   { href: '/settings/notificaciones', label: 'Notificaciones',   icon: BellRing  },
+  { href: '/settings/idioma',         label: 'Idioma',           icon: Languages },
   { href: '/settings/cuenta',         label: 'Cuenta',           icon: UserCog   },
 ]
 

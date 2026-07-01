@@ -189,6 +189,7 @@ async function main() {
   console.log(`✅  Done`)
   console.log(`   Inserted   : ${inserted}/${dataset.length}`)
   console.log(`   With image : ${withImage}`)
+  console.log('   Next step  : pnpm translate:exercises:es')
   if (errors.length) {
     console.log(`   Errors     : ${errors.length}`)
     errors.slice(0, 20).forEach(e => console.log(`     • ${e}`))

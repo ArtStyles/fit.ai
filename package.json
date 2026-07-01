@@ -10,6 +10,8 @@
     "lint": "eslint .",
     "type-check": "tsc --noEmit --incremental false",
     "seed:exercises": "tsx --env-file=.env.local scripts/seed-free-exercise-db.ts --reset",
+    "translate:setup": "python scripts/setup-argos-translate.py",
+    "translate:exercises:es": "tsx --env-file=.env.local scripts/translate-exercises-es.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

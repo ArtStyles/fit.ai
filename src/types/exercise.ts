@@ -17,13 +17,18 @@ export interface Exercise {
   id: string
   wger_id: number | null
   name: string
+  name_es: string | null
   description: string | null
+  description_es: string | null
   muscle_groups: string[]
+  muscle_groups_es: string[] | null
   equipment: string[]
+  equipment_es: string[] | null
   difficulty: Difficulty | null
   exercise_type: ExerciseType | null
   is_compound: boolean
   instructions: string | null
+  instructions_es: string | null
   video_url: string | null
   image_url: string | null
   is_public: boolean

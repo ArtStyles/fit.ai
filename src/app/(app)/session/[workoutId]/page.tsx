@@ -5,6 +5,7 @@ import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore
 import { buildInitialExercises } from '@/store/sessionStore'
 import { getWorkoutStartAccess } from '@/lib/workouts/access'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
+import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 
 // ─── Tipos de datos crudos del servidor ──────────────────────────────────────
 
@@ -22,20 +23,26 @@ type RawWorkoutExercise = {
   exercises: {
     id:           string
     name:         string
+    name_es:      string | null
     image_url:    string | null
     instructions: string | null
+    instructions_es: string | null
     is_compound:  boolean
     muscle_groups: string[]
+    muscle_groups_es: string[] | null
   } | null
 }
 
 type RawExerciseOption = {
   id: string
   name: string
+  name_es: string | null
   image_url: string | null
   instructions: string | null
+  instructions_es: string | null
   is_compound: boolean
   muscle_groups: string[] | null
+  muscle_groups_es: string[] | null
 }
 
 // ─── Página ───────────────────────────────────────────────────────────────────
@@ -48,6 +55,7 @@ export default async function SessionPage({ params }: PageProps) {
   const { workoutId } = params
 
   const { supabase, user, profile } = await requireAppUserContext()
+  const language = exerciseLanguage(profile.language)
 
   const access = await getWorkoutStartAccess({
     supabase,
@@ -81,17 +89,20 @@ export default async function SessionPage({ params }: PageProps) {
         exercises (
           id,
           name,
+          name_es,
           image_url,
           instructions,
+          instructions_es,
           is_compound,
-          muscle_groups
+          muscle_groups,
+          muscle_groups_es
         )
       `)
       .eq('workout_id', workoutId)
       .order('order_index') as unknown as Promise<{ data: RawWorkoutExercise[] | null }>,
     supabase
       .from('exercises')
-      .select('id, name, image_url, instructions, is_compound, muscle_groups')
+      .select('id, name, name_es, image_url, instructions, instructions_es, is_compound, muscle_groups, muscle_groups_es')
       .eq('is_public', true)
       .order('name')
       .limit(500) as unknown as Promise<{ data: RawExerciseOption[] | null }>,
@@ -136,15 +147,16 @@ export default async function SessionPage({ params }: PageProps) {
   const exerciseInitData = rows
     .filter(r => r.exercises != null)
     .map(r => {
-      const last = lastSessionMap.get(r.exercises!.id)
+      const localized = localizeExercise(r.exercises!, language)
+      const last = lastSessionMap.get(localized.id)
       return {
         workoutExerciseId:     r.id,
-        exerciseId:            r.exercises!.id,
-        name:                  r.exercises!.name,
-        imageUrl:              r.exercises!.image_url,
-        instructions:          r.exercises!.instructions,
-        muscleGroups:          r.exercises!.muscle_groups ?? [],
-        isCompound:            r.exercises!.is_compound,
+        exerciseId:            localized.id,
+        name:                  localized.name,
+        imageUrl:              localized.image_url,
+        instructions:          localized.instructions,
+        muscleGroups:          localized.muscle_groups ?? [],
+        isCompound:            localized.is_compound,
         targetSets:            r.sets ?? 3,
         targetReps:            r.reps,
         targetDuration:        r.duration_seconds,
@@ -159,19 +171,22 @@ export default async function SessionPage({ params }: PageProps) {
     })
 
   const exercises: ExerciseSession[] = buildInitialExercises(exerciseInitData)
-  const exerciseOptions: SessionExerciseDraft[] = (exerciseOptionRows ?? []).map(exercise => ({
-    exerciseId: exercise.id,
-    name: exercise.name,
-    imageUrl: exercise.image_url,
-    instructions: exercise.instructions,
-    muscleGroups: exercise.muscle_groups ?? [],
-    isCompound: exercise.is_compound,
-    targetSets: 3,
-    targetReps: 10,
-    targetDuration: null,
-    restSeconds: 90,
-    targetRpe: 7,
-  }))
+  const exerciseOptions: SessionExerciseDraft[] = (exerciseOptionRows ?? []).map(rawExercise => {
+    const exercise = localizeExercise(rawExercise, language)
+    return {
+      exerciseId: exercise.id,
+      name: exercise.name,
+      imageUrl: exercise.image_url,
+      instructions: exercise.instructions,
+      muscleGroups: exercise.muscle_groups ?? [],
+      isCompound: exercise.is_compound,
+      targetSets: 3,
+      targetReps: 10,
+      targetDuration: null,
+      restSeconds: 90,
+      targetRpe: 7,
+    }
+  })
 
   return (
     <SessionClient

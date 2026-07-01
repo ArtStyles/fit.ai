@@ -42,6 +42,7 @@ export interface Database {
           is_private: boolean                        // migration 024 — cuenta privada
           post_count: number                          // migration 024 — contador de posts (trigger)
           subscription_tier: 'free' | 'pro'
+          language: 'es' | 'en'
           created_at: string
           updated_at: string
         }
@@ -68,6 +69,7 @@ export interface Database {
           is_private?: boolean
           post_count?: number
           subscription_tier?: 'free' | 'pro'
+          language?: 'es' | 'en'
         }
         Update: {
           username?: string | null
@@ -89,6 +91,7 @@ export interface Database {
           timezone?: string | null
           last_check_in_at?: string | null
           subscription_tier?: 'free' | 'pro'
+          language?: 'es' | 'en'
         }
         Relationships: []
       }
@@ -100,13 +103,18 @@ export interface Database {
           id: string
           wger_id: number | null
           name: string
+          name_es: string | null
           description: string | null
+          description_es: string | null
           muscle_groups: string[]
           equipment: string[]
+          equipment_es: string[] | null
+          muscle_groups_es: string[] | null
           difficulty: 'beginner' | 'intermediate' | 'advanced' | null
           exercise_type: 'strength' | 'cardio' | 'flexibility' | 'balance' | 'hiit' | null
           is_compound: boolean
           instructions: string | null
+          instructions_es: string | null
           video_url: string | null
           image_url: string | null
           is_public: boolean
@@ -118,13 +126,18 @@ export interface Database {
           id?: string
           wger_id?: number | null
           name: string
+          name_es?: string | null
           description?: string | null
+          description_es?: string | null
           muscle_groups?: string[]
           equipment?: string[]
+          equipment_es?: string[] | null
+          muscle_groups_es?: string[] | null
           difficulty?: 'beginner' | 'intermediate' | 'advanced' | null
           exercise_type?: 'strength' | 'cardio' | 'flexibility' | 'balance' | 'hiit' | null
           is_compound?: boolean
           instructions?: string | null
+          instructions_es?: string | null
           video_url?: string | null
           image_url?: string | null
           is_public?: boolean
@@ -134,13 +147,18 @@ export interface Database {
         Update: {
           wger_id?: number | null
           name?: string
+          name_es?: string | null
           description?: string | null
+          description_es?: string | null
           muscle_groups?: string[]
           equipment?: string[]
+          equipment_es?: string[] | null
+          muscle_groups_es?: string[] | null
           difficulty?: 'beginner' | 'intermediate' | 'advanced' | null
           exercise_type?: 'strength' | 'cardio' | 'flexibility' | 'balance' | 'hiit' | null
           is_compound?: boolean
           instructions?: string | null
+          instructions_es?: string | null
           video_url?: string | null
           image_url?: string | null
           is_public?: boolean

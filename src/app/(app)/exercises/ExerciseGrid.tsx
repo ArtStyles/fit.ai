@@ -45,7 +45,7 @@ function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
         <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" zoomable zoomFocusable={false} />
         {ex.is_compound && (
           <span className="absolute top-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-200">
-            Compound
+            Compuesto
           </span>
         )}
       </div>
@@ -160,7 +160,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
             ref={closeRef}
             onClick={onClose}
             className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-xl text-zinc-500 hover:text-white hover:bg-zinc-700/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/60"
-            aria-label="Close"
+            aria-label="Cerrar"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
@@ -192,7 +192,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
                 {ex.is_compound && (
                   <>
                     <span className="text-zinc-700">·</span>
-                    <span className="text-[11px] text-zinc-500 font-medium">Compound</span>
+                    <span className="text-[11px] text-zinc-500 font-medium">Compuesto</span>
                   </>
                 )}
               </div>
@@ -205,7 +205,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
 
           {/* Description */}
           {description && (
-            <Section title="About">
+            <Section title="Descripción">
               <p className="text-sm text-zinc-300 leading-relaxed">
                 {description}
               </p>
@@ -214,7 +214,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
 
           {/* Muscles */}
           {ex.muscle_groups.length > 0 && (
-            <Section title="Muscles Worked">
+            <Section title="Músculos trabajados">
               <div className="flex flex-wrap gap-2">
                 {ex.muscle_groups.map(m => <Chip key={m} label={m} />)}
               </div>
@@ -223,7 +223,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
 
           {/* Equipment */}
           {ex.equipment.length > 0 && (
-            <Section title="Equipment">
+            <Section title="Equipo">
               <div className="flex flex-wrap gap-2">
                 {ex.equipment.map(e => <Chip key={e} label={e} />)}
               </div>
@@ -232,7 +232,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
 
           {/* Instructions */}
           {instructions && (
-            <Section title="Instructions">
+            <Section title="Instrucciones">
               <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-line">
                 {instructions}
               </p>
@@ -251,7 +251,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
-                Watch demonstration
+                Ver demostración
               </a>
             </Section>
           )}
@@ -259,7 +259,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
           {/* Empty state */}
           {!description && !instructions && ex.muscle_groups.length === 0 && ex.equipment.length === 0 && (
             <p className="text-sm text-zinc-600 text-center py-4">
-              No additional details available for this exercise.
+              No hay más detalles disponibles para este ejercicio.
             </p>
           )}
         </div>
@@ -273,7 +273,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
             onClick={onClose}
             className="text-sm font-medium text-zinc-400 hover:text-white px-4 py-1.5 rounded-xl border border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800 transition-colors"
           >
-            Close
+            Cerrar
           </button>
         </div>
       </motion.div>

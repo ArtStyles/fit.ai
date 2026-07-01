@@ -10,6 +10,7 @@ import { TYPE_CFG } from './config'
 import ExerciseFilters from './ExerciseFilters'
 import ExerciseGrid from './ExerciseGrid'
 import type { Difficulty, ExerciseType } from '@/types/exercise'
+import { exerciseLanguage, localizeEquipment, localizeMuscleGroup } from '@/lib/exercises/localization'
 
 // ─── Dev guard ────────────────────────────────────────────────────────────────
 
@@ -27,14 +28,14 @@ function StatStrip({ total, page, totalPages }: { total: number; page: number; t
     <div className="flex items-center gap-5">
       <div className="text-center">
         <div className="text-2xl font-bold text-white tabular-nums">{total.toLocaleString()}</div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Exercises</div>
+        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Ejercicios</div>
       </div>
       <div className="w-px h-8 bg-zinc-800" />
       <div className="text-center">
         <div className="text-2xl font-bold text-white tabular-nums">
           {page}<span className="text-zinc-600 text-base">/{totalPages}</span>
         </div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Page</div>
+        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Página</div>
       </div>
       <div className="w-px h-8 bg-zinc-800 hidden lg:block" />
       <div className="hidden lg:flex items-center gap-3.5">
@@ -68,8 +69,8 @@ function Pagination({ page, totalPages, sp }: { page: number; totalPages: number
   return (
     <div className="flex items-center justify-center gap-1.5 mt-12">
       {page > 1
-        ? <Link href={href(page - 1)} className={navCls}>← Prev</Link>
-        : <span className={deadCls}>← Prev</span>}
+        ? <Link href={href(page - 1)} className={navCls}>← Anterior</Link>
+        : <span className={deadCls}>← Anterior</span>}
 
       <div className="flex items-center gap-1 mx-1">
         {pages.map((p, i) =>
@@ -92,8 +93,8 @@ function Pagination({ page, totalPages, sp }: { page: number; totalPages: number
       </div>
 
       {page < totalPages
-        ? <Link href={href(page + 1)} className={navCls}>Next →</Link>
-        : <span className={deadCls}>Next →</span>}
+        ? <Link href={href(page + 1)} className={navCls}>Siguiente →</Link>
+        : <span className={deadCls}>Siguiente →</span>}
     </div>
   )
 }
@@ -105,8 +106,9 @@ export default async function ExercisesPage({
 }: {
   searchParams: Promise<Record<string, string>>
 }) {
-  const { user } = await requireAppUserContext()
+  const { user, profile } = await requireAppUserContext()
   if (!isDevAccess(user?.email)) notFound()
+  const language = exerciseLanguage(profile.language)
 
   const sp             = await searchParams
   const page           = Math.max(1, parseInt(sp.page ?? '1', 10))
@@ -124,7 +126,7 @@ export default async function ExercisesPage({
       muscle_group:  muscle_group  || undefined,
       equipment:     equipment     || undefined,
       page,
-    }),
+    }, language),
     getDistinctMuscleGroups(),
     getDistinctEquipment(),
   ])
@@ -139,13 +141,13 @@ export default async function ExercisesPage({
       <div className="sticky top-0 z-10 bg-[#0e0e10]/95 backdrop-blur-md border-b border-zinc-800/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between py-4 gap-4">
-            <h1 className="text-xl font-bold tracking-tight shrink-0">Exercise Library</h1>
+            <h1 className="text-xl font-bold tracking-tight shrink-0">Biblioteca de ejercicios</h1>
             <StatStrip total={total} page={page} totalPages={totalPages} />
           </div>
           <div className="pb-3">
             <ExerciseFilters
-              muscleGroups={muscleGroups}
-              equipmentList={equipmentList}
+              muscleGroups={muscleGroups.map(value => ({ value, label: localizeMuscleGroup(value, language) }))}
+              equipmentList={equipmentList.map(value => ({ value, label: localizeEquipment(value, language) }))}
               current={{ search, difficulty, exercise_type, muscle_group, equipment }}
               total={total}
             />
@@ -161,11 +163,11 @@ export default async function ExercisesPage({
               🔍
             </div>
             <div>
-              <p className="text-base font-semibold text-white">No exercises found</p>
-              <p className="text-sm text-zinc-500 mt-1">Try adjusting or clearing your filters</p>
+              <p className="text-base font-semibold text-white">No se encontraron ejercicios</p>
+              <p className="text-sm text-zinc-500 mt-1">Prueba a cambiar o limpiar los filtros</p>
             </div>
             <Link href="/exercises" className="text-sm text-orange-400 hover:text-orange-300 underline underline-offset-2">
-              Clear all filters
+              Limpiar todos los filtros
             </Link>
           </div>
         ) : (

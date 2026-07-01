@@ -21,6 +21,7 @@ import { generateDailyBrief } from '@/lib/ai/mock-briefGenerator'
 import { isCheckInDue } from '@/lib/profile/checkin'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 import type { Database } from '@/types/database'
+import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 
 export const metadata = { title: 'Dashboard · FitAI' }
 
@@ -96,7 +97,7 @@ type ExerciseProgressRow = {
   exercise_id: string | null
   weights_kg: number[] | null
   reps_completed: number[] | null
-  exercise: { name: string } | { name: string }[] | null
+  exercise: { name: string; name_es: string | null } | { name: string; name_es: string | null }[] | null
 }
 
 type TopRecordHighlight = {
@@ -288,9 +289,10 @@ async function loadDashboardPayload(
   return loadDashboardFallback(supabase, userId, weekStart, recentStart)
 }
 
-function getExerciseName(row: ExerciseProgressRow): string | null {
-  if (Array.isArray(row.exercise)) return row.exercise[0]?.name ?? null
-  return row.exercise?.name ?? null
+function getExerciseName(row: ExerciseProgressRow, language: ExerciseLanguage): string | null {
+  const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
+  if (!exercise) return null
+  return language === 'es' ? exercise.name_es?.trim() || exercise.name : exercise.name
 }
 
 type RecentInsights = {
@@ -301,13 +303,14 @@ type RecentInsights = {
 async function loadRecentInsights(
   supabase: SupabaseServerClient,
   recentLogs: WeekLogRow[],
+  language: ExerciseLanguage,
 ): Promise<RecentInsights> {
   const logIds = recentLogs.map(log => log.id)
   if (logIds.length === 0) return { topRecord: null, volumeSeries: [] }
 
   const { data } = await supabase
     .from('exercise_logs')
-    .select('progress_log_id, exercise_id, weights_kg, reps_completed, exercise:exercises(name)')
+    .select('progress_log_id, exercise_id, weights_kg, reps_completed, exercise:exercises(name, name_es)')
     .in('progress_log_id', logIds) as unknown as { data: ExerciseProgressRow[] | null }
 
   let best: NonNullable<TopRecordHighlight> | null = null
@@ -325,7 +328,7 @@ async function loadRecentInsights(
     volumeByLog.set(row.progress_log_id, logVolume)
 
     // ── Mejor marca personal ───────────────────────────────────────────────
-    const exerciseName = getExerciseName(row)
+    const exerciseName = getExerciseName(row, language)
     if (!exerciseName || !row.exercise_id) continue
 
     const maxWeightKg = weights.reduce((max, weight) => Math.max(max, Number(weight) || 0), 0)
@@ -390,7 +393,11 @@ export default async function DashboardPage() {
     hasCompletedSessions,
   } = dashboardPayload
   const workouts = await attachProgressionCounts(supabase, dashboardPayload.workouts)
-  const { topRecord: topRecordHighlight, volumeSeries } = await loadRecentInsights(supabase, allRecentLogs)
+  const { topRecord: topRecordHighlight, volumeSeries } = await loadRecentInsights(
+    supabase,
+    allRecentLogs,
+    exerciseLanguage(profile.language),
+  )
   const workoutNameById = new Map(workouts.map(workout => [workout.id, workout.name]))
   const latestCompletedSession = allRecentLogs[0]
   const latestSession = latestCompletedSession

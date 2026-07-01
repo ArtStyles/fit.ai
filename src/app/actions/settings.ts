@@ -109,6 +109,27 @@ export async function updateProfileName(formData: FormData) {
   redirect('/settings/perfil?notice=settings_saved')
 }
 
+export async function updateLanguage(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login?error=auth_required')
+
+  const language = formData.get('language')
+  if (language !== 'es' && language !== 'en') {
+    redirect('/settings/idioma?error=save_failed')
+  }
+
+  const { error } = await (supabase
+    .from('profiles') as any)
+    .update({ language })
+    .eq('id', user.id)
+
+  if (error) redirect('/settings/idioma?error=save_failed')
+
+  revalidatePath('/', 'layout')
+  redirect('/settings/idioma?notice=settings_saved')
+}
+
 export async function setPrivacy(isPrivate: boolean): Promise<ActionResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

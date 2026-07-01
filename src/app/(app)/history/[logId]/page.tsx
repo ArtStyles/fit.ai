@@ -15,6 +15,7 @@ import { PendingLink } from '@/components/navigation/PendingLink'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
+import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 
 export const metadata = { title: 'Detalle de sesión · FitAI' }
 
@@ -36,7 +37,9 @@ type ProgressLogRow = {
 
 type ExerciseSummary = {
   name: string
+  name_es: string | null
   muscle_groups: string[] | null
+  muscle_groups_es: string[] | null
   is_compound: boolean | null
 }
 
@@ -138,7 +141,8 @@ function setRows(row: ExerciseLogRow) {
 }
 
 export default async function HistoryDetailPage({ params }: PageProps) {
-  const { supabase, user } = await requireAppUserContext()
+  const { supabase, user, profile } = await requireAppUserContext()
+  const language = exerciseLanguage(profile.language)
 
   const { data: log } = await supabase
     .from('progress_logs')
@@ -169,11 +173,18 @@ export default async function HistoryDetailPage({ params }: PageProps) {
       rpe_values,
       duration_seconds,
       notes,
-      exercise:exercises(name, muscle_groups, is_compound)
+      exercise:exercises(name, name_es, muscle_groups, muscle_groups_es, is_compound)
     `)
     .eq('progress_log_id', log.id) as unknown as { data: ExerciseLogRow[] | null }
 
-  const exerciseLogs = exerciseLogRows ?? []
+  const exerciseLogs = (exerciseLogRows ?? []).map(row => ({
+    ...row,
+    exercise: Array.isArray(row.exercise)
+      ? row.exercise.map(exercise => localizeExercise(exercise, language))
+      : row.exercise
+        ? localizeExercise(row.exercise, language)
+        : null,
+  }))
   const exerciseIds = Array.from(new Set(exerciseLogs.map(row => row.exercise_id)))
   let previousLogs: PreviousExerciseLogRow[] = []
 

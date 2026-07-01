@@ -126,6 +126,19 @@ Aplica las migraciones SQL en este orden:
 012_calendar_payload.sql
 013_exercise_images.sql
 014_exercise_source_columns.sql
+015_coach_chat_operation.sql
+016_profile_timezone.sql
+017_profile_check_in.sql
+018_avatars_bucket.sql
+019_social_posts.sql
+020_social_rls.sql
+021_posts_bucket.sql
+022_follows.sql
+023_backfill_usernames.sql
+024_private_accounts.sql
+025_social_push_notifications.sql
+026_plan_library.sql
+027_exercise_localization.sql
 ```
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
@@ -137,10 +150,20 @@ desde free-exercise-db:
 
 ```bash
 pnpm seed:exercises
+pnpm translate:setup
+pnpm translate:exercises:es
 ```
 
 El seed requiere `SUPABASE_SERVICE_ROLE_KEY` y la migracion
-`014_exercise_source_columns.sql`.
+`014_exercise_source_columns.sql`. El backfill en español requiere además
+`027_exercise_localization.sql`. Usa Argos Translate local, no requiere una API
+key y procesa 25 ejercicios por ejecución; es incremental y no borra planes ni
+historial. Usa `--limit=100` para ampliar un lote, `--all` para procesar todo o
+`--force` solo para reemplazar traducciones existentes. Antes de guardar un lote,
+puedes revisarlo con `pnpm translate:exercises:es -- --limit=25 --dry-run`. Las
+traducciones de Argos que aún no están en el archivo revisado se muestran como
+borrador y no se guardan automáticamente; `--allow-machine` permite aceptarlas
+explícitamente.
 
 ### Desarrollo
 
@@ -190,6 +213,8 @@ pnpm cap:android
 | `pnpm test:watch` | Ejecuta Vitest en modo watch. |
 | `pnpm test:ui` | Abre la interfaz de Vitest. |
 | `pnpm seed:exercises` | Reemplaza el catálogo de ejercicios con free-exercise-db (resetea datos de entrenamiento de prueba). |
+| `pnpm translate:setup` | Instala el motor local Argos Translate. |
+| `pnpm translate:exercises:es` | Traduce localmente el siguiente lote de 25 ejercicios sin borrar planes ni historial. |
 | `pnpm cap:sync` | Sincroniza recursos y plugins de Capacitor. |
 | `pnpm cap:android` | Abre el proyecto Android. |
 

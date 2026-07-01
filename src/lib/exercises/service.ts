@@ -8,6 +8,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { Exercise, ExerciseFilters, ExercisePage } from '@/types/exercise'
+import { localizeExercise, type ExerciseLanguage } from './localization'
 
 const DEFAULT_LIMIT = 24
 
@@ -20,7 +21,8 @@ const DEFAULT_LIMIT = 24
  * Paginated, filtered list of public exercises.
  */
 export async function getExercises(
-  filters: ExerciseFilters = {}
+  filters: ExerciseFilters = {},
+  language: ExerciseLanguage = 'es',
 ): Promise<ExercisePage> {
   const supabase = await createClient()
 
@@ -48,8 +50,10 @@ export async function getExercises(
   let q = query.select('*', { count: 'exact' }).eq('is_public', true)
 
   if (search?.trim()) {
-    // ilike for case-insensitive partial match on name
-    q = q.ilike('name', `%${search.trim()}%`)
+    const term = search.trim().replace(/[^a-zA-Z0-9À-ÿ\s'’_-]/g, '')
+    q = language === 'es'
+      ? q.or(`name.ilike.%${term}%,name_es.ilike.%${term}%`)
+      : q.ilike('name', `%${term}%`)
   }
   if (difficulty) {
     q = q.eq('difficulty', difficulty)
@@ -81,7 +85,7 @@ export async function getExercises(
   const total = count ?? 0
 
   return {
-    exercises: data ?? [],
+    exercises: (data ?? []).map(exercise => localizeExercise(exercise, language)),
     total,
     page,
     limit,
@@ -92,7 +96,10 @@ export async function getExercises(
 /**
  * Single exercise by UUID.
  */
-export async function getExerciseById(id: string): Promise<Exercise | null> {
+export async function getExerciseById(
+  id: string,
+  language: ExerciseLanguage = 'es',
+): Promise<Exercise | null> {
   const supabase = await createClient()
 
   const result = await supabase
@@ -106,7 +113,7 @@ export async function getExerciseById(id: string): Promise<Exercise | null> {
     throw new Error(result.error.message)
   }
 
-  return result.data
+  return result.data ? localizeExercise(result.data, language) : null
 }
 
 /**
@@ -115,29 +122,38 @@ export async function getExerciseById(id: string): Promise<Exercise | null> {
  */
 export async function searchExercises(
   query: string,
-  limit = 10
+  limit = 10,
+  language: ExerciseLanguage = 'es',
 ): Promise<Exercise[]> {
   if (!query.trim()) return []
 
   const supabase = await createClient()
 
-  const result = await supabase
+  let request = supabase
     .from('exercises')
     .select('*')
     .eq('is_public', true)
-    .ilike('name', `%${query.trim()}%`)
+  const term = query.trim().replace(/[^a-zA-Z0-9À-ÿ\s'’_-]/g, '')
+  request = language === 'es'
+    ? request.or(`name.ilike.%${term}%,name_es.ilike.%${term}%`)
+    : request.ilike('name', `%${term}%`)
+
+  const result = await request
     .order('name', { ascending: true })
     .limit(limit) as unknown as { data: Exercise[] | null; error: { message: string } | null }
 
   if (result.error) throw new Error(result.error.message)
-  return result.data ?? []
+  return (result.data ?? []).map(exercise => localizeExercise(exercise, language))
 }
 
 /**
  * Fetch a specific set of exercises by their UUIDs (e.g. to populate a plan).
  * Preserves the order of the input array.
  */
-export async function getExercisesByIds(ids: string[]): Promise<Exercise[]> {
+export async function getExercisesByIds(
+  ids: string[],
+  language: ExerciseLanguage = 'es',
+): Promise<Exercise[]> {
   if (ids.length === 0) return []
 
   const supabase = await createClient()
@@ -150,7 +166,7 @@ export async function getExercisesByIds(ids: string[]): Promise<Exercise[]> {
 
   if (result.error) throw new Error(result.error.message)
 
-  const rows = result.data ?? []
+  const rows = (result.data ?? []).map(exercise => localizeExercise(exercise, language))
 
   // Restore caller's ordering
   const map = new Map(rows.map(e => [e.id, e]))
@@ -173,7 +189,7 @@ export async function getDistinctMuscleGroups(): Promise<string[]> {
 
   if (result.error) throw new Error(result.error.message)
 
-  const all = (result.data ?? []).flatMap(r => r.muscle_groups)
+  const all = (result.data ?? []).flatMap(row => row.muscle_groups)
   return Array.from(new Set(all)).sort()
 }
 
@@ -190,6 +206,6 @@ export async function getDistinctEquipment(): Promise<string[]> {
 
   if (result.error) throw new Error(result.error.message)
 
-  const all = (result.data ?? []).flatMap(r => r.equipment)
+  const all = (result.data ?? []).flatMap(row => row.equipment)
   return Array.from(new Set(all)).sort()
 }

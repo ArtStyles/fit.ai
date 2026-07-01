@@ -32,6 +32,7 @@ import {
   Timer,
 } from 'lucide-react'
 import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
+import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 
 export const metadata = { title: 'Plan completo · FitAI' }
 
@@ -206,6 +207,7 @@ function PlanLibrary({ plans, tier }: { plans: PlanListRow[]; tier: 'free' | 'pr
 
 export default async function PlanPage() {
   const { supabase, user, profile } = await requireAppUserContext()
+  const language = exerciseLanguage(profile.language)
 
   const [{ data: planRaw }, { data: planRows }] = await Promise.all([
     supabase
@@ -270,7 +272,7 @@ export default async function PlanPage() {
       .order('order_in_plan') as unknown as Promise<{ data: WorkoutRow[] | null }>,
     supabase
       .from('exercises')
-      .select('id, name, muscle_groups, equipment, difficulty, exercise_type, is_compound')
+      .select('id, name, name_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound')
       .eq('is_public', true)
       .order('name') as unknown as Promise<{ data: PlanExerciseOption[] | null }>,
   ])
@@ -279,7 +281,9 @@ export default async function PlanPage() {
     ...workout,
     displayName: getWorkoutDisplayName(workout.name, workout.focus),
   }))
-  const exerciseOptions = exerciseOptionsResult.data ?? []
+  const exerciseOptions = (exerciseOptionsResult.data ?? []).map(exercise =>
+    localizeExercise(exercise, language)
+  )
 
   const workoutIds = workouts.map(workout => workout.id)
   let exerciseRows: PlanWorkoutExerciseRow[] = []
@@ -298,12 +302,19 @@ export default async function PlanPage() {
         notes,
         target_rpe,
         weight_suggestion_basis,
-        exercise:exercises(id, name, muscle_groups, equipment, difficulty, exercise_type, is_compound)
+        exercise:exercises(id, name, name_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound)
       `)
       .in('workout_id', workoutIds)
       .order('order_index') as unknown as { data: PlanWorkoutExerciseRow[] | null }
 
-    exerciseRows = data ?? []
+    exerciseRows = (data ?? []).map(row => ({
+      ...row,
+      exercise: Array.isArray(row.exercise)
+        ? row.exercise.map(exercise => localizeExercise(exercise, language))
+        : row.exercise
+          ? localizeExercise(row.exercise, language)
+          : null,
+    }))
   }
 
   const exercisesByWorkout = exerciseRows.reduce<Record<string, PlanWorkoutExerciseRow[]>>((acc, row) => {

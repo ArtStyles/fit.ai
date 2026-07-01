@@ -11,6 +11,7 @@ import { ExerciseProgressionSection } from '@/components/history/ExerciseProgres
 import { requireAppUserContext } from '@/lib/auth/server'
 import type { Database } from '@/types/database'
 import type { TrackedExercise } from '@/app/actions/progression'
+import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
 
 export const metadata = { title: 'Historial · FitAI' }
 
@@ -30,7 +31,9 @@ type ProgressLogRow = {
 
 type ExerciseSummary = {
   name: string
+  name_es?: string | null
   muscle_groups: string[] | null
+  muscle_groups_es?: string[] | null
   is_compound: boolean | null
 }
 
@@ -79,6 +82,7 @@ function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
 async function loadHistoryPayloadFallback(
   supabase: AppSupabaseClient,
   userId: string,
+  language: ExerciseLanguage,
 ): Promise<{ sessionLogs: ProgressLogRow[]; exerciseLogs: ExerciseLogRow[] }> {
   const { data: logs } = await supabase
     .from('progress_logs')
@@ -107,11 +111,18 @@ async function loadHistoryPayloadFallback(
         exercise_id,
         weights_kg,
         reps_completed,
-        exercise:exercises(name, muscle_groups, is_compound)
+        exercise:exercises(name, name_es, muscle_groups, muscle_groups_es, is_compound)
       `)
       .in('progress_log_id', logIds) as unknown as { data: ExerciseLogRow[] | null }
 
-    exerciseLogs = data ?? []
+    exerciseLogs = (data ?? []).map(row => ({
+      ...row,
+      exercise: Array.isArray(row.exercise)
+        ? row.exercise.map(exercise => localizeExercise(exercise, language))
+        : row.exercise
+          ? localizeExercise(row.exercise, language)
+          : null,
+    }))
   }
 
   return { sessionLogs, exerciseLogs }
@@ -120,6 +131,7 @@ async function loadHistoryPayloadFallback(
 async function loadHistoryPayload(
   supabase: AppSupabaseClient,
   userId: string,
+  language: ExerciseLanguage,
 ): Promise<{ sessionLogs: ProgressLogRow[]; exerciseLogs: ExerciseLogRow[] }> {
   try {
     const { data, error } = await (supabase as unknown as HistoryRpcClient)
@@ -135,7 +147,7 @@ async function loadHistoryPayload(
     // The migration may not be applied locally yet; fallback keeps the screen usable.
   }
 
-  return loadHistoryPayloadFallback(supabase, userId)
+  return loadHistoryPayloadFallback(supabase, userId, language)
 }
 
 function volumeFor(logId: string, rows: ExerciseLogRow[]): number {
@@ -208,8 +220,12 @@ function buildPersonalRecords(rows: ExerciseLogRow[], logs: ProgressLogRow[]): P
 }
 
 export default async function HistoryPage() {
-  const { supabase, user } = await requireAppUserContext()
-  const { sessionLogs, exerciseLogs } = await loadHistoryPayload(supabase, user.id)
+  const { supabase, user, profile } = await requireAppUserContext()
+  const { sessionLogs, exerciseLogs } = await loadHistoryPayload(
+    supabase,
+    user.id,
+    exerciseLanguage(profile.language),
+  )
 
   const totalMinutes = sessionLogs.reduce((sum, log) => sum + (log.duration_minutes ?? 0), 0)
   const totalVolume = Math.round(sessionLogs.reduce((sum, log) => {

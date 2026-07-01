@@ -19,19 +19,25 @@ import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import type { Database } from '@/types/database'
+import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 
 export const metadata = { title: 'Ejercicio · FitAI' }
 
 type ExerciseRow = {
   id: string
   name: string
+  name_es?: string | null
   description: string | null
+  description_es?: string | null
   muscle_groups: string[] | null
+  muscle_groups_es?: string[] | null
   equipment: string[] | null
+  equipment_es?: string[] | null
   difficulty: string | null
   exercise_type: string | null
   is_compound: boolean | null
   instructions: string | null
+  instructions_es?: string | null
   video_url: string | null
   image_url: string | null
 }
@@ -136,7 +142,7 @@ async function loadExerciseDetailPayloadFallback(
 ): Promise<ExerciseDetailPayloadResult> {
   const { data: exercise } = await supabase
     .from('exercises')
-    .select('id, name, description, muscle_groups, equipment, difficulty, exercise_type, is_compound, instructions, video_url, image_url')
+    .select('id, name, name_es, description, description_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound, instructions, instructions_es, video_url, image_url')
     .eq('id', exerciseId)
     .eq('is_public', true)
     .maybeSingle() as unknown as { data: ExerciseRow | null }
@@ -437,12 +443,16 @@ function ProgressChart({ points }: { points: ProgressPoint[] }) {
 }
 
 export default async function ExerciseDetailPage({ params }: PageProps) {
-  const { supabase, user } = await requireAppUserContext()
-  const { exercise, logs, workoutsById } = await loadExerciseDetailPayload(
+  const { supabase, user, profile } = await requireAppUserContext()
+  const payload = await loadExerciseDetailPayload(
     supabase,
     user.id,
     params.exerciseId,
   )
+  const exercise = payload.exercise
+    ? localizeExercise(payload.exercise, exerciseLanguage(profile.language))
+    : null
+  const { logs, workoutsById } = payload
 
   if (!exercise) notFound()
 

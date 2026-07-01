@@ -18,6 +18,7 @@ export type AppProfile = {
   username: string | null
   is_private: boolean
   subscription_tier: 'free' | 'pro'
+  language: 'es' | 'en'
 }
 
 type AppUserContext = {
@@ -47,7 +48,7 @@ export const getAppUserContext = cache(async (): Promise<AppUserContext> => {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('onboarding_done, full_name, avatar_url, timezone, last_check_in_at, username, is_private, subscription_tier')
+    .select('onboarding_done, full_name, avatar_url, timezone, last_check_in_at, username, is_private, subscription_tier, language')
     .eq('id', user.id)
     .single() as unknown as { data: AppProfile | null }
 
