@@ -6,6 +6,8 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { VerifyCodeStep } from '../register/VerifyCodeStep'
+import { isEmailNotConfirmedError } from './authError'
 
 type LoginFieldErrors = {
   email?: string
@@ -65,6 +67,7 @@ export function LoginForm() {
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({})
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -92,6 +95,17 @@ export function LoginForm() {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
+    if (error && isEmailNotConfirmedError(error)) {
+      setLoading(false)
+      setVerifyEmail(email)
+      showToast({
+        title: 'Verificación pendiente',
+        description: 'Ingresa el código enviado a tu correo para activar tu cuenta.',
+        variant: 'info',
+      })
+      return
+    }
+
     if (error) {
       const message = getLoginErrorMessage(error.message)
       setError(message)
@@ -112,6 +126,10 @@ export function LoginForm() {
     window.dispatchEvent(new Event('fitai:navigation-start'))
     router.push('/dashboard')
     router.refresh()
+  }
+
+  if (verifyEmail) {
+    return <VerifyCodeStep email={verifyEmail} />
   }
 
   return (
