@@ -17,6 +17,13 @@ export function PostFeed({ initialPosts, initialCursor, fetchPage, emptyMessage 
   const [loading, setLoading] = useState(false)
   const sentinel = useRef<HTMLDivElement>(null)
 
+  // Los Server Actions pueden refrescar las props del feed sin desmontar este
+  // componente. Reconciliamos la copia local para no conservar likes obsoletos.
+  useEffect(() => {
+    setPosts(initialPosts)
+    setCursor(initialCursor)
+  }, [initialPosts, initialCursor])
+
   const loadMore = useCallback(async () => {
     if (loading || !cursor) return
     setLoading(true)

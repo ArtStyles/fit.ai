@@ -6,6 +6,11 @@ import { createClient } from '@/lib/supabase/server'
 import { notifyPostCommented, notifyPostLiked } from '@/lib/notifications/socialPush'
 import type { ActionResult } from './posts'
 
+function revalidatePostEngagement(postId: string) {
+  revalidatePath('/feed')
+  revalidatePath(`/post/${postId}`)
+}
+
 export async function toggleLike(postId: string): Promise<ActionResult<{ liked: boolean }>> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -20,12 +25,14 @@ export async function toggleLike(postId: string): Promise<ActionResult<{ liked: 
     const { error } = await (supabase.from('post_likes') as any)
       .delete().eq('post_id', postId).eq('user_id', user.id)
     if (error) return { ok: false, error: 'No se pudo quitar el like.' }
+    revalidatePostEngagement(postId)
     return { ok: true, liked: false }
   }
 
   const { error } = await (supabase.from('post_likes') as any)
     .insert({ post_id: postId, user_id: user.id })
   if (error) return { ok: false, error: 'No se pudo dar like.' }
+  revalidatePostEngagement(postId)
   try {
     await notifyPostLiked(postId, user.id)
   } catch {

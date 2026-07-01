@@ -1,7 +1,7 @@
 // src/components/social/LikeButton.tsx
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { Heart } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toggleLike } from '@/app/actions/engagement'
@@ -12,6 +12,13 @@ export function LikeButton({ postId, initialLiked, initialCount }: {
   const [liked, setLiked] = useState(initialLiked)
   const [count, setCount] = useState(initialCount)
   const [, startTransition] = useTransition()
+
+  // Una revalidacion de la ruta actualiza las props, pero React conserva el
+  // estado de este boton porque el post mantiene la misma key.
+  useEffect(() => {
+    setLiked(initialLiked)
+    setCount(initialCount)
+  }, [postId, initialLiked, initialCount])
 
   function onToggle() {
     const next = !liked
