@@ -4,6 +4,7 @@ import {
   CalendarRange,
   Dumbbell,
   History,
+  Languages,
   PlusCircle,
   Ruler,
   Search,
@@ -404,7 +405,7 @@ export function SettingsLoading() {
     <AppLoadingShell className="pb-16">
       <BackHeader title="Ajustes" subtitle="Preferencias de tu cuenta" icon={UserRound} />
       <section className="mt-8 overflow-hidden rounded-2xl border border-border/60 bg-muted/10">
-        {['Perfil', 'Datos personales', 'Entrenamiento', 'Medidas', 'Notificaciones', 'Cuenta'].map((label, index) => (
+        {['Perfil', 'Datos personales', 'Entrenamiento', 'Medidas', 'Notificaciones', 'Idioma', 'Cuenta'].map((label, index) => (
           <div
             key={label}
             className={cn(
@@ -417,6 +418,47 @@ export function SettingsLoading() {
             <Shimmer className="h-4 w-4 rounded bg-muted/40" />
           </div>
         ))}
+      </section>
+    </AppLoadingShell>
+  )
+}
+
+export function LanguageSettingsLoading() {
+  return (
+    <AppLoadingShell className="pb-16">
+      <BackHeader
+        backLabel="Ajustes"
+        title="Idioma"
+        subtitle="Interfaz, catálogo y rutinas"
+        icon={Languages}
+      />
+
+      <section className="mt-8 space-y-5" aria-label="Cargando ajustes de idioma">
+        <div className="space-y-3">
+          {['Español', 'English'].map((label, index) => (
+            <div
+              key={label}
+              className="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/10 p-4"
+            >
+              <Shimmer
+                className="mt-1 h-4 w-4 shrink-0 rounded-full bg-violet-500/20"
+                style={{ animationDelay: `${index * 80}ms` } as React.CSSProperties}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">{label}</p>
+                <Shimmer className="mt-2 h-3 w-full rounded bg-muted/40" />
+                <Shimmer className="mt-2 h-3 w-4/5 rounded bg-muted/40" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          <Shimmer className="h-3 w-full rounded bg-muted/40" />
+          <Shimmer className="h-3 w-3/4 rounded bg-muted/40" />
+        </div>
+
+        <Shimmer className="h-11 w-full rounded-md bg-violet-500/20" />
       </section>
     </AppLoadingShell>
   )
