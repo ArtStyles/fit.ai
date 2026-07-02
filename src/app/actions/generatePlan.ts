@@ -5,7 +5,7 @@ import { generateInitialPlan }     from '@/lib/ai/planGenerator'
 import { filterExercisesForUser }  from '@/lib/ai/filter'
 import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
 import { buildWeeklySummary, getCyclePhase } from '@/lib/plans/periodization'
-import { getPlanCreatePolicy, removeOtherPlansForFreeUser } from '@/lib/plans/entitlements'
+import { getPlanCreatePolicy, pruneExcessPlansForFreeUser } from '@/lib/plans/entitlements'
 import {
   estimateDayMinutes,
   generateEvidencePlan,
@@ -494,7 +494,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     }
 
     if (createPolicy.replacingExisting) {
-      await removeOtherPlansForFreeUser(supabase, user.id, newPlanId)
+      await pruneExcessPlansForFreeUser(supabase, user.id, newPlanId, activePlan?.id)
     }
 
     return {
@@ -648,7 +648,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
   }
 
   if (createPolicy.replacingExisting) {
-    await removeOtherPlansForFreeUser(supabase, user.id, newPlan.id)
+    await pruneExcessPlansForFreeUser(supabase, user.id, newPlan.id, activePlan?.id)
   }
 
   return {

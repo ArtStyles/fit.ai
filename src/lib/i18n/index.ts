@@ -244,7 +244,7 @@ const ENGLISH: Record<string, string> = {
   'Objetivo visible': 'Visible goal',
   'Activarlo ahora': 'Activate it now',
   'Crear plan manual': 'Create manual plan',
-  'Tu cuenta free solo permite guardar un plan.': 'Your free account can only store one plan.',
+  'Tu cuenta free permite guardar hasta dos planes.': 'Your free account can store up to two plans.',
   'No encontramos un plan activo': 'No active plan found',
   'Tu perfil ya está guardado. Reintenta la generación para crear tu estructura semanal.': 'Your profile is already saved. Retry generation to create your weekly structure.',
   'Plan completo': 'Complete plan',

@@ -34,6 +34,7 @@ import {
 import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale, type AppLanguage } from '@/lib/i18n'
+import { FREE_PLAN_LIMIT } from '@/lib/plans/entitlements'
 
 export const metadata = { title: 'Plan completo · FitAI' }
 
@@ -105,7 +106,7 @@ function formatSource(value: PlanRow['source_type'], t: (source: string) => stri
 }
 
 function PlanLibrary({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' | 'pro'; t: (source: string) => string }) {
-  const canCreate = tier === 'pro' || plans.length === 0
+  const canCreate = tier === 'pro' || plans.length < FREE_PLAN_LIMIT
 
   return (
     <section className="animate-in fade-in slide-in-from-bottom-3 mt-8 rounded-2xl border border-border/60 bg-muted/10 p-5 duration-500">
@@ -198,7 +199,7 @@ function PlanLibrary({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' | 
             </form>
           ) : (
             <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-              {t('Tu cuenta free solo permite guardar un plan.')}
+              {t('Tu cuenta free permite guardar hasta dos planes.')}
             </p>
           )}
         </details>

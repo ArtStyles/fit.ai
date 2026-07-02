@@ -2,6 +2,8 @@ import type { createClient } from '@/lib/supabase/server'
 
 export type SubscriptionTier = 'free' | 'pro'
 
+export const FREE_PLAN_LIMIT = 2
+
 export type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 export type PlanCreatePolicy =
@@ -43,36 +45,66 @@ export async function getPlanCreatePolicy(
     getSavedPlanCount(supabase, userId),
   ])
 
-  if (tier === 'pro' || planCount === 0) {
+  if (tier === 'pro') {
     return { allowed: true, tier, planCount, replacingExisting: false }
   }
 
-  if (options.replaceExistingForFree) {
+  if (options.replaceExistingForFree && planCount > 0) {
     return { allowed: true, tier, planCount, replacingExisting: true }
+  }
+
+  if (planCount < FREE_PLAN_LIMIT) {
+    return { allowed: true, tier, planCount, replacingExisting: false }
   }
 
   return {
     allowed: false,
     tier,
     planCount,
-    reason: 'Tu cuenta free solo permite guardar un plan. Reemplaza el plan actual o actualiza a Pro.',
+    reason: 'Tu cuenta free permite guardar hasta dos planes. Reemplaza uno de tus planes o actualiza a Pro.',
   }
 }
 
-export async function removeOtherPlansForFreeUser(
+type SavedPlan = { id: string; created_at: string }
+
+export function getFreePlanIdsToRemove(
+  plans: SavedPlan[],
+  keepPlanId: string,
+  replacedPlanId?: string | null,
+): string[] {
+  const hasReplacedPlan = Boolean(
+    replacedPlanId
+    && replacedPlanId !== keepPlanId
+    && plans.some(plan => plan.id === replacedPlanId),
+  )
+  const removalCount = Math.max(hasReplacedPlan ? 1 : 0, plans.length - FREE_PLAN_LIMIT)
+  if (removalCount === 0) return []
+
+  return plans
+    .filter(plan => plan.id !== keepPlanId)
+    .sort((a, b) => {
+      if (a.id === replacedPlanId) return -1
+      if (b.id === replacedPlanId) return 1
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    })
+    .slice(0, removalCount)
+    .map(plan => plan.id)
+}
+
+export async function pruneExcessPlansForFreeUser(
   supabase: SupabaseServerClient,
   userId: string,
   keepPlanId: string,
+  replacedPlanId?: string | null,
 ): Promise<void> {
   const tier = await getSubscriptionTier(supabase, userId)
   if (tier !== 'free') return
 
   const { data: plans } = await (supabase.from('workout_plans') as any)
-    .select('id')
-    .eq('user_id', userId)
-    .neq('id', keepPlanId) as { data: { id: string }[] | null }
+    .select('id, created_at')
+    .eq('user_id', userId) as { data: SavedPlan[] | null }
 
-  const planIds = (plans ?? []).map(plan => plan.id)
+  const planIds = getFreePlanIdsToRemove(plans ?? [], keepPlanId, replacedPlanId)
   if (planIds.length === 0) return
 
   await (supabase.from('workout_plans') as any)
