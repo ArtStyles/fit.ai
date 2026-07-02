@@ -134,7 +134,6 @@ export async function updateLanguage(formData: FormData) {
     maxAge: 60 * 60 * 24 * 365,
   })
   revalidatePath('/', 'layout')
-  redirect('/settings/idioma?notice=settings_saved')
 }
 
 export async function setPrivacy(isPrivate: boolean): Promise<ActionResult> {

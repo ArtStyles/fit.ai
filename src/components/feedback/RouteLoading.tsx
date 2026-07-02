@@ -429,7 +429,6 @@ export function LanguageSettingsLoading() {
       <BackHeader
         backLabel="Ajustes"
         title="Idioma"
-        subtitle="Interfaz, catálogo y rutinas"
         icon={Languages}
       />
 
@@ -438,27 +437,16 @@ export function LanguageSettingsLoading() {
           {['Español', 'English'].map((label, index) => (
             <div
               key={label}
-              className="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/10 p-4"
+              className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/10 p-4"
             >
               <Shimmer
-                className="mt-1 h-4 w-4 shrink-0 rounded-full bg-violet-500/20"
+                className="h-4 w-4 shrink-0 rounded-full bg-violet-500/20"
                 style={{ animationDelay: `${index * 80}ms` } as React.CSSProperties}
               />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-foreground">{label}</p>
-                <Shimmer className="mt-2 h-3 w-full rounded bg-muted/40" />
-                <Shimmer className="mt-2 h-3 w-4/5 rounded bg-muted/40" />
-              </div>
+              <p className="text-sm font-semibold text-foreground">{label}</p>
             </div>
           ))}
         </div>
-
-        <div className="space-y-2">
-          <Shimmer className="h-3 w-full rounded bg-muted/40" />
-          <Shimmer className="h-3 w-3/4 rounded bg-muted/40" />
-        </div>
-
-        <Shimmer className="h-11 w-full rounded-md bg-violet-500/20" />
       </section>
     </AppLoadingShell>
   )
