@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Globe2, ImagePlus, Loader2, Pencil, Plus, Send, Sparkles, X } from 'lucide-react'
+import { Camera, Globe2, ImagePlus, Loader2, Pencil, Plus, Send, X } from 'lucide-react'
 import { createPost } from '@/app/actions/posts'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { validatePostImage, resizePostImage, MAX_POST_IMAGES } from '@/lib/images/post'
@@ -212,9 +212,6 @@ export function PostComposer({ author }: Props) {
             <ImagePlus className="h-7 w-7" />
           </div>
           <h2 className="mt-3 text-base font-semibold">Añade tu mejor momento</h2>
-          <p className="mx-auto mt-1 max-w-xs text-sm leading-relaxed text-muted-foreground">
-            Toma una foto ahora o elige hasta {MAX_POST_IMAGES} de tu galería. Podrás recortarlas antes de publicar.
-          </p>
           <div className="mt-5 grid grid-cols-2 gap-2.5">
             <button type="button" onClick={() => cameraInputRef.current?.click()}
               className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
@@ -242,12 +239,6 @@ export function PostComposer({ author }: Props) {
       )}
 
       <div className="rounded-2xl border border-border/70 bg-card p-4">
-        <div className="mb-4 flex items-center gap-3 text-sm text-muted-foreground">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Sparkles className="h-4 w-4" />
-          </span>
-          <p>Revisa el texto y el encuadre antes de compartir.</p>
-        </div>
         <button type="button" onClick={submit} disabled={pending || !canPublish}
           className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-45">
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
