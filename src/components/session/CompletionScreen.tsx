@@ -333,6 +333,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
           isCompound: exercise.isCompound,
           targetSets: exercise.targetSets,
           targetReps: exercise.targetReps,
+          targetDuration: exercise.targetDuration,
           targetRpe: exercise.targetRpe,
           source: exercise.source,
           skipReason: exercise.skipReason,

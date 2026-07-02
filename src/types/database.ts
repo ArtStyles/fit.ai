@@ -35,6 +35,13 @@ export interface Database {
           gym_type: 'home_no_equipment' | 'home_basic' | 'full_gym' | null
           available_equipment: string[]
           injuries: string | null
+          cardio_preferences: ('walking' | 'running' | 'cycling' | 'elliptical' | 'rowing' | 'stairs' | 'jump_rope')[]
+          activity_level: 'inactive' | 'insufficiently_active' | 'regularly_active'
+          readiness_status: 'pending' | 'cleared' | 'modified' | 'professional_clearance_required'
+          readiness_answers: Json
+          movement_limitations: Json
+          readiness_version: string | null
+          readiness_completed_at: string | null
           preferred_workout_days: number[] | null   // migration 004 — 1=lunes…7=domingo
           onboarding_done: boolean
           timezone: string | null                    // migration 016 — IANA, null = zona de la app
@@ -62,6 +69,13 @@ export interface Database {
           gym_type?: 'home_no_equipment' | 'home_basic' | 'full_gym' | null
           available_equipment?: string[]
           injuries?: string | null
+          cardio_preferences?: ('walking' | 'running' | 'cycling' | 'elliptical' | 'rowing' | 'stairs' | 'jump_rope')[]
+          activity_level?: 'inactive' | 'insufficiently_active' | 'regularly_active'
+          readiness_status?: 'pending' | 'cleared' | 'modified' | 'professional_clearance_required'
+          readiness_answers?: Json
+          movement_limitations?: Json
+          readiness_version?: string | null
+          readiness_completed_at?: string | null
           preferred_workout_days?: number[] | null
           onboarding_done?: boolean
           timezone?: string | null
@@ -86,6 +100,13 @@ export interface Database {
           gym_type?: 'home_no_equipment' | 'home_basic' | 'full_gym' | null
           available_equipment?: string[]
           injuries?: string | null
+          cardio_preferences?: ('walking' | 'running' | 'cycling' | 'elliptical' | 'rowing' | 'stairs' | 'jump_rope')[]
+          activity_level?: 'inactive' | 'insufficiently_active' | 'regularly_active'
+          readiness_status?: 'pending' | 'cleared' | 'modified' | 'professional_clearance_required'
+          readiness_answers?: Json
+          movement_limitations?: Json
+          readiness_version?: string | null
+          readiness_completed_at?: string | null
           preferred_workout_days?: number[] | null
           onboarding_done?: boolean
           timezone?: string | null
@@ -120,6 +141,10 @@ export interface Database {
           is_public: boolean
           source: string | null
           external_id: string | null
+          movement_patterns: string[]
+          cardio_modality: 'walking' | 'running' | 'cycling' | 'elliptical' | 'rowing' | 'stairs' | 'jump_rope' | null
+          impact_level: 'low' | 'moderate' | 'high' | null
+          joint_stress_tags: string[]
           created_at: string
         }
         Insert: {
@@ -143,6 +168,10 @@ export interface Database {
           is_public?: boolean
           source?: string | null
           external_id?: string | null
+          movement_patterns?: string[]
+          cardio_modality?: 'walking' | 'running' | 'cycling' | 'elliptical' | 'rowing' | 'stairs' | 'jump_rope' | null
+          impact_level?: 'low' | 'moderate' | 'high' | null
+          joint_stress_tags?: string[]
         }
         Update: {
           wger_id?: number | null
@@ -164,6 +193,10 @@ export interface Database {
           is_public?: boolean
           source?: string | null
           external_id?: string | null
+          movement_patterns?: string[]
+          cardio_modality?: 'walking' | 'running' | 'cycling' | 'elliptical' | 'rowing' | 'stairs' | 'jump_rope' | null
+          impact_level?: 'low' | 'moderate' | 'high' | null
+          joint_stress_tags?: string[]
         }
         Relationships: []
       }
@@ -188,7 +221,8 @@ export interface Database {
           plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id: string | null
           manually_updated_at: string | null
-          source_type: 'ai' | 'manual' | 'imported' | 'shared_post'
+          source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          generation_metadata: Json
           source_post_id: string | null
           source_user_id: string | null
           created_at: string
@@ -211,7 +245,8 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
-          source_type?: 'ai' | 'manual' | 'imported' | 'shared_post'
+          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
         }
@@ -230,7 +265,8 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
-          source_type?: 'ai' | 'manual' | 'imported' | 'shared_post'
+          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
         }
@@ -671,6 +707,17 @@ export interface Database {
       [name: string]: {
         Args: Record<string, unknown>
         Returns: unknown
+      }
+      create_engine_plan: {
+        Args: {
+          p_plan: Json
+          p_metadata: Json
+          p_week_number: number
+          p_plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
+          p_parent_plan_id?: string | null
+          p_profile_updates?: Json
+        }
+        Returns: string
       }
       get_dashboard_payload: {
         Args: {

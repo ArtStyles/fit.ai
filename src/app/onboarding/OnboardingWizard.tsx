@@ -15,7 +15,7 @@ import { validateUsername } from '@/lib/social/username'
 
 type StepKey =
   | 'username' | 'goal' | 'level' | 'days' | 'duration'
-  | 'location' | 'equipment' | 'injuries' | 'physical'
+  | 'location' | 'equipment' | 'cardio' | 'readiness' | 'limitations' | 'physical'
   | 'planChoice' | 'generating'
 
 function buildSteps(answers: OnboardingAnswers): StepKey[] {
@@ -23,10 +23,10 @@ function buildSteps(answers: OnboardingAnswers): StepKey[] {
   if (answers.gym_type === 'home_basic' || answers.gym_type === 'full_gym') {
     base.push('equipment')
   }
-  return [...base, 'injuries', 'physical', 'planChoice', 'generating']
+  return [...base, 'cardio', 'readiness', 'limitations', 'physical', 'planChoice', 'generating']
 }
 
-const STORAGE_KEY = 'fitai_onboarding_v1'
+const STORAGE_KEY = 'fitai_onboarding_v2'
 
 // ─── Shared step props ────────────────────────────────────────────────────────
 
@@ -405,30 +405,159 @@ function Step6Equipment({ answers, update, onNext, onBack, isFirst }: StepProps)
   )
 }
 
-function Step7Injuries({ answers, update, onNext, onBack, isFirst }: StepProps) {
+const CARDIO_OPTIONS = [
+  { value: 'walking', label: 'Caminar', emoji: '🚶' },
+  { value: 'running', label: 'Correr', emoji: '🏃' },
+  { value: 'cycling', label: 'Bicicleta', emoji: '🚴' },
+  { value: 'elliptical', label: 'Elíptica', emoji: '🔄' },
+  { value: 'rowing', label: 'Remo', emoji: '🚣' },
+  { value: 'stairs', label: 'Escaleras', emoji: '🪜' },
+  { value: 'jump_rope', label: 'Cuerda', emoji: '➰' },
+] as const
+
+function StepCardioPreferences({ answers, update, onNext, onBack, isFirst }: StepProps) {
+  const toggle = (value: OnboardingAnswers['cardio_preferences'][number]) => {
+    update('cardio_preferences', answers.cardio_preferences.includes(value)
+      ? answers.cardio_preferences.filter(item => item !== value)
+      : [...answers.cardio_preferences, value])
+  }
+
   return (
-    <StepShell
-      title="¿Tienes alguna lesión o limitación?"
-      subtitle="Opcional. Si hay algo que debamos tener en cuenta al diseñar tu plan, cuéntanos."
+    <StepShell title="¿Qué cardio te gustaría hacer?"
+      subtitle="Selecciona las modalidades que aceptarías. Solo usaremos opciones compatibles con tu equipo y limitaciones."
       isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={true}
-      ctaLabel={answers.injuries.trim() ? 'Continuar' : 'Sin lesiones, continuar'}
-    >
-      <div className="space-y-3">
-        <textarea
-          value={answers.injuries}
-          onChange={e => update('injuries', e.target.value)}
-          placeholder="Ej: Dolor de rodilla izquierda, evitar sentadillas profundas. Lesión de hombro derecho..."
-          rows={5}
-          className={cn(
-            'w-full rounded-xl border-2 border-border bg-muted/20 px-4 py-3',
-            'text-foreground placeholder:text-muted-foreground/40 text-sm leading-relaxed resize-none',
-            'focus:outline-none focus:border-primary/50 transition-colors',
-          )}
-        />
-        <p className="text-xs text-muted-foreground/50">
-          Solo se usa para personalizar tu plan y no se comparte con nadie.
-        </p>
+      canProceed={answers.cardio_preferences.length > 0}>
+      <div className="grid grid-cols-2 gap-2.5">
+        {CARDIO_OPTIONS.map(option => {
+          const selected = answers.cardio_preferences.includes(option.value)
+          return (
+            <button key={option.value} type="button" onClick={() => toggle(option.value)} aria-pressed={selected}
+              className={cn('rounded-xl border-2 px-3 py-4 text-left transition-colors',
+                selected ? 'border-primary bg-primary/10' : 'border-border bg-muted/20')}>
+              <span className="text-xl" aria-hidden>{option.emoji}</span>
+              <p className={cn('mt-1 text-sm font-semibold', selected ? 'text-primary' : 'text-foreground')}>{option.label}</p>
+            </button>
+          )
+        })}
+      </div>
+    </StepShell>
+  )
+}
+
+const WARNING_OPTIONS = [
+  ['chest_discomfort', 'Molestia o dolor en pecho, cuello, mandíbula o brazos'],
+  ['dyspnea_at_rest_or_mild', 'Falta de aire en reposo o con esfuerzo leve'],
+  ['dizziness_or_syncope', 'Mareo intenso, desmayo o pérdida de conciencia'],
+  ['palpitations_or_unusual_fatigue', 'Palpitaciones o fatiga inusual con actividad normal'],
+] as const
+
+function StepReadiness({ answers, update, onNext, onBack, isFirst }: StepProps) {
+  const toggleWarning = (value: string) => {
+    update('warning_symptoms', answers.warning_symptoms.includes(value)
+      ? answers.warning_symptoms.filter(item => item !== value)
+      : [...answers.warning_symptoms, value])
+  }
+
+  return (
+    <StepShell title="Preparación para entrenar"
+      subtitle="Este cribado no diagnostica. Indica si el plan automático puede continuar o si necesitas orientación profesional."
+      isFirst={isFirst} onNext={onNext} onBack={onBack}
+      canProceed={answers.activity_level !== null}>
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-foreground">Actividad durante los últimos 3 meses</p>
+          {[
+            ['inactive', 'Casi ninguna actividad planificada'],
+            ['insufficiently_active', 'Algo de actividad, menos de 3 días por semana'],
+            ['regularly_active', '30 minutos moderados, al menos 3 días por semana'],
+          ].map(([value, label]) => (
+            <button key={value} type="button"
+              onClick={() => update('activity_level', value as OnboardingAnswers['activity_level'])}
+              className={cn('w-full rounded-xl border px-4 py-3 text-left text-sm',
+                answers.activity_level === value ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-foreground">Marca cualquier señal que presentes</p>
+          {WARNING_OPTIONS.map(([value, label]) => (
+            <label key={value} className="flex gap-3 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground">
+              <input type="checkbox" checked={answers.warning_symptoms.includes(value)} onChange={() => toggleWarning(value)} className="mt-0.5" />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+        <label className="flex gap-3 text-sm text-muted-foreground">
+          <input type="checkbox" checked={answers.known_disease} onChange={event => update('known_disease', event.target.checked)} />
+          Tengo una enfermedad cardiovascular, metabólica o renal diagnosticada.
+        </label>
+        <label className="flex gap-3 text-sm text-muted-foreground">
+          <input type="checkbox" checked={answers.recent_surgery} onChange={event => update('recent_surgery', event.target.checked)} />
+          Tuve una cirugía reciente o tengo una restricción médica vigente.
+        </label>
+        {(answers.known_disease || answers.recent_surgery || answers.warning_symptoms.length > 0) ? (
+          <label className="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <input type="checkbox" checked={answers.medically_cleared} onChange={event => update('medically_cleared', event.target.checked)} />
+            Un profesional sanitario me autorizó expresamente a comenzar o continuar este nivel de ejercicio.
+          </label>
+        ) : null}
+      </div>
+    </StepShell>
+  )
+}
+
+const LIMITATION_REGIONS = ['hombro', 'codo', 'muñeca', 'espalda', 'cadera', 'rodilla', 'tobillo']
+
+function StepLimitations({ answers, update, onNext, onBack, isFirst }: StepProps) {
+  const toggleRegion = (region: string) => {
+    update('limitation_regions', answers.limitation_regions.includes(region)
+      ? answers.limitation_regions.filter(item => item !== region)
+      : [...answers.limitation_regions, region])
+  }
+  const hasLimitations = answers.limitation_regions.length > 0
+
+  return (
+    <StepShell title="¿Tienes alguna limitación musculoesquelética?"
+      subtitle="Selecciona la zona y describe únicamente movimientos que un profesional te haya indicado evitar."
+      isFirst={isFirst} onNext={onNext} onBack={onBack}
+      canProceed={!hasLimitations || answers.limitation_status !== null}
+      ctaLabel={hasLimitations ? 'Guardar limitaciones' : 'Sin limitaciones, continuar'}>
+      <div className="space-y-5">
+        <div className="flex flex-wrap gap-2">
+          {LIMITATION_REGIONS.map(region => (
+            <button key={region} type="button" onClick={() => toggleRegion(region)}
+              aria-pressed={answers.limitation_regions.includes(region)}
+              className={cn('rounded-full border px-3 py-2 text-sm capitalize',
+                answers.limitation_regions.includes(region) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>
+              {region}
+            </button>
+          ))}
+        </div>
+        {hasLimitations ? (
+          <>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ['stable', 'Estable'],
+                ['recovering', 'Recuperación'],
+                ['acute', 'Aguda'],
+              ].map(([value, label]) => (
+                <button key={value} type="button" onClick={() => update('limitation_status', value as OnboardingAnswers['limitation_status'])}
+                  className={cn('rounded-xl border px-2 py-3 text-xs font-semibold',
+                    answers.limitation_status === value ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <textarea value={answers.movements_to_avoid} onChange={event => update('movements_to_avoid', event.target.value)}
+              placeholder="Movimientos a evitar, separados por comas. Ej.: squat, vertical_push"
+              rows={3} className="w-full resize-none rounded-xl border-2 border-border bg-muted/20 px-4 py-3 text-sm text-foreground" />
+            <label className="flex gap-3 text-sm text-muted-foreground">
+              <input type="checkbox" checked={answers.clinician_cleared} onChange={event => update('clinician_cleared', event.target.checked)} />
+              Un profesional me autorizó a entrenar respetando estas restricciones.
+            </label>
+          </>
+        ) : null}
       </div>
     </StepShell>
   )
@@ -440,7 +569,8 @@ function Step8Physical({ answers, update, onNext, onBack, isFirst }: StepProps) 
     { value: 'female', label: 'Mujer' },
     { value: 'other',  label: 'Otro' },
   ]
-  const isValid = answers.age !== '' && answers.weight_kg !== '' && answers.height_cm !== '' && answers.gender !== null
+  const parsedAge = Number(answers.age)
+  const isValid = parsedAge >= 18 && parsedAge <= 100 && answers.weight_kg !== '' && answers.height_cm !== '' && answers.gender !== null
 
   const inputClass = cn(
     'w-full rounded-xl border-2 border-border bg-muted/20 px-4 py-3.5',
@@ -471,7 +601,7 @@ function Step8Physical({ answers, update, onNext, onBack, isFirst }: StepProps) 
         <div className="space-y-2">
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Edad</label>
           <div className="relative">
-            <input type="number" min={13} max={100}
+            <input type="number" min={18} max={100}
               value={answers.age} onChange={e => update('age', e.target.value)}
               placeholder="25" className={inputClass} />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/60 text-sm">años</span>
@@ -541,7 +671,7 @@ function Step9PlanChoice({
           Como quieres empezar?
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Puedes generar una rutina con IA ahora o guardar tu perfil y crear el plan manualmente.
+          Puedes generar una rutina basada en evidencia ahora o guardar tu perfil y crear el plan manualmente.
         </p>
 
         <div className="mt-8 space-y-3">
@@ -550,8 +680,8 @@ function Step9PlanChoice({
             onClick={onGenerate}
             className="w-full rounded-2xl bg-primary px-5 py-4 text-left text-primary-foreground shadow-lg shadow-primary/20 active:scale-[0.98]"
           >
-            <p className="font-bold">Generar con IA</p>
-            <p className="mt-1 text-xs opacity-80">Usa tu perfil para crear una primera semana lista.</p>
+            <p className="font-bold">Generar plan basado en evidencia</p>
+            <p className="mt-1 text-xs opacity-80">Usa reglas versionadas y validadas para crear tu primera semana.</p>
           </button>
           <button
             type="button"
@@ -705,7 +835,7 @@ export default function OnboardingWizard() {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const saved = JSON.parse(raw) as { answers: OnboardingAnswers; step: StepKey }
-        if (saved.answers) setAnswers(saved.answers)
+        if (saved.answers) setAnswers({ ...defaultAnswers, ...saved.answers })
         if (saved.step && saved.step !== 'generating') setStepKey(saved.step)
       }
     } catch { /* corrupt data — start fresh */ }
@@ -793,7 +923,9 @@ export default function OnboardingWizard() {
     duration:   <Step4Duration  {...stepProps} />,
     location:   <Step5Location  {...stepProps} />,
     equipment:  <Step6Equipment {...stepProps} />,
-    injuries:   <Step7Injuries  {...stepProps} />,
+    cardio:     <StepCardioPreferences {...stepProps} />,
+    readiness:  <StepReadiness {...stepProps} />,
+    limitations:<StepLimitations {...stepProps} />,
     physical:   <Step8Physical  {...stepProps} />,
     planChoice: <Step9PlanChoice onGenerate={goNext} onManual={handleManualStart} onBack={goBack} />,
     generating: <Step9GeneratingAuto onFinish={handleFinish} />,

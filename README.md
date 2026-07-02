@@ -17,8 +17,9 @@ conectado de extremo a extremo:
 - Registro, login, logout, callback y proteccion de rutas con Supabase Auth.
 - Onboarding persistente con objetivo, nivel, disponibilidad, equipo, lesiones y
   datos fisicos.
-- Generacion inicial y regeneracion semanal de planes, con modo Anthropic real o
-  mock local.
+- Generacion inicial y regeneracion semanal mediante un motor local determinista,
+  versionado y basado en evidencia. Anthropic queda reservado para chat e
+  interpretacion de ajustes.
 - Filtro de ejercicios segun perfil, equipo disponible y restricciones.
 - Dashboard con rutina del dia, calendario semanal, racha, volumen, momentum,
   records, ajustes activos y resumen diario.
@@ -81,7 +82,7 @@ conectado de extremo a extremo:
 
 - Node.js y pnpm.
 - Un proyecto de Supabase.
-- Una API key de Anthropic solo si se quiere usar IA real.
+- Una API key de Anthropic solo si se quiere usar el chat y la interpretación de ajustes con IA real.
 - Android Studio solo para trabajar con la app Android.
 
 ### Instalacion
@@ -101,7 +102,9 @@ Configura `.env.local` antes de iniciar la app.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cliente web y autenticacion. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Operaciones server/admin, limites IA, borrado de cuenta y seed. Nunca exponer al cliente. |
 | `ANTHROPIC_API_KEY` | Activa generacion real de planes. Si falta, se usa mock. |
-| `USE_AI_MOCK` | Con `true`, fuerza el generador local aunque exista API key. |
+| `USE_AI_MOCK` | Con `true`, usa respuestas locales para chat e interpretación de ajustes. |
+| `PLAN_GENERATION_MODE` | `evidence_engine` (default) o `legacy_ai` para rollback temporal. |
+| `EVIDENCE_ENGINE_BETA_USER_IDS` | UUIDs separados por coma que limitan el motor a una beta controlada. Vacío lo habilita para todos. |
 | `MAX_DAILY_API_SPEND_USD` | Limite global opcional de gasto diario de Anthropic. |
 | `ANTHROPIC_MODEL_PRIMARY` | Modelo primario opcional. Default: `claude-sonnet-4-5`. |
 | `ANTHROPIC_MODEL_FALLBACK` | Modelo fallback opcional. Default: `claude-opus-4-5`. |
@@ -139,6 +142,7 @@ Aplica las migraciones SQL en este orden:
 025_social_push_notifications.sql
 026_plan_library.sql
 027_exercise_localization.sql
+028_evidence_training_engine.sql
 ```
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
@@ -173,12 +177,16 @@ pnpm dev
 
 La app queda disponible en `http://localhost:3000`.
 
-## Comportamiento de IA
+## Motor de planes e IA
 
-La generacion de planes usa mock cuando `USE_AI_MOCK=true` o cuando no existe
-`ANTHROPIC_API_KEY`. Con IA real, el generador valida el JSON devuelto, limita los
-ejercicios al pool permitido, reintenta hasta 3 veces, registra uso/costo y puede
-usar un modelo fallback.
+La generación de planes usa por defecto el motor determinista local. El motor no
+consume tokens, valida seguridad, equipamiento, duración y dosis, y guarda cada
+plan de forma transaccional. `legacy_ai` conserva temporalmente el generador
+anterior como rollback.
+
+El chat y la interpretación de peticiones siguen usando Anthropic cuando existe
+una API key. Una petición de ajuste produce una intención tipada; el motor
+recalcula y valida el plan completo antes de mostrar la vista previa.
 
 Limites configurados:
 

@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { Check, ChevronRight, Send, Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useToast } from '@/components/feedback/ToastProvider'
-import { applyWorkoutAdjustment, suggestWorkoutAdjustment } from '@/app/actions/adjustPlan'
-import type { AdjustmentChange } from '@/lib/ai/adjustments'
+import { applyPlanAdjustment, suggestPlanAdjustment } from '@/app/actions/adjustPlan'
+import type { PlanAdjustmentIntent } from '@/lib/training-engine'
+import { ReadinessReviewDialog } from './ReadinessReviewDialog'
 
 interface Props {
   workoutId: string
@@ -45,11 +46,12 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
   const [open, setOpen]                     = useState(false)
   const [request, setRequest]               = useState('')
   const [suggestion, setSuggestion]         = useState<string | null>(null)
-  const [changes, setChanges]               = useState<AdjustmentChange[]>([])
+  const [intent, setIntent]                 = useState<PlanAdjustmentIntent | null>(null)
   const [changesSummary, setChangesSummary] = useState<string[]>([])
   const [loading, setLoading]               = useState(false)
   const [applying, setApplying]             = useState(false)
   const [error, setError]                   = useState<string | null>(null)
+  const [readinessOpen, setReadinessOpen]   = useState(false)
   const { showToast }                       = useToast()
 
   async function handleSubmit(req: string) {
@@ -57,24 +59,28 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
     setLoading(true)
     setError(null)
     setSuggestion(null)
-    setChanges([])
+    setIntent(null)
     setChangesSummary([])
 
-    const result = await suggestWorkoutAdjustment(workoutId, req)
+    const result = await suggestPlanAdjustment(workoutId, req)
     setLoading(false)
 
-    if (!result.success) { setError(result.error ?? 'Error al generar la sugerencia'); return }
+    if (!result.success) {
+      setError(result.error ?? 'Error al generar la sugerencia')
+      if (result.requiresReadinessReview) setReadinessOpen(true)
+      return
+    }
     setSuggestion(result.suggestion ?? '')
-    setChanges(result.changes ?? [])
+    setIntent(result.intent ?? null)
     setChangesSummary(result.changesSummary ?? [])
   }
 
   async function handleApply() {
-    if (applying || changes.length === 0) return
+    if (applying || !intent) return
     setApplying(true)
     setError(null)
 
-    const result = await applyWorkoutAdjustment(workoutId, changes)
+    const result = await applyPlanAdjustment(intent)
     setApplying(false)
 
     if (!result.success) {
@@ -84,7 +90,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
 
     showToast({
       title: 'Ajuste aplicado',
-      description: `${result.appliedCount} cambio${result.appliedCount === 1 ? '' : 's'} en ${workoutName}.`,
+      description: `El plan completo fue recalculado y validado desde ${workoutName}.`,
       variant: 'success',
     })
     setOpen(false)
@@ -94,7 +100,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
     setOpen(true)
     setRequest('')
     setSuggestion(null)
-    setChanges([])
+    setIntent(null)
     setChangesSummary([])
     setError(null)
   }
@@ -107,7 +113,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
         className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-violet-500/30 px-3.5 py-2.5 text-xs font-semibold text-violet-300 transition-colors hover:bg-violet-500/10"
       >
         <Sparkles className="h-3.5 w-3.5" />
-        Sugerir ajuste IA
+        Ajustar plan con asistente
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -115,7 +121,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-sm text-white">
               <Sparkles className="h-4 w-4 text-violet-400" />
-              Ajuste IA — {workoutName}
+              Vista previa del plan — {workoutName}
             </DialogTitle>
           </DialogHeader>
 
@@ -151,7 +157,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
 
                 <div className="flex gap-2">
                   <button type="button"
-                    onClick={() => { setSuggestion(null); setChanges([]); setChangesSummary([]); setRequest('') }}
+                    onClick={() => { setSuggestion(null); setIntent(null); setChangesSummary([]); setRequest('') }}
                     className="flex-1 rounded-lg border border-border/50 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
                     Otra pregunta
                   </button>
@@ -222,6 +228,11 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
           </div>
         </DialogContent>
       </Dialog>
+      <ReadinessReviewDialog
+        open={readinessOpen}
+        onOpenChange={setReadinessOpen}
+        onSaved={() => { if (request.trim()) void handleSubmit(request) }}
+      />
     </>
   )
 }

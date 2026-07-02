@@ -61,7 +61,7 @@ type PlanRow = {
   duration_weeks: number | null
   days_per_week: number | null
   difficulty: string | null
-  source_type: 'ai' | 'manual' | 'imported' | 'shared_post'
+  source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
   created_at: string
 }
 
@@ -97,6 +97,7 @@ function formatDuration(minutes: number | null, t: (source: string) => string): 
 }
 
 function formatSource(value: PlanRow['source_type'], t: (source: string) => string): string {
+  if (value === 'engine') return t('Motor basado en evidencia')
   if (value === 'manual') return t('Manual')
   if (value === 'shared_post') return t('Copiado')
   if (value === 'imported') return t('Importado')

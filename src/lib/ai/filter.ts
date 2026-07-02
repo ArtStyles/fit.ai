@@ -170,6 +170,10 @@ interface ExerciseRow {
   exercise_type: string | null
   difficulty: string | null
   is_compound: boolean
+  movement_patterns: string[]
+  cardio_modality: string | null
+  impact_level: string | null
+  joint_stress_tags: string[]
 }
 
 // ─── Cascade ──────────────────────────────────────────────────────────────────
@@ -228,7 +232,7 @@ export async function filterExercisesForUser(
   // Traer solo las columnas que necesitamos (evita pasar image_url, instructions, etc. a la IA)
   const result = await supabase
     .from('exercises')
-    .select('id, name, muscle_groups, equipment, exercise_type, difficulty, is_compound')
+    .select('id, name, muscle_groups, equipment, exercise_type, difficulty, is_compound, movement_patterns, cardio_modality, impact_level, joint_stress_tags')
     .eq('is_public', true) as unknown as {
       data: ExerciseRow[] | null
       error: { message: string } | null
@@ -267,5 +271,9 @@ export async function filterExercisesForUser(
     exercise_type:  ex.exercise_type ?? 'strength',
     difficulty:     ex.difficulty,
     is_compound:    ex.is_compound,
+    movement_patterns: ex.movement_patterns ?? [],
+    cardio_modality: ex.cardio_modality,
+    impact_level: ex.impact_level,
+    joint_stress_tags: ex.joint_stress_tags ?? [],
   }))
 }

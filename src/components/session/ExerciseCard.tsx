@@ -5,6 +5,7 @@ import { cn }    from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import { SetRow } from './SetRow'
+import { TimedSetRow } from './TimedSetRow'
 import { SessionExercisePicker } from '@/components/session/SessionExercisePicker'
 import { useSessionStore } from '@/store/sessionStore'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
@@ -55,6 +56,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
     muscleGroups,
     notes,
     targetReps,
+    targetDuration,
     isCompound,
     suggestedWeight,
     weightSuggestionBasis,
@@ -65,6 +67,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
 
   const toggleExpanded  = useSessionStore(s => s.toggleExpanded)
   const updateSetField  = useSessionStore(s => s.updateSetField)
+  const updateSetDuration = useSessionStore(s => s.updateSetDuration)
   const selectRpe       = useSessionStore(s => s.selectRpe)
   const completeSet     = useSessionStore(s => s.completeSet)
   const skipExercise    = useSessionStore(s => s.skipExercise)
@@ -200,6 +203,11 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
               Objetivo: {targetReps} reps · RPE {exercise.targetRpe}
             </p>
           )}
+          {targetDuration && (
+            <p className="px-1 text-xs text-indigo-300">
+              Objetivo: {Math.floor(targetDuration / 60)}:{String(targetDuration % 60).padStart(2, '0')} · RPE {exercise.targetRpe}
+            </p>
+          )}
 
           {exercise.hasLastSessionData && (
             <div className="inline-flex items-center gap-1 rounded-md bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
@@ -216,16 +224,33 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           )}
 
           {/* Cabecera de la tabla */}
-          <div className="grid grid-cols-[28px_1fr_1fr_64px_44px] gap-1.5 px-1">
+          <div className={cn('grid gap-1.5 px-1', targetDuration ? 'grid-cols-[28px_1fr_64px_44px]' : 'grid-cols-[28px_1fr_1fr_64px_44px]')}>
             <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">#</span>
-            <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Peso</span>
-            <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Reps</span>
+            {targetDuration ? (
+              <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Tiempo</span>
+            ) : (
+              <>
+                <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Peso</span>
+                <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Reps</span>
+              </>
+            )}
             <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">RPE</span>
             <span />
           </div>
 
           {/* Filas de series */}
-          {sets.map((set, i) => (
+          {sets.map((set, i) => targetDuration ? (
+            <TimedSetRow
+              key={i}
+              setNumber={i + 1}
+              data={set}
+              targetSeconds={targetDuration}
+              isActive={isActive}
+              onDurationChange={seconds => updateSetDuration(weId, i, seconds)}
+              onRpeChange={rpe => selectRpe(weId, i, rpe)}
+              onComplete={() => completeSet(weId, i)}
+            />
+          ) : (
             <SetRow
               key={i}
               setNumber={i + 1}

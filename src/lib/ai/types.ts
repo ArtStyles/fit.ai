@@ -126,4 +126,8 @@ export interface FilteredExercise {
   exercise_type: string
   difficulty: string | null
   is_compound: boolean
+  movement_patterns?: string[]
+  cardio_modality?: string | null
+  impact_level?: string | null
+  joint_stress_tags?: string[]
 }

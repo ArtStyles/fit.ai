@@ -5,6 +5,7 @@ import { create } from 'zustand'
 export interface SetData {
   weightKg:  string       // string para controlar el input
   reps:      string       // string para controlar el input
+  durationSeconds?: number // tiempo real completado en ejercicios temporizados
   rpe:       number | null
   completed: boolean
 }
@@ -76,6 +77,7 @@ export interface SessionState {
   restoreSession:  (snapshot: { workoutId: string; workoutName: string; startedAt: number; exercises: ExerciseSession[] }) => void
   toggleExpanded:  (workoutExerciseId: string) => void
   updateSetField:  (weId: string, setIdx: number, field: 'weightKg' | 'reps', value: string) => void
+  updateSetDuration: (weId: string, setIdx: number, seconds: number) => void
   selectRpe:       (weId: string, setIdx: number, rpe: number) => void
   completeSet:     (weId: string, setIdx: number) => void
   skipExercise:    (weId: string, reason?: string | null) => void
@@ -99,6 +101,7 @@ function buildInitialSets(
   suggestedWeight: number | null,
   lastWeightsKg?:  number[] | null,
   lastReps?:       number[] | null,
+  targetDuration?: number | null,
 ): SetData[] {
   return Array.from({ length: targetSets }, (_, i) => {
     // Usar valor de la última sesión por índice; si el nuevo plan tiene más series
@@ -115,6 +118,7 @@ function buildInitialSets(
                : suggestedWeight != null ? String(suggestedWeight)
                : '',
       reps:      lastR != null ? String(lastR) : '',
+      durationSeconds: targetDuration ?? 0,
       rpe:       null,
       completed: false,
     }
@@ -156,7 +160,7 @@ function buildFlexibleExercise(
     source,
     skipReason: null,
     hasLastSessionData: false,
-    sets: buildInitialSets(targetSets, null),
+    sets: buildInitialSets(targetSets, null, null, null, draft.targetDuration ?? original?.targetDuration ?? null),
     status: original?.status === 'active' ? 'active' : 'pending',
     expanded: original?.status === 'active',
   }
@@ -233,6 +237,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         )
         return { ...ex, sets }
       }),
+    }))
+  },
+
+  updateSetDuration(weId, setIdx, seconds) {
+    set(state => ({
+      exercises: state.exercises.map(exercise =>
+        exercise.workoutExerciseId !== weId
+          ? exercise
+          : {
+            ...exercise,
+            sets: exercise.sets.map((setData, index) =>
+              index === setIdx
+                ? { ...setData, durationSeconds: Math.max(0, Math.round(seconds)) }
+                : setData,
+            ),
+          },
+      ),
     }))
   },
 
@@ -495,7 +516,7 @@ export function buildInitialExercises(
     source:              'planned' as const,
     skipReason:          null,
     hasLastSessionData:  !!(r.lastWeightsKg && r.lastWeightsKg.length > 0),
-    sets:     buildInitialSets(r.targetSets, r.suggestedWeight, r.lastWeightsKg, r.lastReps),
+    sets:     buildInitialSets(r.targetSets, r.suggestedWeight, r.lastWeightsKg, r.lastReps, r.targetDuration),
     status:   'pending' as const,
     expanded: false,
   }))

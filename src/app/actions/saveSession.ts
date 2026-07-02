@@ -47,6 +47,7 @@ export interface SetPayload {
   reps: string
   rpe: number | null
   completed: boolean
+  durationSeconds?: number
 }
 
 export interface ExercisePayload {
@@ -58,6 +59,7 @@ export interface ExercisePayload {
   isCompound?: boolean
   targetSets?: number | null
   targetReps?: number | null
+  targetDuration?: number | null
   targetRpe?: number | null
   source?: 'planned' | 'replacement' | 'ad_hoc'
   skipReason?: string | null
@@ -312,7 +314,9 @@ export async function saveSession(
     ex.sets.some(set => set.completed) || (ex.status === 'skipped' && Boolean(ex.skipReason)),
   )
 
-  const progressions = buildProgressionSuggestions(payload.exercises.map(ex => {
+  const progressions = buildProgressionSuggestions(payload.exercises
+    .filter(ex => ex.targetReps !== null && ex.targetReps !== undefined)
+    .map(ex => {
     const meta = metadataByWorkoutExercise.get(ex.workoutExerciseId)
     const relatedExercise = meta ? getExerciseRelation(meta) : null
     const usePlanMeta = (ex.source ?? 'planned') === 'planned'
@@ -345,6 +349,7 @@ export async function saveSession(
         reps_completed: completedSets.map(set => Math.max(0, parseInt(set.reps) || 0)),
         weights_kg: completedSets.map(set => Math.max(0, parseFloat(set.weightKg) || 0)),
         rpe_values: completedSets.map(set => set.rpe),
+        duration_seconds: completedSets.reduce((total, set) => total + Math.max(0, set.durationSeconds ?? 0), 0) || null,
         notes: buildExerciseLogNote(ex),
       }
     })

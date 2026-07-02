@@ -56,7 +56,7 @@ export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' 
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <copy.icon aria-hidden="true" className="h-4 w-4" />
-              {t('Nota de tu entrenador IA')}
+              {t('Nota de tu plan')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">

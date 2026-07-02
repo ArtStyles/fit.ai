@@ -6,8 +6,24 @@ import { filterExercisesForUser }  from '@/lib/ai/filter'
 import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
 import { buildWeeklySummary, getCyclePhase } from '@/lib/plans/periodization'
 import { getPlanCreatePolicy, removeOtherPlansForFreeUser } from '@/lib/plans/entitlements'
+import {
+  estimateDayMinutes,
+  generateEvidencePlan,
+  regenerateEvidencePlan,
+  type CardioModality,
+  type EngineExercise,
+  type EvidencePlan,
+  type MovementLimitation,
+  type MovementPattern,
+  type PlanAdjustmentIntent,
+  type PlanDiff,
+  type ReadinessProfile,
+  type RegenerationHistory,
+  previewPlanAdjustment,
+} from '@/lib/training-engine'
 import type { WeekContext, WeeklySummary, WeeklyExerciseRow } from '@/lib/plans/periodization'
 import type { UserContext }        from '@/lib/ai/types'
+import type { Json } from '@/types/database'
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -18,13 +34,66 @@ export interface GeneratePlanResult {
   daysCount?:        number
   weekNumber?:       number
   isMock?:           boolean
+  generator?:        'evidence_engine' | 'legacy_ai'
+  engineVersion?:    string
+  evidenceVersion?:  string
+  requiresReadinessReview?: boolean
+  previewDiff?: PlanDiff
+  warnings?: string[]
   error?:            string
   rateLimitedUntil?: string   // ISO string
 }
 
 export interface GeneratePlanOptions {
-  mode?: 'initial' | 'weekly_regeneration'
+  mode?: 'initial' | 'weekly_regeneration' | 'plan_adjustment'
   replaceExisting?: boolean
+  adjustmentIntent?: PlanAdjustmentIntent
+  previewOnly?: boolean
+}
+
+function usesEvidenceEngine(userId: string): boolean {
+  if ((process.env.PLAN_GENERATION_MODE ?? 'evidence_engine') === 'legacy_ai') return false
+  const allowlist = (process.env.EVIDENCE_ENGINE_BETA_USER_IDS ?? '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+  return allowlist.length === 0 || allowlist.includes(userId)
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function parseReadiness(
+  status: ReadinessProfile['status'],
+  answers: Json,
+  limitationsValue: Json,
+): ReadinessProfile {
+  const data = answers && typeof answers === 'object' && !Array.isArray(answers) ? answers as Record<string, unknown> : {}
+  const limitations: MovementLimitation[] = Array.isArray(limitationsValue)
+    ? limitationsValue.flatMap(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+      const record = item as { [key: string]: Json | undefined }
+      return [{
+        region: typeof record.region === 'string' ? record.region : '',
+        side: record.side === 'left' || record.side === 'right' || record.side === 'both' ? record.side : null,
+        status: record.status === 'acute' || record.status === 'recovering' ? record.status : 'stable',
+        movementsToAvoid: asStringArray(record.movementsToAvoid ?? record.movements_to_avoid),
+        clinicianCleared: record.clinicianCleared === true || record.clinician_cleared === true,
+      } satisfies MovementLimitation]
+    })
+    : []
+
+  return {
+    status,
+    currentlyActive: data.currentlyActive === true || data.currently_active === true,
+    warningSymptoms: asStringArray(data.warningSymptoms ?? data.warning_symptoms),
+    knownCardiovascularMetabolicOrRenalDisease:
+      data.knownCardiovascularMetabolicOrRenalDisease === true || data.known_disease === true,
+    medicallyCleared: data.medicallyCleared === true || data.medically_cleared === true,
+    recentSurgery: data.recentSurgery === true || data.recent_surgery === true,
+    limitations,
+  }
 }
 
 // ─── Helper: asignar días de la semana ───────────────────────────────────────
@@ -99,15 +168,75 @@ async function buildPreviousWeekSummary(
   })
 }
 
+async function loadPlanForEngine(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  plan: { id: string; name: string; ai_notes: string | null },
+): Promise<EvidencePlan | null> {
+  type WorkoutRow = {
+    id: string
+    name: string
+    focus: string | null
+    order_in_plan: number | null
+  }
+  type WorkoutExerciseRow = {
+    workout_id: string
+    exercise_id: string
+    order_index: number
+    sets: number
+    reps: number | null
+    duration_seconds: number | null
+    rest_seconds: number
+    target_rpe: number | null
+    weight_kg: number | null
+    weight_suggestion_basis: 'user_baseline_pending' | 'estimated_from_profile' | 'based_on_previous_logs' | null
+    notes: string | null
+  }
+
+  const { data: workouts } = await (supabase.from('workouts') as any)
+    .select('id, name, focus, order_in_plan')
+    .eq('plan_id', plan.id)
+    .order('order_in_plan') as { data: WorkoutRow[] | null }
+  if (!workouts?.length) return null
+
+  const { data: rows } = await (supabase.from('workout_exercises') as any)
+    .select('workout_id, exercise_id, order_index, sets, reps, duration_seconds, rest_seconds, target_rpe, weight_kg, weight_suggestion_basis, notes')
+    .in('workout_id', workouts.map(workout => workout.id))
+    .order('order_index') as { data: WorkoutExerciseRow[] | null }
+
+  return {
+    display_name: plan.name,
+    ai_notes: plan.ai_notes ?? '',
+    days: workouts.map((workout, index) => ({
+      day_number: index + 1,
+      display_name: workout.name,
+      focus: workout.focus ?? '',
+      exercises: (rows ?? [])
+        .filter(row => row.workout_id === workout.id)
+        .map(row => ({
+          exercise_id: row.exercise_id,
+          sets: row.sets,
+          reps: row.reps,
+          duration_seconds: row.duration_seconds,
+          rest_seconds: row.rest_seconds,
+          target_rpe: row.target_rpe ?? 7,
+          weight_kg: row.weight_kg,
+          weight_suggestion_basis: row.weight_suggestion_basis ?? 'user_baseline_pending',
+          notes: row.notes,
+        })),
+    })),
+  }
+}
+
 // ─── Server Action principal ──────────────────────────────────────────────────
 
 export async function generatePlan(options: GeneratePlanOptions = {}): Promise<GeneratePlanResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
+  const useEvidenceEngine = options.mode === 'plan_adjustment' || usesEvidenceEngine(user.id)
 
   const mode = options.mode ?? 'initial'
-  const replaceExisting = options.replaceExisting ?? mode === 'weekly_regeneration'
+  const replaceExisting = options.replaceExisting ?? mode !== 'initial'
   const operation = mode === 'weekly_regeneration'
     ? 'weekly_plan_regeneration'
     : 'initial_plan_generation'
@@ -121,35 +250,22 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
 
   const { data: activePlan } = await (supabase
     .from('workout_plans') as any)
-    .select('id, week_number')
+    .select('id, name, ai_notes, week_number')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle() as {
-      data: { id: string; week_number: number | null } | null
+      data: { id: string; name: string; ai_notes: string | null; week_number: number | null } | null
       error: { message: string } | null
     }
 
   const nextWeekNumber = mode === 'weekly_regeneration'
     ? Math.max(2, (activePlan?.week_number ?? 1) + 1)
-    : 1
+    : mode === 'plan_adjustment' ? activePlan?.week_number ?? 1 : 1
 
-  // ── 1. Rate limits ─────────────────────────────────────────────────────────
-  const [userLimit, globalBudget] = await Promise.all([
-    checkUserRateLimit(user.id, operation),
-    checkGlobalDailyBudget(),
-  ])
-
-  if (!userLimit.allowed) {
-    return {
-      success:           false,
-      error:             userLimit.reason,
-      rateLimitedUntil:  userLimit.retryAfter?.toISOString(),
-    }
-  }
-  if (!globalBudget.allowed) {
-    return { success: false, error: globalBudget.reason }
+  if (mode === 'plan_adjustment' && (!activePlan || !options.adjustmentIntent)) {
+    return { success: false, error: 'No hay un plan activo o una intención válida para ajustar.' }
   }
 
   // ── 2. Perfil del usuario ──────────────────────────────────────────────────
@@ -165,6 +281,11 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     weight_kg:                number | null
     date_of_birth:            string | null
     preferred_workout_days:   number[] | null
+    language:                  'es' | 'en'
+    cardio_preferences:       CardioModality[]
+    readiness_status:         ReadinessProfile['status']
+    readiness_answers:        Json
+    movement_limitations:     Json
   }
 
   const { data: profile } = await supabase
@@ -172,7 +293,8 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     .select(`
       fitness_level, primary_goal, days_per_week, session_duration_minutes,
       gym_type, available_equipment, injuries, gender, weight_kg,
-      date_of_birth, preferred_workout_days
+      date_of_birth, preferred_workout_days, language, cardio_preferences,
+      readiness_status, readiness_answers, movement_limitations
     `)
     .eq('id', user.id)
     .single() as unknown as { data: ProfileRow | null }
@@ -201,7 +323,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     session_duration_minutes: profile.session_duration_minutes ?? 60,
     gym_type:                 profile.gym_type ?? 'full_gym',
     available_equipment:      profile.available_equipment ?? [],
-    injuries:                 profile.injuries ?? '',
+    injuries:                 useEvidenceEngine ? '' : profile.injuries ?? '',
     gender:                   profile.gender ?? 'other',
     weight_kg:                profile.weight_kg,
     age,
@@ -224,6 +346,185 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
   }
 
   // ── 5. Generar plan (mock o real) ──────────────────────────────────────────
+
+  if (useEvidenceEngine) {
+    const [previousWeek, previousPlan] = await Promise.all([
+      mode === 'weekly_regeneration' && activePlan
+        ? buildPreviousWeekSummary(supabase, user.id, activePlan.id)
+        : Promise.resolve(null),
+      mode !== 'initial' && activePlan
+        ? loadPlanForEngine(supabase, activePlan)
+        : Promise.resolve(null),
+    ])
+
+    const engineExercises: EngineExercise[] = exercises.map(exercise => ({
+      id: exercise.id,
+      name: exercise.name,
+      muscleGroups: exercise.muscle_groups,
+      equipment: exercise.equipment,
+      exerciseType: (['strength', 'cardio', 'flexibility', 'balance', 'hiit'].includes(exercise.exercise_type)
+        ? exercise.exercise_type
+        : 'strength') as EngineExercise['exerciseType'],
+      difficulty: exercise.difficulty === 'beginner' || exercise.difficulty === 'intermediate' || exercise.difficulty === 'advanced'
+        ? exercise.difficulty
+        : null,
+      isCompound: exercise.is_compound,
+      movementPatterns: (exercise.movement_patterns ?? []) as MovementPattern[],
+      cardioModality: (exercise.cardio_modality ?? null) as CardioModality | null,
+      impactLevel: exercise.impact_level === 'low' || exercise.impact_level === 'moderate' || exercise.impact_level === 'high'
+        ? exercise.impact_level
+        : null,
+      jointStressTags: exercise.joint_stress_tags ?? [],
+    }))
+
+    const regenerationHistory: RegenerationHistory | null = previousWeek ? {
+      scheduledSessions: previousWeek.scheduledSessions,
+      completedSessions: previousWeek.completedSessions,
+      adherenceRatio: previousWeek.adherenceRatio,
+      avgRpe: previousWeek.avgRpe,
+      painReported: previousWeek.skippedExercises.some(item => /dolor|pain/i.test(item.lastReason ?? '')),
+      stalledExerciseIds: [],
+    } : null
+
+    const engineInput = {
+      seed: `${user.id}:week:${nextWeekNumber}`,
+      weekNumber: nextWeekNumber,
+      exercises: engineExercises,
+      previousPlan: previousPlan ? { plan: previousPlan } : null,
+      history: regenerationHistory,
+      profile: {
+        language: profile.language ?? 'es',
+        fitnessLevel: profile.fitness_level,
+        primaryGoal: profile.primary_goal as UserContext['primary_goal'],
+        daysPerWeek: profile.days_per_week,
+        sessionDurationMinutes: profile.session_duration_minutes ?? 60,
+        gymType: profile.gym_type ?? 'full_gym',
+        availableEquipment: profile.available_equipment ?? [],
+        preferredWorkoutDays: profile.preferred_workout_days,
+        cardioPreferences: profile.cardio_preferences ?? [],
+        age,
+        readiness: parseReadiness(
+          profile.readiness_status ?? 'pending',
+          profile.readiness_answers ?? {},
+          profile.movement_limitations ?? [],
+        ),
+      },
+    }
+
+    const adjustmentPreview = mode === 'plan_adjustment' && options.adjustmentIntent && previousPlan
+      ? previewPlanAdjustment(engineInput, previousPlan, options.adjustmentIntent)
+      : null
+    const engineResult = adjustmentPreview
+      ? adjustmentPreview.result
+      : mode === 'weekly_regeneration'
+        ? regenerateEvidencePlan(engineInput)
+        : generateEvidencePlan(engineInput)
+
+    if (!engineResult.success || !engineResult.plan) {
+      return {
+        success: false,
+        error: engineResult.issues[0]?.message ?? 'No se pudo crear un plan válido.',
+        generator: 'evidence_engine',
+        engineVersion: engineResult.metadata.engineVersion,
+        evidenceVersion: engineResult.metadata.evidenceVersion,
+        requiresReadinessReview: engineResult.requiresReadinessReview,
+      }
+    }
+
+    if (options.previewOnly) {
+      return {
+        success: true,
+        planName: engineResult.plan.display_name,
+        daysCount: engineResult.plan.days.length,
+        weekNumber: nextWeekNumber,
+        generator: 'evidence_engine',
+        engineVersion: engineResult.metadata.engineVersion,
+        evidenceVersion: engineResult.metadata.evidenceVersion,
+        previewDiff: adjustmentPreview?.diff ?? undefined,
+        warnings: adjustmentPreview?.warnings ?? engineResult.metadata.warnings,
+      }
+    }
+
+    const isoDays = assignIsoDays(engineResult.plan.days.length, profile.preferred_workout_days)
+    const transactionalPlan = {
+      ...engineResult.plan,
+      goal: profile.primary_goal,
+      difficulty: profile.fitness_level,
+      days: engineResult.plan.days.map((day, dayIndex) => ({
+        ...day,
+        day_of_week: isoDays[dayIndex] ?? dayIndex + 1,
+        estimated_duration_minutes: estimateDayMinutes(day),
+        exercises: day.exercises.map((exercise, exerciseIndex) => ({
+          ...exercise,
+          order_index: exerciseIndex + 1,
+        })),
+      })),
+    }
+
+    const profileUpdates: Record<string, Json> = {}
+    const intent = options.adjustmentIntent
+    if (mode === 'plan_adjustment' && intent) {
+      if (intent.type === 'change_days') {
+        profileUpdates.days_per_week = intent.daysPerWeek
+        profileUpdates.preferred_workout_days = intent.preferredWorkoutDays ?? []
+      } else if (intent.type === 'change_duration') {
+        profileUpdates.session_duration_minutes = intent.sessionDurationMinutes
+      } else if (intent.type === 'equipment_unavailable') {
+        const unavailable = new Set(intent.equipment)
+        profileUpdates.available_equipment = (profile.available_equipment ?? []).filter(item => !unavailable.has(item))
+      } else if (intent.type === 'change_cardio_preferences') {
+        profileUpdates.cardio_preferences = intent.cardioPreferences
+      }
+    }
+
+    const { data: newPlanId, error: rpcError } = await (supabase.rpc as any)('create_engine_plan', {
+      p_plan: transactionalPlan as unknown as Json,
+      p_metadata: engineResult.metadata as unknown as Json,
+      p_week_number: nextWeekNumber,
+      p_plan_context: mode === 'weekly_regeneration'
+        ? 'weekly_regeneration'
+        : mode === 'plan_adjustment' ? 'manual_update' : 'first_plan',
+      p_parent_plan_id: mode === 'initial' ? null : activePlan?.id ?? null,
+      p_profile_updates: profileUpdates,
+    })
+
+    if (rpcError || !newPlanId) {
+      console.error('[generatePlan] create_engine_plan falló:', rpcError)
+      return { success: false, error: 'Error al guardar el plan. El plan anterior no fue modificado.' }
+    }
+
+    if (createPolicy.replacingExisting) {
+      await removeOtherPlansForFreeUser(supabase, user.id, newPlanId)
+    }
+
+    return {
+      success: true,
+      planId: newPlanId,
+      planName: engineResult.plan.display_name,
+      daysCount: engineResult.plan.days.length,
+      weekNumber: nextWeekNumber,
+      isMock: false,
+      generator: 'evidence_engine',
+      engineVersion: engineResult.metadata.engineVersion,
+      evidenceVersion: engineResult.metadata.evidenceVersion,
+    }
+  }
+
+  const [userLimit, globalBudget] = await Promise.all([
+    checkUserRateLimit(user.id, operation),
+    checkGlobalDailyBudget(),
+  ])
+  if (!userLimit.allowed) {
+    return {
+      success: false,
+      error: userLimit.reason,
+      rateLimitedUntil: userLimit.retryAfter?.toISOString(),
+      generator: 'legacy_ai',
+    }
+  }
+  if (!globalBudget.allowed) {
+    return { success: false, error: globalBudget.reason, generator: 'legacy_ai' }
+  }
 
   // Contexto de periodización: fase del ciclo + rendimiento de la semana
   // anterior. Solo aplica en regeneraciones semanales.
@@ -357,5 +658,6 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     daysCount: plan.days.length,
     weekNumber: nextWeekNumber,
     isMock:    result.isMock,
+    generator: 'legacy_ai',
   }
 }

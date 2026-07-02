@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { generatePlan } from '@/app/actions/generatePlan'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { ReadinessReviewDialog } from './ReadinessReviewDialog'
 
 export function PlanRegenerateButton() {
   const router = useRouter()
@@ -14,6 +15,7 @@ export function PlanRegenerateButton() {
   const { t } = useI18n()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [readinessOpen, setReadinessOpen] = useState(false)
 
   async function handleClick() {
     setLoading(true)
@@ -22,6 +24,7 @@ export function PlanRegenerateButton() {
     const result = await generatePlan({ mode: 'weekly_regeneration' })
 
     if (!result.success) {
+      if (result.requiresReadinessReview) setReadinessOpen(true)
       const message = result.error ?? t('No se pudo regenerar el plan.')
       setError(message)
       showToast({
@@ -72,6 +75,11 @@ export function PlanRegenerateButton() {
           {error}
         </p>
       )}
+      <ReadinessReviewDialog
+        open={readinessOpen}
+        onOpenChange={setReadinessOpen}
+        onSaved={() => { void handleClick() }}
+      />
     </div>
   )
 }

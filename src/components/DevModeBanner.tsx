@@ -4,7 +4,7 @@ export function DevModeBanner() {
   if (process.env.NODE_ENV !== 'development') return null
 
   const tooltip =
-    'Modo desarrollo — planes generados con mock. Configura ANTHROPIC_API_KEY y pon USE_AI_MOCK=false para activar IA real.'
+    'Modo desarrollo — el asistente usa respuestas locales. Los planes se generan con el motor determinista.'
 
   return (
     <div className="relative">

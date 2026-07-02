@@ -484,7 +484,7 @@ export default async function DashboardPage() {
 
   const bannerContext = getBannerContext(planRaw, hasCompletedSessions)
 
-  // ── Banner de IA: si el plan tiene ai_notes y se creó en los últimos 7 días ─
+  // Banner del plan: usa ai_notes como columna legacy para notas del motor o de IA.
   const showAiBanner = !!(
     planRaw?.ai_notes &&
     new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7, tz).getTime()
