@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 
 // Routes where the bottom bar should be hidden (full-screen flows)
-const HIDDEN_PREFIXES = ['/session', '/plans/generate']
+const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
 
 type Tab = {
   href:  string

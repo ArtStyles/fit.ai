@@ -4,6 +4,12 @@
 export const MAX_POST_IMAGE_BYTES = 8 * 1024 * 1024 // 8 MB
 export const MAX_POST_IMAGES = 4
 
+export interface SquareCrop {
+  sx: number
+  sy: number
+  size: number
+}
+
 export type PostImageValidation = { ok: true } | { ok: false; error: string }
 
 export function validatePostImage(
@@ -19,6 +25,32 @@ export function validatePostImage(
 
 export function postStoragePath(userId: string, postId: string, index: number): string {
   return `${userId}/${postId}/${index}.webp`
+}
+
+/**
+ * Convierte el encuadre visible del editor (cuadrado) a coordenadas de la
+ * imagen original. Los offsets se expresan en pixeles del viewport.
+ */
+export function calculateSquareCrop(
+  imageWidth: number,
+  imageHeight: number,
+  viewportSize: number,
+  zoom: number,
+  offsetX: number,
+  offsetY: number,
+): SquareCrop {
+  const safeZoom = Math.max(1, zoom)
+  const baseScale = Math.max(viewportSize / imageWidth, viewportSize / imageHeight)
+  const scale = baseScale * safeZoom
+  const size = Math.min(imageWidth, imageHeight, viewportSize / scale)
+  const centerX = imageWidth / 2 - offsetX / scale
+  const centerY = imageHeight / 2 - offsetY / scale
+
+  return {
+    sx: Math.max(0, Math.min(imageWidth - size, centerX - size / 2)),
+    sy: Math.max(0, Math.min(imageHeight - size, centerY - size / 2)),
+    size,
+  }
 }
 
 // Reescala manteniendo proporción a un ancho máximo y exporta webp (o jpeg). Solo cliente.

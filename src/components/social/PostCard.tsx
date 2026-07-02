@@ -8,10 +8,13 @@ import { SessionCard } from './SessionCard'
 import { RoutineCard } from './RoutineCard'
 import { LikeButton } from './LikeButton'
 import { PostMenu } from './PostMenu'
+import { formatPostDate, formatPostDateTime } from '@/lib/social/date'
 
 export function PostCard({ post }: { post: FeedPost }) {
   const name = post.author.full_name || post.author.username || 'Usuario'
   const handle = post.author.username
+  const postDate = formatPostDate(post.created_at)
+  const postDateTime = formatPostDateTime(post.created_at)
 
   return (
     <article className="border-b border-border/40 px-4 py-4">
@@ -42,6 +45,15 @@ export function PostCard({ post }: { post: FeedPost }) {
           <MessageCircle className="h-5 w-5" />
           {post.comment_count > 0 && <span>{post.comment_count}</span>}
         </Link>
+        {postDate && (
+          <time
+            dateTime={post.created_at}
+            title={postDateTime}
+            className="ml-auto text-[11px] font-medium uppercase tracking-wide text-muted-foreground/75"
+          >
+            {postDate}
+          </time>
+        )}
       </footer>
     </article>
   )
