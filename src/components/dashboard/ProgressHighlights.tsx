@@ -1,5 +1,9 @@
+'use client'
+
 import { Activity, ChevronRight, Medal, TrendingUp } from 'lucide-react'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { dateLocale, type AppLanguage } from '@/lib/i18n'
 
 type LatestSession = {
   id: string
@@ -22,23 +26,23 @@ type ProgressHighlightsProps = {
   activeAdjustments: number
 }
 
-function formatRelativeDate(value: string): string {
+function formatRelativeDate(value: string, language: AppLanguage, t: (source: string) => string): string {
   const date = new Date(value)
   const today = new Date()
   const yesterday = new Date()
   yesterday.setDate(today.getDate() - 1)
 
-  if (date.toDateString() === today.toDateString()) return 'Hoy'
-  if (date.toDateString() === yesterday.toDateString()) return 'Ayer'
+  if (date.toDateString() === today.toDateString()) return t('Hoy')
+  if (date.toDateString() === yesterday.toDateString()) return t('Ayer')
 
-  return new Intl.DateTimeFormat('es', {
+  return new Intl.DateTimeFormat(dateLocale(language), {
     day: 'numeric',
     month: 'short',
   }).format(date)
 }
 
-function formatWeight(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return 'Sin carga'
+function formatWeight(value: number, t: (source: string) => string): string {
+  if (!Number.isFinite(value) || value <= 0) return t('Sin carga')
   return Number.isInteger(value) ? `${value} kg` : `${value.toFixed(1)} kg`
 }
 
@@ -47,12 +51,13 @@ export function ProgressHighlights({
   topRecord,
   activeAdjustments,
 }: ProgressHighlightsProps) {
+  const { language, t } = useI18n()
   if (!latestSession && !topRecord && activeAdjustments === 0) return null
 
   return (
     <div>
       <div className="mb-3 flex items-center gap-2 px-0.5">
-        <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">Progreso inteligente</span>
+        <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">{t('Progreso inteligente')}</span>
         <div className="h-px flex-1 bg-border/40" />
       </div>
 
@@ -67,9 +72,9 @@ export function ProgressHighlights({
               <Activity className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">Última sesión</p>
+              <p className="text-sm font-semibold text-foreground">{t('Última sesión')}</p>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {latestSession.workoutName} · {formatRelativeDate(latestSession.completedAt)}
+                {latestSession.workoutName} · {formatRelativeDate(latestSession.completedAt, language, t)}
                 {latestSession.durationMinutes ? ` · ${latestSession.durationMinutes} min` : ''}
               </p>
             </div>
@@ -90,10 +95,10 @@ export function ProgressHighlights({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-amber-400/80 mb-0.5">
-                  Mejor marca personal
+                  {t('Mejor marca personal')}
                 </p>
                 <p className="font-display text-xl font-bold text-foreground tracking-tight leading-none">
-                  {formatWeight(topRecord.maxWeightKg)}
+                  {formatWeight(topRecord.maxWeightKg, t)}
                   {topRecord.repsAtMaxWeight > 0 && (
                     <span className="text-sm font-sans font-medium text-muted-foreground ml-1">
                       × {topRecord.repsAtMaxWeight}
@@ -117,9 +122,9 @@ export function ProgressHighlights({
               <TrendingUp className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">Plan ajustado por tus datos</p>
+              <p className="text-sm font-semibold text-foreground">{t('Plan ajustado por tus datos')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {activeAdjustments} {activeAdjustments === 1 ? 'peso actualizado' : 'pesos actualizados'} por progreso real.
+                {activeAdjustments} {t(activeAdjustments === 1 ? 'peso actualizado' : 'pesos actualizados')} {t('por progreso real.')}
               </p>
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />

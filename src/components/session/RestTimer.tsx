@@ -5,6 +5,7 @@ import { X }               from 'lucide-react'
 import { cn }              from '@/lib/utils'
 import { hapticPattern }   from '@/lib/native/haptics'
 import { useSessionStore } from '@/store/sessionStore'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 // ─── Formato mm:ss ────────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ function fmt(seconds: number): string {
 // ─── RestTimer ────────────────────────────────────────────────────────────────
 
 export function RestTimer() {
+  const { t } = useI18n()
   const restTimer    = useSessionStore(s => s.restTimer)
   const extendTimer  = useSessionStore(s => s.extendRestTimer)
   const clearTimer   = useSessionStore(s => s.clearRestTimer)
@@ -102,7 +104,7 @@ export function RestTimer() {
 
         {/* Texto + botones */}
         <div className="flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Descanso activo</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t('Descanso activo')}</p>
           <div className="flex gap-2">
             <button
               type="button"
@@ -116,7 +118,7 @@ export function RestTimer() {
               onClick={clearTimer}
               className="flex-1 h-11 rounded-lg border border-border/60 bg-muted/20 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
             >
-              Saltar
+              {t('Saltar')}
             </button>
           </div>
         </div>
@@ -126,7 +128,7 @@ export function RestTimer() {
           type="button"
           onClick={clearTimer}
           className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Cerrar timer"
+          aria-label={t('Cerrar timer')}
         >
           <X className="h-4 w-4" />
         </button>

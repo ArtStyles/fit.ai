@@ -3,12 +3,14 @@
 import { usePathname } from 'next/navigation'
 import { MessageSquare, Sparkles } from 'lucide-react'
 import { PendingLink } from './PendingLink'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 // Hidden on full-screen flows and on the chat route itself (you're already there)
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/chat']
 
 export function ChatFab() {
   const pathname = usePathname()
+  const { t } = useI18n()
 
   if (HIDDEN_PREFIXES.some(p => pathname.startsWith(p))) return null
 
@@ -16,7 +18,7 @@ export function ChatFab() {
     <PendingLink
       href="/chat"
       showSpinner={false}
-      aria-label="Abrir Coach IA"
+      aria-label={t('Abrir Coach IA')}
       className="group fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-600/40 ring-1 ring-white/10 transition-transform duration-200 active:scale-95"
     >
       {/* soft sonar halo (single ping; suppressed under prefers-reduced-motion) */}

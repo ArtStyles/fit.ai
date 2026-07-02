@@ -6,10 +6,12 @@ import type { FeedPage } from '@/lib/social/types'
 import { getDiscoverFeed, getFollowingFeed } from '@/app/actions/feed'
 import { PostFeed } from './PostFeed'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 type Tab = 'descubrir' | 'siguiendo'
 
 export function FeedTabs({ discover, following }: { discover: FeedPage; following: FeedPage }) {
+  const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('descubrir')
 
   return (
@@ -25,7 +27,7 @@ export function FeedTabs({ discover, following }: { discover: FeedPage; followin
           className={cn('h-11 flex-1 text-sm font-medium transition-colors',
             tab === 'descubrir' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}
         >
-          Descubrir
+          {t('Descubrir')}
         </button>
         <button
           onClick={() => setTab('siguiendo')}
@@ -37,7 +39,7 @@ export function FeedTabs({ discover, following }: { discover: FeedPage; followin
           className={cn('h-11 flex-1 text-sm font-medium transition-colors',
             tab === 'siguiendo' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}
         >
-          Siguiendo
+          {t('Siguiendo')}
         </button>
       </div>
 
@@ -52,9 +54,9 @@ export function FeedTabs({ discover, following }: { discover: FeedPage; followin
             fetchPage={getFollowingFeed}
             emptyMessage={
               <div className="px-4 py-16 text-center text-sm text-muted-foreground">
-                <p>Sigue a gente para ver sus rutinas aquí.</p>
+                <p>{t('Sigue a gente para ver sus rutinas aquí.')}</p>
                 <button onClick={() => setTab('descubrir')} className="mt-3 font-medium text-primary">
-                  Explorar Descubrir
+                  {t('Explorar Descubrir')}
                 </button>
               </div>
             }

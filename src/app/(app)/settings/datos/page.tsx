@@ -4,6 +4,7 @@ import { SelectField, GENDERS } from '@/components/settings/fields'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { updatePersonalData } from '@/app/actions/settings'
+import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
 export const metadata = { title: 'Datos personales · FitAI' }
 
@@ -15,7 +16,8 @@ type PersonalProfile = {
 }
 
 export default async function PersonalDataPage() {
-  const { supabase, user } = await requireAppUserContext()
+  const { supabase, user, profile: appProfile } = await requireAppUserContext()
+  const t = createTranslator(normalizeLanguage(appProfile.language))
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -25,9 +27,9 @@ export default async function PersonalDataPage() {
 
   return (
     <SettingsScreen
-      title="Datos personales"
+      title={t('Datos personales')}
       backHref="/settings"
-      backLabel="Ajustes"
+      backLabel={t('Ajustes')}
       icon={<UserRound className="h-5 w-5" />}
     >
       <form action={updatePersonalData} className="space-y-6">
@@ -35,7 +37,7 @@ export default async function PersonalDataPage() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Altura cm</span>
+                <span className="text-xs font-medium text-muted-foreground">{t('Altura cm')}</span>
                 <input
                   name="heightCm"
                   type="number"
@@ -46,7 +48,7 @@ export default async function PersonalDataPage() {
                 />
               </label>
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Peso kg</span>
+                <span className="text-xs font-medium text-muted-foreground">{t('Peso kg')}</span>
                 <input
                   name="weightKg"
                   type="number"
@@ -61,7 +63,7 @@ export default async function PersonalDataPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Nacimiento</span>
+                <span className="text-xs font-medium text-muted-foreground">{t('Nacimiento')}</span>
                 <input
                   name="dateOfBirth"
                   type="date"
@@ -69,18 +71,18 @@ export default async function PersonalDataPage() {
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
                 />
               </label>
-              <SelectField label="Género" name="gender" value={profile?.gender ?? null} options={GENDERS} />
+              <SelectField label={t('Género')} name="gender" value={profile?.gender ?? null} options={GENDERS.map(([value, label]) => [value, t(label)])} emptyLabel={t('Sin definir')} />
             </div>
           </div>
         </section>
 
         <SubmitButton
-          label="Guardar"
-          pendingLabel="Guardando"
+          label={t('Guardar')}
+          pendingLabel={t('Guardando')}
           className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
         >
           <Save className="mr-2 h-4 w-4" />
-          Guardar
+          {t('Guardar')}
         </SubmitButton>
       </form>
     </SettingsScreen>

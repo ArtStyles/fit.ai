@@ -12,6 +12,7 @@ import {
 import { useSessionStore } from '@/store/sessionStore'
 import { SyncStatusIndicator } from '@/components/session/SyncStatusIndicator'
 import { useBackHandler } from '@/lib/native/backHandlers'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 // ─── Elapsed timer ────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ interface Props {
 }
 
 export function SessionHeader({ onFinish }: Props) {
+  const { t } = useI18n()
   const router        = useRouter()
   const workoutName   = useSessionStore(s => s.workoutName)
   const startedAt     = useSessionStore(s => s.startedAt)
@@ -87,7 +89,7 @@ export function SessionHeader({ onFinish }: Props) {
           type="button"
           onClick={handleBack}
           className="shrink-0 h-11 w-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-          aria-label="Volver"
+          aria-label={t('Volver')}
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -104,7 +106,7 @@ export function SessionHeader({ onFinish }: Props) {
             </p>
             {totalSets > 0 && (
               <span className="text-xs text-muted-foreground tabular-nums">
-                · {completedSets}/{totalSets} series
+                · {completedSets}/{totalSets} {t('series')}
               </span>
             )}
             <SyncStatusIndicator />
@@ -125,7 +127,7 @@ export function SessionHeader({ onFinish }: Props) {
           )}
         >
           <Flag className="h-3.5 w-3.5" />
-          Finalizar
+          {t('Finalizar')}
         </Button>
         </div>
 
@@ -144,11 +146,13 @@ export function SessionHeader({ onFinish }: Props) {
       <Dialog open={showExitDialog} onOpenChange={setShowExitDialog}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>¿Salir del entrenamiento?</DialogTitle>
+            <DialogTitle>{t('¿Salir del entrenamiento?')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Tienes {completedSets} {completedSets === 1 ? 'serie' : 'series'} completadas.
-            Si sales ahora, el progreso no guardado se perderá.
+            {t('Tienes {count} {sets} completadas. Si sales ahora, el progreso no guardado se perderá.', {
+              count: completedSets,
+              sets: t(completedSets === 1 ? 'serie' : 'series'),
+            })}
           </p>
           <div className="flex gap-3 mt-2">
             <Button
@@ -156,14 +160,14 @@ export function SessionHeader({ onFinish }: Props) {
               className="flex-1"
               onClick={() => setShowExitDialog(false)}
             >
-              Seguir entrenando
+              {t('Seguir entrenando')}
             </Button>
             <Button
               variant="destructive"
               className="flex-1"
               onClick={() => router.back()}
             >
-              Salir
+              {t('Salir')}
             </Button>
           </div>
         </DialogContent>

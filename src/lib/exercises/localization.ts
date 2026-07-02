@@ -1,4 +1,6 @@
-export type ExerciseLanguage = 'es' | 'en'
+import { normalizeLanguage, type AppLanguage } from '@/lib/i18n'
+
+export type ExerciseLanguage = AppLanguage
 
 export type LocalizableExercise = {
   name: string
@@ -14,7 +16,7 @@ export type LocalizableExercise = {
 }
 
 export function exerciseLanguage(value: string | null | undefined): ExerciseLanguage {
-  return value === 'en' ? 'en' : 'es'
+  return normalizeLanguage(value)
 }
 
 /** Applies the preferred language while retaining the canonical fields as fallbacks. */

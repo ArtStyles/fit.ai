@@ -20,6 +20,6 @@ export const TYPE_CFG: Record<ExerciseType, TypeCfg> = {
 
 export const DIFF_CFG: Record<Difficulty, { label: string; color: string }> = {
   beginner:     { label: 'Principiante', color: 'text-zinc-400'  },
-  intermediate: { label: 'Intermediate', color: 'text-amber-400' },
+  intermediate: { label: 'Intermedio',    color: 'text-amber-400' },
   advanced:     { label: 'Avanzado',     color: 'text-red-400'   },
 }

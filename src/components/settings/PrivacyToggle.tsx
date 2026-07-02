@@ -6,11 +6,13 @@ import { Lock } from 'lucide-react'
 import { setPrivacy } from '@/app/actions/settings'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 export function PrivacyToggle({ initialPrivate }: { initialPrivate: boolean }) {
   const [isPrivate, setIsPrivate] = useState(initialPrivate)
   const [pending, startTransition] = useTransition()
   const { showToast } = useToast()
+  const { t } = useI18n()
 
   function toggle() {
     const next = !isPrivate
@@ -26,15 +28,15 @@ export function PrivacyToggle({ initialPrivate }: { initialPrivate: boolean }) {
       <div className="flex items-center gap-3">
         <Lock className="h-5 w-5 text-muted-foreground" />
         <div>
-          <p className="text-sm font-medium">Cuenta privada</p>
-          <p className="text-xs text-muted-foreground">Solo tus seguidores aceptados ven tus publicaciones.</p>
+          <p className="text-sm font-medium">{t('Cuenta privada')}</p>
+          <p className="text-xs text-muted-foreground">{t('Solo tus seguidores aceptados ven tus publicaciones.')}</p>
         </div>
       </div>
       <button
         type="button"
         role="switch"
         aria-checked={isPrivate}
-        aria-label="Cuenta privada"
+        aria-label={t('Cuenta privada')}
         onClick={toggle}
         disabled={pending}
         className={cn('relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60',

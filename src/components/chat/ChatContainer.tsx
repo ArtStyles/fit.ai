@@ -21,6 +21,8 @@ import {
 import { LongPressMenu, type LongPressAction } from '@/components/ui'
 import { MessageBubble } from './MessageBubble'
 import { ChatInputBar } from './ChatInputBar'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { dateLocale } from '@/lib/i18n'
 
 type View = 'list' | 'chat'
 
@@ -48,6 +50,7 @@ interface Props {
 }
 
 export function ChatContainer({ initialConversations }: Props) {
+  const { language, t } = useI18n()
   const [view, setView]                           = useState<View>('list')
   const [conversations, setConversations]         = useState<ConversationRow[]>(initialConversations)
   const [selected, setSelected]                   = useState<ConversationRow | null>(null)
@@ -73,8 +76,8 @@ export function ChatContainer({ initialConversations }: Props) {
 
   async function handleNewConversation(context: ConversationContext) {
     setCreating(true)
-    const label = CONTEXT_LABELS[context]
-    const date  = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+    const label = t(CONTEXT_LABELS[context])
+    const date  = new Date().toLocaleDateString(dateLocale(language), { day: 'numeric', month: 'short' })
     const title = `${label} · ${date}`
 
     const result = await createConversation(context, title)
@@ -162,7 +165,7 @@ export function ChatContainer({ initialConversations }: Props) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">{selected.title}</p>
             <p className="text-xs text-muted-foreground/70">
-              {selected.context ? CONTEXT_LABELS[selected.context] : 'General'}
+              {t(selected.context ? CONTEXT_LABELS[selected.context] : 'General')}
             </p>
           </div>
         </header>
@@ -178,7 +181,7 @@ export function ChatContainer({ initialConversations }: Props) {
                 <MessageSquare className="h-6 w-6" />
               </div>
               <p className="text-sm text-muted-foreground">
-                Conversación iniciada.<br />¿En qué te puedo ayudar?
+                {t('Conversación iniciada.')}<br />{t('¿En qué te puedo ayudar?')}
               </p>
             </div>
           ) : (
@@ -217,7 +220,7 @@ export function ChatContainer({ initialConversations }: Props) {
             className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700"
           >
             <Plus className="h-4 w-4" />
-            Nueva
+            {t('Nueva')}
           </button>
         </div>
       </header>
@@ -229,9 +232,9 @@ export function ChatContainer({ initialConversations }: Props) {
               <MessageSquare className="h-8 w-8" />
             </div>
             <div>
-              <p className="font-semibold text-white">Sin conversaciones aún</p>
+              <p className="font-semibold text-white">{t('Sin conversaciones aún')}</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Pregúntale a tu coach sobre tu entrenamiento, progreso o nutrición
+                {t('Pregúntale a tu coach sobre tu entrenamiento, progreso o nutrición')}
               </p>
             </div>
             <button
@@ -240,7 +243,7 @@ export function ChatContainer({ initialConversations }: Props) {
               className="mt-2 flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500"
             >
               <Plus className="h-4 w-4" />
-              Iniciar conversación
+              {t('Iniciar conversación')}
             </button>
           </div>
         ) : (
@@ -260,7 +263,7 @@ export function ChatContainer({ initialConversations }: Props) {
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
         <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
-            <DialogTitle className="text-base text-white">Nueva conversación</DialogTitle>
+            <DialogTitle className="text-base text-white">{t('Nueva conversación')}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-2 p-4">
             {CONTEXT_OPTIONS.map(({ value, label, description, Icon }) => (
@@ -275,8 +278,8 @@ export function ChatContainer({ initialConversations }: Props) {
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-white">{label}</p>
-                  <p className="text-xs text-muted-foreground">{description}</p>
+                  <p className="text-sm font-medium text-white">{t(label)}</p>
+                  <p className="text-xs text-muted-foreground">{t(description)}</p>
                 </div>
               </button>
             ))}
@@ -296,11 +299,12 @@ function ConversationItem({
   onSelect: () => void
   onDelete: () => void
 }) {
-  const label = conversation.context ? CONTEXT_LABELS[conversation.context] : 'General'
-  const date  = new Date(conversation.updated_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+  const { language, t } = useI18n()
+  const label = t(conversation.context ? CONTEXT_LABELS[conversation.context] : 'General')
+  const date  = new Date(conversation.updated_at).toLocaleDateString(dateLocale(language), { day: 'numeric', month: 'short' })
 
   const actions: LongPressAction[] = [
-    { id: 'delete', label: 'Eliminar', icon: Trash2, variant: 'danger', onSelect: onDelete },
+    { id: 'delete', label: t('Eliminar'), icon: Trash2, variant: 'danger', onSelect: onDelete },
   ]
 
   return (

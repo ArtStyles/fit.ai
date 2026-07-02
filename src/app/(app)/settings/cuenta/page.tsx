@@ -5,18 +5,20 @@ import { Button } from '@/components/ui/button'
 import { DeleteAccountSection } from '@/components/settings/DeleteAccountSection'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { signOut } from '@/app/(auth)/actions'
+import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
 export const metadata = { title: 'Cuenta · FitAI' }
 
 export default async function AccountSettingsPage() {
-  const { user } = await requireAppUserContext()
+  const { user, profile } = await requireAppUserContext()
+  const t = createTranslator(normalizeLanguage(profile.language))
 
   return (
     <SettingsScreen
-      title="Cuenta"
+      title={t('Cuenta')}
       subtitle={user.email}
       backHref="/settings"
-      backLabel="Ajustes"
+      backLabel={t('Ajustes')}
       icon={<UserCog className="h-5 w-5" />}
     >
       <form action={signOut}>
@@ -26,7 +28,7 @@ export default async function AccountSettingsPage() {
           className="h-11 w-full border-border/60 bg-transparent text-muted-foreground hover:bg-muted/20 hover:text-foreground"
         >
           <LogOut className="mr-2 h-4 w-4" />
-          Cerrar sesión
+          {t('Cerrar sesión')}
         </Button>
       </form>
 
@@ -36,7 +38,7 @@ export default async function AccountSettingsPage() {
 
       <p className="mt-8 text-center text-xs text-muted-foreground">
         <Link href="/privacy" className="underline transition-colors hover:text-foreground">
-          Política de privacidad
+          {t('Política de privacidad')}
         </Link>
       </p>
     </SettingsScreen>

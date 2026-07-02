@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Pencil, RefreshCw, Sparkles, X } from 'lucide-react'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 export type BannerContext = 'first_plan' | 'weekly_regeneration' | 'manual_update'
 
@@ -20,6 +21,7 @@ const BANNER_COPY: Record<BannerContext, { title: string; icon: React.ComponentT
 }
 
 export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' }: Props) {
+  const { t } = useI18n()
   const [open,      setOpen]      = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const copy = BANNER_COPY[bannerContext]
@@ -31,19 +33,19 @@ export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' 
       <div className="relative rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3.5 flex gap-3">
         <copy.icon className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-violet-300 mb-0.5">{copy.title}</p>
+          <p className="text-xs font-semibold text-violet-300 mb-0.5">{t(copy.title)}</p>
           <p className="text-sm text-muted-foreground line-clamp-2">{aiNotes}</p>
           <button
             onClick={() => setOpen(true)}
             className="mt-1.5 text-xs font-medium text-violet-400 hover:text-violet-300 transition-colors"
           >
-            Ver detalles →
+            {t('Ver detalles')} →
           </button>
         </div>
         <button
           onClick={() => setDismissed(true)}
           className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Cerrar"
+          aria-label={t('Cerrar')}
         >
           <X className="h-4 w-4" />
         </button>
@@ -54,7 +56,7 @@ export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' 
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <copy.icon aria-hidden="true" className="h-4 w-4" />
-              Nota de tu entrenador IA
+              {t('Nota de tu entrenador IA')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -62,7 +64,7 @@ export function AINotesBanner({ aiNotes, planName, bannerContext = 'first_plan' 
             <p className="text-sm text-foreground leading-relaxed">{aiNotes}</p>
           </div>
           <Button variant="outline" className="w-full mt-2" onClick={() => setOpen(false)}>
-            Cerrar
+            {t('Cerrar')}
           </Button>
         </DialogContent>
       </Dialog>

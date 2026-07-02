@@ -44,11 +44,13 @@ export function SelectField({
   name,
   value,
   options,
+  emptyLabel = 'Sin definir',
 }: {
   label: string
   name: string
   value: string | null
   options: string[][]
+  emptyLabel?: string
 }) {
   return (
     <label className="block space-y-1.5">
@@ -58,7 +60,7 @@ export function SelectField({
         defaultValue={value ?? ''}
         className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
       >
-        <option value="">Sin definir</option>
+        <option value="">{emptyLabel}</option>
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>{optionLabel}</option>
         ))}

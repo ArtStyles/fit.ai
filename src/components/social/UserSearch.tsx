@@ -6,8 +6,10 @@ import { Search, Loader2 } from 'lucide-react'
 import type { SuggestedUser } from '@/lib/social/types'
 import { searchUsers } from '@/app/actions/users'
 import { UserRow } from './UserRow'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 export function UserSearch({ suggested }: { suggested: SuggestedUser[] }) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SuggestedUser[]>([])
   const [loading, setLoading] = useState(false)
@@ -18,12 +20,12 @@ export function UserSearch({ suggested }: { suggested: SuggestedUser[] }) {
     if (!q) { setResults([]); setLoading(false); return }
     setLoading(true)
     const id = ++reqId.current
-    const t = setTimeout(async () => {
+    const timeoutId = setTimeout(async () => {
       const res = await searchUsers(q)
       // Ignora respuestas obsoletas (la última petición gana).
       if (id === reqId.current) { setResults(res); setLoading(false) }
     }, 300)
-    return () => clearTimeout(t)
+    return () => clearTimeout(timeoutId)
   }, [query])
 
   const showingSearch = query.trim().length > 0
@@ -36,8 +38,8 @@ export function UserSearch({ suggested }: { suggested: SuggestedUser[] }) {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Buscar usuarios"
-            aria-label="Buscar usuarios"
+            placeholder={t('Buscar usuarios')}
+            aria-label={t('Buscar usuarios')}
             maxLength={100}
             className="h-11 flex-1 bg-transparent text-sm outline-none"
           />
@@ -47,15 +49,15 @@ export function UserSearch({ suggested }: { suggested: SuggestedUser[] }) {
 
       {showingSearch ? (
         results.length === 0 && !loading
-          ? <p className="px-4 py-10 text-center text-sm text-muted-foreground">Sin resultados.</p>
+          ? <p className="px-4 py-10 text-center text-sm text-muted-foreground">{t('Sin resultados.')}</p>
           : results.map(u => <UserRow key={u.id} user={u} />)
       ) : (
         <>
           <p className="px-4 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Sugeridos
+            {t('Sugeridos')}
           </p>
           {suggested.length === 0
-            ? <p className="px-4 py-10 text-center text-sm text-muted-foreground">No hay sugerencias por ahora.</p>
+            ? <p className="px-4 py-10 text-center text-sm text-muted-foreground">{t('No hay sugerencias por ahora.')}</p>
             : suggested.map(u => <UserRow key={u.id} user={u} />)}
         </>
       )}

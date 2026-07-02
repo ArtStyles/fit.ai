@@ -4,6 +4,9 @@ import { Barlow_Condensed, Plus_Jakarta_Sans } from 'next/font/google'
 import { ToastProvider } from '@/components/feedback/ToastProvider'
 import { ActionNotice } from '@/components/feedback/ActionNotice'
 import { NativeAppInit } from '@/components/native/NativeAppInit'
+import { cookies } from 'next/headers'
+import { normalizeLanguage } from '@/lib/i18n'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
 import '@/styles/globals.css'
 
 const barlowCondensed = Barlow_Condensed({
@@ -46,16 +49,20 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const language = normalizeLanguage(cookies().get('fitai-language')?.value)
+
   return (
-    <html lang="es" className={`dark ${barlowCondensed.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
+    <html lang={language} className={`dark ${barlowCondensed.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
       <body className="bg-background font-sans text-foreground antialiased">
-        <NativeAppInit />
-        <ToastProvider>
-          <Suspense fallback={null}>
-            <ActionNotice />
-          </Suspense>
-          {children}
-        </ToastProvider>
+        <I18nProvider language={language} syncDocumentLanguage={false}>
+          <NativeAppInit />
+          <ToastProvider>
+            <Suspense fallback={null}>
+              <ActionNotice />
+            </Suspense>
+            {children}
+          </ToastProvider>
+        </I18nProvider>
       </body>
     </html>
   )

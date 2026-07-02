@@ -2,6 +2,7 @@
 
 import { ChevronRight, TrendingUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 export interface ProgressionItem {
   weId:         string
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function PreSessionScreen({ progressions, onApply, onSkip }: Props) {
+  const { t } = useI18n()
   const count = progressions.length
 
   return (
@@ -34,11 +36,11 @@ export function PreSessionScreen({ progressions, onApply, onSkip }: Props) {
               <TrendingUp className="relative h-8 w-8 text-violet-400" />
             </div>
             <div>
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">Puedes mejorar hoy</h1>
+              <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">{t('Puedes mejorar hoy')}</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Tu historial sugiere subir peso en{' '}
+                {t('Tu historial sugiere subir peso en')}{' '}
                 <span className="font-medium text-foreground">
-                  {count} {count === 1 ? 'ejercicio' : 'ejercicios'}
+                  {count} {t(count === 1 ? 'ejercicio' : 'ejercicios')}
                 </span>
               </p>
             </div>
@@ -96,14 +98,14 @@ export function PreSessionScreen({ progressions, onApply, onSkip }: Props) {
           }
         >
           <TrendingUp className="mr-2 h-5 w-5" />
-          Aplicar y empezar
+          {t('Aplicar y empezar')}
         </Button>
         <Button
           variant="ghost"
           className="w-full h-11 text-muted-foreground hover:text-foreground text-sm"
           onClick={onSkip}
         >
-          Empezar sin cambios
+          {t('Empezar sin cambios')}
         </Button>
       </div>
 

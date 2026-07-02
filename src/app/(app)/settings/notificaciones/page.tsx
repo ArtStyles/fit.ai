@@ -4,6 +4,7 @@ import { SocialNotificationPreferences } from '@/components/settings/SocialNotif
 import { WorkoutReminders } from '@/components/settings/WorkoutReminders'
 import { requireAppUserContext } from '@/lib/auth/server'
 import type { SocialNotificationPreferencesInput } from '@/app/actions/pushNotifications'
+import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
 export const metadata = { title: 'Notificaciones · FitAI' }
 
@@ -19,7 +20,8 @@ const DEFAULT_SOCIAL_PREFERENCES: SocialNotificationPreferencesInput = {
 }
 
 export default async function NotificationsSettingsPage() {
-  const { supabase, user } = await requireAppUserContext()
+  const { supabase, user, profile: appProfile } = await requireAppUserContext()
+  const t = createTranslator(normalizeLanguage(appProfile.language))
 
   const [{ data: profile }, { data: socialPreferences }] = await Promise.all([
     supabase
@@ -35,9 +37,9 @@ export default async function NotificationsSettingsPage() {
 
   return (
     <SettingsScreen
-      title="Notificaciones"
+      title={t('Notificaciones')}
       backHref="/settings"
-      backLabel="Ajustes"
+      backLabel={t('Ajustes')}
       icon={<BellRing className="h-5 w-5" />}
     >
       <div className="space-y-4">

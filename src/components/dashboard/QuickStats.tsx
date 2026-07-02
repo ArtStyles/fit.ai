@@ -6,6 +6,7 @@ import { Flame, CalendarCheck, Weight, ChevronRight } from 'lucide-react'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { Sparkline } from '@/components/dashboard/Sparkline'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 // ─── Animated counter hook ────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ export function QuickStats({
   volumeSeries,
   hasCompletedSessions,
 }: Props) {
+  const { language, t } = useI18n()
   const reduce         = useReducedMotion()
   const animatedStreak = useCountUp(streak, 900)
   const animatedVolume = useCountUp(volumeKg, 1400, 200)
@@ -81,22 +83,22 @@ export function QuickStats({
   const volumePct  = Math.min(volumeKg / 3000, 1)
   const isOnFire   = streak >= 3
   const streakLabel =
-    streak === 0 ? 'Retoma tu racha' :
-    streak === 1 ? '¡Vas bien!' : '¡Sigue así!'
+    streak === 0 ? t('Retoma tu racha') :
+    streak === 1 ? t('¡Vas bien!') : t('¡Sigue así!')
 
   // ── Empty state ─────────────────────────────────────────────────────────────
   if (!hasCompletedSessions) {
     return (
       <div>
-        <SectionLabel>Tu progreso</SectionLabel>
+        <SectionLabel>{t('Tu progreso')}</SectionLabel>
         <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-muted/10 p-5">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted/30">
             <Flame className="h-6 w-6 text-muted-foreground/40" />
           </div>
           <div className="min-w-0">
-            <p className="text-base font-semibold text-foreground">Empieza tu camino</p>
+            <p className="text-base font-semibold text-foreground">{t('Empieza tu camino')}</p>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              Tu primera sesión te espera. Cada serie cuenta.
+              {t('Tu primera sesión te espera. Cada serie cuenta.')}
             </p>
           </div>
         </div>
@@ -109,11 +111,11 @@ export function QuickStats({
     <PendingLink href="/history" className="group block focus-visible:outline-none" spinnerClassName="hidden">
       <div className="mb-3 flex items-center gap-2 px-0.5">
         <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">
-          Tu progreso
+          {t('Tu progreso')}
         </span>
         <div className="h-px flex-1 bg-border/40" />
         <span className="flex items-center gap-0.5 text-[11px] font-semibold text-muted-foreground/40 transition-colors group-hover:text-violet-400">
-          Historial
+          {t('Historial')}
           <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
         </span>
       </div>
@@ -138,7 +140,7 @@ export function QuickStats({
           <div className="relative flex items-center justify-between gap-4">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">
-                Racha activa
+                {t('Racha activa')}
               </p>
               <div className="mt-1 flex items-end gap-1.5">
                 <span className={cn(
@@ -150,7 +152,7 @@ export function QuickStats({
                   {streak > 0 ? animatedStreak : '—'}
                 </span>
                 {streak > 0 && (
-                  <span className="mb-2 text-base font-medium text-muted-foreground">días</span>
+                  <span className="mb-2 text-base font-medium text-muted-foreground">{t('días')}</span>
                 )}
               </div>
               <p className={cn(
@@ -182,7 +184,7 @@ export function QuickStats({
           <div className="flex items-center justify-between">
             <CalendarCheck className="h-4 w-4 text-indigo-400" />
             <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground/50">
-              Semana
+              {t('Semana')}
             </span>
           </div>
           <div className="flex items-end gap-0.5 leading-none">
@@ -209,12 +211,12 @@ export function QuickStats({
           <div className="flex items-center justify-between">
             <Weight className="h-4 w-4 text-emerald-400" />
             <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground/50">
-              Volumen
+              {t('Volumen')}
             </span>
           </div>
           <div className="flex items-end gap-0.5 leading-none">
             <span className="font-display text-2xl font-bold tabular-nums text-foreground">
-              {animatedVolume.toLocaleString('es')}
+              {animatedVolume.toLocaleString(language === 'en' ? 'en-US' : 'es-ES')}
             </span>
             <span className="mb-0.5 text-sm font-medium text-muted-foreground"> kg</span>
           </div>

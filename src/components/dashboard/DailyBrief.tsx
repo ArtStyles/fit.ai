@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 interface Props {
   message: string
 }
 
 export function DailyBrief({ message }: Props) {
+  const { t } = useI18n()
   const [phase,     setPhase]     = useState<'thinking' | 'visible'>('thinking')
   const [collapsed, setCollapsed] = useState(false)
 
@@ -63,7 +65,7 @@ export function DailyBrief({ message }: Props) {
             type="button"
             onClick={() => setCollapsed(v => !v)}
             className="-my-1.5 -mr-2 flex h-11 w-11 cursor-pointer items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:text-muted-foreground/80"
-            aria-label={collapsed ? 'Expandir mensaje del coach' : 'Colapsar mensaje del coach'}
+            aria-label={collapsed ? t('Expandir mensaje del coach') : t('Colapsar mensaje del coach')}
           >
             <ChevronDown className={cn(
               'h-3.5 w-3.5 transition-transform duration-200',

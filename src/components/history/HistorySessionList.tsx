@@ -14,6 +14,8 @@ import { Badge } from '@/components/ui/badge'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { dateLocale, type AppLanguage } from '@/lib/i18n'
 
 type WorkoutSummary = {
   name: string
@@ -48,16 +50,16 @@ interface HistorySessionListProps {
   exerciseLogs: HistoryExerciseLogRow[]
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('es', {
+function formatDate(value: string, language: AppLanguage): string {
+  return new Intl.DateTimeFormat(dateLocale(language), {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
   }).format(new Date(value))
 }
 
-function formatTime(value: string): string {
-  return new Intl.DateTimeFormat('es', {
+function formatTime(value: string, language: AppLanguage): string {
+  return new Intl.DateTimeFormat(dateLocale(language), {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
@@ -102,6 +104,7 @@ function normalize(value: string): string {
 }
 
 export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySessionListProps) {
+  const { language, t } = useI18n()
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<HistoryMode>('all')
 
@@ -114,14 +117,14 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
         const workout = getWorkout(log)
         const workoutName = workout
           ? getWorkoutDisplayName(workout.name, workout.focus)
-          : 'Entrenamiento'
+          : t('Entrenamiento')
         const exerciseNames = exerciseLogs
           .filter(row => row.progress_log_id === log.id)
           .map(getExerciseName)
           .filter(Boolean)
           .join(' ')
         const volume = Math.round(volumeFor(log.id, exerciseLogs))
-        const dateLabel = `${formatDate(log.completed_at)} ${formatTime(log.completed_at)}`
+        const dateLabel = `${formatDate(log.completed_at, language)} ${formatTime(log.completed_at, language)}`
         const haystack = normalize([
           workoutName,
           exerciseNames,
@@ -150,12 +153,12 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
     }
 
     return rows
-  }, [exerciseLogs, mode, query, sessionLogs])
+  }, [exerciseLogs, language, mode, query, sessionLogs, t])
 
   const modes: { value: HistoryMode; label: string }[] = [
-    { value: 'all', label: 'Todas' },
-    { value: 'week', label: 'Esta semana' },
-    { value: 'volume', label: 'Mayor volumen' },
+    { value: 'all', label: t('Todas') },
+    { value: 'week', label: t('Esta semana') },
+    { value: 'volume', label: t('Mayor volumen') },
   ]
 
   return (
@@ -166,7 +169,7 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Buscar rutina, foco o fecha"
+            placeholder={t('Buscar rutina, foco o fecha')}
             className="h-11 w-full rounded-xl border border-border/60 bg-background/70 pl-9 pr-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
           />
           {query && (
@@ -174,7 +177,7 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
               type="button"
               onClick={() => setQuery('')}
               className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-              aria-label="Limpiar búsqueda"
+              aria-label={t('Limpiar búsqueda')}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -206,8 +209,8 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
       <div className="mt-4 flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {filteredLogs.length === sessionLogs.length
-            ? `${sessionLogs.length} sesiones`
-            : `${filteredLogs.length} de ${sessionLogs.length} sesiones`}
+            ? `${sessionLogs.length} ${t('sesiones')}`
+            : `${filteredLogs.length} / ${sessionLogs.length} ${t('sesiones')}`}
         </p>
         {mode !== 'all' || query ? (
           <button
@@ -218,7 +221,7 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
             }}
             className="text-xs font-medium text-violet-300 hover:text-violet-200"
           >
-            Limpiar filtros
+            {t('Limpiar filtros')}
           </button>
         ) : null}
       </div>
@@ -226,9 +229,9 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
       {filteredLogs.length === 0 ? (
         <div className="mt-3 rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">
           <Search className="mx-auto h-6 w-6 text-muted-foreground" />
-          <p className="mt-3 text-sm font-semibold text-foreground">Sin resultados</p>
+          <p className="mt-3 text-sm font-semibold text-foreground">{t('Sin resultados')}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Prueba con otro nombre, foco o rango.
+            {t('Prueba con otro nombre, foco o rango.')}
           </p>
         </div>
       ) : (
@@ -244,7 +247,7 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium capitalize text-muted-foreground">
-                    {formatDate(log.completed_at)} · {formatTime(log.completed_at)}
+                    {formatDate(log.completed_at, language)} · {formatTime(log.completed_at, language)}
                   </p>
                   <h2 className="mt-1 font-display text-lg font-semibold text-foreground">
                     {workoutName}
@@ -256,7 +259,7 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
                 <div className="flex shrink-0 items-center gap-2">
                   {log.mood_rating && (
                     <Badge variant="ghost" className="border border-border/50">
-                      ánimo {log.mood_rating}/5
+                      {t('ánimo')} {log.mood_rating}/5
                     </Badge>
                   )}
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />

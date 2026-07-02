@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { cn } from '@/lib/utils'
 import type { DayData } from '@/app/(app)/dashboard/page'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
-const DAY_INITIALS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+const DAY_INITIALS = {
+  es: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
+  en: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
+} as const
 
 interface Props {
   days:     DayData[]
@@ -15,12 +19,13 @@ interface Props {
 type DayState = 'completed' | 'today' | 'scheduled' | 'rest' | 'skipped' | 'recoverable'
 
 export function WeekCalendar({ days, todayIso }: Props) {
+  const { language, t } = useI18n()
   const [activeMessageDay, setActiveMessageDay] = useState<number | null>(null)
   const activeDay = activeMessageDay === null
     ? null
     : days.find(day => day.isoDay === activeMessageDay) ?? null
   const activeMessage = activeDay
-    ? getUnavailableMessage(activeDay, getDayState(activeDay, todayIso))
+    ? getUnavailableMessage(activeDay, getDayState(activeDay, todayIso), t)
     : null
 
   useEffect(() => {
@@ -32,7 +37,7 @@ export function WeekCalendar({ days, todayIso }: Props) {
   return (
     <div>
       <div className="mb-3 flex items-center gap-2 px-0.5">
-        <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">Esta semana</span>
+        <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">{t('Esta semana')}</span>
         <div className="h-px flex-1 bg-border/40" />
       </div>
       <div className="grid grid-cols-7 gap-1.5">
@@ -44,7 +49,7 @@ export function WeekCalendar({ days, todayIso }: Props) {
             <DayCell
               key={day.isoDay}
               day={day}
-              dayInitial={DAY_INITIALS[day.isoDay - 1]}
+              dayInitial={DAY_INITIALS[language][day.isoDay - 1]}
               dayNum={dayNum}
               state={state}
               showMessage={activeMessageDay === day.isoDay}
@@ -75,23 +80,23 @@ function getDayState(day: DayData, todayIso: number): DayState {
   return 'scheduled'
 }
 
-function getTooltip(day: DayData, state: DayState): string {
-  if (!day.workout) return 'Descanso'
+function getTooltip(day: DayData, state: DayState, t: (source: string) => string): string {
+  if (!day.workout) return t('Descanso')
   if (state === 'completed') {
     const duration = day.completedDurationMinutes
       ? ` · ${day.completedDurationMinutes} min`
       : ''
-    return `✓ Completado${duration}`
+    return `✓ ${t('Completado')}${duration}`
   }
-  if (state === 'recoverable') return `Recuperable · ${day.workout.name}`
+  if (state === 'recoverable') return `${t('Recuperable')} · ${day.workout.name}`
   return day.workout.name
 }
 
-function getUnavailableMessage(day: DayData, state: DayState): string {
-  if (!day.workout) return 'Dia de descanso, aprovecha para recuperar'
-  if (state === 'completed') return 'Ver detalle de rutina completada'
-  if (state === 'skipped') return 'Esta rutina quedo fuera de la ventana de recuperacion.'
-  if (state === 'scheduled') return 'Esta rutina aun no esta disponible. Solo puedes iniciar la rutina de hoy.'
+function getUnavailableMessage(day: DayData, state: DayState, t: (source: string) => string): string {
+  if (!day.workout) return t('Día de descanso, aprovecha para recuperar')
+  if (state === 'completed') return t('Ver detalle de rutina completada')
+  if (state === 'skipped') return t('Esta rutina quedó fuera de la ventana de recuperación.')
+  if (state === 'scheduled') return t('Esta rutina aún no está disponible. Solo puedes iniciar la rutina de hoy.')
   return day.workout.name
 }
 
@@ -110,12 +115,13 @@ function DayCell({
   showMessage:     boolean
   onUnavailableTap: () => void
 }) {
+  const { t } = useI18n()
   const workout = day.workout
   const canStart = (state === 'today' || state === 'recoverable') && workout !== null
   const canViewHistory = state === 'completed' && day.completedLogId !== null && workout !== null
   const tooltip = showMessage
-    ? getUnavailableMessage(day, state)
-    : getTooltip(day, state)
+    ? getUnavailableMessage(day, state, t)
+    : getTooltip(day, state, t)
 
   const inner = (
     <div
@@ -170,10 +176,10 @@ function DayCell({
         className="focus-visible:outline-none"
         aria-label={
           state === 'recoverable'
-            ? `Recuperar ${workout.name}`
-            : day.isToday ? `Continuar ${workout.name}` : workout.name
+            ? t('Recuperar {workout}', { workout: workout.name })
+            : day.isToday ? t('Continuar {workout}', { workout: workout.name }) : workout.name
         }
-        title={getTooltip(day, state)}
+        title={getTooltip(day, state, t)}
         showSpinner={false}
       >
         {inner}
@@ -186,8 +192,8 @@ function DayCell({
       <PendingLink
         href={`/history/${day.completedLogId}`}
         className="focus-visible:outline-none"
-        aria-label={`Ver historial de ${workout.name}`}
-        title={`Ver detalle de ${workout.name} completada`}
+        aria-label={t('Ver historial de {workout}', { workout: workout.name })}
+        title={t('Ver detalle de {workout} completada', { workout: workout.name })}
         showSpinner={false}
       >
         {inner}
@@ -201,8 +207,8 @@ function DayCell({
       onClick={onUnavailableTap}
       className="focus-visible:outline-none"
       aria-disabled={day.workout ? true : undefined}
-      aria-label={day.workout ? getUnavailableMessage(day, state) : 'Dia de descanso'}
-      title={getUnavailableMessage(day, state)}
+      aria-label={day.workout ? getUnavailableMessage(day, state, t) : t('Día de descanso')}
+      title={getUnavailableMessage(day, state, t)}
     >
       {inner}
     </button>

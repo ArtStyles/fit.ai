@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
-const CONFIRM_WORD = 'ELIMINAR'
+const CONFIRM_WORDS = new Set(['ELIMINAR', 'DELETE'])
 
 /**
  * Elimina la cuenta del usuario autenticado y todos sus datos.
@@ -21,7 +21,7 @@ const CONFIRM_WORD = 'ELIMINAR'
  */
 export async function deleteAccount(formData: FormData) {
   const confirmText = String(formData.get('confirmText') ?? '').trim()
-  if (confirmText !== CONFIRM_WORD) {
+  if (!CONFIRM_WORDS.has(confirmText)) {
     redirect('/settings?error=delete_confirm')
   }
 

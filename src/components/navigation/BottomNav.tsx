@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { BarChart2, CalendarDays, Home, Settings, Users } from 'lucide-react'
 import { PendingLink } from './PendingLink'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 // Routes where the bottom bar should be hidden (full-screen flows)
 const HIDDEN_PREFIXES = ['/session', '/plans/generate']
@@ -25,12 +26,13 @@ const TABS: Tab[] = [
 
 export function BottomNav() {
   const pathname = usePathname()
+  const { t } = useI18n()
 
   if (HIDDEN_PREFIXES.some(p => pathname.startsWith(p))) return null
 
   return (
     <nav
-      aria-label="Navegación principal"
+      aria-label={t('Navegación principal')}
       className="fixed inset-x-0 bottom-0 z-30 border-t border-border/40 bg-background/90 backdrop-blur-md"
     >
       <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2">
@@ -44,7 +46,7 @@ export function BottomNav() {
               key={href}
               href={href}
               showSpinner={false}
-              aria-label={label}
+              aria-label={t(label)}
               className="group relative flex flex-col items-center justify-center px-1 py-1.5 min-w-[4.5rem]"
             >
               {/* icon bubble */}

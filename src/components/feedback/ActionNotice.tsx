@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useToast } from '@/components/feedback/ToastProvider'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 const NOTICES: Record<string, { title: string; description?: string }> = {
   plan_saved: {
@@ -75,6 +76,7 @@ export function ActionNotice() {
   const pathname = usePathname()
   const router = useRouter()
   const { showToast } = useToast()
+  const { t } = useI18n()
 
   useEffect(() => {
     const notice = searchParams.get('notice')
@@ -83,11 +85,13 @@ export function ActionNotice() {
     if (!notice && !error) return
 
     if (notice && NOTICES[notice]) {
-      showToast({ ...NOTICES[notice], variant: 'success' })
+      const message = NOTICES[notice]
+      showToast({ title: t(message.title), description: message.description ? t(message.description) : undefined, variant: 'success' })
     }
 
     if (error && ERRORS[error]) {
-      showToast({ ...ERRORS[error], variant: 'error' })
+      const message = ERRORS[error]
+      showToast({ title: t(message.title), description: message.description ? t(message.description) : undefined, variant: 'error' })
     }
 
     const nextParams = new URLSearchParams(searchParams.toString())
@@ -95,7 +99,7 @@ export function ActionNotice() {
     nextParams.delete('error')
     const query = nextParams.toString()
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
-  }, [pathname, router, searchParams, showToast])
+  }, [pathname, router, searchParams, showToast, t])
 
   return null
 }

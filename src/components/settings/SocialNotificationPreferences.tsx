@@ -8,6 +8,7 @@ import {
 } from '@/app/actions/pushNotifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 type PreferenceKey = keyof SocialNotificationPreferencesInput
 
@@ -17,8 +18,8 @@ const OPTIONS: Array<{
   description: string
   icon: typeof Heart
 }> = [
-  { key: 'likes_enabled', label: 'Likes', description: 'Cuando alguien marca una publicacion tuya.', icon: Heart },
-  { key: 'comments_enabled', label: 'Comentarios', description: 'Cuando alguien comenta una publicacion tuya.', icon: MessageCircle },
+  { key: 'likes_enabled', label: 'Likes', description: 'Cuando alguien marca una publicación tuya.', icon: Heart },
+  { key: 'comments_enabled', label: 'Comentarios', description: 'Cuando alguien comenta una publicación tuya.', icon: MessageCircle },
   { key: 'follows_enabled', label: 'Seguidores', description: 'Cuando alguien empieza a seguirte.', icon: UserCheck },
   { key: 'follow_requests_enabled', label: 'Solicitudes', description: 'Cuando una cuenta privada recibe una solicitud.', icon: UserPlus },
 ]
@@ -31,6 +32,7 @@ export function SocialNotificationPreferences({
   const [preferences, setPreferences] = useState(initialPreferences)
   const [pending, startTransition] = useTransition()
   const { showToast } = useToast()
+  const { t } = useI18n()
 
   function toggle(key: PreferenceKey) {
     const next = { ...preferences, [key]: !preferences[key] }
@@ -47,8 +49,8 @@ export function SocialNotificationPreferences({
   return (
     <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
       <div>
-        <p className="text-sm font-semibold text-foreground">Actividad social</p>
-        <p className="text-xs text-muted-foreground">Push en la app instalada</p>
+        <p className="text-sm font-semibold text-foreground">{t('Actividad social')}</p>
+        <p className="text-xs text-muted-foreground">{t('Push en la app instalada')}</p>
       </div>
 
       <div className="mt-4 divide-y divide-border/50">
@@ -62,15 +64,15 @@ export function SocialNotificationPreferences({
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{option.label}</p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">{option.description}</p>
+                  <p className="text-sm font-medium text-foreground">{t(option.label)}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{t(option.description)}</p>
                 </div>
               </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={enabled}
-                aria-label={`${enabled ? 'Desactivar' : 'Activar'} ${option.label}`}
+                aria-label={`${t(enabled ? 'Desactivar' : 'Activar')} ${t(option.label)}`}
                 onClick={() => toggle(option.key)}
                 disabled={pending}
                 className={cn(

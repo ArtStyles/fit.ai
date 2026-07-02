@@ -3,6 +3,7 @@
 import { useState, useRef, type KeyboardEvent } from 'react'
 import { Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 interface Props {
   onSend: (content: string) => void
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function ChatInputBar({ onSend, disabled }: Props) {
+  const { t } = useI18n()
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -56,7 +58,7 @@ export function ChatInputBar({ onSend, disabled }: Props) {
           onChange={e => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder="Escribe un mensaje…"
+          placeholder={t('Escribe un mensaje…')}
           rows={1}
           disabled={disabled}
           className="flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:opacity-50"
@@ -66,7 +68,7 @@ export function ChatInputBar({ onSend, disabled }: Props) {
           type="button"
           onClick={handleSend}
           disabled={!canSend}
-          aria-label="Enviar mensaje"
+          aria-label={t('Enviar mensaje')}
           className={cn(
             'mb-0.5 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl transition-all duration-200',
             canSend
@@ -78,7 +80,7 @@ export function ChatInputBar({ onSend, disabled }: Props) {
         </button>
       </div>
       <p className="mt-1.5 text-center text-[11px] text-muted-foreground/40">
-        Enter para enviar · Shift+Enter para nueva línea
+        {t('Enter para enviar · Shift+Enter para nueva línea')}
       </p>
     </div>
   )

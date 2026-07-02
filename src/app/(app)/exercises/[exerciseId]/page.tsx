@@ -20,6 +20,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import type { Database } from '@/types/database'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
+import { createTranslator } from '@/lib/i18n'
 
 export const metadata = { title: 'Ejercicio · FitAI' }
 
@@ -325,11 +326,11 @@ function getTrend(rows: ExerciseLogRow[]): 'up' | 'same' | 'down' | 'baseline' {
   return 'same'
 }
 
-function trendCopy(trend: ReturnType<typeof getTrend>): string {
-  if (trend === 'up') return 'Vienes subiendo carga en este ejercicio.'
-  if (trend === 'down') return 'La última marca bajó; revisa fatiga o técnica.'
-  if (trend === 'same') return 'Última marca estable; buen momento para consolidar.'
-  return 'Aún estás creando tu baseline para este ejercicio.'
+function trendCopy(trend: ReturnType<typeof getTrend>, t: (source: string) => string): string {
+  if (trend === 'up') return t('Vienes subiendo carga en este ejercicio.')
+  if (trend === 'down') return t('La última marca bajó; revisa fatiga o técnica.')
+  if (trend === 'same') return t('Última marca estable; buen momento para consolidar.')
+  return t('Aún estás creando tu baseline para este ejercicio.')
 }
 
 function bestVsLatestCopy(points: ProgressPoint[]): string {
@@ -348,7 +349,7 @@ function bestVsLatestCopy(points: ProgressPoint[]): string {
   return `Tu última sesión quedó ${formatWeight(diff)} por debajo de tu mejor marca.`
 }
 
-function ProgressChart({ points }: { points: ProgressPoint[] }) {
+function ProgressChart({ points, t }: { points: ProgressPoint[]; t: (source: string) => string }) {
   if (points.length === 0) return null
 
   const maxWeight = Math.max(...points.map(point => point.maxWeightKg), 0)
@@ -364,9 +365,9 @@ function ProgressChart({ points }: { points: ProgressPoint[] }) {
     <section className="animate-in fade-in slide-in-from-bottom-3 mt-6 rounded-2xl border border-border/60 bg-muted/10 p-4 duration-500">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-foreground">Progreso visual</p>
+          <p className="text-sm font-semibold text-foreground">{t('Progreso visual')}</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Peso máximo por sesión. Toca una barra para abrir el entrenamiento.
+            {t('Peso máximo por sesión. Toca una barra para abrir el entrenamiento.')}
           </p>
         </div>
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
@@ -415,7 +416,7 @@ function ProgressChart({ points }: { points: ProgressPoint[] }) {
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-border/50 bg-background/50 p-3">
-          <p className="text-[11px] text-muted-foreground">Última sesión</p>
+          <p className="text-[11px] text-muted-foreground">{t('Última sesión')}</p>
           <p className="mt-1 text-sm font-semibold text-foreground">
             {formatWeight(latest.maxWeightKg)}
           </p>
@@ -424,7 +425,7 @@ function ProgressChart({ points }: { points: ProgressPoint[] }) {
           </p>
         </div>
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
-          <p className="text-[11px] text-muted-foreground">Mejor marca</p>
+          <p className="text-[11px] text-muted-foreground">{t('Mejor marca')}</p>
           <p className="mt-1 text-sm font-semibold text-amber-100">
             {formatWeight(best.maxWeightKg)}
           </p>
@@ -444,13 +445,15 @@ function ProgressChart({ points }: { points: ProgressPoint[] }) {
 
 export default async function ExerciseDetailPage({ params }: PageProps) {
   const { supabase, user, profile } = await requireAppUserContext()
+  const language = exerciseLanguage(profile.language)
+  const t = createTranslator(language)
   const payload = await loadExerciseDetailPayload(
     supabase,
     user.id,
     params.exerciseId,
   )
   const exercise = payload.exercise
-    ? localizeExercise(payload.exercise, exerciseLanguage(profile.language))
+    ? localizeExercise(payload.exercise, language)
     : null
   const { logs, workoutsById } = payload
 
@@ -472,14 +475,14 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
           showSpinner={false}
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Historial
+          {t('Historial')}
         </PendingLink>
 
         <header className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
-                Ficha de ejercicio
+                {t('Ficha de ejercicio')}
               </p>
               <h1 className="mt-2 text-2xl font-bold leading-tight text-foreground">
                 {exercise.name}
@@ -497,7 +500,7 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
                 )}
                 {exercise.is_compound && (
                   <Badge variant="ghost" className="border border-violet-500/20 bg-violet-500/10 text-violet-200">
-                    compuesto
+                    {t('compuesto')}
                   </Badge>
                 )}
               </div>
@@ -520,26 +523,26 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
           <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
             <History className="h-4 w-4 text-violet-300" />
             <p className="mt-2 text-lg font-semibold text-foreground">{stats.sessions}</p>
-            <p className="text-xs text-muted-foreground">Sesiones</p>
+            <p className="text-xs text-muted-foreground">{t('Sesiones')}</p>
           </div>
           <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
             <Trophy className="h-4 w-4 text-amber-300" />
             <p className="mt-2 text-lg font-semibold text-foreground">{formatWeight(stats.maxWeightKg)}</p>
             <p className="text-xs text-muted-foreground">
-              {stats.repsAtMaxWeight > 0 ? `${stats.repsAtMaxWeight} reps` : 'Mejor peso'}
+              {stats.repsAtMaxWeight > 0 ? `${stats.repsAtMaxWeight} reps` : t('Mejor peso')}
             </p>
           </div>
           <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
             <Weight className="h-4 w-4 text-emerald-300" />
             <p className="mt-2 text-lg font-semibold text-foreground">{stats.totalVolumeKg}kg</p>
-            <p className="text-xs text-muted-foreground">Volumen total</p>
+            <p className="text-xs text-muted-foreground">{t('Volumen total')}</p>
           </div>
           <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
             <Flame className="h-4 w-4 text-orange-300" />
             <p className="mt-2 text-lg font-semibold text-foreground">
               {stats.averageRpe ?? '—'}
             </p>
-            <p className="text-xs text-muted-foreground">RPE promedio</p>
+            <p className="text-xs text-muted-foreground">{t('RPE promedio')}</p>
           </div>
         </section>
 
@@ -549,27 +552,27 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
               <Target className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">Lectura rápida</p>
+              <p className="text-sm font-semibold text-foreground">{t('Lectura rápida')}</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                {trendCopy(trend)}
+                {trendCopy(trend, t)}
               </p>
               {latestLog && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Última vez: {formatDate(latestLog.completed_at)}
+                  {t('Última vez:')} {formatDate(latestLog.completed_at)}
                 </p>
               )}
             </div>
           </div>
         </section>
 
-        <ProgressChart points={progressPoints} />
+        <ProgressChart points={progressPoints} t={t} />
 
         {(exercise.muscle_groups?.length || exercise.equipment?.length || description || instructions) ? (
           <section className="animate-in fade-in slide-in-from-bottom-3 mt-8 space-y-4 duration-500">
             {(exercise.muscle_groups?.length ?? 0) > 0 && (
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  Músculos
+                  {t('Músculos')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {exercise.muscle_groups!.map(group => (
@@ -584,7 +587,7 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
             {(exercise.equipment?.length ?? 0) > 0 && (
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  Equipo
+                  {t('Equipo')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {exercise.equipment!.map(item => (
@@ -598,14 +601,14 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
 
             {description && (
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-sm font-semibold text-foreground">Descripción</p>
+                <p className="text-sm font-semibold text-foreground">{t('Descripción')}</p>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
               </div>
             )}
 
             {instructions && (
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-sm font-semibold text-foreground">Instrucciones</p>
+                <p className="text-sm font-semibold text-foreground">{t('Instrucciones')}</p>
                 <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{instructions}</p>
               </div>
             )}
@@ -615,9 +618,9 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
         <section className="animate-in fade-in slide-in-from-bottom-3 mt-8 duration-500">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-foreground">Historial del ejercicio</p>
+              <p className="text-sm font-semibold text-foreground">{t('Historial del ejercicio')}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Últimas sesiones donde registraste este movimiento.
+                {t('Últimas sesiones donde registraste este movimiento.')}
               </p>
             </div>
           </div>
@@ -625,9 +628,9 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
           {logs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">
               <Info className="mx-auto h-6 w-6 text-muted-foreground" />
-              <p className="mt-3 text-sm font-semibold text-foreground">Sin registros todavía</p>
+              <p className="mt-3 text-sm font-semibold text-foreground">{t('Sin registros todavía')}</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Cuando completes este ejercicio, aquí verás su progreso.
+                {t('Cuando completes este ejercicio, aquí verás su progreso.')}
               </p>
             </div>
           ) : (
@@ -637,7 +640,7 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
                 const workout = progressLog.workout_id ? workoutsById[progressLog.workout_id] : null
                 const workoutName = workout
                   ? getWorkoutDisplayName(workout.name, workout.focus)
-                  : 'Entrenamiento'
+                  : t('Entrenamiento')
                 const rows = setRows(row)
                 const bestWeight = maxWeightFor(row)
                 const avgRpe = averageRpeFor(row)
@@ -683,7 +686,7 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
                       )}
                       <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
                         <CalendarDays className="mr-1 h-3.5 w-3.5" />
-                        ver sesión
+                        {t('ver sesión')}
                       </span>
                     </div>
                   </PendingLink>

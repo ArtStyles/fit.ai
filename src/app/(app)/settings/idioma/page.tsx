@@ -3,37 +3,39 @@ import { updateLanguage } from '@/app/actions/settings'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { requireAppUserContext } from '@/lib/auth/server'
+import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
 export const metadata = { title: 'Idioma · FitAI' }
 
-const OPTIONS = [
-  {
-    value: 'es',
-    title: 'Español',
-    description: 'Nombres, músculos, equipo e instrucciones de ejercicios en español.',
-  },
-  {
-    value: 'en',
-    title: 'English',
-    description: 'Exercise names, muscles, equipment, and instructions in English.',
-  },
-] as const
-
 export default async function LanguageSettingsPage() {
   const { profile } = await requireAppUserContext()
+  const language = normalizeLanguage(profile.language)
+  const t = createTranslator(language)
+  const options = [
+    {
+      value: 'es',
+      title: t('Español'),
+      description: t('Nombres, navegación, acciones y contenido de ejercicios en español.'),
+    },
+    {
+      value: 'en',
+      title: 'English',
+      description: t('Navigation, actions, and exercise content in English.'),
+    },
+  ] as const
 
   return (
     <SettingsScreen
-      title="Idioma"
-      subtitle="Contenido del catálogo y las rutinas"
+      title={t('Idioma')}
+      subtitle={t('Contenido del catálogo y las rutinas')}
       backHref="/settings"
-      backLabel="Ajustes"
+      backLabel={t('Ajustes')}
       icon={<Languages className="h-5 w-5" />}
     >
       <form action={updateLanguage} className="space-y-5">
         <fieldset className="space-y-3">
-          <legend className="sr-only">Idioma de los ejercicios</legend>
-          {OPTIONS.map(option => (
+          <legend className="sr-only">{t('Idioma de la aplicación')}</legend>
+          {options.map(option => (
             <label
               key={option.value}
               className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border/60 bg-muted/10 p-4 has-[:checked]:border-violet-500/60 has-[:checked]:bg-violet-500/10"
@@ -56,16 +58,16 @@ export default async function LanguageSettingsPage() {
         </fieldset>
 
         <p className="text-xs leading-relaxed text-muted-foreground">
-          La interfaz general permanece en español. Este ajuste controla el contenido técnico de los ejercicios en toda la app.
+          {t('Este ajuste cambia la interfaz completa y el contenido técnico de los ejercicios.')}
         </p>
 
         <SubmitButton
-          label="Guardar idioma"
-          pendingLabel="Guardando"
+          label={t('Guardar idioma')}
+          pendingLabel={t('Guardando')}
           className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
         >
           <Save className="mr-2 h-4 w-4" />
-          Guardar idioma
+          {t('Guardar idioma')}
         </SubmitButton>
       </form>
     </SettingsScreen>

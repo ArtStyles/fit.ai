@@ -6,10 +6,12 @@ import { AlertCircle, Loader2, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { generatePlan } from '@/app/actions/generatePlan'
 import { useToast } from '@/components/feedback/ToastProvider'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 export function PlanRegenerateButton() {
   const router = useRouter()
   const { showToast } = useToast()
+  const { t } = useI18n()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -20,10 +22,10 @@ export function PlanRegenerateButton() {
     const result = await generatePlan({ mode: 'weekly_regeneration' })
 
     if (!result.success) {
-      const message = result.error ?? 'No se pudo regenerar el plan.'
+      const message = result.error ?? t('No se pudo regenerar el plan.')
       setError(message)
       showToast({
-        title: 'No se pudo regenerar',
+        title: t('No se pudo regenerar'),
         description: message,
         variant: 'error',
       })
@@ -32,10 +34,10 @@ export function PlanRegenerateButton() {
     }
 
     showToast({
-      title: 'Semana regenerada',
+      title: t('Semana regenerada'),
       description: result.weekNumber
-        ? `Tu plan se actualizó para la semana ${result.weekNumber}.`
-        : 'Tu plan semanal quedó actualizado.',
+        ? t('Tu plan se actualizó para la semana {week}.', { week: result.weekNumber })
+        : t('Tu plan semanal quedó actualizado.'),
       variant: 'success',
     })
     window.dispatchEvent(new Event('fitai:navigation-start'))
@@ -54,12 +56,12 @@ export function PlanRegenerateButton() {
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            Regenerando semana
+            {t('Regenerando semana')}
           </>
         ) : (
           <>
             <RefreshCcw className="h-4 w-4" />
-            Regenerar semana
+            {t('Regenerar semana')}
           </>
         )}
       </Button>

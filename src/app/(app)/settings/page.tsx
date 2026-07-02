@@ -3,6 +3,7 @@ import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { cn } from '@/lib/utils'
+import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
 export const metadata = { title: 'Ajustes · FitAI' }
 
@@ -17,11 +18,12 @@ const SECTIONS = [
 ]
 
 export default async function SettingsPage() {
-  const { user } = await requireAppUserContext()
+  const { user, profile } = await requireAppUserContext()
+  const t = createTranslator(normalizeLanguage(profile.language))
 
   return (
     <SettingsScreen
-      title="Ajustes"
+      title={t('Ajustes')}
       subtitle={user.email}
       backHref="/dashboard"
       backLabel="Dashboard"
@@ -41,7 +43,7 @@ export default async function SettingsPage() {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
               <Icon className="h-4 w-4" />
             </span>
-            <span className="flex-1 text-sm font-medium text-foreground">{label}</span>
+            <span className="flex-1 text-sm font-medium text-foreground">{t(label)}</span>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </PendingLink>
         ))}

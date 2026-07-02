@@ -22,14 +22,16 @@ import { isCheckInDue } from '@/lib/profile/checkin'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 import type { Database } from '@/types/database'
 import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
+import { createTranslator } from '@/lib/i18n'
 
 export const metadata = { title: 'Dashboard · FitAI' }
 
-function getGreeting(): string {
+function getGreeting(language: ExerciseLanguage): string {
+  const t = createTranslator(language)
   const h = new Date().getHours()
-  if (h < 12) return 'Buenos días'
-  if (h < 19) return 'Buenas tardes'
-  return 'Buenas noches'
+  if (h < 12) return t('Buenos días')
+  if (h < 19) return t('Buenas tardes')
+  return t('Buenas noches')
 }
 
 function getBannerContext(
@@ -367,11 +369,13 @@ async function loadRecentInsights(
 
 export default async function DashboardPage() {
   const { supabase, user, profile } = await requireAppUserContext()
+  const language = exerciseLanguage(profile.language)
+  const t = createTranslator(language)
 
   // ── Perfil del usuario ─────────────────────────────────────────────────────
   const firstName = profile?.full_name?.split(' ')[0]
     ?? user.email?.split('@')[0]
-    ?? 'Campeón'
+    ?? t('Campeón')
 
   const tz        = resolveUserTimeZone(profile?.timezone)
   const todayIso  = getIsoWeekday(new Date(), tz)
@@ -396,7 +400,7 @@ export default async function DashboardPage() {
   const { topRecord: topRecordHighlight, volumeSeries } = await loadRecentInsights(
     supabase,
     allRecentLogs,
-    exerciseLanguage(profile.language),
+    language,
   )
   const workoutNameById = new Map(workouts.map(workout => [workout.id, workout.name]))
   const latestCompletedSession = allRecentLogs[0]
@@ -404,8 +408,8 @@ export default async function DashboardPage() {
     ? {
         id: latestCompletedSession.id,
         workoutName: latestCompletedSession.workout_id
-          ? workoutNameById.get(latestCompletedSession.workout_id) ?? 'Entrenamiento'
-          : 'Entrenamiento',
+          ? workoutNameById.get(latestCompletedSession.workout_id) ?? t('Entrenamiento')
+          : t('Entrenamiento'),
         completedAt: latestCompletedSession.completed_at,
         durationMinutes: latestCompletedSession.duration_minutes,
       }
@@ -513,7 +517,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <DashboardHeader greeting={getGreeting()} firstName={firstName} avatarUrl={profile?.avatar_url ?? null} momentumScore={momentumScore} username={profile?.username ?? null} />
+      <DashboardHeader greeting={getGreeting(language)} firstName={firstName} avatarUrl={profile?.avatar_url ?? null} momentumScore={momentumScore} username={profile?.username ?? null} />
 
       <main className="mx-auto max-w-lg px-4">
         {showAiBanner && (

@@ -1,3 +1,5 @@
+'use client'
+
 import { Button } from '@/components/ui/button'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import {
@@ -5,6 +7,7 @@ import {
   Flame, Moon, RotateCcw, Sparkles, TrendingUp,
 } from 'lucide-react'
 import type { WorkoutSummary } from '@/app/(app)/dashboard/page'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 // ── Mapeo isoDay → nombre del día ──────────────────────────────────────────────
 const DAY_NAMES: Record<number, string> = {
@@ -28,6 +31,7 @@ interface Props {
 // ── Week progress bar (static SVG arc) ────────────────────────────────────────
 
 function WeekRing({ done, total }: { done: number; total: number }) {
+  const { t } = useI18n()
   if (total === 0) return null
   const pct     = Math.min(done / total, 1)
   const radius  = 18
@@ -61,7 +65,7 @@ function WeekRing({ done, total }: { done: number; total: number }) {
         </div>
       </div>
       <span className="text-[9px] font-semibold uppercase tracking-wider text-white/50">
-        semana
+        {t('semana')}
       </span>
     </div>
   )
@@ -75,6 +79,7 @@ export function HeroCard({
   recoverableWorkout, recoverableIsoDay, streak,
   weekDone, weekTotal,
 }: Props) {
+  const { t } = useI18n()
 
   // ── Sin plan activo ───────────────────────────────────────────────────────
   if (!planExists) {
@@ -84,15 +89,15 @@ export function HeroCard({
           <Sparkles className="h-6 w-6 text-indigo-400" />
         </div>
         <div>
-          <p className="font-semibold text-foreground">Tu perfil está listo</p>
+          <p className="font-semibold text-foreground">{t('Tu perfil está listo')}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            No encontramos un plan activo. Puedes reintentar la generación sin repetir el onboarding.
+            {t('No encontramos un plan activo. Puedes reintentar la generación sin repetir el onboarding.')}
           </p>
         </div>
         <Button className="w-full h-12 bg-indigo-500 hover:bg-indigo-600 text-white" asChild>
           <PendingLink href="/plans/generate?autostart=1">
             <Sparkles className="mr-2 h-4 w-4" />
-            Reintentar generación
+            {t('Reintentar generación')}
           </PendingLink>
         </Button>
       </div>
@@ -115,7 +120,7 @@ export function HeroCard({
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-2 text-emerald-200">
             <CheckCircle2 className="h-5 w-5" />
-            <span className="text-sm font-semibold">¡Completado hoy!</span>
+            <span className="text-sm font-semibold">{t('¡Completado hoy!')}</span>
           </div>
           <div className="flex items-center gap-3">
             {streak >= 2 && (
@@ -132,8 +137,8 @@ export function HeroCard({
         </p>
         {nextWorkout && nextWorkoutIsoDay && (
           <p className="relative text-sm text-emerald-200/80">
-            Próxima: <span className="text-white font-medium">{nextWorkout.name}</span>
-            {' '}{DAY_NAMES[nextWorkoutIsoDay]}
+            {t('Próxima:')} <span className="text-white font-medium">{nextWorkout.name}</span>
+            {' '}{t(DAY_NAMES[nextWorkoutIsoDay])}
           </p>
         )}
       </div>
@@ -149,28 +154,28 @@ export function HeroCard({
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Moon className="h-4 w-4" />
-            <span className="text-xs font-semibold uppercase tracking-wide">Día de descanso</span>
+            <span className="text-xs font-semibold uppercase tracking-wide">{t('Día de descanso')}</span>
           </div>
           <WeekRing done={weekDone} total={weekTotal} />
         </div>
         <p className="relative text-sm text-muted-foreground leading-relaxed">
-          Los músculos crecen mientras descansas. Aprovecha para recuperarte.
+          {t('Los músculos crecen mientras descansas. Aprovecha para recuperarte.')}
         </p>
         {recoverableWorkout && recoverableIsoDay && (
           <PendingLink
             href={`/session/${recoverableWorkout.id}`}
             className="relative flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 transition-colors hover:bg-amber-500/10"
-            aria-label={`Recuperar ${recoverableWorkout.name}`}
+            aria-label={t('Recuperar {workout}', { workout: recoverableWorkout.name })}
           >
             <div>
               <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-400">
                 <RotateCcw className="h-3 w-3" />
-                Sesión pendiente
+                {t('Sesión pendiente')}
               </p>
               <p className="mt-0.5 text-sm font-semibold text-foreground">
                 {recoverableWorkout.name}
                 <span className="ml-1.5 font-normal text-muted-foreground capitalize">
-                  · de{' '}{DAY_NAMES[recoverableIsoDay]}
+                  · {t(DAY_NAMES[recoverableIsoDay])}
                 </span>
               </p>
             </div>
@@ -181,12 +186,12 @@ export function HeroCard({
           <div className="relative flex items-center justify-between rounded-xl border border-border/50 bg-background/40 px-4 py-3 backdrop-blur-sm">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
-                Próxima sesión
+                {t('Próxima sesión')}
               </p>
               <p className="mt-0.5 text-sm font-semibold text-foreground">{nextWorkout.name}</p>
             </div>
             <span className="text-xs font-medium text-muted-foreground capitalize">
-              {DAY_NAMES[nextWorkoutIsoDay]}
+              {t(DAY_NAMES[nextWorkoutIsoDay])}
             </span>
           </div>
         )}
@@ -235,7 +240,7 @@ export function HeroCard({
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-300" />
             </span>
-            Hoy
+            {t('Hoy')}
           </span>
           <WeekRing done={weekDone} total={weekTotal} />
         </div>
@@ -254,7 +259,7 @@ export function HeroCard({
             <p className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-indigo-100 ring-1 ring-white/10">
               <TrendingUp className="h-3.5 w-3.5" />
               {todayWorkout.progression_suggestion_count}{' '}
-              {todayWorkout.progression_suggestion_count === 1 ? 'progresión sugerida' : 'progresiones sugeridas'}
+              {t(todayWorkout.progression_suggestion_count === 1 ? 'progresión sugerida' : 'progresiones sugeridas')}
             </p>
           )}
         </div>
@@ -264,7 +269,7 @@ export function HeroCard({
           {todayWorkout.exercise_count > 0 && (
             <span className="inline-flex items-center gap-1.5">
               <Dumbbell className="h-4 w-4 text-violet-200" />
-              {todayWorkout.exercise_count} ejercicios
+              {todayWorkout.exercise_count} {t(todayWorkout.exercise_count === 1 ? 'ejercicio' : 'ejercicios')}
             </span>
           )}
           {todayWorkout.exercise_count > 0 && todayWorkout.estimated_duration_minutes && (
@@ -284,7 +289,7 @@ export function HeroCard({
           asChild
         >
           <PendingLink href={`/session/${todayWorkout.id}`}>
-            Empezar entrenamiento
+            {t('Empezar entrenamiento')}
             <span className="ml-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-700 text-white transition-transform duration-300 group-hover/cta:translate-x-0.5">
               <ChevronRight className="h-4 w-4" />
             </span>

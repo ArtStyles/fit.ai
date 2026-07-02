@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useRef, useTransition } from 'react'
 import type { Difficulty, ExerciseType } from '@/types/exercise'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 interface Props {
   muscleGroups:  { value: string; label: string }[]
@@ -36,7 +37,7 @@ const SELECT_ACTIVE_CLS = `
 const DIFF_OPTS: { v: Difficulty | ''; label: string }[] = [
   { v: '',             label: 'Todos los niveles' },
   { v: 'beginner',     label: 'Principiante'  },
-  { v: 'intermediate', label: 'Intermediate'  },
+  { v: 'intermediate', label: 'Intermedio'  },
   { v: 'advanced',     label: 'Avanzado'      },
 ]
 
@@ -52,6 +53,7 @@ const TYPE_OPTS: { v: ExerciseType | ''; label: string }[] = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ExerciseFilters({ muscleGroups, equipmentList, current }: Props) {
+  const { t } = useI18n()
   const router       = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startT] = useTransition()
@@ -99,7 +101,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             ref={inputRef}
             name="search"
             defaultValue={current.search}
-            placeholder="Buscar ejercicios…"
+            placeholder={t('Buscar ejercicios…')}
             className={`w-full pl-8 pr-3 h-9 rounded-xl border text-sm bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-500 hover:bg-zinc-700/70 hover:border-zinc-600 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500/50 transition-colors ${current.search ? 'border-orange-500/50 bg-orange-500/10 text-orange-100 placeholder:text-orange-300/40' : ''}`}
           />
         </form>
@@ -111,7 +113,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             value={current.difficulty}
             onChange={e => push({ difficulty: e.target.value })}
           >
-            {DIFF_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+            {DIFF_OPTS.map(o => <option key={o.v} value={o.v}>{t(o.label)}</option>)}
           </select>
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,7 +128,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             value={current.exercise_type}
             onChange={e => push({ exercise_type: e.target.value })}
           >
-            {TYPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+            {TYPE_OPTS.map(o => <option key={o.v} value={o.v}>{t(o.label)}</option>)}
           </select>
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -141,7 +143,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             value={current.muscle_group}
             onChange={e => push({ muscle_group: e.target.value })}
           >
-            <option value="">Todos los músculos</option>
+            <option value="">{t('Todos los músculos')}</option>
             {muscleGroups.map(option => <option key={option.value} value={option.value} className="capitalize">{option.label}</option>)}
           </select>
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
@@ -157,7 +159,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             value={current.equipment}
             onChange={e => push({ equipment: e.target.value })}
           >
-            <option value="">Todo el equipo</option>
+            <option value="">{t('Todo el equipo')}</option>
             {equipmentList.map(option => <option key={option.value} value={option.value} className="capitalize">{option.label}</option>)}
           </select>
           <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
@@ -172,7 +174,7 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
             onClick={() => { if (inputRef.current) inputRef.current.value = ''; push({ search: '', difficulty: '', exercise_type: '', muscle_group: '', equipment: '' }) }}
             className="h-9 px-3 text-sm text-zinc-500 hover:text-white rounded-xl border border-transparent hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
           >
-            ✕ Limpiar
+            ✕ {t('Limpiar')}
           </button>
         )}
       </div>

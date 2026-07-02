@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react'
 import { Check, CloudOff, Loader2 } from 'lucide-react'
 import { useSyncStatus } from '@/hooks/useSyncStatus'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 interface Props {
   className?: string
 }
 
 export function SyncStatusIndicator({ className }: Props) {
+  const { t } = useI18n()
   const { syncStatus } = useSyncStatus()
   const [showSynced, setShowSynced] = useState(false)
 
@@ -27,7 +29,7 @@ export function SyncStatusIndicator({ className }: Props) {
     return (
       <div className={cn('flex items-center gap-1 text-green-400', className)} aria-live="polite">
         <Check className="h-3 w-3" />
-        <span className="sr-only">Sincronizado</span>
+        <span className="sr-only">{t('Sincronizado')}</span>
       </div>
     )
   }
@@ -36,7 +38,7 @@ export function SyncStatusIndicator({ className }: Props) {
     return (
       <div className={cn('flex items-center gap-1 text-muted-foreground', className)} aria-live="polite">
         <Loader2 className="h-3 w-3 animate-spin" />
-        <span className="sr-only">Sincronizando</span>
+        <span className="sr-only">{t('Sincronizando')}</span>
       </div>
     )
   }
@@ -46,7 +48,7 @@ export function SyncStatusIndicator({ className }: Props) {
       <div className={cn('flex items-center gap-1.5 text-amber-400', className)} aria-live="polite">
         <CloudOff className="h-3 w-3 shrink-0" />
         <span className="text-[11px] font-medium leading-none">
-          Offline · se guardará al reconectar
+          {t('Offline · se guardará al reconectar')}
         </span>
       </div>
     )

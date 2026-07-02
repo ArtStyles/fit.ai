@@ -10,6 +10,7 @@ import {
   type RawExerciseLog,
   type RawProgressLog,
 } from '@/lib/calendar/aggregate'
+import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
 export const metadata = { title: 'Calendario · FitAI' }
 
@@ -86,6 +87,7 @@ async function loadCalendarDays(
 
 export default async function CalendarPage() {
   const { supabase, user, profile } = await requireAppUserContext()
+  const t = createTranslator(normalizeLanguage(profile.language))
   const timeZone = resolveUserTimeZone(profile.timezone)
   const todayStr = getLocalDateString(new Date(), timeZone)
   const days = await loadCalendarDays(supabase, user.id, timeZone)
@@ -107,8 +109,8 @@ export default async function CalendarPage() {
             <CalendarRange className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">Calendario</h1>
-            <p className="text-sm text-muted-foreground">Tu historial de entrenamiento mes a mes</p>
+            <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">{t('Calendario')}</h1>
+            <p className="text-sm text-muted-foreground">{t('Tu historial de entrenamiento mes a mes')}</p>
           </div>
         </header>
 

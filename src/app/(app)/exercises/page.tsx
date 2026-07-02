@@ -11,6 +11,7 @@ import ExerciseFilters from './ExerciseFilters'
 import ExerciseGrid from './ExerciseGrid'
 import type { Difficulty, ExerciseType } from '@/types/exercise'
 import { exerciseLanguage, localizeEquipment, localizeMuscleGroup } from '@/lib/exercises/localization'
+import { createTranslator } from '@/lib/i18n'
 
 // ─── Dev guard ────────────────────────────────────────────────────────────────
 
@@ -23,26 +24,26 @@ function isDevAccess(email: string | undefined): boolean {
 
 // ─── Stat strip ───────────────────────────────────────────────────────────────
 
-function StatStrip({ total, page, totalPages }: { total: number; page: number; totalPages: number }) {
+function StatStrip({ total, page, totalPages, t }: { total: number; page: number; totalPages: number; t: (source: string) => string }) {
   return (
     <div className="flex items-center gap-5">
       <div className="text-center">
         <div className="text-2xl font-bold text-white tabular-nums">{total.toLocaleString()}</div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Ejercicios</div>
+        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">{t('Ejercicios')}</div>
       </div>
       <div className="w-px h-8 bg-zinc-800" />
       <div className="text-center">
         <div className="text-2xl font-bold text-white tabular-nums">
           {page}<span className="text-zinc-600 text-base">/{totalPages}</span>
         </div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Página</div>
+        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">{t('Página')}</div>
       </div>
       <div className="w-px h-8 bg-zinc-800 hidden lg:block" />
       <div className="hidden lg:flex items-center gap-3.5">
         {Object.values(TYPE_CFG).map(cfg => (
           <div key={cfg.label} className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
-            <span className="text-[11px] text-zinc-400">{cfg.label}</span>
+            <span className="text-[11px] text-zinc-400">{t(cfg.label)}</span>
           </div>
         ))}
       </div>
@@ -52,7 +53,7 @@ function StatStrip({ total, page, totalPages }: { total: number; page: number; t
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
-function Pagination({ page, totalPages, sp }: { page: number; totalPages: number; sp: Record<string, string> }) {
+function Pagination({ page, totalPages, sp, t }: { page: number; totalPages: number; sp: Record<string, string>; t: (source: string) => string }) {
   if (totalPages <= 1) return null
 
   const href = (p: number) => `/exercises?${new URLSearchParams({ ...sp, page: String(p) })}`
@@ -69,8 +70,8 @@ function Pagination({ page, totalPages, sp }: { page: number; totalPages: number
   return (
     <div className="flex items-center justify-center gap-1.5 mt-12">
       {page > 1
-        ? <Link href={href(page - 1)} className={navCls}>← Anterior</Link>
-        : <span className={deadCls}>← Anterior</span>}
+        ? <Link href={href(page - 1)} className={navCls}>← {t('Anterior')}</Link>
+        : <span className={deadCls}>← {t('Anterior')}</span>}
 
       <div className="flex items-center gap-1 mx-1">
         {pages.map((p, i) =>
@@ -93,8 +94,8 @@ function Pagination({ page, totalPages, sp }: { page: number; totalPages: number
       </div>
 
       {page < totalPages
-        ? <Link href={href(page + 1)} className={navCls}>Siguiente →</Link>
-        : <span className={deadCls}>Siguiente →</span>}
+        ? <Link href={href(page + 1)} className={navCls}>{t('Siguiente')} →</Link>
+        : <span className={deadCls}>{t('Siguiente')} →</span>}
     </div>
   )
 }
@@ -109,6 +110,7 @@ export default async function ExercisesPage({
   const { user, profile } = await requireAppUserContext()
   if (!isDevAccess(user?.email)) notFound()
   const language = exerciseLanguage(profile.language)
+  const t = createTranslator(language)
 
   const sp             = await searchParams
   const page           = Math.max(1, parseInt(sp.page ?? '1', 10))
@@ -141,8 +143,8 @@ export default async function ExercisesPage({
       <div className="sticky top-0 z-10 bg-[#0e0e10]/95 backdrop-blur-md border-b border-zinc-800/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between py-4 gap-4">
-            <h1 className="text-xl font-bold tracking-tight shrink-0">Biblioteca de ejercicios</h1>
-            <StatStrip total={total} page={page} totalPages={totalPages} />
+            <h1 className="text-xl font-bold tracking-tight shrink-0">{t('Biblioteca de ejercicios')}</h1>
+            <StatStrip total={total} page={page} totalPages={totalPages} t={t} />
           </div>
           <div className="pb-3">
             <ExerciseFilters
@@ -163,18 +165,18 @@ export default async function ExercisesPage({
               🔍
             </div>
             <div>
-              <p className="text-base font-semibold text-white">No se encontraron ejercicios</p>
-              <p className="text-sm text-zinc-500 mt-1">Prueba a cambiar o limpiar los filtros</p>
+              <p className="text-base font-semibold text-white">{t('No se encontraron ejercicios')}</p>
+              <p className="text-sm text-zinc-500 mt-1">{t('Prueba a cambiar o limpiar los filtros')}</p>
             </div>
             <Link href="/exercises" className="text-sm text-orange-400 hover:text-orange-300 underline underline-offset-2">
-              Limpiar todos los filtros
+              {t('Limpiar todos los filtros')}
             </Link>
           </div>
         ) : (
           <ExerciseGrid exercises={exercises} />
         )}
 
-        <Pagination page={page} totalPages={totalPages} sp={rawSp} />
+        <Pagination page={page} totalPages={totalPages} sp={rawSp} t={t} />
       </div>
     </div>
   )

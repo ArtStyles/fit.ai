@@ -5,6 +5,7 @@ import { Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DevModeBanner } from '@/components/DevModeBanner'
 import { AvatarUploader } from '@/components/profile/AvatarUploader'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 interface Props {
   greeting:      string
@@ -27,6 +28,7 @@ function getMomentumStyle(score: number) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function DashboardHeader({ greeting, firstName, avatarUrl, momentumScore, username }: Props) {
+  const { t } = useI18n()
   const initials = firstName.slice(0, 2).toUpperCase()
   const momentum = getMomentumStyle(momentumScore)
 
@@ -51,7 +53,7 @@ export function DashboardHeader({ greeting, firstName, avatarUrl, momentumScore,
           )}>
             <Zap className="h-2.5 w-2.5" />
             {momentumScore}
-            <span className="font-semibold normal-case tracking-normal opacity-70">· {momentum.label}</span>
+            <span className="font-semibold normal-case tracking-normal opacity-70">· {t(momentum.label)}</span>
           </span>
         </div>
       </div>

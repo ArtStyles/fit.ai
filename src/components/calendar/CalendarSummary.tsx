@@ -1,7 +1,11 @@
+'use client'
+
 import { CalendarCheck, Dumbbell, Flame, TrendingUp } from 'lucide-react'
 import type { CalendarStats } from '@/lib/calendar/aggregate'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 export function CalendarSummary({ stats }: { stats: CalendarStats }) {
+  const { t } = useI18n()
   const items = [
     { label: 'Días',     value: stats.trainedDays,         icon: CalendarCheck },
     { label: 'Racha',    value: `${stats.currentStreak}d`, icon: Flame },
@@ -15,7 +19,7 @@ export function CalendarSummary({ stats }: { stats: CalendarStats }) {
         <div key={label} className="rounded-2xl border border-border/60 bg-muted/10 p-3 text-center">
           <Icon className="mx-auto h-4 w-4 text-violet-300" />
           <p className="mt-2 font-display text-xl font-bold tabular-nums text-foreground">{value}</p>
-          <p className="text-[11px] text-muted-foreground">{label}</p>
+          <p className="text-[11px] text-muted-foreground">{t(label)}</p>
         </div>
       ))}
     </div>

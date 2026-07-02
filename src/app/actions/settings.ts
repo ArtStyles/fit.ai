@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import type { ActionResult } from './posts'
 
@@ -126,6 +127,12 @@ export async function updateLanguage(formData: FormData) {
 
   if (error) redirect('/settings/idioma?error=save_failed')
 
+  cookies().set('fitai-language', language, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+  })
   revalidatePath('/', 'layout')
   redirect('/settings/idioma?notice=settings_saved')
 }

@@ -12,6 +12,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import type { Database } from '@/types/database'
 import type { TrackedExercise } from '@/app/actions/progression'
 import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
+import { createTranslator } from '@/lib/i18n'
 
 export const metadata = { title: 'Historial · FitAI' }
 
@@ -221,6 +222,7 @@ function buildPersonalRecords(rows: ExerciseLogRow[], logs: ProgressLogRow[]): P
 
 export default async function HistoryPage() {
   const { supabase, user, profile } = await requireAppUserContext()
+  const t = createTranslator(exerciseLanguage(profile.language))
   const { sessionLogs, exerciseLogs } = await loadHistoryPayload(
     supabase,
     user.id,
@@ -267,7 +269,7 @@ export default async function HistoryPage() {
             showSpinner={false}
           >
             <CalendarRange className="mr-1.5 h-4 w-4" />
-            Calendario
+            {t('Calendario')}
           </PendingLink>
         </div>
 
@@ -277,22 +279,22 @@ export default async function HistoryPage() {
               <History className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">Historial</h1>
-              <p className="text-sm text-muted-foreground">Últimas sesiones completadas</p>
+              <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">{t('Historial')}</h1>
+              <p className="text-sm text-muted-foreground">{t('Últimas sesiones completadas')}</p>
             </div>
           </div>
 
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs text-muted-foreground">Sesiones</p>
+              <p className="text-xs text-muted-foreground">{t('Sesiones')}</p>
               <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{sessionLogs.length}</p>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs text-muted-foreground">Tiempo</p>
+              <p className="text-xs text-muted-foreground">{t('Tiempo')}</p>
               <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{totalMinutes}m</p>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs text-muted-foreground">Volumen</p>
+              <p className="text-xs text-muted-foreground">{t('Volumen')}</p>
               <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{totalVolume}kg</p>
             </div>
           </div>
@@ -303,15 +305,15 @@ export default async function HistoryPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/10">
               <Trophy className="h-6 w-6 text-violet-400" />
             </div>
-            <h2 className="mt-4 font-display text-xl font-bold text-foreground">Sin sesiones todavía</h2>
+            <h2 className="mt-4 font-display text-xl font-bold text-foreground">{t('Sin sesiones todavía')}</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Cuando completes tu primer entrenamiento aparecerá aquí.
+              {t('Cuando completes tu primer entrenamiento aparecerá aquí.')}
             </p>
             <PendingLink
               href="/dashboard"
               className="mt-5 inline-flex h-11 items-center justify-center rounded-md bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-600"
             >
-              Ir al dashboard
+              {t('Ir al dashboard')}
             </PendingLink>
           </section>
         ) : (
@@ -320,9 +322,9 @@ export default async function HistoryPage() {
               <section className="animate-in fade-in slide-in-from-bottom-3 mt-8 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 duration-500">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Records personales</p>
+                    <p className="text-sm font-semibold text-foreground">{t('Records personales')}</p>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Tus mejores marcas detectadas en las sesiones guardadas.
+                      {t('Tus mejores marcas detectadas en las sesiones guardadas.')}
                     </p>
                   </div>
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-300">
