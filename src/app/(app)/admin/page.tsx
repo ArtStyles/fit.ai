@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
-import { ArrowLeft, Crown, Search, ShieldCheck, UserRoundCheck, UsersRound } from 'lucide-react'
+import { Crown, Search, ShieldCheck, UserRoundCheck, UsersRound } from 'lucide-react'
 import { AdminUserActions } from '@/components/admin/AdminUserActions'
 import { DashboardBannerEditor } from '@/components/admin/DashboardBannerEditor'
-import { PendingLink } from '@/components/navigation/PendingLink'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,26 +37,15 @@ export default async function AdminPage({ searchParams }: { searchParams?: { q?:
 
   return (
     <div className="min-h-screen bg-background pb-28">
+      <PageTopBar
+        title="Administración"
+        subtitle="Usuarios, suscripciones y acceso"
+        backHref="/settings"
+        backLabel="Ajustes"
+        icon={<ShieldCheck className="h-5 w-5" />}
+      />
+
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <PendingLink
-          href="/settings"
-          showSpinner={false}
-          className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Ajustes
-        </PendingLink>
-
-        <header className="mt-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="font-display text-3xl font-bold text-foreground">Administración</h1>
-            <p className="text-sm text-muted-foreground">Usuarios, suscripciones y acceso</p>
-          </div>
-        </header>
-
         <section className="mt-8 grid gap-3 sm:grid-cols-3" aria-label="Resumen de cuentas">
           <Card className="border-border/60 bg-muted/10">
             <CardContent className="flex items-center gap-3 p-4">

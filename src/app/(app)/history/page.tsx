@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   CalendarRange,
   History,
   Medal,
@@ -13,6 +12,7 @@ import type { Database } from '@/types/database'
 import type { TrackedExercise } from '@/app/actions/progression'
 import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 
 export const metadata = { title: 'Historial · Vekira' }
 
@@ -253,38 +253,26 @@ export default async function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <main className="mx-auto max-w-lg px-4 py-8">
-        <div className="flex items-center justify-between">
-          <PendingLink
-            href="/dashboard"
-            className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-            showSpinner={false}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Dashboard
-          </PendingLink>
+      <PageTopBar
+        title={t('Historial')}
+        subtitle={t('Últimas sesiones completadas')}
+        backHref="/dashboard"
+        backLabel="Dashboard"
+        icon={<History className="h-5 w-5" />}
+        right={(
           <PendingLink
             href="/calendario"
-            className="inline-flex items-center text-sm font-medium text-violet-400 hover:underline"
+            aria-label={t('Calendario')}
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-violet-300 transition-colors hover:bg-violet-500/10"
             showSpinner={false}
           >
-            <CalendarRange className="mr-1.5 h-4 w-4" />
-            {t('Calendario')}
+            <CalendarRange className="h-5 w-5" />
           </PendingLink>
-        </div>
+        )}
+      />
 
-        <header className="mt-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-              <History className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">{t('Historial')}</h1>
-              <p className="text-sm text-muted-foreground">{t('Últimas sesiones completadas')}</p>
-            </div>
-          </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-2">
+      <main className="mx-auto max-w-lg px-4 py-8">
+          <section className="grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
               <p className="text-xs text-muted-foreground">{t('Sesiones')}</p>
               <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{sessionLogs.length}</p>
@@ -297,8 +285,7 @@ export default async function HistoryPage() {
               <p className="text-xs text-muted-foreground">{t('Volumen')}</p>
               <p className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{totalVolume}kg</p>
             </div>
-          </div>
-        </header>
+          </section>
 
         {sessionLogs.length === 0 ? (
           <section className="mt-8 rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">

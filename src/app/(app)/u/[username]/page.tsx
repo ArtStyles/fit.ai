@@ -1,12 +1,13 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { Lock } from 'lucide-react'
+import { Lock, UserRound } from 'lucide-react'
 import { getProfile } from '@/app/actions/feed'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { FollowButton } from '@/components/social/FollowButton'
 import { ProfilePostGrid } from '@/components/social/ProfilePostGrid'
 import { PrivateProfileNotice } from '@/components/social/PrivateProfileNotice'
 import { ProfileConnectionsStats } from '@/components/social/ProfileConnectionsStats'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 
 export default async function PublicProfilePage({ params }: { params: { username: string } }) {
   const { username } = params
@@ -17,6 +18,14 @@ export default async function PublicProfilePage({ params }: { params: { username
 
   return (
     <div className="mx-auto max-w-lg pb-24">
+      <PageTopBar
+        title={name}
+        subtitle={author.username ? `@${author.username}` : 'Perfil'}
+        backHref="/feed"
+        backLabel="Comunidad"
+        icon={<UserRound className="h-5 w-5" />}
+      />
+
       <header className="border-b border-border/40 px-4 py-6">
         <div className="flex items-center gap-5">
           <Avatar className="h-20 w-20">

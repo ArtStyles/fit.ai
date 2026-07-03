@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import {
-  ArrowLeft,
   Clock,
   Dumbbell,
   Flame,
@@ -16,6 +15,7 @@ import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 
 export const metadata = { title: 'Detalle de sesión · Vekira' }
 
@@ -214,26 +214,16 @@ export default async function HistoryDetailPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <main className="mx-auto max-w-lg px-4 py-8">
-        <PendingLink
-          href="/history"
-          className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-          showSpinner={false}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Historial
-        </PendingLink>
+      <PageTopBar
+        title={workoutName}
+        subtitle={formatDateTime(log.completed_at)}
+        backHref="/history"
+        backLabel="Historial"
+        icon={<Dumbbell className="h-5 w-5" />}
+      />
 
-        <header className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500">
-          <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
-            Sesión completada
-          </p>
-          <h1 className="mt-2 font-display text-3xl font-extrabold leading-tight tracking-tight text-foreground">
-            {workoutName}
-          </h1>
-          <p className="mt-2 text-sm capitalize text-muted-foreground">
-            {formatDateTime(log.completed_at)}
-          </p>
+      <main className="mx-auto max-w-lg px-4 py-8">
+        <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
           {workout?.focus && (
             <p className="mt-2 text-sm text-muted-foreground">{workout.focus}</p>
           )}
@@ -278,7 +268,8 @@ export default async function HistoryDetailPage({ params }: PageProps) {
           <div className="mt-4">
             <ShareSessionButton progressLogId={params.logId} />
           </div>
-        </header>
+
+        </div>
 
         {exerciseLogs.length === 0 ? (
           <section className="mt-8 rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">

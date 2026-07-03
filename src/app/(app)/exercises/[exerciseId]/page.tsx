@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import {
-  ArrowLeft,
   BarChart3,
   CalendarDays,
   Clock,
@@ -21,6 +20,7 @@ import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import type { Database } from '@/types/database'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 
 export const metadata = { title: 'Ejercicio · Vekira' }
 
@@ -468,26 +468,19 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <main className="mx-auto max-w-lg px-4 py-8">
-        <PendingLink
-          href="/history"
-          className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-          showSpinner={false}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          {t('Historial')}
-        </PendingLink>
+      <PageTopBar
+        title={exercise.name}
+        subtitle={t('Ficha de ejercicio')}
+        backHref="/history"
+        backLabel={t('Historial')}
+        icon={<Dumbbell className="h-5 w-5" />}
+      />
 
-        <header className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500">
+      <main className="mx-auto max-w-lg px-4 py-8">
+        <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
-                {t('Ficha de ejercicio')}
-              </p>
-              <h1 className="mt-2 text-2xl font-bold leading-tight text-foreground">
-                {exercise.name}
-              </h1>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 {exercise.exercise_type && (
                   <Badge variant="ghost" className="border border-border/50 capitalize">
                     {exercise.exercise_type}
@@ -509,7 +502,7 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
               <Dumbbell className="h-5 w-5" />
             </div>
           </div>
-        </header>
+        </div>
 
         <ExerciseImage
           src={exercise.image_url}

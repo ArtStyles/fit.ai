@@ -1,6 +1,6 @@
 import { redirect }    from 'next/navigation'
-import { ArrowLeft, Sparkles } from 'lucide-react'
-import { PendingLink } from '@/components/navigation/PendingLink'
+import { Sparkles } from 'lucide-react'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { GeneratePlanClient } from './GeneratePlanClient'
 import type { ProfileSummary } from './GeneratePlanClient'
@@ -44,19 +44,15 @@ export default async function GeneratePlanPage({
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-lg px-4">
+      <PageTopBar
+        title="Generar plan"
+        subtitle="Entrenamiento personalizado con IA"
+        backHref="/plan"
+        backLabel="Plan"
+        icon={<Sparkles className="h-5 w-5" />}
+      />
 
-        {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-3 py-4">
-          <PendingLink
-            href="/dashboard"
-            className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-            showSpinner={false}
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </PendingLink>
-        </div>
-
+      <div className="mx-auto max-w-lg px-4 py-8">
         {/* ── Hero ────────────────────────────────────────────────────────── */}
         <div className="mb-8 flex flex-col items-center text-center gap-3">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-500/10">

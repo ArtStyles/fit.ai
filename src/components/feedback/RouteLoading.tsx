@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Bell,
   CalendarRange,
+  Dumbbell,
   History,
   Languages,
   PlusCircle,
@@ -58,27 +59,22 @@ export function BackHeader({
   right,
 }: BackHeaderProps) {
   return (
-    <>
-      <div className="inline-flex items-center text-sm font-medium text-muted-foreground">
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        {backLabel}
-      </div>
-
-      <header className="mt-6 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-            <Icon className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">
-              {title}
-            </h1>
-            {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-          </div>
+    <FixedTopBar contentClassName="justify-between">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground">
+          <ArrowLeft className="h-5 w-5" />
+          <span className="sr-only">{backLabel}</span>
         </div>
-        {right}
-      </header>
-    </>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+            <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="truncate font-display text-lg font-bold leading-tight text-foreground">{title}</h1>
+          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+        </div>
+      </div>
+      {right}
+    </FixedTopBar>
   )
 }
 
@@ -150,10 +146,7 @@ export function DashboardLoading() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <header
-        className="mx-auto flex max-w-lg items-center gap-3 px-4 pb-2 pt-6"
-        aria-label="Cargando perfil y suscripción"
-      >
+      <FixedTopBar initialHeight={104}>
         <Shimmer className="h-20 w-20 shrink-0 rounded-full bg-violet-500/15" />
 
         <div className="min-w-0 flex-1">
@@ -170,7 +163,7 @@ export function DashboardLoading() {
             <Shimmer className="h-3 min-w-0 flex-1 rounded" />
           </div>
         </div>
-      </header>
+      </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4">
         <section className="mt-6 rounded-2xl border border-violet-500/20 bg-violet-500/[0.06] p-5">
@@ -213,13 +206,7 @@ export function DashboardLoading() {
 export function PlanLoading() {
   return (
     <AppLoadingShell className="pb-16">
-      <div className="flex items-center justify-between gap-3">
-        <div className="inline-flex h-10 items-center text-sm font-medium text-muted-foreground">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Dashboard
-        </div>
-        <Shimmer className="h-10 w-10 rounded-full bg-muted/30" />
-      </div>
+      <BackHeader title="Plan" subtitle="Cargando plan activo" icon={Dumbbell} right={<Shimmer className="h-10 w-10 rounded-full bg-muted/30" />} />
 
       <section className="mt-5 flex min-h-16 items-center gap-3 rounded-2xl border border-border/60 bg-muted/10 px-4 py-3" aria-label="Cargando selector de planes">
         <Shimmer className="h-10 w-10 shrink-0 rounded-xl bg-violet-500/15" />
@@ -230,11 +217,7 @@ export function PlanLoading() {
         <Shimmer className="h-4 w-4 rounded bg-muted/40" />
       </section>
 
-      <header className="mt-6">
-        <Shimmer className="h-3 w-20 rounded bg-violet-500/20" />
-        <Shimmer className="mt-3 h-8 w-3/4 rounded" />
-        <Shimmer className="mt-3 h-4 w-2/5 rounded bg-muted/40" />
-      </header>
+      <Shimmer className="mt-6 h-4 w-2/5 rounded bg-muted/40" />
 
       <section className="mt-6 rounded-2xl border border-violet-500/25 bg-violet-500/[0.08] p-5" aria-label="Cargando entrenamiento de hoy">
         <Shimmer className="h-3 w-32 rounded bg-violet-500/20" />
@@ -418,6 +401,7 @@ export function PostDetailLoading() {
 export function ProfileLoading() {
   return (
     <div className="mx-auto max-w-lg pb-24">
+      <BackHeader backLabel="Comunidad" title="Perfil" icon={UserRound} />
       <header className="border-b border-border/40 px-4 py-6">
         <div className="flex items-center gap-5">
           <Shimmer className="h-20 w-20 shrink-0 rounded-full bg-violet-500/15" />

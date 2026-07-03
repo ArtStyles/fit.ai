@@ -1,5 +1,5 @@
-import { ArrowLeft, CalendarRange } from 'lucide-react'
-import { PendingLink } from '@/components/navigation/PendingLink'
+import { CalendarRange } from 'lucide-react'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { CalendarView } from '@/components/calendar/CalendarView'
 import { EmptyCalendar } from '@/components/calendar/EmptyCalendar'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -94,26 +94,15 @@ export default async function CalendarPage() {
 
   return (
     <div className="min-h-screen bg-background pb-24">
+      <PageTopBar
+        title={t('Calendario')}
+        subtitle={t('Tu historial de entrenamiento mes a mes')}
+        backHref="/dashboard"
+        backLabel="Dashboard"
+        icon={<CalendarRange className="h-5 w-5" />}
+      />
+
       <main className="mx-auto max-w-lg px-4 py-8">
-        <PendingLink
-          href="/dashboard"
-          className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-          showSpinner={false}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Dashboard
-        </PendingLink>
-
-        <header className="mt-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-            <CalendarRange className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground">{t('Calendario')}</h1>
-            <p className="text-sm text-muted-foreground">{t('Tu historial de entrenamiento mes a mes')}</p>
-          </div>
-        </header>
-
         {days.length === 0 ? (
           <EmptyCalendar />
         ) : (

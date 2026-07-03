@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
 import { PlanViewTabs } from '@/components/plan/PlanViewTabs'
 import { WorkoutAdjustButton } from '@/components/plan/WorkoutAdjustButton'
@@ -21,7 +22,6 @@ import {
   updateWorkoutSummary,
 } from '@/app/actions/plan'
 import {
-  ArrowLeft,
   CalendarDays,
   Check,
   ChevronDown,
@@ -270,16 +270,15 @@ export default async function PlanPage() {
 
   if (!planRaw) {
     return (
-      <div className="min-h-screen bg-background px-4 py-10">
-        <main className="mx-auto max-w-lg">
-          <PendingLink
-            href="/dashboard"
-            className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-            showSpinner={false}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Dashboard
-          </PendingLink>
+      <div className="min-h-screen bg-background pb-16">
+        <PageTopBar
+          title={t('Plan')}
+          subtitle={t('Sin plan activo')}
+          backHref="/dashboard"
+          backLabel="Dashboard"
+          icon={<Dumbbell className="h-5 w-5" />}
+        />
+        <main className="mx-auto max-w-lg px-4 py-8">
 
           <PlanSwitcher plans={plans} tier={tier} t={t} />
 
@@ -367,17 +366,13 @@ export default async function PlanPage() {
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <main className="mx-auto max-w-lg px-4 py-8">
-        <div className="flex items-center justify-between gap-3">
-          <PendingLink
-            href="/dashboard"
-            className="inline-flex h-10 items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-            showSpinner={false}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Dashboard
-          </PendingLink>
-
+      <PageTopBar
+        title={t('Plan')}
+        subtitle={planRaw.name}
+        backHref="/dashboard"
+        backLabel="Dashboard"
+        icon={<Dumbbell className="h-5 w-5" />}
+        right={(
           <details className="group relative">
             <summary
               aria-label={t('Acciones del plan')}
@@ -401,21 +396,17 @@ export default async function PlanPage() {
               </div>
             </div>
           </details>
-        </div>
+        )}
+      />
 
+      <main className="mx-auto max-w-lg px-4 py-8">
         <PlanSwitcher plans={plans} tier={tier} t={t} />
 
-        <header className="mt-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
-          <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
-            {t('Plan activo')}
-          </p>
-          <h1 className="mt-2 font-display text-3xl font-extrabold leading-tight tracking-tight text-foreground">
-            {planRaw.name}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+        <div className="mt-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
+          <p className="text-sm text-muted-foreground">
             {planRaw.goal || t('Estructura semanal de entrenamiento')}
           </p>
-        </header>
+        </div>
 
         {todayWorkout ? (
           <section className="relative mt-6 overflow-hidden rounded-2xl border border-violet-500/35 bg-gradient-to-br from-violet-500/20 via-violet-500/10 to-transparent p-5 shadow-lg shadow-violet-950/20">
