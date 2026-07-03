@@ -6,7 +6,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import type { SocialNotificationPreferencesInput } from '@/app/actions/pushNotifications'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
-export const metadata = { title: 'Notificaciones · FitAI' }
+export const metadata = { title: 'Notificaciones · Vekira' }
 
 type NotificationsProfile = {
   preferred_workout_days: number[] | null

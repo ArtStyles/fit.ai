@@ -12,7 +12,7 @@ import {
 } from '@/lib/calendar/aggregate'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
-export const metadata = { title: 'Calendario · FitAI' }
+export const metadata = { title: 'Calendario · Vekira' }
 
 type AppSupabaseClient = Awaited<ReturnType<typeof requireAppUserContext>>['supabase']
 

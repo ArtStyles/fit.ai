@@ -7,7 +7,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { signOut } from '@/app/(auth)/actions'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
-export const metadata = { title: 'Cuenta · FitAI' }
+export const metadata = { title: 'Cuenta · Vekira' }
 
 export default async function AccountSettingsPage() {
   const { user, profile } = await requireAppUserContext()

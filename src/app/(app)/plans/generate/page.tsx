@@ -5,7 +5,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { GeneratePlanClient } from './GeneratePlanClient'
 import type { ProfileSummary } from './GeneratePlanClient'
 
-export const metadata = { title: 'Generar plan · FitAI' }
+export const metadata = { title: 'Generar plan · Vekira' }
 
 export default async function GeneratePlanPage({
   searchParams,

@@ -4,7 +4,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 import { LanguageSelector } from './LanguageSelector'
 
-export const metadata = { title: 'Idioma · FitAI' }
+export const metadata = { title: 'Idioma · Vekira' }
 
 export default async function LanguageSettingsPage() {
   const { profile } = await requireAppUserContext()

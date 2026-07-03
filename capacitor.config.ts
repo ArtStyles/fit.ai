@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.fitai.app',
-  appName: 'FitAI',
+  appName: 'Vekira',
   webDir: 'public',
   server: {
     url: 'https://fit-ai-kohl.vercel.app',

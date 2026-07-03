@@ -93,7 +93,7 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
         if (!ok) {
           showToast({
             title: 'Permiso necesario',
-            description: 'Activa las notificaciones de FitAI en los ajustes del teléfono.',
+            description: 'Activa las notificaciones de Vekira en los ajustes del teléfono.',
             variant: 'error',
           })
           return

@@ -14,7 +14,7 @@ import type { TrackedExercise } from '@/app/actions/progression'
 import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
 
-export const metadata = { title: 'Historial · FitAI' }
+export const metadata = { title: 'Historial · Vekira' }
 
 type WorkoutSummary = {
   name: string

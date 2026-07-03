@@ -30,7 +30,7 @@ import {
   type DashboardBannerData,
 } from '@/lib/dashboard/banner'
 
-export const metadata = { title: 'Dashboard · FitAI' }
+export const metadata = { title: 'Dashboard · Vekira' }
 
 function getGreeting(language: ExerciseLanguage): string {
   const t = createTranslator(language)

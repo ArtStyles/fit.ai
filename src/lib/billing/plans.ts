@@ -20,7 +20,7 @@ export const PRO_PRICING_PLANS: readonly ProPricingPlan[] = [
     billingLabel: 'facturado cada mes',
     monthlyEquivalent: 'USD 9.99 al mes',
     badge: null,
-    description: 'Flexibilidad total para probar todo el potencial de FitAI Pro.',
+    description: 'Flexibilidad total para probar todo el potencial de Vekira Pro.',
   },
   {
     id: 'pro-annual',

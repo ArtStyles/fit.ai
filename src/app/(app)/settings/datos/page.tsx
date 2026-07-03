@@ -6,7 +6,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { updatePersonalData } from '@/app/actions/settings'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
-export const metadata = { title: 'Datos personales · FitAI' }
+export const metadata = { title: 'Datos personales · Vekira' }
 
 type PersonalProfile = {
   height_cm: number | null

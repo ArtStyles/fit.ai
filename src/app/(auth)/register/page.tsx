@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { Dumbbell, TrendingUp, Users, Award } from 'lucide-react'
+import { TrendingUp, Users, Award } from 'lucide-react'
+import { VekiraLogo } from '@/components/branding/VekiraLogo'
 import { RegisterForm } from './RegisterForm'
 
 export const metadata: Metadata = { title: 'Crear cuenta' }
@@ -11,8 +12,8 @@ const STATS = [
 ]
 
 const SELECTED_PLAN_COPY: Record<string, string> = {
-  'pro-monthly': 'FitAI Pro mensual · USD 9.99/mes',
-  'pro-annual': 'FitAI Pro anual · USD 59.99/año',
+  'pro-monthly': 'Vekira Pro mensual · USD 9.99/mes',
+  'pro-annual': 'Vekira Pro anual · USD 59.99/año',
 }
 
 export default function RegisterPage({ searchParams }: { searchParams?: { plan?: string } }) {
@@ -27,12 +28,7 @@ export default function RegisterPage({ searchParams }: { searchParams?: { plan?:
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 sm:px-12 bg-background">
 
         {/* Mobile logo */}
-        <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500">
-            <Dumbbell className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight">FitAI</span>
-        </div>
+        <VekiraLogo className="mb-8 lg:hidden" markClassName="h-9 w-9" />
 
         <div className="w-full max-w-sm">
           <div className="mb-7 space-y-1">
@@ -80,12 +76,7 @@ export default function RegisterPage({ searchParams }: { searchParams?: { plan?:
         </div>
 
         {/* Logo */}
-        <div className="relative flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500">
-            <Dumbbell className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-white">FitAI</span>
-        </div>
+        <VekiraLogo className="relative" markClassName="h-9 w-9" wordmarkClassName="text-white" />
 
         {/* Main copy */}
         <div className="relative space-y-10">
@@ -101,7 +92,7 @@ export default function RegisterPage({ searchParams }: { searchParams?: { plan?:
               </span>
             </h2>
             <p className="text-base text-violet-200/70 leading-relaxed max-w-xs">
-              Únete a miles de personas que ya usan FitAI para alcanzar
+              Únete a personas que ya usan Vekira para alcanzar
               sus objetivos de forma más inteligente.
             </p>
           </div>
@@ -134,7 +125,7 @@ export default function RegisterPage({ searchParams }: { searchParams?: { plan?:
 
         {/* Footer */}
         <p className="relative text-xs text-violet-400/50">
-          © {new Date().getFullYear()} FitAI. Todos los derechos reservados.
+          © {new Date().getFullYear()} Vekira. Todos los derechos reservados.
         </p>
       </div>
     </div>

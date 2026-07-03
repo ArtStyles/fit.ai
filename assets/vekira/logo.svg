@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="vekira" x1="90" y1="70" x2="415" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c4b5fd"/>
+      <stop offset=".48" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+  </defs>
+  <path d="M86 86h82l126 352h-84L86 86Z" fill="url(#vekira)"/>
+  <path d="m308 438-78-138 85-108-38-27 162-76-12 178-42-30-72 82 67 119h-72Z" fill="url(#vekira)"/>
+</svg>

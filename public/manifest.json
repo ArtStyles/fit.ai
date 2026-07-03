@@ -1,6 +1,6 @@
 {
-  "name": "FitAI",
-  "short_name": "FitAI",
+  "name": "Vekira",
+  "short_name": "Vekira",
   "description": "Tu entrenador personal con IA. Rutinas adaptativas semana a semana.",
   "start_url": "/",
   "display": "standalone",

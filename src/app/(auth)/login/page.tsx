@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Dumbbell, Zap, BarChart3, Brain } from 'lucide-react'
+import { Zap, BarChart3, Brain } from 'lucide-react'
+import { VekiraLogo } from '@/components/branding/VekiraLogo'
 import { LoginForm } from './LoginForm'
 
 export const metadata: Metadata = { title: 'Iniciar sesión' }
@@ -36,12 +37,7 @@ export default function LoginPage() {
         </div>
 
         {/* Logo */}
-        <div className="relative flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500">
-            <Dumbbell className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-white">FitAI</span>
-        </div>
+        <VekiraLogo className="relative" markClassName="h-9 w-9" wordmarkClassName="text-white" />
 
         {/* Main copy */}
         <div className="relative space-y-8">
@@ -76,7 +72,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="relative text-xs text-indigo-400/50">
-          © {new Date().getFullYear()} FitAI. Todos los derechos reservados.
+          © {new Date().getFullYear()} Vekira. Todos los derechos reservados.
         </p>
       </div>
 
@@ -84,12 +80,7 @@ export default function LoginPage() {
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 sm:px-12 bg-background">
 
         {/* Mobile logo */}
-        <div className="mb-10 flex items-center gap-2.5 lg:hidden">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500">
-            <Dumbbell className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight">FitAI</span>
-        </div>
+        <VekiraLogo className="mb-10 lg:hidden" markClassName="h-9 w-9" />
 
         <div className="w-full max-w-sm">
           {/* Heading */}

@@ -1,13 +1,14 @@
 import type { Metadata } from 'next'
-import { ArrowLeft, Dumbbell } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { getAppUserContext } from '@/lib/auth/server'
 import { PricingSelector } from '@/components/pricing/PricingSelector'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { Badge } from '@/components/ui/badge'
+import { VekiraLogo } from '@/components/branding/VekiraLogo'
 
 export const metadata: Metadata = {
   title: 'Precios',
-  description: 'Elige FitAI Pro mensual o anual y desbloquea una experiencia de entrenamiento sin límites.',
+  description: 'Elige Vekira Pro mensual o anual y desbloquea una experiencia de entrenamiento sin límites.',
 }
 
 export default async function PricingPage() {
@@ -27,12 +28,7 @@ export default async function PricingPage() {
             <span className="hidden sm:inline">{isAuthenticated ? 'Dashboard' : 'Inicio'}</span>
           </PendingLink>
 
-          <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500 text-white">
-              <Dumbbell className="h-5 w-5" />
-            </span>
-            <span className="font-display text-xl font-bold">FitAI</span>
-          </div>
+          <VekiraLogo markClassName="h-9 w-9" />
 
           <div className="flex justify-end">
             {isAuthenticated ? (
@@ -48,7 +44,7 @@ export default async function PricingPage() {
         </header>
 
         <section className="mx-auto max-w-xl pb-8 pt-14 text-center sm:pt-20">
-          <p className="text-sm font-semibold text-violet-300">FitAI Pro</p>
+          <p className="text-sm font-semibold text-violet-300">Vekira Pro</p>
           <h1 className="mt-3 font-display text-4xl font-black tracking-tight text-foreground sm:text-5xl">
             Elige tu ritmo.
           </h1>

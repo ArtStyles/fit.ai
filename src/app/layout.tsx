@@ -24,13 +24,13 @@ const plusJakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: { default: 'FitAI', template: '%s | FitAI' },
+  title: { default: 'Vekira', template: '%s | Vekira' },
   description: 'Tu entrenador personal con IA. Rutinas adaptativas semana a semana.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'FitAI',
+    title: 'Vekira',
   },
   formatDetection: { telephone: false },
   icons: {

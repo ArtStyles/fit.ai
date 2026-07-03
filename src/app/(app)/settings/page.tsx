@@ -5,7 +5,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { cn } from '@/lib/utils'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
-export const metadata = { title: 'Ajustes · FitAI' }
+export const metadata = { title: 'Ajustes · Vekira' }
 
 const SECTIONS = [
   { href: '/settings/perfil',         label: 'Perfil',           icon: UserRound },

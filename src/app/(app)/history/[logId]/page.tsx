@@ -17,7 +17,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 
-export const metadata = { title: 'Detalle de sesión · FitAI' }
+export const metadata = { title: 'Detalle de sesión · Vekira' }
 
 type WorkoutSummary = {
   name: string

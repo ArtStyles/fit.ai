@@ -31,7 +31,7 @@ export default async function SuspendedPage() {
           </div>
           <h1 className="mt-5 font-display text-3xl font-bold text-foreground">Cuenta suspendida</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Tu acceso a FitAI está temporalmente restringido. Tus datos permanecen guardados.
+            Tu acceso a Vekira está temporalmente restringido. Tus datos permanecen guardados.
           </p>
 
           <div className="mt-6 space-y-4 rounded-xl border border-border/60 bg-background/50 p-4 text-left">

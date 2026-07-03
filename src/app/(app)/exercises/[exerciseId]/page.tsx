@@ -22,7 +22,7 @@ import type { Database } from '@/types/database'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
 
-export const metadata = { title: 'Ejercicio · FitAI' }
+export const metadata = { title: 'Ejercicio · Vekira' }
 
 type ExerciseRow = {
   id: string

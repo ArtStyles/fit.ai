@@ -9,7 +9,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { updateProfileName } from '@/app/actions/settings'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
-export const metadata = { title: 'Perfil · FitAI' }
+export const metadata = { title: 'Perfil · Vekira' }
 
 export default async function ProfilePage() {
   const { user, profile } = await requireAppUserContext()

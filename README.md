@@ -1,6 +1,6 @@
-# FitAI
+# Vekira
 
-FitAI es una aplicacion de entrenamiento personalizada, orientada a movil, que
+Vekira es una aplicacion de entrenamiento personalizada, orientada a movil, que
 genera planes semanales, guia sesiones y registra progresion. El flujo principal
 usa Next.js y Supabase; la generacion de planes puede usar Anthropic o un mock
 local.

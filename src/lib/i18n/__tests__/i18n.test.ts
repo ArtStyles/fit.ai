@@ -11,7 +11,7 @@ describe('UI translations', () => {
   it('translates known copy and safely falls back for unknown copy', () => {
     expect(translate('en', 'Ajustes')).toBe('Settings')
     expect(translate('es', 'Ajustes')).toBe('Ajustes')
-    expect(translate('en', 'FitAI')).toBe('FitAI')
+    expect(translate('en', 'Vekira')).toBe('Vekira')
   })
 
   it('interpolates translated values', () => {

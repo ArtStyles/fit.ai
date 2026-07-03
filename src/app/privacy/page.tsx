@@ -4,7 +4,7 @@ import { ArrowLeft, ShieldCheck } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Política de privacidad',
-  description: 'Cómo FitAI recopila, usa y protege tus datos.',
+  description: 'Cómo Vekira recopila, usa y protege tus datos.',
 }
 
 // Fecha de última actualización de esta política.
@@ -45,8 +45,8 @@ export default function PrivacyPage() {
 
         <div className="mt-8 space-y-8">
           <p className="text-sm leading-relaxed text-muted-foreground">
-            En FitAI tratamos tus datos con cuidado. Esta política explica qué información recopilamos, con qué fin,
-            con quién la compartimos y qué derechos tienes sobre ella. Al usar FitAI aceptas las prácticas aquí
+            En Vekira tratamos tus datos con cuidado. Esta política explica qué información recopilamos, con qué fin,
+            con quién la compartimos y qué derechos tienes sobre ella. Al usar Vekira aceptas las prácticas aquí
             descritas.
           </p>
 
@@ -121,7 +121,7 @@ export default function PrivacyPage() {
 
           <Section title="9. Menores de edad">
             <p>
-              FitAI no está dirigida a menores de 16 años. Si crees que un menor nos ha facilitado datos, contáctanos y
+              Vekira no está dirigida a menores de 16 años. Si crees que un menor nos ha facilitado datos, contáctanos y
               los eliminaremos.
             </p>
           </Section>

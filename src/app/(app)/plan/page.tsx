@@ -40,7 +40,7 @@ import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization
 import { createTranslator, dateLocale, type AppLanguage } from '@/lib/i18n'
 import { FREE_PLAN_LIMIT } from '@/lib/plans/entitlements'
 
-export const metadata = { title: 'Plan completo · FitAI' }
+export const metadata = { title: 'Plan completo · Vekira' }
 
 const DAY_NAMES: Record<number, string> = {
   1: 'Lunes',

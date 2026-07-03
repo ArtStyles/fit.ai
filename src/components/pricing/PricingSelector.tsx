@@ -25,7 +25,7 @@ export function PricingSelector({ isAuthenticated, isPro }: Props) {
   const annual = interval === 'annual'
 
   return (
-    <section className="mx-auto max-w-xl" aria-label="Elegir plan FitAI Pro">
+    <section className="mx-auto max-w-xl" aria-label="Elegir plan Vekira Pro">
       <div className="grid grid-cols-2 rounded-xl border border-border/60 bg-muted/20 p-1">
         <Button
           type="button"
@@ -70,7 +70,7 @@ export function PricingSelector({ isAuthenticated, isPro }: Props) {
                 <Crown className="h-4 w-4" />
               </span>
               <div>
-                <p className="text-sm font-bold text-foreground">FitAI Pro</p>
+                <p className="text-sm font-bold text-foreground">Vekira Pro</p>
                 <p className="text-xs text-muted-foreground">Todo incluido</p>
               </div>
             </div>
