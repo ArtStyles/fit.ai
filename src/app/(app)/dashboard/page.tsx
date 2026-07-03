@@ -517,7 +517,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <DashboardHeader greeting={getGreeting(language)} firstName={firstName} avatarUrl={profile?.avatar_url ?? null} momentumScore={momentumScore} username={profile?.username ?? null} />
+      <DashboardHeader
+        greeting={getGreeting(language)}
+        firstName={firstName}
+        avatarUrl={profile?.avatar_url ?? null}
+        momentumScore={momentumScore}
+        username={profile?.username ?? null}
+        subscriptionTier={profile.subscription_tier}
+      />
 
       <main className="mx-auto max-w-lg px-4">
         {showAiBanner && (

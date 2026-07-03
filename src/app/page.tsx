@@ -75,25 +75,34 @@ export default function Home() {
       </div>
 
       {/* ── CTAs ─────────────────────────────────────────────────────────────── */}
-      <div className="animate-in fade-in slide-in-from-bottom-3 duration-500 [animation-delay:240ms] flex flex-col gap-3 sm:flex-row mb-10">
+      <div className="animate-in fade-in slide-in-from-bottom-3 duration-500 [animation-delay:240ms] mb-10 flex w-full max-w-sm flex-col gap-3">
         <PendingLink
-          href="/register"
-          className="group inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-7 text-sm font-bold text-white shadow-lg shadow-violet-500/25 transition-all hover:from-violet-500 hover:to-indigo-500 hover:shadow-violet-500/40 hover:-translate-y-0.5"
+          href="/pricing"
+          className="group inline-flex h-14 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-7 text-base font-bold text-white shadow-lg shadow-violet-500/30 transition-all hover:-translate-y-0.5 hover:from-violet-500 hover:to-indigo-500 hover:shadow-violet-500/40"
         >
-          Empezar gratis
+          Registrarme con Pro
           <ChevronRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
         </PendingLink>
-        <PendingLink
-          href="/login"
-          className="inline-flex h-12 items-center justify-center rounded-xl border border-border px-7 text-sm font-semibold text-foreground transition-all hover:bg-muted/30 hover:-translate-y-0.5"
-        >
-          Iniciar sesión
-        </PendingLink>
+        <div className="flex items-center justify-center gap-4 text-sm">
+          <PendingLink
+            href="/register"
+            className="inline-flex h-10 items-center justify-center px-2 font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Continuar gratis
+          </PendingLink>
+          <span aria-hidden className="h-4 w-px bg-border" />
+          <PendingLink
+            href="/login"
+            className="inline-flex h-10 items-center justify-center px-2 font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Iniciar sesión
+          </PendingLink>
+        </div>
       </div>
 
       {/* ── Stats ────────────────────────────────────────────────────────────── */}
       <div className="animate-in fade-in slide-in-from-bottom-3 duration-500 [animation-delay:300ms] flex items-center gap-6 sm:gap-10">
-        {STATS.map(({ icon: Icon, value, label }, i) => (
+        {STATS.map(({ value, label }, i) => (
           <div key={label} className="flex flex-col items-center gap-0.5">
             {i > 0 && (
               <div className="absolute -left-3 top-1/2 h-5 w-px -translate-y-1/2 bg-border/50" />

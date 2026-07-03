@@ -151,7 +151,7 @@ function PasswordToggleButton({
   )
 }
 
-export function RegisterForm() {
+export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | null }) {
   const router = useRouter()
   const { showToast } = useToast()
   const [error, setError] = useState<string | null>(null)
@@ -196,7 +196,10 @@ export function RegisterForm() {
       email,
       password,
       options: {
-        data: { full_name: fullName },
+        data: {
+          full_name: fullName,
+          ...(selectedPlan ? { selected_plan: selectedPlan } : {}),
+        },
       },
     })
 
@@ -374,7 +377,7 @@ export function RegisterForm() {
         className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-indigo-600 text-sm font-semibold text-white tracking-wide transition-all hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-        {loading ? 'Creando cuenta...' : 'Crear cuenta'}
+        {loading ? 'Creando cuenta...' : selectedPlan ? 'Crear cuenta y continuar' : 'Crear cuenta'}
       </button>
 
       <p className="text-center text-xs text-muted-foreground/70">

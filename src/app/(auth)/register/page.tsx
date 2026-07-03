@@ -10,7 +10,16 @@ const STATS = [
   { value: '98%',  label: 'Satisfacción' },
 ]
 
-export default function RegisterPage() {
+const SELECTED_PLAN_COPY: Record<string, string> = {
+  'pro-monthly': 'FitAI Pro mensual · USD 9.99/mes',
+  'pro-annual': 'FitAI Pro anual · USD 59.99/año',
+}
+
+export default function RegisterPage({ searchParams }: { searchParams?: { plan?: string } }) {
+  const selectedPlan = searchParams?.plan && SELECTED_PLAN_COPY[searchParams.plan]
+    ? searchParams.plan
+    : null
+
   return (
     <div className="flex min-h-screen">
 
@@ -31,11 +40,22 @@ export default function RegisterPage() {
               Crea tu cuenta.
             </h2>
             <p className="text-sm text-muted-foreground">
-              Empieza gratis. Sin tarjeta de crédito.
+              {selectedPlan ? 'Crea tu cuenta para continuar con Pro.' : 'Empieza gratis. Sin tarjeta de crédito.'}
             </p>
           </div>
 
-          <RegisterForm />
+          {selectedPlan && (
+            <div className="mb-5 flex items-center gap-3 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3">
+              <Award className="h-5 w-5 shrink-0 text-violet-300" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">Plan seleccionado</p>
+                <p className="mt-0.5 text-sm font-semibold text-foreground">{SELECTED_PLAN_COPY[selectedPlan]}</p>
+                <p className="mt-1 text-xs text-muted-foreground">No se realizará ningún cobro en esta fase.</p>
+              </div>
+            </div>
+          )}
+
+          <RegisterForm selectedPlan={selectedPlan} />
         </div>
       </div>
 
