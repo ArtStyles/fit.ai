@@ -149,15 +149,27 @@ export function DashboardLoading() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <div className="sticky top-0 z-20 border-b border-border/40 bg-background/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
-          <div>
-            <p className="text-sm text-muted-foreground">Dashboard</p>
-            <h1 className="font-display text-2xl font-extrabold text-foreground">Tu entrenamiento</h1>
-          </div>
-          <Shimmer className="h-10 w-10 rounded-full bg-violet-500/20" />
+      <header
+        className="mx-auto flex max-w-lg items-center gap-3 px-4 pb-2 pt-6"
+        aria-label="Cargando perfil y suscripción"
+      >
+        <Shimmer className="h-20 w-20 shrink-0 rounded-full bg-violet-500/15" />
+
+        <div className="min-w-0 flex-1">
+          <Shimmer className="h-3 w-16 rounded bg-muted/40" />
+          <Shimmer className="mt-2 h-5 w-24 rounded" />
+          <Shimmer className="mt-2 h-5 w-20 rounded-full bg-violet-500/15" />
         </div>
-      </div>
+
+        <div className="flex h-11 w-[8.5rem] shrink-0 items-center gap-2 rounded-full border border-border/60 bg-card/50 p-1.5 pr-3 shadow-sm">
+          <Shimmer className="h-8 w-8 shrink-0 rounded-full bg-violet-500/20" />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Shimmer className="h-3 w-6 shrink-0 rounded bg-muted/40" />
+            <span aria-hidden className="h-3.5 w-px shrink-0 bg-border/80" />
+            <Shimmer className="h-3 min-w-0 flex-1 rounded" />
+          </div>
+        </div>
+      </header>
 
       <main className="mx-auto max-w-lg px-4">
         <section className="mt-6 rounded-2xl border border-violet-500/20 bg-violet-500/[0.06] p-5">
