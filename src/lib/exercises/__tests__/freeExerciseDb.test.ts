@@ -7,6 +7,7 @@ import {
   joinInstructions,
   muscleGroups,
   imageUrlFromPath,
+  classifyExerciseMetadata,
   toExerciseInsert,
   type FreeExercise,
 } from '../freeExerciseDb'
@@ -75,6 +76,34 @@ describe('imageUrlFromPath', () => {
   })
 })
 
+describe('classifyExerciseMetadata', () => {
+  const exercise = (overrides: Partial<FreeExercise>): FreeExercise => ({
+    id: 'exercise', name: 'Exercise', force: null, level: 'beginner', mechanic: 'compound',
+    equipment: null, primaryMuscles: [], secondaryMuscles: [], instructions: [],
+    category: 'strength', images: [], ...overrides,
+  })
+
+  it('classifies strength movement patterns from name and anatomy', () => {
+    expect(classifyExerciseMetadata(exercise({
+      name: 'Barbell Back Squat', primaryMuscles: ['quadriceps'], secondaryMuscles: ['glutes'],
+    }))).toMatchObject({
+      movement_patterns: ['squat'],
+      cardio_modality: null,
+    })
+  })
+
+  it('classifies cardio modality and impact', () => {
+    expect(classifyExerciseMetadata(exercise({
+      name: 'Jogging, Treadmill', category: 'cardio', mechanic: null,
+    }))).toEqual({
+      movement_patterns: ['locomotion'],
+      cardio_modality: 'running',
+      impact_level: 'high',
+      joint_stress_tags: ['locomotion'],
+    })
+  })
+})
+
 describe('toExerciseInsert', () => {
   it('maps a full record to our insert shape (without image_url)', () => {
     const ex: FreeExercise = {
@@ -102,6 +131,10 @@ describe('toExerciseInsert', () => {
       is_public: true,
       source: 'free-exercise-db',
       external_id: '3_4_Sit-Up',
+      movement_patterns: ['core'],
+      cardio_modality: null,
+      impact_level: null,
+      joint_stress_tags: ['core'],
     })
   })
 })

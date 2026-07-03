@@ -1,4 +1,5 @@
 import { generateEvidencePlan } from './generator'
+import { ENGINE_VERSION, EVIDENCE_VERSION } from './evidence'
 import { validateGeneratedPlan } from './validator'
 import type {
   EngineResult,
@@ -36,8 +37,8 @@ export function previewPlanAdjustment(
       result: {
         success: false,
         metadata: {
-          engineVersion: '1.0.0',
-          evidenceVersion: '2026.1',
+          engineVersion: ENGINE_VERSION,
+          evidenceVersion: EVIDENCE_VERSION,
           appliedRuleIds: [],
           warnings: [],
           generatedAt: new Date().toISOString(),

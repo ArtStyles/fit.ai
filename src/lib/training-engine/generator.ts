@@ -6,6 +6,7 @@ import {
 } from './evidence'
 import { prohibitedMovementTags, validateReadiness } from './safety'
 import { estimateDayMinutes, validateGeneratedPlan } from './validator'
+import { carryForwardProgression } from './continuity'
 import type {
   CardioModality,
   EngineExercise,
@@ -389,7 +390,7 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
   }
 
   const week = input.weekNumber ?? 1
-  const plan: EvidencePlan = {
+  const generatedPlan: EvidencePlan = {
     display_name: input.profile.language === 'en'
       ? `${goalName(input.profile.primaryGoal, 'en')} · Week ${week}`
       : `${goalName(input.profile.primaryGoal, 'es')} · Semana ${week}`,
@@ -402,6 +403,10 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
     days,
   }
 
+  const plan = input.previousPlan
+    ? carryForwardProgression(generatedPlan, input.previousPlan.plan)
+    : generatedPlan
+
   const issues = validateGeneratedPlan(plan, input)
   const appliedRules = [
     RULE_IDS.progressiveResistance,
@@ -413,6 +418,7 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
     ...(['lose_weight', 'improve_endurance', 'stay_active'].includes(input.profile.primaryGoal) ? [RULE_IDS.weeklyActivity] : []),
     ...(input.profile.primaryGoal === 'lose_weight' ? [RULE_IDS.concurrentWeightLoss] : []),
     ...(input.history ? [RULE_IDS.adaptiveRegeneration] : []),
+    ...(input.previousPlan ? [RULE_IDS.progressionContinuity] : []),
   ]
 
   return {
@@ -426,4 +432,3 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
 export function regenerateEvidencePlan(input: TrainingPlanInput): EngineResult {
   return generateEvidencePlan(input)
 }
-

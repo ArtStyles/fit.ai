@@ -1,6 +1,6 @@
 import type { FitnessLevel, TrainingGoal } from './types'
 
-export const ENGINE_VERSION = '1.0.0'
+export const ENGINE_VERSION = '1.1.0'
 export const EVIDENCE_VERSION = '2026.1'
 
 export const EVIDENCE_SOURCES = {
@@ -99,5 +99,5 @@ export const RULE_IDS = {
   weeklyActivity: 'WHO-2020-WEEKLY-ACTIVITY',
   concurrentWeightLoss: 'CT-2025-FAT-MASS-LEAN-MASS',
   adaptiveRegeneration: 'FITAI-ADAPTIVE-REGEN-1',
+  progressionContinuity: 'FITAI-PROGRESSION-CONTINUITY-1',
 } as const
-

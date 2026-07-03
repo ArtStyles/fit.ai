@@ -184,6 +184,30 @@ describe('evidence training engine', () => {
     expect(result.metadata.warnings.join(' ')).toMatch(/descarga/i)
   })
 
+  it('keeps earned targets for exercises retained in a weekly regeneration', () => {
+    const initialInput = makeInput('gain_strength', 'intermediate', 3, 60)
+    const previous = generateEvidencePlan(initialInput).plan!
+    const retained = previous.days[0].exercises[0]
+    retained.weight_kg = 72.5
+    retained.reps = 6
+    retained.weight_suggestion_basis = 'based_on_previous_logs'
+
+    const nextInput = makeInput('gain_strength', 'intermediate', 3, 60)
+    nextInput.weekNumber = 2
+    nextInput.previousPlan = { plan: previous }
+    const result = regenerateEvidencePlan(nextInput)
+    const next = result.plan?.days.flatMap(day => day.exercises)
+      .find(exercise => exercise.exercise_id === retained.exercise_id)
+
+    expect(result.success).toBe(true)
+    expect(next).toMatchObject({
+      reps: 6,
+      weight_kg: 72.5,
+      weight_suggestion_basis: 'based_on_previous_logs',
+    })
+    expect(result.metadata.appliedRuleIds).toContain('FITAI-PROGRESSION-CONTINUITY-1')
+  })
+
   it('previews a full-plan duration adjustment', () => {
     const input = makeInput()
     const current = generateEvidencePlan(input).plan!
@@ -196,4 +220,3 @@ describe('evidence training engine', () => {
     expect(preview.result.plan?.days).toHaveLength(current.days.length)
   })
 })
-

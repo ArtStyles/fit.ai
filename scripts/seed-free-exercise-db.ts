@@ -2,7 +2,8 @@
  * Reemplaza el catálogo de ejercicios con free-exercise-db.
  *
  * Prerequisitos:
- *   1. Ejecutar supabase/migrations/014_exercise_source_columns.sql.
+ *   1. Ejecutar las migraciones 014_exercise_source_columns.sql y
+ *      028_evidence_training_engine.sql.
  *   2. SUPABASE_SERVICE_ROLE_KEY en .env.local (bypassa RLS).
  *
  * Correr (BORRA los datos de entrenamiento de prueba):

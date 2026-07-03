@@ -8,11 +8,13 @@ import { buildWeeklySummary, getCyclePhase } from '@/lib/plans/periodization'
 import { getPlanCreatePolicy, pruneExcessPlansForFreeUser } from '@/lib/plans/entitlements'
 import {
   estimateDayMinutes,
+  findStalledExerciseIds,
   generateEvidencePlan,
   regenerateEvidencePlan,
   type CardioModality,
   type EngineExercise,
   type EvidencePlan,
+  type ExerciseProgressHistoryEntry,
   type MovementLimitation,
   type MovementPattern,
   type PlanAdjustmentIntent,
@@ -117,55 +119,96 @@ function assignIsoDays(
 // Rendimiento de los últimos 7 días respecto al plan activo: adherencia,
 // RPE promedio y ejercicios saltados con motivo. Alimenta la regeneración.
 
-async function buildPreviousWeekSummary(
+interface RegenerationContext {
+  previousWeek: WeeklySummary | null
+  stalledExerciseIds: string[]
+}
+
+async function buildRegenerationContext(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   planId: string,
-): Promise<WeeklySummary | null> {
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+): Promise<RegenerationContext> {
+  const weekSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  const historySince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
 
-  const [{ data: planWorkouts }, { data: weekLogs }] = await Promise.all([
-    (supabase.from('workouts') as any)
-      .select('id')
-      .eq('plan_id', planId) as Promise<{ data: { id: string }[] | null }>,
+  const { data: planWorkouts } = await (supabase.from('workouts') as any)
+    .select('id')
+    .eq('plan_id', planId) as { data: { id: string }[] | null }
+
+  const workoutIds = (planWorkouts ?? []).map(workout => workout.id)
+  if (workoutIds.length === 0) return { previousWeek: null, stalledExerciseIds: [] }
+
+  const [{ data: weekLogs }, { data: historyLogs }, { data: planExercises }] = await Promise.all([
     (supabase.from('progress_logs') as any)
-      .select('id')
+      .select('id, completed_at, workout_id')
       .eq('user_id', userId)
-      .not('workout_id', 'is', null)
-      .gte('completed_at', since.toISOString()) as Promise<{ data: { id: string }[] | null }>,
+      .in('workout_id', workoutIds)
+      .gte('completed_at', weekSince.toISOString()) as Promise<{ data: { id: string; completed_at: string; workout_id: string | null }[] | null }>,
+    (supabase.from('progress_logs') as any)
+      .select('id, completed_at')
+      .eq('user_id', userId)
+      .gte('completed_at', historySince.toISOString())
+      .order('completed_at', { ascending: false })
+      .limit(200) as Promise<{ data: { id: string; completed_at: string }[] | null }>,
+    (supabase.from('workout_exercises') as any)
+      .select('exercise_id')
+      .in('workout_id', workoutIds) as Promise<{ data: { exercise_id: string }[] | null }>,
   ])
 
-  const scheduledSessions = planWorkouts?.length ?? 0
-  const logIds = (weekLogs ?? []).map(log => log.id)
-
-  if (scheduledSessions === 0 && logIds.length === 0) return null
+  const weekLogIds = new Set((weekLogs ?? []).map(log => log.id))
+  const completedWorkoutIds = new Set((weekLogs ?? []).flatMap(log => log.workout_id ? [log.workout_id] : []))
+  const historyLogIds = (historyLogs ?? []).map(log => log.id)
+  const exerciseIds = Array.from(new Set((planExercises ?? []).map(row => row.exercise_id)))
+  const completedAtByLog = new Map((historyLogs ?? []).map(log => [log.id, log.completed_at]))
 
   type ExerciseLogRow = {
+    exercise_id: string
+    progress_log_id: string
+    weights_kg: number[] | null
+    reps_completed: number[] | null
     rpe_values: (number | null)[] | null
     notes: string | null
     exercise: { name: string } | { name: string }[] | null
   }
 
-  let exerciseRows: WeeklyExerciseRow[] = []
-  if (logIds.length > 0) {
+  let exerciseLogs: ExerciseLogRow[] = []
+  if (historyLogIds.length > 0 && exerciseIds.length > 0) {
     const { data: exLogs } = await (supabase.from('exercise_logs') as any)
-      .select('rpe_values, notes, exercise:exercises(name)')
-      .in('progress_log_id', logIds) as { data: ExerciseLogRow[] | null }
+      .select('exercise_id, progress_log_id, weights_kg, reps_completed, rpe_values, notes, exercise:exercises(name)')
+      .in('progress_log_id', historyLogIds)
+      .in('exercise_id', exerciseIds) as { data: ExerciseLogRow[] | null }
+    exerciseLogs = exLogs ?? []
+  }
 
-    exerciseRows = (exLogs ?? []).map(row => ({
+  const exerciseRows: WeeklyExerciseRow[] = exerciseLogs
+    .filter(row => weekLogIds.has(row.progress_log_id))
+    .map(row => ({
       exerciseName: Array.isArray(row.exercise)
         ? row.exercise[0]?.name ?? null
         : row.exercise?.name ?? null,
       rpeValues: row.rpe_values,
       note: row.notes,
     }))
-  }
 
-  return buildWeeklySummary({
-    scheduledSessions,
-    completedSessions: logIds.length,
-    exerciseRows,
+  const historyEntries: ExerciseProgressHistoryEntry[] = exerciseLogs.flatMap(row => {
+    const completedAt = completedAtByLog.get(row.progress_log_id)
+    return completedAt ? [{
+      exerciseId: row.exercise_id,
+      completedAt,
+      weightsKg: row.weights_kg,
+      repsCompleted: row.reps_completed,
+    }] : []
   })
+
+  return {
+    previousWeek: buildWeeklySummary({
+      scheduledSessions: workoutIds.length,
+      completedSessions: completedWorkoutIds.size,
+      exerciseRows,
+    }),
+    stalledExerciseIds: findStalledExerciseIds(historyEntries),
+  }
 }
 
 async function loadPlanForEngine(
@@ -348,9 +391,9 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
   // ── 5. Generar plan (mock o real) ──────────────────────────────────────────
 
   if (useEvidenceEngine) {
-    const [previousWeek, previousPlan] = await Promise.all([
+    const [regenerationContext, previousPlan] = await Promise.all([
       mode === 'weekly_regeneration' && activePlan
-        ? buildPreviousWeekSummary(supabase, user.id, activePlan.id)
+        ? buildRegenerationContext(supabase, user.id, activePlan.id)
         : Promise.resolve(null),
       mode !== 'initial' && activePlan
         ? loadPlanForEngine(supabase, activePlan)
@@ -377,13 +420,14 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
       jointStressTags: exercise.joint_stress_tags ?? [],
     }))
 
+    const previousWeek = regenerationContext?.previousWeek ?? null
     const regenerationHistory: RegenerationHistory | null = previousWeek ? {
       scheduledSessions: previousWeek.scheduledSessions,
       completedSessions: previousWeek.completedSessions,
       adherenceRatio: previousWeek.adherenceRatio,
       avgRpe: previousWeek.avgRpe,
       painReported: previousWeek.skippedExercises.some(item => /dolor|pain/i.test(item.lastReason ?? '')),
-      stalledExerciseIds: [],
+      stalledExerciseIds: regenerationContext?.stalledExerciseIds ?? [],
     } : null
 
     const engineInput = {
@@ -531,7 +575,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
   let weekContext: WeekContext | undefined
   if (mode === 'weekly_regeneration') {
     const previousWeek = activePlan
-      ? await buildPreviousWeekSummary(supabase, user.id, activePlan.id)
+      ? (await buildRegenerationContext(supabase, user.id, activePlan.id)).previousWeek
       : null
 
     weekContext = {

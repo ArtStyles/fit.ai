@@ -143,6 +143,9 @@ Aplica las migraciones SQL en este orden:
 026_plan_library.sql
 027_exercise_localization.sql
 028_evidence_training_engine.sql
+029_admin_accounts.sql
+030_dashboard_banner.sql
+031_reclassify_exercise_cardio.sql
 ```
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
@@ -158,8 +161,8 @@ pnpm translate:setup
 pnpm translate:exercises:es
 ```
 
-El seed requiere `SUPABASE_SERVICE_ROLE_KEY` y la migracion
-`014_exercise_source_columns.sql`. El backfill en español requiere además
+El seed requiere `SUPABASE_SERVICE_ROLE_KEY` y las migraciones
+`014_exercise_source_columns.sql` y `028_evidence_training_engine.sql`. El backfill en español requiere además
 `027_exercise_localization.sql`. Usa Argos Translate local, no requiere una API
 key y procesa 25 ejercicios por ejecución; es incremental y no borra planes ni
 historial. Usa `--limit=100` para ampliar un lote, `--all` para procesar todo o
