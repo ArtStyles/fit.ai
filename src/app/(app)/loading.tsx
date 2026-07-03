@@ -1,17 +1,16 @@
 import { Loader2 } from 'lucide-react'
+import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 
 export default function AppRouteLoading() {
   return (
     <div className="min-h-screen bg-background pb-16">
-      <div className="sticky top-0 z-20 border-b border-border/40 bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
+      <FixedTopBar contentClassName="justify-between">
           <div className="animate-in fade-in slide-in-from-left-2 flex items-center gap-2.5 duration-300">
             <div className="fitai-shimmer h-8 w-8 rounded-lg bg-violet-500/15" />
             <div className="fitai-shimmer h-4 w-36 rounded bg-muted/60" />
           </div>
           <div className="fitai-shimmer h-10 w-10 rounded-full bg-violet-500/30" />
-        </div>
-      </div>
+      </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4">
         <div className="animate-in fade-in slide-in-from-bottom-2 mt-8 flex items-center gap-2 rounded-xl border border-violet-400/20 bg-violet-500/5 px-4 py-3 text-sm font-medium text-violet-200 duration-300">

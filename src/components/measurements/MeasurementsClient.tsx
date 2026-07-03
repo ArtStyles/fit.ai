@@ -8,6 +8,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LongPressMenu, type LongPressAction } from '@/components/ui'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import {
   logMeasurement,
   updateMeasurement,
@@ -324,8 +325,7 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-border/40 bg-background/80 px-4 py-3 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-lg items-center justify-between">
+      <FixedTopBar contentClassName="justify-between">
           <div className="flex items-center gap-2.5">
             <PendingLink href="/dashboard"
               className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white">
@@ -338,8 +338,7 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
             <Plus className="h-4 w-4" />
             Registrar
           </button>
-        </div>
-      </header>
+      </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4 pt-6">
 

@@ -23,6 +23,7 @@ import { MessageBubble } from './MessageBubble'
 import { ChatInputBar } from './ChatInputBar'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { dateLocale } from '@/lib/i18n'
+import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 
 type View = 'list' | 'chat'
 
@@ -154,7 +155,7 @@ export function ChatContainer({ initialConversations }: Props) {
   if (view === 'chat' && selected) {
     return (
       <div className="flex h-dvh flex-col bg-background pb-16">
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/40 bg-background/80 px-4 py-3 backdrop-blur-sm">
+        <FixedTopBar>
           <button
             type="button"
             onClick={handleBack}
@@ -168,7 +169,7 @@ export function ChatContainer({ initialConversations }: Props) {
               {t(selected.context ? CONTEXT_LABELS[selected.context] : 'General')}
             </p>
           </div>
-        </header>
+        </FixedTopBar>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {loadingMessages ? (
@@ -203,8 +204,7 @@ export function ChatContainer({ initialConversations }: Props) {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-20 border-b border-border/40 bg-background/80 px-4 py-3 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-lg items-center justify-between">
+      <FixedTopBar contentClassName="justify-between">
           <div className="flex items-center gap-2.5">
             <PendingLink
               href="/dashboard"
@@ -222,8 +222,7 @@ export function ChatContainer({ initialConversations }: Props) {
             <Plus className="h-4 w-4" />
             {t('Nueva')}
           </button>
-        </div>
-      </header>
+      </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4 pt-6">
         {conversations.length === 0 ? (

@@ -13,6 +13,7 @@ import { useSessionStore } from '@/store/sessionStore'
 import { SyncStatusIndicator } from '@/components/session/SyncStatusIndicator'
 import { useBackHandler } from '@/lib/native/backHandlers'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 
 // ─── Elapsed timer ────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export function SessionHeader({ onFinish }: Props) {
 
   return (
     <>
-      <header className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b border-border/40">
+      <FixedTopBar className="bg-background/95" contentClassName="block p-0" initialHeight={69}>
         <div className="flex items-center gap-3 px-4 py-3">
         {/* Botón atrás */}
         <button
@@ -140,7 +141,7 @@ export function SessionHeader({ onFinish }: Props) {
             />
           </div>
         )}
-      </header>
+      </FixedTopBar>
 
       {/* ── Diálogo de confirmación para salir ───────────────────────────── */}
       <Dialog open={showExitDialog} onOpenChange={setShowExitDialog}>

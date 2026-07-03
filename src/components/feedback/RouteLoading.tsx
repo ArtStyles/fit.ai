@@ -10,6 +10,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 
 type IconComponent = React.ComponentType<{ className?: string }>
 
@@ -338,8 +339,7 @@ export function MeasurementsLoading() {
 export function ChatLoading() {
   return (
     <div className="min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-20 border-b border-border/40 bg-background/80 px-4 py-3 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-lg items-center justify-between">
+      <FixedTopBar contentClassName="justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground">
               <ArrowLeft className="h-5 w-5" />
@@ -350,8 +350,7 @@ export function ChatLoading() {
             <PlusCircle className="h-4 w-4" />
             Nueva
           </div>
-        </div>
-      </header>
+      </FixedTopBar>
       <main className="mx-auto max-w-lg px-4 pt-6">
         <RowSkeletons count={4} avatar />
       </main>
@@ -362,7 +361,7 @@ export function ChatLoading() {
 export function SocialFeedLoading() {
   return (
     <div className="mx-auto max-w-lg pb-24">
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur-md">
+      <FixedTopBar contentClassName="justify-between">
         <h1 className="text-lg font-bold">Comunidad</h1>
         <div className="flex items-center gap-1 text-muted-foreground">
           <Bell className="h-5 w-5" />
@@ -372,7 +371,7 @@ export function SocialFeedLoading() {
             Publicar
           </div>
         </div>
-      </header>
+      </FixedTopBar>
       <div className="grid grid-cols-2 border-b border-border/40">
         <p className="py-3 text-center text-sm font-semibold text-foreground">Descubrir</p>
         <p className="py-3 text-center text-sm font-semibold text-muted-foreground">Siguiendo</p>
@@ -385,12 +384,12 @@ export function SocialFeedLoading() {
 export function SocialListLoading({ title }: { title: string }) {
   return (
     <div className="mx-auto max-w-lg pb-24">
-      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur-md">
+      <FixedTopBar>
         <div className="flex h-9 w-9 items-center justify-center rounded-full">
           <ArrowLeft className="h-5 w-5" />
         </div>
         <h1 className="text-lg font-bold">{title}</h1>
-      </header>
+      </FixedTopBar>
       <div className="px-4">
         <RowSkeletons count={5} avatar />
       </div>
@@ -401,12 +400,12 @@ export function SocialListLoading({ title }: { title: string }) {
 export function PostDetailLoading() {
   return (
     <div className="mx-auto max-w-lg pb-32">
-      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur-md">
+      <FixedTopBar>
         <div className="flex h-9 w-9 items-center justify-center rounded-full">
           <ArrowLeft className="h-5 w-5" />
         </div>
         <h1 className="text-lg font-bold">Publicacion</h1>
-      </header>
+      </FixedTopBar>
       <PostSkeletons count={1} />
       <div className="px-4">
         <p className="mt-6 text-sm font-semibold text-foreground">Comentarios</p>
@@ -499,8 +498,7 @@ export function LanguageSettingsLoading() {
 export function SessionLoading() {
   return (
     <div className="flex min-h-screen flex-col bg-background pb-24">
-      <header className="sticky top-0 z-20 border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur-md">
-        <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+      <FixedTopBar contentClassName="justify-between">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
               Sesion en curso
@@ -510,8 +508,7 @@ export function SessionLoading() {
             </h1>
           </div>
           <Shimmer className="h-10 w-20 rounded-lg bg-violet-500/15" />
-        </div>
-      </header>
+      </FixedTopBar>
       <main className="mx-auto w-full max-w-lg px-4 py-5">
         <section className="rounded-2xl border border-border/60 bg-muted/10 p-4">
           <div className="flex items-center justify-between">
@@ -528,8 +525,11 @@ export function SessionLoading() {
 export function ExercisesLoading() {
   return (
     <div className="min-h-screen bg-[#0e0e10] text-white">
-      <div className="sticky top-0 z-10 border-b border-zinc-800/50 bg-[#0e0e10]/95 backdrop-blur-md">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
+      <FixedTopBar
+        className="border-zinc-800/50 bg-[#0e0e10]/95"
+        contentClassName="mx-auto block max-w-7xl px-4 py-4 sm:px-6"
+        initialHeight={116}
+      >
           <div className="flex items-center justify-between gap-4">
             <h1 className="shrink-0 text-xl font-bold tracking-tight">Exercise Library</h1>
             <div className="flex items-center gap-5">
@@ -549,8 +549,7 @@ export function ExercisesLoading() {
             <Shimmer className="h-10 w-32 rounded-xl bg-zinc-800" />
             <Shimmer className="h-10 w-32 rounded-xl bg-zinc-800" />
           </div>
-        </div>
-      </div>
+      </FixedTopBar>
 
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 px-4 py-6 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 xl:grid-cols-4">
         {Array.from({ length: 12 }).map((_, index) => (

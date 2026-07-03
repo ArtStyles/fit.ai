@@ -3,6 +3,7 @@ import { Bell, PlusCircle, Search } from 'lucide-react'
 import { getDiscoverFeed, getFollowingFeed } from '@/app/actions/feed'
 import { getPendingRequestCount } from '@/app/actions/follows'
 import { FeedTabs } from '@/components/social/FeedTabs'
+import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
@@ -18,7 +19,7 @@ export default async function FeedPage() {
 
   return (
     <div className="mx-auto max-w-lg pb-24">
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur-md">
+      <FixedTopBar contentClassName="justify-between">
         <h1 className="text-lg font-bold">{t('Comunidad')}</h1>
         <div className="flex items-center gap-1">
           <Link href="/solicitudes" aria-label={t('Solicitudes de seguimiento')} className="relative flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground">
@@ -36,7 +37,7 @@ export default async function FeedPage() {
             <PlusCircle className="h-5 w-5" /> {t('Publicar')}
           </Link>
         </div>
-      </header>
+      </FixedTopBar>
       <FeedTabs discover={discover} following={following} />
     </div>
   )

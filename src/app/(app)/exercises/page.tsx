@@ -12,6 +12,7 @@ import ExerciseGrid from './ExerciseGrid'
 import type { Difficulty, ExerciseType } from '@/types/exercise'
 import { exerciseLanguage, localizeEquipment, localizeMuscleGroup } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 
 // ─── Dev guard ────────────────────────────────────────────────────────────────
 
@@ -140,8 +141,11 @@ export default async function ExercisesPage({
     <div className="min-h-screen bg-[#0e0e10] text-white">
 
       {/* ── Sticky toolbar ───────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 bg-[#0e0e10]/95 backdrop-blur-md border-b border-zinc-800/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+      <FixedTopBar
+        className="border-zinc-800/50 bg-[#0e0e10]/95"
+        contentClassName="mx-auto block max-w-7xl px-4 py-0 sm:px-6"
+        initialHeight={116}
+      >
           <div className="flex items-center justify-between py-4 gap-4">
             <h1 className="text-xl font-bold tracking-tight shrink-0">{t('Biblioteca de ejercicios')}</h1>
             <StatStrip total={total} page={page} totalPages={totalPages} t={t} />
@@ -154,8 +158,7 @@ export default async function ExercisesPage({
               total={total}
             />
           </div>
-        </div>
-      </div>
+      </FixedTopBar>
 
       {/* ── Grid + Modal ─────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
