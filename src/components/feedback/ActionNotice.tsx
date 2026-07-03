@@ -42,6 +42,22 @@ const NOTICES: Record<string, { title: string; description?: string }> = {
     title: 'Cuenta eliminada',
     description: 'Tu cuenta y todos tus datos se borraron de forma permanente.',
   },
+  admin_pro_granted: {
+    title: 'Plan Pro activado',
+    description: 'La cuenta ya tiene acceso a las funciones Pro.',
+  },
+  admin_subscription_cancelled: {
+    title: 'Suscripción cancelada',
+    description: 'La cuenta volvió al plan Free.',
+  },
+  admin_user_suspended: {
+    title: 'Cuenta suspendida',
+    description: 'El acceso quedó bloqueado con el motivo indicado.',
+  },
+  admin_user_reactivated: {
+    title: 'Cuenta reactivada',
+    description: 'El usuario puede volver a acceder a la aplicación.',
+  },
 }
 
 const ERRORS: Record<string, { title: string; description?: string }> = {
@@ -68,6 +84,26 @@ const ERRORS: Record<string, { title: string; description?: string }> = {
   delete_failed: {
     title: 'No se pudo eliminar la cuenta',
     description: 'Hubo un problema al borrar tus datos. Intenta de nuevo.',
+  },
+  admin_invalid_user: {
+    title: 'Usuario no válido',
+    description: 'No se encontró la cuenta indicada.',
+  },
+  admin_owner_protected: {
+    title: 'Cuenta protegida',
+    description: 'La cuenta propietaria no puede degradarse, suspenderse ni eliminarse.',
+  },
+  admin_invalid_action: {
+    title: 'Acción no válida',
+    description: 'La operación administrativa solicitada no está permitida.',
+  },
+  admin_suspension_fields: {
+    title: 'Faltan datos de suspensión',
+    description: 'Indica un motivo y una duración válidos.',
+  },
+  admin_update_failed: {
+    title: 'No se pudo actualizar la cuenta',
+    description: 'La operación administrativa falló. Intenta nuevamente.',
   },
 }
 

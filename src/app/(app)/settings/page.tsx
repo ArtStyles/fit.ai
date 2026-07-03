@@ -1,4 +1,4 @@
-import { BellRing, ChevronRight, Dumbbell, Languages, Ruler, UserCog, UserRound } from 'lucide-react'
+import { BellRing, ChevronRight, Dumbbell, Languages, Ruler, ShieldCheck, UserCog, UserRound } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -20,6 +20,9 @@ const SECTIONS = [
 export default async function SettingsPage() {
   const { user, profile } = await requireAppUserContext()
   const t = createTranslator(normalizeLanguage(profile.language))
+  const sections = profile.is_admin
+    ? [{ href: '/admin', label: 'Administración', icon: ShieldCheck }, ...SECTIONS]
+    : SECTIONS
 
   return (
     <SettingsScreen
@@ -30,7 +33,7 @@ export default async function SettingsPage() {
       icon={<UserRound className="h-5 w-5" />}
     >
       <nav className="overflow-hidden rounded-2xl border border-border/60 bg-muted/10">
-        {SECTIONS.map(({ href, label, icon: Icon }, i) => (
+        {sections.map(({ href, label, icon: Icon }, i) => (
           <PendingLink
             key={href}
             href={href}

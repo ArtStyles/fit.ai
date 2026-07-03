@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/', '/login', '/register', '/auth/callback', '/privacy']
+const PUBLIC_PATHS = ['/', '/login', '/register', '/auth/callback', '/privacy', '/pricing', '/suspended']
 
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
@@ -34,6 +34,23 @@ export async function middleware(request: NextRequest) {
   const isPublic = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith('/auth'))
 
   if (user) {
+    const { data: accessProfile } = await supabase
+      .from('profiles')
+      .select('account_status, suspended_until')
+      .eq('id', user.id)
+      .maybeSingle() as {
+        data: { account_status: 'active' | 'suspended'; suspended_until: string | null } | null
+      }
+
+    const suspensionActive = accessProfile?.account_status === 'suspended'
+      && (!accessProfile.suspended_until || new Date(accessProfile.suspended_until).getTime() > Date.now())
+
+    if (suspensionActive && pathname !== '/suspended' && !pathname.startsWith('/auth')) {
+      const redirectResponse = NextResponse.redirect(new URL('/suspended', request.url))
+      supabaseResponse.cookies.getAll().forEach(cookie => redirectResponse.cookies.set(cookie))
+      return redirectResponse
+    }
+
     requestHeaders.set('x-fitai-user-id', user.id)
     if (user.email) requestHeaders.set('x-fitai-user-email', user.email)
 

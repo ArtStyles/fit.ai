@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { isOwnerAdminEmail } from '@/lib/auth/identity'
 
 const CONFIRM_WORDS = new Set(['ELIMINAR', 'DELETE'])
 
@@ -28,6 +29,7 @@ export async function deleteAccount(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login?error=auth_required')
+  if (isOwnerAdminEmail(user.email)) redirect('/settings/cuenta?error=admin_owner_protected')
 
   const userId = user.id
   const admin = createServiceClient()

@@ -49,6 +49,12 @@ export interface Database {
           is_private: boolean                        // migration 024 — cuenta privada
           post_count: number                          // migration 024 — contador de posts (trigger)
           subscription_tier: 'free' | 'pro'
+          is_admin: boolean
+          account_status: 'active' | 'suspended'
+          suspension_reason: string | null
+          suspended_at: string | null
+          suspended_until: string | null
+          suspended_by: string | null
           language: 'es' | 'en'
           created_at: string
           updated_at: string
@@ -83,6 +89,12 @@ export interface Database {
           is_private?: boolean
           post_count?: number
           subscription_tier?: 'free' | 'pro'
+          is_admin?: boolean
+          account_status?: 'active' | 'suspended'
+          suspension_reason?: string | null
+          suspended_at?: string | null
+          suspended_until?: string | null
+          suspended_by?: string | null
           language?: 'es' | 'en'
         }
         Update: {
@@ -112,8 +124,37 @@ export interface Database {
           timezone?: string | null
           last_check_in_at?: string | null
           subscription_tier?: 'free' | 'pro'
+          is_admin?: boolean
+          account_status?: 'active' | 'suspended'
+          suspension_reason?: string | null
+          suspended_at?: string | null
+          suspended_until?: string | null
+          suspended_by?: string | null
           language?: 'es' | 'en'
         }
+        Relationships: []
+      }
+
+      admin_audit_logs: {
+        Row: {
+          id: string
+          admin_user_id: string | null
+          target_user_id: string | null
+          action: string
+          reason: string | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          admin_user_id?: string | null
+          target_user_id?: string | null
+          action: string
+          reason?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Update: never
         Relationships: []
       }
 
