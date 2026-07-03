@@ -154,7 +154,7 @@ export function ChatContainer({ initialConversations }: Props) {
 
   if (view === 'chat' && selected) {
     return (
-      <div className="flex h-dvh flex-col bg-background pb-16">
+      <div className="flex h-full flex-col bg-background pb-16">
         <FixedTopBar>
           <button
             type="button"

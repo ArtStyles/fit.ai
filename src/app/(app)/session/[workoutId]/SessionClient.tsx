@@ -128,7 +128,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
   }
 
   return (
-    <div className="flex flex-col h-dvh overflow-hidden bg-background">
+    <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* Header sticky */}
       <SessionHeader onFinish={finishSession} />
 

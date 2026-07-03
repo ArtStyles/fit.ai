@@ -23,7 +23,7 @@ export function PreSessionScreen({ progressions, onApply, onSkip }: Props) {
   const count = progressions.length
 
   return (
-    <div className="flex h-dvh flex-col bg-background pb-6">
+    <div className="flex h-full flex-col bg-background pb-6">
 
       {/* Contenido con scroll */}
       <div className="flex-1 overflow-y-auto">

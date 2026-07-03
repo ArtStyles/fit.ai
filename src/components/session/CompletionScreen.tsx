@@ -406,10 +406,10 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
   }
 
   return (
-    <div className="relative z-50 h-dvh snap-y snap-proximity overflow-y-auto scroll-smooth bg-background">
+    <div className="relative z-50 h-full snap-y snap-proximity overflow-y-auto overscroll-y-none scroll-smooth bg-background">
       <SyncStatusIndicator className="fixed bottom-4 right-4 z-50 rounded-full border border-border/60 bg-background/90 px-2 py-1 shadow-lg backdrop-blur-sm" />
 
-      <section className="flex min-h-dvh snap-start items-center px-5 py-10">
+      <section className="flex min-h-full snap-start items-center px-5 py-10">
         <motion.div
           variants={containerMotion}
           initial="hidden"
@@ -537,7 +537,7 @@ export function CompletionScreen({ workoutId, onClearBackup }: Props) {
       </section>
 
       {saved && (
-        <section id="next-session-view" className="flex min-h-dvh snap-start items-center px-5 py-10">
+        <section id="next-session-view" className="flex min-h-full snap-start items-center px-5 py-10">
           <motion.div
             variants={containerMotion}
             initial="hidden"
