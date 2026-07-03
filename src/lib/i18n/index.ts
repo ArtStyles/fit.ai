@@ -247,6 +247,7 @@ const ENGLISH: Record<string, string> = {
   'Elige un plan': 'Choose a plan',
   'planes': 'plans',
   'Usar': 'Use',
+  'Cambiando plan': 'Switching plan',
   'Nuevo plan con IA': 'New AI plan',
   'Crear manualmente': 'Create manually',
   'Elimina un plan para crear otro.': 'Delete a plan to create another one.',

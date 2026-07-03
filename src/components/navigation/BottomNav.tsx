@@ -1,7 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { BarChart2, CalendarDays, Home, Settings, Users, type LucideIcon } from 'lucide-react'
+import { BarChart2, Dumbbell, Home, Settings, Users, type LucideIcon } from 'lucide-react'
 import { PendingLink } from './PendingLink'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
@@ -18,7 +18,7 @@ type Tab = {
 
 const TABS: Tab[] = [
   { href: '/dashboard', label: 'Inicio',     icon: Home         },
-  { href: '/plan',      label: 'Plan',       icon: CalendarDays },
+  { href: '/plan',      label: 'Rutina',     icon: Dumbbell     },
   { href: '/feed',      label: 'Comunidad',  icon: Users        },
   { href: '/settings',  label: 'Ajustes',    icon: Settings     },
   { href: '/history',   label: 'Historial',  icon: BarChart2    },

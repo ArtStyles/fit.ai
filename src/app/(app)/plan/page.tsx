@@ -163,9 +163,11 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
                   ) : (
                     <form action={activatePlan} className="min-w-0 flex-1">
                       <input type="hidden" name="planId" value={plan.id} />
-                      <button
-                        type="submit"
-                        className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left outline-none transition-colors hover:bg-muted/20 focus-visible:ring-2 focus-visible:ring-violet-500"
+                      <SubmitButton
+                        label={t('Usar')}
+                        pendingLabel={t('Cambiando plan')}
+                        variant="ghost"
+                        className="h-auto w-full justify-start gap-3 rounded-lg px-2 py-1.5 text-left font-normal hover:bg-muted/20 hover:text-foreground focus-visible:ring-violet-500"
                       >
                         <span className="h-8 w-8 shrink-0 rounded-full border-2 border-border/70" />
                         <span className="min-w-0 flex-1">
@@ -173,7 +175,7 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
                           <span className="mt-0.5 block truncate text-xs text-muted-foreground">{metadata}</span>
                         </span>
                         <span className="text-xs font-semibold text-violet-300">{t('Usar')}</span>
-                      </button>
+                      </SubmitButton>
                     </form>
                   )}
                   <form action={deletePlan}>
