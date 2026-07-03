@@ -19,7 +19,7 @@ export function ChatFab() {
       href="/chat"
       showSpinner={false}
       aria-label={t('Abrir Coach IA')}
-      className="group fixed bottom-[4.5rem] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-600/40 ring-1 ring-white/10 transition-transform duration-200 active:scale-95"
+      className="fitai-bottom-nav-offset group fixed right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-600/40 ring-1 ring-white/10 transition-transform duration-200 active:scale-95"
     >
       {/* soft sonar halo (single ping; suppressed under prefers-reduced-motion) */}
       <span

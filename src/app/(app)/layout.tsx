@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <AndroidBackHandler />
         <SocialPushNotificationsInit />
         <TimezoneSync current={profile.timezone} />
-        <main className="flex-1 overflow-x-hidden">
+        <main className="fitai-safe-content-bottom flex-1 overflow-x-hidden">
           <PageTransition>{children}</PageTransition>
         </main>
         <ChatFab />

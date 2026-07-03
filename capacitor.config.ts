@@ -12,6 +12,11 @@ const config: CapacitorConfig = {
     backgroundColor: '#0d0d14',
   },
   plugins: {
+    SystemBars: {
+      insetsHandling: 'css',
+      style: 'DARK',
+      hidden: false,
+    },
     SplashScreen: {
       // Lo ocultamos manualmente al cargar la web (NativeAppInit), porque con
       // server.url remoto el contenido puede tardar y autohide dejaría un flash.

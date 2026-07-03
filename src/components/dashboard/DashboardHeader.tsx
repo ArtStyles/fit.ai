@@ -41,7 +41,7 @@ export function DashboardHeader({
   const momentum = getMomentumStyle(momentumScore)
 
   return (
-    <header className="mx-auto flex max-w-lg items-center gap-3 px-4 pb-2 pt-3">
+    <header className="mx-auto flex max-w-lg items-center gap-3 px-4 pb-2 pt-0">
       <AvatarUploader avatarUrl={avatarUrl} initials={initials} size="header" />
 
       <div className="min-w-0 flex-1">

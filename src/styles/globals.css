@@ -33,6 +33,13 @@
     --ring: 222.2 84% 4.9%;
 
     --radius: 0.5rem;
+
+    /* Capacitor 8 injects --safe-area-inset-* on Android WebViews that need
+       a fallback; modern WebViews and iOS provide the env() values directly. */
+    --app-safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --app-safe-area-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+    --app-safe-area-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+    --app-safe-area-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   }
 
   .dark {
@@ -85,6 +92,9 @@
   body {
     @apply bg-background text-foreground;
     min-height: 100dvh;
+    padding-top: var(--app-safe-area-top);
+    padding-right: var(--app-safe-area-right);
+    padding-left: var(--app-safe-area-left);
   }
 }
 
@@ -135,6 +145,26 @@
   /* Compact selection feedback for the persistent bottom navigation. */
   .fitai-nav-selected {
     animation: fitai-nav-selected 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  /* Keep controls safe while their surfaces continue behind the system bars. */
+  .fitai-safe-content-bottom {
+    padding-bottom: var(--app-safe-area-bottom);
+  }
+
+  .fitai-safe-bottom {
+    padding-right: var(--app-safe-area-right);
+    padding-bottom: var(--app-safe-area-bottom);
+    padding-left: var(--app-safe-area-left);
+  }
+
+  .fitai-bottom-nav-offset {
+    bottom: calc(4.5rem + var(--app-safe-area-bottom));
+  }
+
+  /* Sticky controls must remain below the status bar after scrolling. */
+  .sticky.top-0 {
+    top: var(--app-safe-area-top);
   }
 }
 

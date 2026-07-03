@@ -33,7 +33,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label={t('Navegación principal')}
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border/30 bg-background"
+      className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/30 bg-background"
     >
       <div className="mx-auto flex h-14 max-w-lg items-center justify-around px-2">
         {TABS.map(({ href, label, icon: Icon }) => {
