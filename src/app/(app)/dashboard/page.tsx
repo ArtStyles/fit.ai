@@ -6,6 +6,7 @@ import { AINotesBanner }      from '@/components/dashboard/AINotesBanner'
 import { CheckInBanner }      from '@/components/dashboard/CheckInBanner'
 import { ProgressHighlights } from '@/components/dashboard/ProgressHighlights'
 import { DailyBrief }         from '@/components/dashboard/DailyBrief'
+import { DashboardPromoBanner } from '@/components/dashboard/DashboardPromoBanner'
 import { PendingLink }        from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
@@ -23,6 +24,11 @@ import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 import type { Database } from '@/types/database'
 import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import {
+  DASHBOARD_BANNER_SLOT,
+  isDashboardBannerVisible,
+  type DashboardBannerData,
+} from '@/lib/dashboard/banner'
 
 export const metadata = { title: 'Dashboard · FitAI' }
 
@@ -383,12 +389,23 @@ export default async function DashboardPage() {
   const todayStr  = getLocalDateString(new Date(), tz)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
-  const dashboardPayload = await loadDashboardPayload(
-    supabase,
-    user.id,
-    weekStart,
-    addCalendarDays(new Date(), -30, tz),
-  )
+  const [dashboardPayload, { data: bannerRaw }] = await Promise.all([
+    loadDashboardPayload(
+      supabase,
+      user.id,
+      weekStart,
+      addCalendarDays(new Date(), -30, tz),
+    ),
+    supabase
+      .from('dashboard_banners')
+      .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
+      .eq('slot', DASHBOARD_BANNER_SLOT)
+      .maybeSingle(),
+  ])
+  const bannerCandidate = bannerRaw as DashboardBannerData | null
+  const dashboardBanner = isDashboardBannerVisible(bannerCandidate)
+    ? bannerCandidate
+    : null
   const {
     planRaw,
     allRecentLogs,
@@ -527,6 +544,15 @@ export default async function DashboardPage() {
       />
 
       <main className="mx-auto max-w-lg px-4">
+        {dashboardBanner && (
+          <section
+            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
+            style={{ animationDelay: '40ms' }}
+          >
+            <DashboardPromoBanner banner={dashboardBanner} />
+          </section>
+        )}
+
         {showAiBanner && (
           <section
             className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"

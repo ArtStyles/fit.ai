@@ -58,6 +58,10 @@ const NOTICES: Record<string, { title: string; description?: string }> = {
     title: 'Cuenta reactivada',
     description: 'El usuario puede volver a acceder a la aplicación.',
   },
+  admin_banner_saved: {
+    title: 'Banner guardado',
+    description: 'El contenido del dashboard quedó actualizado.',
+  },
 }
 
 const ERRORS: Record<string, { title: string; description?: string }> = {
@@ -104,6 +108,18 @@ const ERRORS: Record<string, { title: string; description?: string }> = {
   admin_update_failed: {
     title: 'No se pudo actualizar la cuenta',
     description: 'La operación administrativa falló. Intenta nuevamente.',
+  },
+  admin_banner_invalid: {
+    title: 'Revisa el banner',
+    description: 'Completa el título, las fechas y el enlace con valores válidos.',
+  },
+  admin_banner_image: {
+    title: 'Imagen no válida',
+    description: 'Usa JPG, PNG, WebP o AVIF con un máximo de 8 MB.',
+  },
+  admin_banner_update_failed: {
+    title: 'No se pudo guardar el banner',
+    description: 'Comprueba que la migración 030 esté aplicada e intenta nuevamente.',
   },
 }
 

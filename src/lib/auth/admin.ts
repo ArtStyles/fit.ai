@@ -5,6 +5,8 @@ import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { isOwnerAdminEmail } from '@/lib/auth/identity'
+import type { DashboardBannerData } from '@/lib/dashboard/banner'
+import { DASHBOARD_BANNER_SLOT } from '@/lib/dashboard/banner'
 
 export type AdminUserRecord = {
   id: string
@@ -24,6 +26,11 @@ export type AdminUserRecord = {
 export type AdminUsersData = {
   users: AdminUserRecord[]
   suspensionEnabled: boolean
+}
+
+export type AdminDashboardBannerData = {
+  banner: DashboardBannerData | null
+  enabled: boolean
 }
 
 export async function requireAdminUserContext() {
@@ -109,4 +116,18 @@ export async function listAdminUsers(): Promise<AdminUsersData> {
   })
 
   return { users, suspensionEnabled: !accessError }
+}
+
+export async function getAdminDashboardBanner(): Promise<AdminDashboardBannerData> {
+  const { service } = await requireAdminUserContext()
+  const { data, error } = await service
+    .from('dashboard_banners')
+    .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
+    .eq('slot', DASHBOARD_BANNER_SLOT)
+    .maybeSingle()
+
+  return {
+    banner: error ? null : data,
+    enabled: !error,
+  }
 }

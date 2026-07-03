@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import { ArrowLeft, Crown, Search, ShieldCheck, UserRoundCheck, UsersRound } from 'lucide-react'
 import { AdminUserActions } from '@/components/admin/AdminUserActions'
+import { DashboardBannerEditor } from '@/components/admin/DashboardBannerEditor'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { listAdminUsers } from '@/lib/auth/admin'
+import { getAdminDashboardBanner, listAdminUsers } from '@/lib/auth/admin'
 
 export const metadata: Metadata = { title: 'Administración' }
 
@@ -21,7 +22,11 @@ function initials(name: string | null, email: string): string {
 }
 
 export default async function AdminPage({ searchParams }: { searchParams?: { q?: string } }) {
-  const { users, suspensionEnabled } = await listAdminUsers()
+  const [userData, bannerData] = await Promise.all([
+    listAdminUsers(),
+    getAdminDashboardBanner(),
+  ])
+  const { users, suspensionEnabled } = userData
   const query = searchParams?.q?.trim().toLowerCase() ?? ''
   const visibleUsers = query
     ? users.filter(user => [user.email, user.fullName, user.username].some(value => value?.toLowerCase().includes(query)))
@@ -71,6 +76,10 @@ export default async function AdminPage({ searchParams }: { searchParams?: { q?:
               <div><p className="text-2xl font-bold">{suspendedCount}</p><p className="text-xs text-muted-foreground">Suspendidas</p></div>
             </CardContent>
           </Card>
+        </section>
+
+        <section className="mt-6" aria-label="Contenido del dashboard">
+          <DashboardBannerEditor initialBanner={bannerData.banner} enabled={bannerData.enabled} />
         </section>
 
         <form method="get" className="relative mt-6">

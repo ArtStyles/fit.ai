@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 011_history_and_exercise_payloads
+ * Last updated: migration 030_dashboard_banner
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -159,6 +159,41 @@ export interface Database {
       }
 
       // ─── exercises ────────────────────────────────────────────────────────
+
+      dashboard_banners: {
+        Row: {
+          slot: 'dashboard-primary'
+          kind: 'announcement' | 'event' | 'promotion' | 'info'
+          title: string
+          description: string | null
+          image_url: string | null
+          cta_label: string | null
+          cta_href: string | null
+          status: 'draft' | 'active' | 'paused'
+          starts_on: string | null
+          ends_on: string | null
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          slot?: 'dashboard-primary'
+          kind?: 'announcement' | 'event' | 'promotion' | 'info'
+          title: string
+          description?: string | null
+          image_url?: string | null
+          cta_label?: string | null
+          cta_href?: string | null
+          status?: 'draft' | 'active' | 'paused'
+          starts_on?: string | null
+          ends_on?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['dashboard_banners']['Insert']>
+        Relationships: []
+      }
 
       exercises: {
         Row: {
