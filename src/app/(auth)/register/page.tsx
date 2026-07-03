@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import { TrendingUp, Users, Award } from 'lucide-react'
 import { VekiraLogo } from '@/components/branding/VekiraLogo'
 import { RegisterForm } from './RegisterForm'
+import Link from 'next/link'
+import { BrandTopBar } from '@/components/navigation/BrandTopBar'
 
 export const metadata: Metadata = { title: 'Crear cuenta' }
 
@@ -22,7 +24,16 @@ export default function RegisterPage({ searchParams }: { searchParams?: { plan?:
     : null
 
   return (
-    <div className="flex min-h-screen">
+    <div className="min-h-screen bg-background">
+      <BrandTopBar
+        right={(
+          <Link href="/login" className="inline-flex h-11 items-center rounded-xl px-3 text-sm font-semibold text-violet-300 transition-colors hover:bg-violet-500/10 hover:text-violet-200">
+            Iniciar sesión
+          </Link>
+        )}
+      />
+
+      <div className="flex min-h-[calc(100dvh-4.25rem)]">
 
       {/* ── Left: Form panel ── */}
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 sm:px-12 bg-background">
@@ -127,6 +138,7 @@ export default function RegisterPage({ searchParams }: { searchParams?: { plan?:
         <p className="relative text-xs text-violet-400/50">
           © {new Date().getFullYear()} Vekira. Todos los derechos reservados.
         </p>
+      </div>
       </div>
     </div>
   )

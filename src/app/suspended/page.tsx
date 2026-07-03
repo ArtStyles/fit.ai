@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getAppUserContext } from '@/lib/auth/server'
 import { isSuspensionActive } from '@/lib/auth/access'
+import { BrandTopBar } from '@/components/navigation/BrandTopBar'
 
 export const metadata: Metadata = { title: 'Cuenta suspendida' }
 
@@ -23,8 +24,10 @@ export default async function SuspendedPage() {
   if (!isSuspensionActive(profile)) redirect('/dashboard')
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-      <Card className="w-full max-w-md border-red-500/25 bg-card/70">
+    <div className="min-h-screen bg-background">
+      <BrandTopBar />
+      <main className="flex min-h-[calc(100dvh-4.25rem)] items-center justify-center px-4 py-12">
+        <Card className="w-full max-w-md border-red-500/25 bg-card/70">
         <CardContent className="p-6 text-center sm:p-8">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 text-red-300">
             <ShieldAlert className="h-6 w-6" />
@@ -53,7 +56,8 @@ export default async function SuspendedPage() {
             <Button type="submit" variant="outline" className="w-full">Cerrar sesión</Button>
           </form>
         </CardContent>
-      </Card>
-    </main>
+        </Card>
+      </main>
+    </div>
   )
 }

@@ -9,8 +9,9 @@ import {
   Sparkles,
   TrendingUp,
 } from 'lucide-react'
-import { VekiraLogo, VekiraMark } from '@/components/branding/VekiraLogo'
+import { VekiraMark } from '@/components/branding/VekiraLogo'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { BrandTopBar } from '@/components/navigation/BrandTopBar'
 
 const BENEFITS = [
   { icon: BrainCircuit, label: 'Se adapta a tu progreso' },
@@ -30,17 +31,19 @@ export default function Home() {
         <div className="absolute -right-40 bottom-[-10rem] h-[32rem] w-[32rem] rounded-full bg-indigo-700/15 blur-[120px]" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 sm:px-8">
-        <header className="flex h-20 items-center justify-between border-b border-white/[0.07]">
-          <VekiraLogo wordmarkClassName="text-white" />
+      <BrandTopBar
+        className="border-white/[0.07] bg-[#09090d]/90"
+        right={(
           <PendingLink
             href="/login"
             className="inline-flex h-10 items-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white/80 transition-colors hover:border-violet-400/40 hover:bg-violet-500/10 hover:text-white"
           >
             Iniciar sesión
           </PendingLink>
-        </header>
+        )}
+      />
 
+      <div className="relative mx-auto flex min-h-[calc(100dvh-4.25rem)] w-full max-w-6xl flex-col px-5 sm:px-8">
         <section className="grid flex-1 items-center gap-14 py-12 lg:grid-cols-[1.02fr_0.98fr] lg:gap-20 lg:py-16">
           <div className="max-w-xl">
             <div className="animate-in fade-in slide-in-from-bottom-3 inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-500/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.15em] text-violet-200 duration-500">

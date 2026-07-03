@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import { ArrowLeft, ShieldCheck } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 
 export const metadata: Metadata = {
   title: 'Política de privacidad',
@@ -24,26 +24,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-background">
+      <PageTopBar
+        title="Política de privacidad"
+        subtitle={`Última actualización: ${LAST_UPDATED}`}
+        backHref="/"
+        backLabel="Volver"
+        icon={<ShieldCheck className="h-5 w-5" />}
+      />
+
       <main className="mx-auto max-w-2xl px-5 py-10">
-        <Link
-          href="/"
-          className="inline-flex items-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Volver
-        </Link>
-
-        <header className="mt-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="font-display text-3xl font-extrabold text-foreground">Política de privacidad</h1>
-            <p className="text-sm text-muted-foreground">Última actualización: {LAST_UPDATED}</p>
-          </div>
-        </header>
-
-        <div className="mt-8 space-y-8">
+        <div className="space-y-8">
           <p className="text-sm leading-relaxed text-muted-foreground">
             En Vekira tratamos tus datos con cuidado. Esta política explica qué información recopilamos, con qué fin,
             con quién la compartimos y qué derechos tienes sobre ella. Al usar Vekira aceptas las prácticas aquí

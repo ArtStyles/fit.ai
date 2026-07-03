@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Zap, BarChart3, Brain } from 'lucide-react'
 import { VekiraLogo } from '@/components/branding/VekiraLogo'
 import { LoginForm } from './LoginForm'
+import { BrandTopBar } from '@/components/navigation/BrandTopBar'
 
 export const metadata: Metadata = { title: 'Iniciar sesión' }
 
@@ -14,7 +15,16 @@ const FEATURES = [
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-screen">
+    <div className="min-h-screen bg-background">
+      <BrandTopBar
+        right={(
+          <Link href="/register" className="inline-flex h-11 items-center rounded-xl px-3 text-sm font-semibold text-violet-300 transition-colors hover:bg-violet-500/10 hover:text-violet-200">
+            Crear cuenta
+          </Link>
+        )}
+      />
+
+      <div className="flex min-h-[calc(100dvh-4.25rem)]">
 
       {/* ── Left: Branding panel ── */}
       <div className="relative hidden lg:flex lg:w-[45%] flex-col justify-between p-12 bg-gradient-to-br from-indigo-950 via-violet-950 to-indigo-900 overflow-hidden">
@@ -103,6 +113,7 @@ export default function LoginPage() {
             .
           </p>
         </div>
+      </div>
       </div>
     </div>
   )

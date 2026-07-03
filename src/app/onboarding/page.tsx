@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getAppUserContext } from '@/lib/auth/server'
 import OnboardingWizard from './OnboardingWizard'
+import { BrandTopBar } from '@/components/navigation/BrandTopBar'
 
 export const metadata = { title: 'Bienvenido a Vekira' }
 
@@ -10,5 +11,10 @@ export default async function OnboardingPage() {
 
   if (profile?.onboarding_done) redirect('/dashboard')
 
-  return <OnboardingWizard />
+  return (
+    <div className="min-h-screen bg-background">
+      <BrandTopBar />
+      <OnboardingWizard />
+    </div>
+  )
 }
