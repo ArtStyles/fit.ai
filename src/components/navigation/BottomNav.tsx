@@ -33,9 +33,9 @@ export function BottomNav() {
   return (
     <nav
       aria-label={t('Navegación principal')}
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border/40 bg-background/90 backdrop-blur-md"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-border/30 bg-background"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2">
+      <div className="mx-auto flex h-14 max-w-lg items-center justify-around px-2">
         {TABS.map(({ href, label, icon: Icon }) => {
           const isActive =
             pathname === href ||
