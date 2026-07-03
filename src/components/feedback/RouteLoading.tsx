@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   Bell,
   CalendarRange,
-  Dumbbell,
   History,
   Languages,
   PlusCircle,
@@ -201,32 +200,65 @@ export function DashboardLoading() {
 export function PlanLoading() {
   return (
     <AppLoadingShell className="pb-16">
-      <BackHeader title="Plan completo" subtitle="Rutina activa y ejercicios" icon={Dumbbell} />
-
-      <section className="mt-6">
-        <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
-          Resumen del plan
-        </p>
-        <Shimmer className="mt-4 h-9 w-4/5 rounded" />
-        <Shimmer className="mt-3 h-4 w-full rounded bg-muted/40" />
-        <Shimmer className="mt-2 h-4 w-3/5 rounded bg-muted/40" />
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Shimmer className="h-7 w-24 rounded-full bg-violet-500/15" />
-          <Shimmer className="h-7 w-28 rounded-full bg-muted/40" />
-          <Shimmer className="h-7 w-24 rounded-full bg-muted/40" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="inline-flex h-10 items-center text-sm font-medium text-muted-foreground">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Dashboard
         </div>
+        <Shimmer className="h-10 w-10 rounded-full bg-muted/30" />
+      </div>
+
+      <section className="mt-5 flex min-h-16 items-center gap-3 rounded-2xl border border-border/60 bg-muted/10 px-4 py-3" aria-label="Cargando selector de planes">
+        <Shimmer className="h-10 w-10 shrink-0 rounded-xl bg-violet-500/15" />
+        <div className="min-w-0 flex-1">
+          <Shimmer className="h-4 w-40 rounded" />
+          <Shimmer className="mt-2 h-3 w-24 rounded bg-muted/40" />
+        </div>
+        <Shimmer className="h-4 w-4 rounded bg-muted/40" />
       </section>
 
-      <section className="mt-6 rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <p className="text-sm font-semibold text-foreground">Editar resumen</p>
-        <div className="mt-4 space-y-3">
-          <Shimmer className="h-11 rounded-md bg-muted/40" />
-          <Shimmer className="h-11 rounded-md bg-muted/40" />
-          <Shimmer className="h-24 rounded-md bg-muted/40" />
+      <header className="mt-6">
+        <Shimmer className="h-3 w-20 rounded bg-violet-500/20" />
+        <Shimmer className="mt-3 h-8 w-3/4 rounded" />
+        <Shimmer className="mt-3 h-4 w-2/5 rounded bg-muted/40" />
+      </header>
+
+      <section className="mt-6 rounded-2xl border border-violet-500/25 bg-violet-500/[0.08] p-5" aria-label="Cargando entrenamiento de hoy">
+        <Shimmer className="h-3 w-32 rounded bg-violet-500/20" />
+        <Shimmer className="mt-4 h-6 w-2/3 rounded" />
+        <div className="mt-3 flex gap-4">
+          <Shimmer className="h-3 w-24 rounded bg-muted/40" />
+          <Shimmer className="h-3 w-16 rounded bg-muted/40" />
         </div>
+        <Shimmer className="mt-5 h-11 w-full rounded-xl bg-violet-500/20" />
       </section>
 
-      <CardSkeletons count={4} className="mt-8" />
+      <div className="mt-6 grid grid-cols-2 rounded-xl border border-border/60 bg-muted/20 p-1">
+        <Shimmer className="h-10 rounded-lg bg-background/70" />
+        <div className="h-10" />
+      </div>
+
+      <div className="mt-4 space-y-3" aria-label="Cargando semana de entrenamiento">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={index}
+            className="flex min-h-20 items-center gap-3 rounded-2xl border border-border/60 bg-muted/10 px-4 py-3"
+          >
+            <Shimmer
+              className={cn(
+                'h-11 w-11 shrink-0 rounded-xl bg-muted/40',
+                index === 0 && 'bg-violet-500/15',
+              )}
+              style={{ animationDelay: `${index * 70}ms` } as React.CSSProperties}
+            />
+            <div className="min-w-0 flex-1">
+              <Shimmer className="h-4 w-2/3 rounded" />
+              <Shimmer className="mt-2 h-3 w-1/2 rounded bg-muted/40" />
+            </div>
+            <Shimmer className="h-4 w-4 rounded bg-muted/40" />
+          </div>
+        ))}
+      </div>
     </AppLoadingShell>
   )
 }
