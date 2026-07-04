@@ -1,4 +1,25 @@
-import type { TrainingProfile, ValidationIssue } from './types'
+import type { MovementLimitation, ReadinessStatus, TrainingProfile, ValidationIssue } from './types'
+
+export interface ReadinessReviewAssessment {
+  warningSymptoms: string[]
+  knownDisease: boolean
+  recentSurgery: boolean
+  medicallyCleared: boolean
+  limitations: MovementLimitation[]
+}
+
+export function getReadinessReviewStatus(input: ReadinessReviewAssessment): ReadinessStatus {
+  const requiresClearance =
+    (input.warningSymptoms.length > 0 && !input.medicallyCleared) ||
+    (input.recentSurgery && !input.medicallyCleared) ||
+    (input.knownDisease && !input.medicallyCleared) ||
+    input.limitations.some(limitation =>
+      !limitation.clinicianCleared || limitation.status === 'acute',
+    )
+
+  if (requiresClearance) return 'professional_clearance_required'
+  return input.limitations.length > 0 ? 'modified' : 'cleared'
+}
 
 export function validateReadiness(profile: TrainingProfile): ValidationIssue[] {
   const issues: ValidationIssue[] = []

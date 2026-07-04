@@ -124,6 +124,32 @@ interface RegenerationContext {
   stalledExerciseIds: string[]
 }
 
+async function recordEvidenceGenerationFailure(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  mode: NonNullable<GeneratePlanOptions['mode']>,
+  engineVersion: string | undefined,
+  errorCode: string,
+  metadata: Record<string, Json> = {},
+): Promise<void> {
+  const { error } = await (supabase.rpc as any)('record_plan_generation_failure', {
+    p_mode: mode,
+    p_engine_version: engineVersion ?? null,
+    p_error_code: errorCode,
+    p_metadata: metadata,
+  })
+  if (error) console.error('[generatePlan] No se pudo registrar el fallo:', error)
+}
+
+async function recordEvidenceGenerationSuccess(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planId: string,
+): Promise<void> {
+  const { error } = await (supabase.rpc as any)('record_plan_generation_success', {
+    p_plan_id: planId,
+  })
+  if (error) console.error('[generatePlan] No se pudo registrar el éxito:', error)
+}
+
 async function buildRegenerationContext(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -465,6 +491,13 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
         : generateEvidencePlan(engineInput)
 
     if (!engineResult.success || !engineResult.plan) {
+      await recordEvidenceGenerationFailure(
+        supabase,
+        mode,
+        engineResult.metadata.engineVersion,
+        engineResult.issues[0]?.code ?? 'engine_validation',
+        { issues: engineResult.issues as unknown as Json },
+      )
       return {
         success: false,
         error: engineResult.issues[0]?.message ?? 'No se pudo crear un plan válido.',
@@ -533,13 +566,29 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     })
 
     if (rpcError || !newPlanId) {
+      await recordEvidenceGenerationFailure(
+        supabase,
+        mode,
+        engineResult.metadata.engineVersion,
+        rpcError?.message?.includes('PLAN_RATE_LIMIT') ? 'rate_limit' : 'persistence',
+      )
       console.error('[generatePlan] create_engine_plan falló:', rpcError)
+      if (rpcError?.message?.includes('PLAN_RATE_LIMIT')) {
+        return {
+          success: false,
+          error: mode === 'weekly_regeneration'
+            ? 'Alcanzaste el limite de 2 regeneraciones en 7 dias.'
+            : 'Alcanzaste el limite de 3 generaciones en 24 horas.',
+        }
+      }
       return { success: false, error: 'Error al guardar el plan. El plan anterior no fue modificado.' }
     }
 
     if (createPolicy.replacingExisting) {
       await pruneExcessPlansForFreeUser(supabase, user.id, newPlanId, activePlan?.id)
     }
+
+    await recordEvidenceGenerationSuccess(supabase, newPlanId)
 
     return {
       success: true,

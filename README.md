@@ -146,6 +146,7 @@ Aplica las migraciones SQL en este orden:
 029_admin_accounts.sql
 030_dashboard_banner.sql
 031_reclassify_exercise_cardio.sql
+032_plan_generation_reliability.sql
 ```
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
@@ -197,6 +198,12 @@ Limites configurados:
 - Regeneracion semanal: 2 generaciones exitosas cada 7 dias.
 - Presupuesto global diario: opcional mediante `MAX_DAILY_API_SPEND_USD`.
 
+La migracion `032_plan_generation_reliability.sql` aplica los limites del motor
+en PostgreSQL, serializa generaciones concurrentes por usuario y hace
+idempotentes los reintentos durante 30 segundos. `pnpm audit:plans` revisa la
+cobertura del catalogo, planes incompletos, duplicados activos y la tasa diaria
+de exito del motor.
+
 ## Android y PWA
 
 La PWA se genera durante `pnpm build`; en desarrollo el service worker esta
@@ -224,6 +231,7 @@ pnpm cap:android
 | `pnpm test:watch` | Ejecuta Vitest en modo watch. |
 | `pnpm test:ui` | Abre la interfaz de Vitest. |
 | `pnpm seed:exercises` | Reemplaza el catálogo de ejercicios con free-exercise-db (resetea datos de entrenamiento de prueba). |
+| `pnpm audit:plans` | Audita cobertura del catálogo, integridad de planes y métricas del motor sin modificar datos. |
 | `pnpm translate:setup` | Instala el motor local Argos Translate. |
 | `pnpm translate:exercises:es` | Traduce localmente el siguiente lote de 25 ejercicios sin borrar planes ni historial. |
 | `pnpm cap:sync` | Sincroniza recursos y plugins de Capacitor. |
