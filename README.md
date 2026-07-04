@@ -2,8 +2,7 @@
 
 Vekira es una aplicacion de entrenamiento personalizada, orientada a movil, que
 genera planes semanales, guia sesiones y registra progresion. El flujo principal
-usa Next.js y Supabase; la generacion de planes puede usar Anthropic o un mock
-local.
+usa Next.js y Supabase; la generacion de planes usa un motor determinista local.
 
 ## Estado actual
 
@@ -62,15 +61,15 @@ conectado de extremo a extremo:
 - `.env.example` incluye `NEXT_PUBLIC_APP_URL`, pero el codigo actual no consume
   esa variable. `NEXT_PUBLIC_APP_TIME_ZONE` actua como zona de fallback cuando el
   perfil no tiene zona horaria propia.
-- No hay pruebas end-to-end; la cobertura actual se concentra en generacion mock,
-  scheduling, acceso a sesiones, guardado y progresion.
+- No hay pruebas end-to-end; la cobertura actual se concentra en el motor de
+  planes, scheduling, acceso a sesiones, guardado y progresion.
 
 ## Stack
 
 - Next.js 14 App Router, React 18 y TypeScript.
 - Tailwind CSS, Radix UI, Lucide y Framer Motion.
 - Supabase Auth, Postgres, RLS y Server Actions.
-- Anthropic SDK para generacion real de planes.
+- Anthropic SDK para chat e interpretacion de ajustes.
 - Zustand para el estado de la sesion activa.
 - Vitest para pruebas.
 - `@ducanh2912/next-pwa` para PWA.
@@ -101,13 +100,9 @@ Configura `.env.local` antes de iniciar la app.
 | `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto Supabase. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cliente web y autenticacion. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Operaciones server/admin, limites IA, borrado de cuenta y seed. Nunca exponer al cliente. |
-| `ANTHROPIC_API_KEY` | Activa generacion real de planes. Si falta, se usa mock. |
+| `ANTHROPIC_API_KEY` | Activa chat e interpretacion de ajustes con Claude. Si falta, se usa el fallback local. |
 | `USE_AI_MOCK` | Con `true`, usa respuestas locales para chat e interpretación de ajustes. |
-| `PLAN_GENERATION_MODE` | `evidence_engine` (default) o `legacy_ai` para rollback temporal. |
-| `EVIDENCE_ENGINE_BETA_USER_IDS` | UUIDs separados por coma que limitan el motor a una beta controlada. Vacío lo habilita para todos. |
 | `MAX_DAILY_API_SPEND_USD` | Limite global opcional de gasto diario de Anthropic. |
-| `ANTHROPIC_MODEL_PRIMARY` | Modelo primario opcional. Default: `claude-sonnet-4-5`. |
-| `ANTHROPIC_MODEL_FALLBACK` | Modelo fallback opcional. Default: `claude-opus-4-5`. |
 | `ANTHROPIC_MODEL_COACH` | Modelo opcional del coach (chat y ajustes). Default: `claude-haiku-4-5`. |
 | `ADMIN_EMAILS` | Emails separados por coma con acceso a `/exercises` en produccion. |
 
@@ -147,6 +142,7 @@ Aplica las migraciones SQL en este orden:
 030_dashboard_banner.sql
 031_reclassify_exercise_cardio.sql
 032_plan_generation_reliability.sql
+033_remove_legacy_plan_generator.sql
 ```
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
@@ -183,20 +179,17 @@ La app queda disponible en `http://localhost:3000`.
 
 ## Motor de planes e IA
 
-La generación de planes usa por defecto el motor determinista local. El motor no
-consume tokens, valida seguridad, equipamiento, duración y dosis, y guarda cada
-plan de forma transaccional. `legacy_ai` conserva temporalmente el generador
-anterior como rollback.
+La generación de planes usa exclusivamente el motor determinista local. El motor
+no consume tokens, valida seguridad, equipamiento, duración y dosis, y guarda
+cada plan de forma transaccional.
 
 El chat y la interpretación de peticiones siguen usando Anthropic cuando existe
 una API key. Una petición de ajuste produce una intención tipada; el motor
 recalcula y valida el plan completo antes de mostrar la vista previa.
 
-Limites configurados:
-
-- Plan inicial: 3 generaciones exitosas cada 24 horas.
-- Regeneracion semanal: 2 generaciones exitosas cada 7 dias.
-- Presupuesto global diario: opcional mediante `MAX_DAILY_API_SPEND_USD`.
+Los limites de planes se aplican de forma transaccional en PostgreSQL: 3 planes
+iniciales cada 24 horas y 2 regeneraciones semanales cada 7 dias. El presupuesto
+global diario de Anthropic es opcional mediante `MAX_DAILY_API_SPEND_USD`.
 
 La migracion `032_plan_generation_reliability.sql` aplica los limites del motor
 en PostgreSQL, serializa generaciones concurrentes por usuario y hace

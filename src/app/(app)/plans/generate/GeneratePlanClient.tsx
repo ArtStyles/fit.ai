@@ -150,11 +150,6 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
           <p className="mt-1 text-sm text-muted-foreground">
             {result.planName} · {result.daysCount} días/semana
           </p>
-          {result.isMock && (
-            <p className="mt-1 text-xs text-amber-400">
-              Generado en modo desarrollo (mock)
-            </p>
-          )}
         </div>
         <Button
           className="w-full h-12 bg-indigo-500 hover:bg-indigo-600 text-white font-bold"

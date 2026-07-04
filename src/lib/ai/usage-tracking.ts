@@ -48,8 +48,6 @@ const DEFAULT_PRICING = MODEL_PRICING['claude-sonnet-4-5']
 
 /** Operación que originó la llamada a Claude. Controla el rate-limit diferenciado. */
 export type AIOperation =
-  | 'initial_plan_generation'
-  | 'weekly_plan_regeneration'
   | 'plan_adjustment'
   | 'coach_chat'
   | 'other'

@@ -200,7 +200,7 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
             <Button asChild className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600">
               <PendingLink href="/plans/generate">
                 <Sparkles className="mr-2 h-4 w-4" />
-                {t('Nuevo plan con IA')}
+                {t('Nuevo plan basado en evidencia')}
               </PendingLink>
             </Button>
             <details className="mt-1">

@@ -1,10 +1,8 @@
 'use server'
 
 import { createClient }            from '@/lib/supabase/server'
-import { generateInitialPlan }     from '@/lib/ai/planGenerator'
 import { filterExercisesForUser }  from '@/lib/ai/filter'
-import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
-import { buildWeeklySummary, getCyclePhase } from '@/lib/plans/periodization'
+import { buildWeeklySummary } from '@/lib/plans/periodization'
 import { getPlanCreatePolicy, pruneExcessPlansForFreeUser } from '@/lib/plans/entitlements'
 import {
   estimateDayMinutes,
@@ -23,7 +21,7 @@ import {
   type RegenerationHistory,
   previewPlanAdjustment,
 } from '@/lib/training-engine'
-import type { WeekContext, WeeklySummary, WeeklyExerciseRow } from '@/lib/plans/periodization'
+import type { WeeklySummary, WeeklyExerciseRow } from '@/lib/plans/periodization'
 import type { UserContext }        from '@/lib/ai/types'
 import type { Json } from '@/types/database'
 
@@ -35,15 +33,12 @@ export interface GeneratePlanResult {
   planName?:         string
   daysCount?:        number
   weekNumber?:       number
-  isMock?:           boolean
-  generator?:        'evidence_engine' | 'legacy_ai'
   engineVersion?:    string
   evidenceVersion?:  string
   requiresReadinessReview?: boolean
   previewDiff?: PlanDiff
   warnings?: string[]
   error?:            string
-  rateLimitedUntil?: string   // ISO string
 }
 
 export interface GeneratePlanOptions {
@@ -51,15 +46,6 @@ export interface GeneratePlanOptions {
   replaceExisting?: boolean
   adjustmentIntent?: PlanAdjustmentIntent
   previewOnly?: boolean
-}
-
-function usesEvidenceEngine(userId: string): boolean {
-  if ((process.env.PLAN_GENERATION_MODE ?? 'evidence_engine') === 'legacy_ai') return false
-  const allowlist = (process.env.EVIDENCE_ENGINE_BETA_USER_IDS ?? '')
-    .split(',')
-    .map(value => value.trim())
-    .filter(Boolean)
-  return allowlist.length === 0 || allowlist.includes(userId)
 }
 
 function asStringArray(value: unknown): string[] {
@@ -302,13 +288,8 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
-  const useEvidenceEngine = options.mode === 'plan_adjustment' || usesEvidenceEngine(user.id)
-
   const mode = options.mode ?? 'initial'
   const replaceExisting = options.replaceExisting ?? mode !== 'initial'
-  const operation = mode === 'weekly_regeneration'
-    ? 'weekly_plan_regeneration'
-    : 'initial_plan_generation'
 
   const createPolicy = await getPlanCreatePolicy(supabase, user.id, {
     replaceExistingForFree: replaceExisting,
@@ -392,7 +373,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     session_duration_minutes: profile.session_duration_minutes ?? 60,
     gym_type:                 profile.gym_type ?? 'full_gym',
     available_equipment:      profile.available_equipment ?? [],
-    injuries:                 useEvidenceEngine ? '' : profile.injuries ?? '',
+    injuries:                 profile.injuries ?? '',
     gender:                   profile.gender ?? 'other',
     weight_kg:                profile.weight_kg,
     age,
@@ -414,343 +395,186 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     }
   }
 
-  // ── 5. Generar plan (mock o real) ──────────────────────────────────────────
+  // ── 5. Generar y persistir el plan con el motor determinista ───────────────
 
-  if (useEvidenceEngine) {
-    const [regenerationContext, previousPlan] = await Promise.all([
-      mode === 'weekly_regeneration' && activePlan
-        ? buildRegenerationContext(supabase, user.id, activePlan.id)
-        : Promise.resolve(null),
-      mode !== 'initial' && activePlan
-        ? loadPlanForEngine(supabase, activePlan)
-        : Promise.resolve(null),
-    ])
+  const [regenerationContext, previousPlan] = await Promise.all([
+    mode === 'weekly_regeneration' && activePlan
+      ? buildRegenerationContext(supabase, user.id, activePlan.id)
+      : Promise.resolve(null),
+    mode !== 'initial' && activePlan
+      ? loadPlanForEngine(supabase, activePlan)
+      : Promise.resolve(null),
+  ])
 
-    const engineExercises: EngineExercise[] = exercises.map(exercise => ({
-      id: exercise.id,
-      name: exercise.name,
-      muscleGroups: exercise.muscle_groups,
-      equipment: exercise.equipment,
-      exerciseType: (['strength', 'cardio', 'flexibility', 'balance', 'hiit'].includes(exercise.exercise_type)
-        ? exercise.exercise_type
-        : 'strength') as EngineExercise['exerciseType'],
-      difficulty: exercise.difficulty === 'beginner' || exercise.difficulty === 'intermediate' || exercise.difficulty === 'advanced'
-        ? exercise.difficulty
-        : null,
-      isCompound: exercise.is_compound,
-      movementPatterns: (exercise.movement_patterns ?? []) as MovementPattern[],
-      cardioModality: (exercise.cardio_modality ?? null) as CardioModality | null,
-      impactLevel: exercise.impact_level === 'low' || exercise.impact_level === 'moderate' || exercise.impact_level === 'high'
-        ? exercise.impact_level
-        : null,
-      jointStressTags: exercise.joint_stress_tags ?? [],
-    }))
+  const engineExercises: EngineExercise[] = exercises.map(exercise => ({
+    id: exercise.id,
+    name: exercise.name,
+    muscleGroups: exercise.muscle_groups,
+    equipment: exercise.equipment,
+    exerciseType: (['strength', 'cardio', 'flexibility', 'balance', 'hiit'].includes(exercise.exercise_type)
+      ? exercise.exercise_type
+      : 'strength') as EngineExercise['exerciseType'],
+    difficulty: exercise.difficulty === 'beginner' || exercise.difficulty === 'intermediate' || exercise.difficulty === 'advanced'
+      ? exercise.difficulty
+      : null,
+    isCompound: exercise.is_compound,
+    movementPatterns: (exercise.movement_patterns ?? []) as MovementPattern[],
+    cardioModality: (exercise.cardio_modality ?? null) as CardioModality | null,
+    impactLevel: exercise.impact_level === 'low' || exercise.impact_level === 'moderate' || exercise.impact_level === 'high'
+      ? exercise.impact_level
+      : null,
+    jointStressTags: exercise.joint_stress_tags ?? [],
+  }))
 
-    const previousWeek = regenerationContext?.previousWeek ?? null
-    const regenerationHistory: RegenerationHistory | null = previousWeek ? {
-      scheduledSessions: previousWeek.scheduledSessions,
-      completedSessions: previousWeek.completedSessions,
-      adherenceRatio: previousWeek.adherenceRatio,
-      avgRpe: previousWeek.avgRpe,
-      painReported: previousWeek.skippedExercises.some(item => /dolor|pain/i.test(item.lastReason ?? '')),
-      stalledExerciseIds: regenerationContext?.stalledExerciseIds ?? [],
-    } : null
+  const previousWeek = regenerationContext?.previousWeek ?? null
+  const regenerationHistory: RegenerationHistory | null = previousWeek ? {
+    scheduledSessions: previousWeek.scheduledSessions,
+    completedSessions: previousWeek.completedSessions,
+    adherenceRatio: previousWeek.adherenceRatio,
+    avgRpe: previousWeek.avgRpe,
+    painReported: previousWeek.skippedExercises.some(item => /dolor|pain/i.test(item.lastReason ?? '')),
+    stalledExerciseIds: regenerationContext?.stalledExerciseIds ?? [],
+  } : null
 
-    const engineInput = {
-      seed: `${user.id}:week:${nextWeekNumber}`,
-      weekNumber: nextWeekNumber,
-      exercises: engineExercises,
-      previousPlan: previousPlan ? { plan: previousPlan } : null,
-      history: regenerationHistory,
-      profile: {
-        language: profile.language ?? 'es',
-        fitnessLevel: profile.fitness_level,
-        primaryGoal: profile.primary_goal as UserContext['primary_goal'],
-        daysPerWeek: profile.days_per_week,
-        sessionDurationMinutes: profile.session_duration_minutes ?? 60,
-        gymType: profile.gym_type ?? 'full_gym',
-        availableEquipment: profile.available_equipment ?? [],
-        preferredWorkoutDays: profile.preferred_workout_days,
-        cardioPreferences: profile.cardio_preferences ?? [],
-        age,
-        readiness: parseReadiness(
-          profile.readiness_status ?? 'pending',
-          profile.readiness_answers ?? {},
-          profile.movement_limitations ?? [],
-        ),
-      },
+  const engineInput = {
+    seed: `${user.id}:week:${nextWeekNumber}`,
+    weekNumber: nextWeekNumber,
+    exercises: engineExercises,
+    previousPlan: previousPlan ? { plan: previousPlan } : null,
+    history: regenerationHistory,
+    profile: {
+      language: profile.language ?? 'es',
+      fitnessLevel: profile.fitness_level,
+      primaryGoal: profile.primary_goal as UserContext['primary_goal'],
+      daysPerWeek: profile.days_per_week,
+      sessionDurationMinutes: profile.session_duration_minutes ?? 60,
+      gymType: profile.gym_type ?? 'full_gym',
+      availableEquipment: profile.available_equipment ?? [],
+      preferredWorkoutDays: profile.preferred_workout_days,
+      cardioPreferences: profile.cardio_preferences ?? [],
+      age,
+      readiness: parseReadiness(
+        profile.readiness_status ?? 'pending',
+        profile.readiness_answers ?? {},
+        profile.movement_limitations ?? [],
+      ),
+    },
+  }
+
+  const adjustmentPreview = mode === 'plan_adjustment' && options.adjustmentIntent && previousPlan
+    ? previewPlanAdjustment(engineInput, previousPlan, options.adjustmentIntent)
+    : null
+  const engineResult = adjustmentPreview
+    ? adjustmentPreview.result
+    : mode === 'weekly_regeneration'
+      ? regenerateEvidencePlan(engineInput)
+      : generateEvidencePlan(engineInput)
+
+  if (!engineResult.success || !engineResult.plan) {
+    await recordEvidenceGenerationFailure(
+      supabase,
+      mode,
+      engineResult.metadata.engineVersion,
+      engineResult.issues[0]?.code ?? 'engine_validation',
+      { issues: engineResult.issues as unknown as Json },
+    )
+    return {
+      success: false,
+      error: engineResult.issues[0]?.message ?? 'No se pudo crear un plan válido.',
+      engineVersion: engineResult.metadata.engineVersion,
+      evidenceVersion: engineResult.metadata.evidenceVersion,
+      requiresReadinessReview: engineResult.requiresReadinessReview,
     }
+  }
 
-    const adjustmentPreview = mode === 'plan_adjustment' && options.adjustmentIntent && previousPlan
-      ? previewPlanAdjustment(engineInput, previousPlan, options.adjustmentIntent)
-      : null
-    const engineResult = adjustmentPreview
-      ? adjustmentPreview.result
-      : mode === 'weekly_regeneration'
-        ? regenerateEvidencePlan(engineInput)
-        : generateEvidencePlan(engineInput)
-
-    if (!engineResult.success || !engineResult.plan) {
-      await recordEvidenceGenerationFailure(
-        supabase,
-        mode,
-        engineResult.metadata.engineVersion,
-        engineResult.issues[0]?.code ?? 'engine_validation',
-        { issues: engineResult.issues as unknown as Json },
-      )
-      return {
-        success: false,
-        error: engineResult.issues[0]?.message ?? 'No se pudo crear un plan válido.',
-        generator: 'evidence_engine',
-        engineVersion: engineResult.metadata.engineVersion,
-        evidenceVersion: engineResult.metadata.evidenceVersion,
-        requiresReadinessReview: engineResult.requiresReadinessReview,
-      }
-    }
-
-    if (options.previewOnly) {
-      return {
-        success: true,
-        planName: engineResult.plan.display_name,
-        daysCount: engineResult.plan.days.length,
-        weekNumber: nextWeekNumber,
-        generator: 'evidence_engine',
-        engineVersion: engineResult.metadata.engineVersion,
-        evidenceVersion: engineResult.metadata.evidenceVersion,
-        previewDiff: adjustmentPreview?.diff ?? undefined,
-        warnings: adjustmentPreview?.warnings ?? engineResult.metadata.warnings,
-      }
-    }
-
-    const isoDays = assignIsoDays(engineResult.plan.days.length, profile.preferred_workout_days)
-    const transactionalPlan = {
-      ...engineResult.plan,
-      goal: profile.primary_goal,
-      difficulty: profile.fitness_level,
-      days: engineResult.plan.days.map((day, dayIndex) => ({
-        ...day,
-        day_of_week: isoDays[dayIndex] ?? dayIndex + 1,
-        estimated_duration_minutes: estimateDayMinutes(day),
-        exercises: day.exercises.map((exercise, exerciseIndex) => ({
-          ...exercise,
-          order_index: exerciseIndex + 1,
-        })),
-      })),
-    }
-
-    const profileUpdates: Record<string, Json> = {}
-    const intent = options.adjustmentIntent
-    if (mode === 'plan_adjustment' && intent) {
-      if (intent.type === 'change_days') {
-        profileUpdates.days_per_week = intent.daysPerWeek
-        profileUpdates.preferred_workout_days = intent.preferredWorkoutDays ?? []
-      } else if (intent.type === 'change_duration') {
-        profileUpdates.session_duration_minutes = intent.sessionDurationMinutes
-      } else if (intent.type === 'equipment_unavailable') {
-        const unavailable = new Set(intent.equipment)
-        profileUpdates.available_equipment = (profile.available_equipment ?? []).filter(item => !unavailable.has(item))
-      } else if (intent.type === 'change_cardio_preferences') {
-        profileUpdates.cardio_preferences = intent.cardioPreferences
-      }
-    }
-
-    const { data: newPlanId, error: rpcError } = await (supabase.rpc as any)('create_engine_plan', {
-      p_plan: transactionalPlan as unknown as Json,
-      p_metadata: engineResult.metadata as unknown as Json,
-      p_week_number: nextWeekNumber,
-      p_plan_context: mode === 'weekly_regeneration'
-        ? 'weekly_regeneration'
-        : mode === 'plan_adjustment' ? 'manual_update' : 'first_plan',
-      p_parent_plan_id: mode === 'initial' ? null : activePlan?.id ?? null,
-      p_profile_updates: profileUpdates,
-    })
-
-    if (rpcError || !newPlanId) {
-      await recordEvidenceGenerationFailure(
-        supabase,
-        mode,
-        engineResult.metadata.engineVersion,
-        rpcError?.message?.includes('PLAN_RATE_LIMIT') ? 'rate_limit' : 'persistence',
-      )
-      console.error('[generatePlan] create_engine_plan falló:', rpcError)
-      if (rpcError?.message?.includes('PLAN_RATE_LIMIT')) {
-        return {
-          success: false,
-          error: mode === 'weekly_regeneration'
-            ? 'Alcanzaste el limite de 2 regeneraciones en 7 dias.'
-            : 'Alcanzaste el limite de 3 generaciones en 24 horas.',
-        }
-      }
-      return { success: false, error: 'Error al guardar el plan. El plan anterior no fue modificado.' }
-    }
-
-    if (createPolicy.replacingExisting) {
-      await pruneExcessPlansForFreeUser(supabase, user.id, newPlanId, activePlan?.id)
-    }
-
-    await recordEvidenceGenerationSuccess(supabase, newPlanId)
-
+  if (options.previewOnly) {
     return {
       success: true,
-      planId: newPlanId,
       planName: engineResult.plan.display_name,
       daysCount: engineResult.plan.days.length,
       weekNumber: nextWeekNumber,
-      isMock: false,
-      generator: 'evidence_engine',
       engineVersion: engineResult.metadata.engineVersion,
       evidenceVersion: engineResult.metadata.evidenceVersion,
+      previewDiff: adjustmentPreview?.diff ?? undefined,
+      warnings: adjustmentPreview?.warnings ?? engineResult.metadata.warnings,
     }
   }
 
-  const [userLimit, globalBudget] = await Promise.all([
-    checkUserRateLimit(user.id, operation),
-    checkGlobalDailyBudget(),
-  ])
-  if (!userLimit.allowed) {
-    return {
-      success: false,
-      error: userLimit.reason,
-      rateLimitedUntil: userLimit.retryAfter?.toISOString(),
-      generator: 'legacy_ai',
+  const isoDays = assignIsoDays(engineResult.plan.days.length, profile.preferred_workout_days)
+  const transactionalPlan = {
+    ...engineResult.plan,
+    goal: profile.primary_goal,
+    difficulty: profile.fitness_level,
+    days: engineResult.plan.days.map((day, dayIndex) => ({
+      ...day,
+      day_of_week: isoDays[dayIndex] ?? dayIndex + 1,
+      estimated_duration_minutes: estimateDayMinutes(day),
+      exercises: day.exercises.map((exercise, exerciseIndex) => ({
+        ...exercise,
+        order_index: exerciseIndex + 1,
+      })),
+    })),
+  }
+
+  const profileUpdates: Record<string, Json> = {}
+  const intent = options.adjustmentIntent
+  if (mode === 'plan_adjustment' && intent) {
+    if (intent.type === 'change_days') {
+      profileUpdates.days_per_week = intent.daysPerWeek
+      profileUpdates.preferred_workout_days = intent.preferredWorkoutDays ?? []
+    } else if (intent.type === 'change_duration') {
+      profileUpdates.session_duration_minutes = intent.sessionDurationMinutes
+    } else if (intent.type === 'equipment_unavailable') {
+      const unavailable = new Set(intent.equipment)
+      profileUpdates.available_equipment = (profile.available_equipment ?? []).filter(item => !unavailable.has(item))
+    } else if (intent.type === 'change_cardio_preferences') {
+      profileUpdates.cardio_preferences = intent.cardioPreferences
     }
   }
-  if (!globalBudget.allowed) {
-    return { success: false, error: globalBudget.reason, generator: 'legacy_ai' }
-  }
 
-  // Contexto de periodización: fase del ciclo + rendimiento de la semana
-  // anterior. Solo aplica en regeneraciones semanales.
-  let weekContext: WeekContext | undefined
-  if (mode === 'weekly_regeneration') {
-    const previousWeek = activePlan
-      ? (await buildRegenerationContext(supabase, user.id, activePlan.id)).previousWeek
-      : null
+  const { data: newPlanId, error: rpcError } = await (supabase.rpc as any)('create_engine_plan', {
+    p_plan: transactionalPlan as unknown as Json,
+    p_metadata: engineResult.metadata as unknown as Json,
+    p_week_number: nextWeekNumber,
+    p_plan_context: mode === 'weekly_regeneration'
+      ? 'weekly_regeneration'
+      : mode === 'plan_adjustment' ? 'manual_update' : 'first_plan',
+    p_parent_plan_id: mode === 'initial' ? null : activePlan?.id ?? null,
+    p_profile_updates: profileUpdates,
+  })
 
-    weekContext = {
-      weekNumber: nextWeekNumber,
-      cyclePhase: getCyclePhase(nextWeekNumber),
-      previousWeek,
-    }
-  }
-
-  let result
-  try {
-    result = await generateInitialPlan({
-      userId:    user.id,
-      operation,
-      user:      userCtx,
-      exercises,
-      weekContext,
-    })
-  } catch (err) {
-    console.error('[generatePlan] generateInitialPlan falló:', err)
-    return { success: false, error: 'Error al generar el plan. Inténtalo de nuevo.' }
-  }
-
-  const plan = result.plan.plan
-
-  // ── 6. Guardar en Supabase ─────────────────────────────────────────────────
-
-  // a) Desactivar planes activos anteriores
-  await (supabase.from('workout_plans') as any)
-    .update({ is_active: false })
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-
-  // b) Crear nuevo plan
-  const { data: newPlan, error: planError } = await (supabase
-    .from('workout_plans') as any)
-    .insert({
-      user_id:         user.id,
-      name:            plan.display_name,
-      ai_notes:        plan.ai_notes,
-      is_active:       true,
-      generated_by_ai: true,
-      days_per_week:   profile.days_per_week,
-      difficulty:      profile.fitness_level,
-      week_number:     nextWeekNumber,
-      plan_context:    mode === 'weekly_regeneration' ? 'weekly_regeneration' : 'first_plan',
-      parent_plan_id:  mode === 'weekly_regeneration' ? activePlan?.id ?? null : null,
-      source_type:     'ai',
-    })
-    .select('id')
-    .single() as { data: { id: string } | null; error: { message: string } | null }
-
-  if (planError || !newPlan) {
-    console.error('[generatePlan] Error creando workout_plans:', planError)
-    return { success: false, error: 'Error al guardar el plan.' }
-  }
-
-  // c) Asignar días de la semana
-  const isoDays = assignIsoDays(plan.days.length, profile.preferred_workout_days)
-
-  // d) Crear workouts + workout_exercises para cada día
-  for (let i = 0; i < plan.days.length; i++) {
-    const day    = plan.days[i]
-    const isoDay = isoDays[i] ?? (i + 1)
-
-    // Duración estimada: suma de (sets × 3.5 min) por ejercicio del día
-    const estimatedMin = Math.round(
-      day.exercises.reduce((acc, ex) => acc + ex.sets * 3.5, 0),
+  if (rpcError || !newPlanId) {
+    await recordEvidenceGenerationFailure(
+      supabase,
+      mode,
+      engineResult.metadata.engineVersion,
+      rpcError?.message?.includes('PLAN_RATE_LIMIT') ? 'rate_limit' : 'persistence',
     )
-
-    const { data: newWorkout, error: wErr } = await (supabase
-      .from('workouts') as any)
-      .insert({
-        user_id:                    user.id,
-        plan_id:                    newPlan.id,
-        name:                       day.display_name,
-        focus:                      day.focus,
-        day_of_week:                isoDay,
-        order_in_plan:              day.day_number,
-        estimated_duration_minutes: estimatedMin > 0 ? estimatedMin : (profile.session_duration_minutes ?? 60),
-      })
-      .select('id')
-      .single() as { data: { id: string } | null; error: { message: string } | null }
-
-    if (wErr || !newWorkout) {
-      console.error(`[generatePlan] Error creando workout día ${day.day_number}:`, wErr)
-      continue   // seguir con el siguiente día en lugar de abortar todo
-    }
-
-    // Ejercicios del día
-    if (day.exercises.length > 0) {
-      const weRows = day.exercises.map((ex, idx) => ({
-        workout_id:              newWorkout.id,
-        exercise_id:             ex.exercise_id,
-        order_index:             idx + 1,
-        sets:                    ex.sets,
-        reps:                    ex.reps,
-        duration_seconds:        ex.duration_seconds,
-        rest_seconds:            ex.rest_seconds,
-        target_rpe:              ex.target_rpe,
-        weight_kg:               ex.weight_kg,
-        notes:                   ex.notes,
-        weight_suggestion_basis: ex.weight_suggestion_basis,
-      }))
-
-      const { error: weErr } = await (supabase
-        .from('workout_exercises') as any)
-        .insert(weRows) as { error: { message: string } | null }
-
-      if (weErr) {
-        console.error(`[generatePlan] Error creando workout_exercises día ${day.day_number}:`, weErr)
+    console.error('[generatePlan] create_engine_plan falló:', rpcError)
+    if (rpcError?.message?.includes('PLAN_RATE_LIMIT')) {
+      return {
+        success: false,
+        error: mode === 'weekly_regeneration'
+          ? 'Alcanzaste el limite de 2 regeneraciones en 7 dias.'
+          : 'Alcanzaste el limite de 3 generaciones en 24 horas.',
       }
     }
+    return { success: false, error: 'Error al guardar el plan. El plan anterior no fue modificado.' }
   }
 
   if (createPolicy.replacingExisting) {
-    await pruneExcessPlansForFreeUser(supabase, user.id, newPlan.id, activePlan?.id)
+    await pruneExcessPlansForFreeUser(supabase, user.id, newPlanId, activePlan?.id)
   }
 
+  await recordEvidenceGenerationSuccess(supabase, newPlanId)
+
   return {
-    success:   true,
-    planId:    newPlan.id,
-    planName:  plan.display_name,
-    daysCount: plan.days.length,
+    success: true,
+    planId: newPlanId,
+    planName: engineResult.plan.display_name,
+    daysCount: engineResult.plan.days.length,
     weekNumber: nextWeekNumber,
-    isMock:    result.isMock,
-    generator: 'legacy_ai',
+    engineVersion: engineResult.metadata.engineVersion,
+    evidenceVersion: engineResult.metadata.evidenceVersion,
   }
 }

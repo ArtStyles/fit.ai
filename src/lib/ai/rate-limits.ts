@@ -6,9 +6,8 @@
  * para que el endpoint pueda decidir cómo responder al cliente.
  *
  * ── Límites por operación ─────────────────────────────────────────────────────
- *   initial_plan_generation:  3 exitosas en 24 h
- *   weekly_plan_regeneration: 2 exitosas en 7 días
- *   plan_adjustment:          no limitado (operación futura)
+ *   plan_adjustment:          10 exitosas en 24 h
+ *   coach_chat:               30 exitosas en 24 h
  *   other:                    no limitado
  *
  * ── Política de fallos ───────────────────────────────────────────────────────
@@ -40,16 +39,12 @@ const RATE_LIMITS: Partial<Record<AIOperation, {
   maxCount:    number
   windowHours: number
 }>> = {
-  initial_plan_generation:  { maxCount: 3,  windowHours: 24      },
-  weekly_plan_regeneration: { maxCount: 2,  windowHours: 24 * 7  },
   plan_adjustment:          { maxCount: 10, windowHours: 24      },
   coach_chat:               { maxCount: 30, windowHours: 24      },
   // 'other' no tiene límite configurado
 }
 
 const OPERATION_LABELS: Partial<Record<AIOperation, string>> = {
-  initial_plan_generation:  'planes iniciales',
-  weekly_plan_regeneration: 'regeneraciones semanales',
   plan_adjustment:          'ajustes de IA',
   coach_chat:               'mensajes al coach',
 }
@@ -188,7 +183,7 @@ export async function checkGlobalDailyBudget(): Promise<RateLimitResult> {
       allowed:    false,
       reason:     `Servicio temporalmente no disponible: se alcanzó el límite de gasto diario ` +
                   `($${todaySpend.toFixed(2)} de $${limitUsd.toFixed(2)}). ` +
-                  `La generación de planes estará disponible mañana (medianoche UTC).`,
+                  `Los servicios de IA estarán disponibles mañana (medianoche UTC).`,
       retryAfter: tomorrowMidnight,
     }
 

@@ -252,7 +252,7 @@ const ENGLISH: Record<string, string> = {
   'Evento': 'Event',
   'Promoción': 'Promotion',
   'Título del banner': 'Banner title',
-  'Nuevo plan con IA': 'New AI plan',
+  'Nuevo plan basado en evidencia': 'New evidence-based plan',
   'Crear manualmente': 'Create manually',
   'Elimina un plan para crear otro.': 'Delete a plan to create another one.',
   'Cambiar o administrar planes': 'Switch or manage plans',

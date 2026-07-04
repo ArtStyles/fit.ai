@@ -2,7 +2,7 @@
  * filter.ts
  *
  * filterExercisesForUser() — construye el pool de ejercicios disponibles
- * para la generación de un plan con IA.
+ * para el motor determinista de planes.
  *
  * ── Restricciones DURAS (nunca se relajan) ───────────────────────────────────
  *   1. Equipamiento: solo ejercicios que el usuario puede hacer con lo que tiene.
@@ -23,7 +23,7 @@ import type { UserContext, FilteredExercise } from './types'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const MIN_POOL = 30   // mínimo de ejercicios en el pool antes de enviar a la IA
+const MIN_POOL = 30   // mínimo de ejercicios antes de relajar filtros secundarios
 
 // ─── Equipamiento ─────────────────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ const EQUIPMENT_MAP: Record<string, string[]> = {
   bench:           ['bench', 'weight bench', 'incline bench'],
   kettlebell:      ['kettlebell', 'kettlebells'],
   resistance_bands:['band', 'bands', 'resistance band', 'elastic band'],
-  cable_machine:   ['cable', 'cables', 'pulley', 'machine'], // 'machine' es amplio; la IA refina
+  cable_machine:   ['cable', 'cables', 'pulley', 'machine'], // 'machine' amplía la compatibilidad con catálogos heterogéneos
   pull_up_bar:     ['pull-up bar', 'pullup bar', 'pull up bar', 'chin-up bar'],
   trx:             ['trx', 'suspension', 'gymnastic rings'],
 }
@@ -93,7 +93,7 @@ function exerciseFitsEquipment(
  * excludePatterns: si el nombre del ejercicio contiene alguno, se excluye
  *
  * IMPORTANTE: esta es una red de seguridad de baja precisión.
- * La IA recibe además el string completo de lesiones y toma decisiones semánticas.
+ * El cribado estructurado del motor aplica restricciones adicionales.
  * El objetivo aquí es eliminar los casos más obvios y peligrosos.
  */
 const INJURY_EXCLUSIONS: Array<{
@@ -219,7 +219,7 @@ function cascade(ctx: CascadeContext): ExerciseRow[] {
 // ─── Función pública ──────────────────────────────────────────────────────────
 
 /**
- * Construye el pool de ejercicios que se pasará a la IA para generar el plan.
+ * Construye el pool de ejercicios compatible con el perfil del usuario.
  *
  * @param user  Contexto completo del perfil del usuario
  * @returns     Array de ejercicios filtrados listos para incluir en el prompt
@@ -229,7 +229,7 @@ export async function filterExercisesForUser(
 ): Promise<FilteredExercise[]> {
   const supabase = await createClient()
 
-  // Traer solo las columnas que necesitamos (evita pasar image_url, instructions, etc. a la IA)
+  // Traer solo las columnas necesarias para filtrar y alimentar el motor.
   const result = await supabase
     .from('exercises')
     .select('id, name, muscle_groups, equipment, exercise_type, difficulty, is_compound, movement_patterns, cardio_modality, impact_level, joint_stress_tags')

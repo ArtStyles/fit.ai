@@ -46,7 +46,7 @@ export default async function GeneratePlanPage({
     <div className="min-h-screen bg-background">
       <PageTopBar
         title="Generar plan"
-        subtitle="Entrenamiento personalizado con IA"
+        subtitle="Entrenamiento personalizado basado en evidencia"
         backHref="/plan"
         backLabel="Plan"
         icon={<Sparkles className="h-5 w-5" />}
@@ -61,8 +61,8 @@ export default async function GeneratePlanPage({
           <div>
             <h1 className="text-2xl font-bold text-foreground">Tu plan personalizado</h1>
             <p className="mt-1.5 text-sm text-muted-foreground max-w-xs">
-              La IA diseñará un plan de entrenamiento 100% adaptado a tu perfil,
-              equipamiento y objetivos.
+              El motor creará un plan de entrenamiento adaptado a tu perfil,
+              equipamiento, restricciones y objetivos.
             </p>
           </div>
         </div>
