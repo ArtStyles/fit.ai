@@ -1,4 +1,5 @@
 import { prohibitedMovementTags, validateReadiness } from './safety'
+import { calculatePlanQualityMetrics } from './metrics'
 import type {
   EvidencePlan,
   PlanExercise,
@@ -82,6 +83,42 @@ export function validateGeneratedPlan(
     }
   })
 
+  const quality = calculatePlanQualityMetrics(plan, input)
+  if (quality.flags.includes('LOW_SESSION_DENSITY')) {
+    issues.push({
+      severity: 'warning',
+      code: 'LOW_SESSION_DENSITY',
+      message: 'Una o más sesiones tienen menos ejercicios estructurados de los esperados para su duración.',
+    })
+  }
+  if (quality.flags.includes('LOW_MOVEMENT_COVERAGE')) {
+    issues.push({
+      severity: 'warning',
+      code: 'LOW_MOVEMENT_COVERAGE',
+      message: 'El plan no cubre todos los patrones de movimiento compatibles disponibles.',
+    })
+  }
+  if (quality.flags.includes('LOW_MUSCLE_FREQUENCY')) {
+    issues.push({
+      severity: 'warning',
+      code: 'LOW_MUSCLE_FREQUENCY',
+      message: 'Algunos grupos musculares principales reciben estímulo menos de dos días por semana.',
+    })
+  }
+  if (quality.flags.includes('LOW_WEEKLY_VOLUME')) {
+    issues.push({
+      severity: 'warning',
+      code: 'LOW_WEEKLY_VOLUME',
+      message: 'El volumen semanal de algunos grupos musculares queda por debajo del objetivo del plan.',
+    })
+  }
+  if (quality.flags.includes('EXCESSIVE_WEEKLY_VOLUME')) {
+    issues.push({
+      severity: 'warning',
+      code: 'EXCESSIVE_WEEKLY_VOLUME',
+      message: 'El volumen semanal de algunos grupos musculares supera ampliamente el objetivo del plan.',
+    })
+  }
+
   return issues
 }
-

@@ -128,6 +128,41 @@ describe('evidence training engine', () => {
     }
   })
 
+  it('builds dense 60-minute hypertrophy sessions and reports quality metrics', () => {
+    const result = generateEvidencePlan(makeInput('build_muscle', 'intermediate', 4, 60))
+
+    expect(result.success).toBe(true)
+    expect(result.plan?.days.every(day => day.exercises.length >= 5)).toBe(true)
+    expect(result.metadata.quality).toMatchObject({
+      totalExercises: expect.any(Number),
+      weeklyResistanceSets: expect.any(Number),
+      sessionExerciseCounts: expect.any(Array),
+    })
+    expect(result.metadata.quality!.averageExercisesPerSession).toBeGreaterThanOrEqual(5)
+    expect(result.metadata.quality!.overallScore).toBeGreaterThanOrEqual(75)
+  })
+
+  it('stimulates the lower body at least twice in a five-day strength split', () => {
+    const result = generateEvidencePlan(makeInput('gain_strength', 'intermediate', 5, 60))
+
+    expect(result.success).toBe(true)
+    expect(result.metadata.quality?.muscleGroupFrequency.quadriceps).toBeGreaterThanOrEqual(2)
+    expect(result.metadata.quality?.muscleGroupFrequency.hamstrings).toBeGreaterThanOrEqual(2)
+  })
+
+  it('adds accessory structure to dedicated cardio sessions', () => {
+    const result = generateEvidencePlan(makeInput('improve_endurance', 'intermediate', 4, 60))
+    const cardioIds = new Set(cardioExercises.map(exercise => exercise.id))
+    const cardioDays = result.plan?.days.filter(day =>
+      day.exercises.some(exercise => cardioIds.has(exercise.exercise_id)),
+    ) ?? []
+
+    expect(result.success).toBe(true)
+    expect(cardioDays.length).toBeGreaterThan(0)
+    expect(cardioDays.every(day => day.exercises.length >= 2)).toBe(true)
+    expect(result.metadata.quality!.weeklyCardioMinutes).toBeGreaterThan(0)
+  })
+
   it('blocks plans that require professional clearance', () => {
     const input = makeInput()
     input.profile.readiness.warningSymptoms = ['chest_discomfort']

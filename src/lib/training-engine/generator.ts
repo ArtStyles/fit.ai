@@ -2,11 +2,13 @@ import {
   ENGINE_VERSION,
   EVIDENCE_VERSION,
   RULE_IDS,
+  getResistanceExerciseTarget,
   getResistancePrescription,
 } from './evidence'
 import { prohibitedMovementTags, validateReadiness } from './safety'
 import { estimateDayMinutes, validateGeneratedPlan } from './validator'
 import { carryForwardProgression } from './continuity'
+import { calculatePlanQualityMetrics } from './metrics'
 import type {
   CardioModality,
   EngineExercise,
@@ -25,11 +27,17 @@ type SessionKind = 'strength' | 'cardio' | 'mixed'
 
 interface SessionTemplate {
   kind: SessionKind
-  patterns: MovementPattern[]
+  slots: ExerciseSlot[]
   nameEs: string
   nameEn: string
   focusEs: string
   focusEn: string
+}
+
+interface ExerciseSlot {
+  pattern: MovementPattern
+  preferredMuscles?: string[]
+  preferCompound?: boolean
 }
 
 interface DoseModifier {
@@ -39,25 +47,62 @@ interface DoseModifier {
   warnings: string[]
 }
 
-const FULL_BODY_PATTERNS: MovementPattern[] = [
-  'squat',
-  'hinge',
-  'horizontal_push',
-  'horizontal_pull',
-  'vertical_push',
-  'vertical_pull',
-  'core',
+const FULL_BODY_SLOTS: ExerciseSlot[] = [
+  { pattern: 'squat', preferredMuscles: ['quadriceps', 'glutes'], preferCompound: true },
+  { pattern: 'hinge', preferredMuscles: ['hamstrings', 'glutes'], preferCompound: true },
+  { pattern: 'horizontal_push', preferredMuscles: ['chest'], preferCompound: true },
+  { pattern: 'horizontal_pull', preferredMuscles: ['middle back', 'lats'], preferCompound: true },
+  { pattern: 'vertical_push', preferredMuscles: ['shoulders'], preferCompound: true },
+  { pattern: 'vertical_pull', preferredMuscles: ['lats'], preferCompound: true },
+  { pattern: 'core', preferredMuscles: ['abdominals'] },
+  { pattern: 'isolation', preferredMuscles: ['biceps', 'triceps'] },
+  { pattern: 'isolation', preferredMuscles: ['calves'] },
 ]
 
-const UPPER_PATTERNS: MovementPattern[] = [
-  'horizontal_push',
-  'horizontal_pull',
-  'vertical_push',
-  'vertical_pull',
-  'isolation',
+const UPPER_SLOTS: ExerciseSlot[] = [
+  { pattern: 'horizontal_push', preferredMuscles: ['chest'], preferCompound: true },
+  { pattern: 'horizontal_pull', preferredMuscles: ['middle back', 'lats'], preferCompound: true },
+  { pattern: 'vertical_push', preferredMuscles: ['shoulders'], preferCompound: true },
+  { pattern: 'vertical_pull', preferredMuscles: ['lats'], preferCompound: true },
+  { pattern: 'horizontal_push', preferredMuscles: ['chest'], preferCompound: false },
+  { pattern: 'isolation', preferredMuscles: ['biceps'] },
+  { pattern: 'isolation', preferredMuscles: ['triceps'] },
+  { pattern: 'vertical_push', preferredMuscles: ['shoulders'], preferCompound: false },
 ]
 
-const LOWER_PATTERNS: MovementPattern[] = ['squat', 'hinge', 'core', 'isolation']
+const LOWER_SLOTS: ExerciseSlot[] = [
+  { pattern: 'squat', preferredMuscles: ['quadriceps'], preferCompound: true },
+  { pattern: 'hinge', preferredMuscles: ['hamstrings', 'glutes'], preferCompound: true },
+  { pattern: 'squat', preferredMuscles: ['glutes'], preferCompound: true },
+  { pattern: 'squat', preferredMuscles: ['quadriceps'], preferCompound: false },
+  { pattern: 'core', preferredMuscles: ['abdominals'] },
+  { pattern: 'hinge', preferredMuscles: ['hamstrings'], preferCompound: false },
+  { pattern: 'hinge', preferredMuscles: ['glutes'], preferCompound: false },
+  { pattern: 'isolation', preferredMuscles: ['calves'] },
+]
+
+const PUSH_SLOTS: ExerciseSlot[] = [
+  { pattern: 'horizontal_push', preferredMuscles: ['chest'], preferCompound: true },
+  { pattern: 'vertical_push', preferredMuscles: ['shoulders'], preferCompound: true },
+  { pattern: 'horizontal_push', preferredMuscles: ['triceps'], preferCompound: true },
+  { pattern: 'horizontal_push', preferredMuscles: ['chest'], preferCompound: false },
+  { pattern: 'vertical_push', preferredMuscles: ['shoulders'], preferCompound: false },
+  { pattern: 'isolation', preferredMuscles: ['triceps'] },
+]
+
+const PULL_SLOTS: ExerciseSlot[] = [
+  { pattern: 'horizontal_pull', preferredMuscles: ['middle back', 'traps'], preferCompound: true },
+  { pattern: 'vertical_pull', preferredMuscles: ['lats'], preferCompound: true },
+  { pattern: 'horizontal_pull', preferredMuscles: ['lats'], preferCompound: true },
+  { pattern: 'isolation', preferredMuscles: ['biceps'] },
+  { pattern: 'isolation', preferredMuscles: ['forearms'] },
+  { pattern: 'horizontal_pull', preferredMuscles: ['shoulders'], preferCompound: false },
+]
+
+const CARDIO_ACCESSORY_SLOTS: ExerciseSlot[] = [
+  { pattern: 'core', preferredMuscles: ['abdominals'] },
+  { pattern: 'isolation', preferredMuscles: ['glutes', 'calves'] },
+]
 
 function stableHash(value: string): number {
   let hash = 2166136261
@@ -71,7 +116,7 @@ function stableHash(value: string): number {
 function strengthTemplates(days: number): SessionTemplate[] {
   const fullBody = (suffix: string): SessionTemplate => ({
     kind: 'strength',
-    patterns: FULL_BODY_PATTERNS,
+    slots: FULL_BODY_SLOTS,
     nameEs: `Cuerpo completo ${suffix}`,
     nameEn: `Full body ${suffix}`,
     focusEs: 'Fuerza de cuerpo completo',
@@ -82,20 +127,30 @@ function strengthTemplates(days: number): SessionTemplate[] {
 
   if (days === 4) {
     return [
-      { kind: 'strength', patterns: UPPER_PATTERNS, nameEs: 'Tren superior A', nameEn: 'Upper body A', focusEs: 'Empuje y tirón', focusEn: 'Push and pull' },
-      { kind: 'strength', patterns: LOWER_PATTERNS, nameEs: 'Tren inferior A', nameEn: 'Lower body A', focusEs: 'Piernas y core', focusEn: 'Legs and core' },
-      { kind: 'strength', patterns: UPPER_PATTERNS, nameEs: 'Tren superior B', nameEn: 'Upper body B', focusEs: 'Espalda, pecho y hombros', focusEn: 'Back, chest and shoulders' },
-      { kind: 'strength', patterns: LOWER_PATTERNS, nameEs: 'Tren inferior B', nameEn: 'Lower body B', focusEs: 'Piernas, cadera y core', focusEn: 'Legs, hips and core' },
+      { kind: 'strength', slots: UPPER_SLOTS, nameEs: 'Tren superior A', nameEn: 'Upper body A', focusEs: 'Empuje y tirón', focusEn: 'Push and pull' },
+      { kind: 'strength', slots: LOWER_SLOTS, nameEs: 'Tren inferior A', nameEn: 'Lower body A', focusEs: 'Piernas y core', focusEn: 'Legs and core' },
+      { kind: 'strength', slots: UPPER_SLOTS, nameEs: 'Tren superior B', nameEn: 'Upper body B', focusEs: 'Espalda, pecho y hombros', focusEn: 'Back, chest and shoulders' },
+      { kind: 'strength', slots: LOWER_SLOTS, nameEs: 'Tren inferior B', nameEn: 'Lower body B', focusEs: 'Piernas, cadera y core', focusEn: 'Legs, hips and core' },
+    ]
+  }
+
+  if (days === 5) {
+    return [
+      { kind: 'strength', slots: UPPER_SLOTS, nameEs: 'Tren superior A', nameEn: 'Upper body A', focusEs: 'Pecho, espalda y hombros', focusEn: 'Chest, back and shoulders' },
+      { kind: 'strength', slots: LOWER_SLOTS, nameEs: 'Tren inferior A', nameEn: 'Lower body A', focusEs: 'Cuádriceps, femorales y glúteos', focusEn: 'Quads, hamstrings and glutes' },
+      { kind: 'strength', slots: PUSH_SLOTS, nameEs: 'Empuje', nameEn: 'Push', focusEs: 'Pecho, hombros y tríceps', focusEn: 'Chest, shoulders and triceps' },
+      { kind: 'strength', slots: PULL_SLOTS, nameEs: 'Tirón', nameEn: 'Pull', focusEs: 'Espalda y bíceps', focusEn: 'Back and biceps' },
+      { kind: 'strength', slots: LOWER_SLOTS, nameEs: 'Tren inferior B', nameEn: 'Lower body B', focusEs: 'Piernas, cadera y core', focusEn: 'Legs, hips and core' },
     ]
   }
 
   const ppl: SessionTemplate[] = [
-    { kind: 'strength', patterns: ['horizontal_push', 'vertical_push', 'isolation'], nameEs: 'Empuje A', nameEn: 'Push A', focusEs: 'Pecho, hombros y tríceps', focusEn: 'Chest, shoulders and triceps' },
-    { kind: 'strength', patterns: ['horizontal_pull', 'vertical_pull', 'isolation'], nameEs: 'Tirón A', nameEn: 'Pull A', focusEs: 'Espalda y bíceps', focusEn: 'Back and biceps' },
-    { kind: 'strength', patterns: LOWER_PATTERNS, nameEs: 'Piernas A', nameEn: 'Legs A', focusEs: 'Piernas y core', focusEn: 'Legs and core' },
-    { kind: 'strength', patterns: ['horizontal_push', 'vertical_push', 'isolation'], nameEs: 'Empuje B', nameEn: 'Push B', focusEs: 'Pecho, hombros y tríceps', focusEn: 'Chest, shoulders and triceps' },
-    { kind: 'strength', patterns: ['horizontal_pull', 'vertical_pull', 'isolation'], nameEs: 'Tirón B', nameEn: 'Pull B', focusEs: 'Espalda y bíceps', focusEn: 'Back and biceps' },
-    { kind: 'strength', patterns: LOWER_PATTERNS, nameEs: 'Piernas B', nameEn: 'Legs B', focusEs: 'Piernas, cadera y core', focusEn: 'Legs, hips and core' },
+    { kind: 'strength', slots: PUSH_SLOTS, nameEs: 'Empuje A', nameEn: 'Push A', focusEs: 'Pecho, hombros y tríceps', focusEn: 'Chest, shoulders and triceps' },
+    { kind: 'strength', slots: PULL_SLOTS, nameEs: 'Tirón A', nameEn: 'Pull A', focusEs: 'Espalda y bíceps', focusEn: 'Back and biceps' },
+    { kind: 'strength', slots: LOWER_SLOTS, nameEs: 'Piernas A', nameEn: 'Legs A', focusEs: 'Piernas y core', focusEn: 'Legs and core' },
+    { kind: 'strength', slots: PUSH_SLOTS, nameEs: 'Empuje B', nameEn: 'Push B', focusEs: 'Pecho, hombros y tríceps', focusEn: 'Chest, shoulders and triceps' },
+    { kind: 'strength', slots: PULL_SLOTS, nameEs: 'Tirón B', nameEn: 'Pull B', focusEs: 'Espalda y bíceps', focusEn: 'Back and biceps' },
+    { kind: 'strength', slots: LOWER_SLOTS, nameEs: 'Piernas B', nameEn: 'Legs B', focusEs: 'Piernas, cadera y core', focusEn: 'Legs, hips and core' },
   ]
   return ppl.slice(0, days)
 }
@@ -103,7 +158,7 @@ function strengthTemplates(days: number): SessionTemplate[] {
 function cardioTemplate(index: number, mixed = false): SessionTemplate {
   return {
     kind: mixed ? 'mixed' : 'cardio',
-    patterns: mixed ? FULL_BODY_PATTERNS : ['locomotion'],
+    slots: mixed ? FULL_BODY_SLOTS : CARDIO_ACCESSORY_SLOTS,
     nameEs: mixed ? `Fuerza + cardio ${index + 1}` : `Cardio ${index + 1}`,
     nameEn: mixed ? `Strength + cardio ${index + 1}` : `Cardio ${index + 1}`,
     focusEs: mixed ? 'Fuerza general y capacidad aeróbica' : 'Capacidad aeróbica',
@@ -117,8 +172,8 @@ function sessionKinds(goal: TrainingGoal, days: number): SessionKind[] {
 
   if (goal === 'improve_endurance') {
     const layouts: Record<number, SessionKind[]> = {
-      3: ['cardio', 'strength', 'cardio'],
-      4: ['cardio', 'strength', 'cardio', 'cardio'],
+      3: ['mixed', 'cardio', 'mixed'],
+      4: ['cardio', 'strength', 'cardio', 'strength'],
       5: ['cardio', 'strength', 'cardio', 'strength', 'cardio'],
       6: ['cardio', 'strength', 'cardio', 'cardio', 'strength', 'cardio'],
     }
@@ -152,19 +207,27 @@ function previousExerciseIds(input: TrainingPlanInput): Set<string> {
 
 function scoreExercise(
   exercise: EngineExercise,
-  pattern: MovementPattern,
+  slot: ExerciseSlot,
   input: TrainingPlanInput,
   dayIndex: number,
   usageCount: Map<string, number>,
+  previousIds: Set<string>,
 ): number {
   let score = 0
-  if (exercise.movementPatterns.includes(pattern)) score += 80
-  if (exercise.isCompound && pattern !== 'isolation' && pattern !== 'core') score += 20
-  if (previousExerciseIds(input).has(exercise.id)) score += 30
+  if (exercise.movementPatterns.includes(slot.pattern)) score += 80
+  const muscles = exercise.muscleGroups.map(muscle => muscle.toLowerCase())
+  const primaryMuscle = muscles[0]
+  if (slot.preferredMuscles?.includes(primaryMuscle)) score += 32
+  else if (slot.preferredMuscles?.some(muscle => muscles.includes(muscle))) score += 8
+  if (slot.preferCompound === true && exercise.isCompound) score += 18
+  if (slot.preferCompound === false && !exercise.isCompound) score += 18
+  if (slot.preferCompound === true && !exercise.isCompound) score -= 10
+  if (slot.preferCompound === false && exercise.isCompound) score -= 10
+  if (previousIds.has(exercise.id)) score += 20
   if (exercise.difficulty === input.profile.fitnessLevel) score += 10
   if (exercise.difficulty === 'advanced' && input.profile.fitnessLevel === 'beginner') score -= 40
-  score -= (usageCount.get(exercise.id) ?? 0) * 12
-  score -= stableHash(`${input.seed}:${dayIndex}:${pattern}:${exercise.id}`) / 0xffffffff
+  score -= (usageCount.get(exercise.id) ?? 0) * 26
+  score -= stableHash(`${input.seed}:${dayIndex}:${slot.pattern}:${exercise.id}`) / 0xffffffff
   return score
 }
 
@@ -237,20 +300,30 @@ function pickStrength(
   minuteBudget: number,
   usageCount: Map<string, number>,
   modifier: DoseModifier,
+  targetCount: number,
 ): PlanExercise[] {
   const pool = eligibleExercises(input, 'strength')
   const selected: PlanExercise[] = []
   const used = new Set<string>()
+  const previousIds = previousExerciseIds(input)
 
-  for (const pattern of template.patterns) {
-    const candidate = pool
-      .filter(exercise => !used.has(exercise.id) && exercise.movementPatterns.includes(pattern))
-      .sort((a, b) => scoreExercise(b, pattern, input, dayIndex, usageCount) - scoreExercise(a, pattern, input, dayIndex, usageCount))[0]
+  for (const slot of template.slots) {
+    if (selected.length >= targetCount) break
+    const available = pool
+      .filter(exercise => !used.has(exercise.id) && exercise.movementPatterns.includes(slot.pattern))
+    const preferred = slot.preferredMuscles
+      ? available.filter(exercise => slot.preferredMuscles!.includes(exercise.muscleGroups[0]?.toLowerCase()))
+      : []
+    const candidate = (preferred.length > 0 ? preferred : available)
+      .sort((a, b) =>
+        scoreExercise(b, slot, input, dayIndex, usageCount, previousIds) -
+        scoreExercise(a, slot, input, dayIndex, usageCount, previousIds),
+      )[0]
     if (!candidate) continue
 
     const prescription = prescribeStrengthExercise(candidate, input, modifier)
     const trialDay: PlanDay = { day_number: dayIndex + 1, display_name: '', focus: '', exercises: [...selected, prescription] }
-    if (selected.length >= 2 && estimateDayMinutes(trialDay) > minuteBudget) continue
+    if (selected.length >= 2 && estimateDayMinutes(trialDay) > minuteBudget + 5) continue
 
     selected.push(prescription)
     used.add(candidate.id)
@@ -313,13 +386,18 @@ function goalName(goal: TrainingGoal, language: 'es' | 'en'): string {
   return language === 'en' ? labels[goal][1] : labels[goal][0]
 }
 
-function metadata(appliedRuleIds: string[], warnings: string[]): EngineMetadata {
+function metadata(
+  appliedRuleIds: string[],
+  warnings: string[],
+  quality?: EngineMetadata['quality'],
+): EngineMetadata {
   return {
     engineVersion: ENGINE_VERSION,
     evidenceVersion: EVIDENCE_VERSION,
     appliedRuleIds: Array.from(new Set(appliedRuleIds)),
     warnings,
     generatedAt: new Date().toISOString(),
+    quality,
   }
 }
 
@@ -353,9 +431,16 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
     const isMixed = template.kind === 'mixed'
     const strengthBudget = template.kind === 'strength'
       ? input.profile.sessionDurationMinutes
-      : isMixed ? Math.floor(input.profile.sessionDurationMinutes * 0.55) : 0
+      : isMixed
+        ? Math.floor(input.profile.sessionDurationMinutes * 0.55)
+        : Math.min(15, Math.max(8, Math.floor(input.profile.sessionDurationMinutes * 0.2)))
+    const strengthTarget = template.kind === 'strength'
+      ? getResistanceExerciseTarget(strengthBudget, input.profile.primaryGoal)
+      : isMixed
+        ? Math.min(4, getResistanceExerciseTarget(strengthBudget, input.profile.primaryGoal))
+        : input.profile.sessionDurationMinutes >= 60 ? 2 : 1
     const exercises = strengthBudget > 0
-      ? pickStrength(template, input, dayIndex, strengthBudget, usageCount, modifier)
+      ? pickStrength(template, input, dayIndex, strengthBudget, usageCount, modifier, strengthTarget)
       : []
 
     if (template.kind === 'cardio' || isMixed) {
@@ -363,7 +448,8 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
       const cardioBudget = Math.max(5, input.profile.sessionDurationMinutes - usedStrengthMinutes)
       const cardio = pickCardio(input, dayIndex, cardioBudget, usageCount)
       if (cardio) {
-        exercises.push(cardio)
+        if (template.kind === 'cardio') exercises.unshift(cardio)
+        else exercises.push(cardio)
         cardioMinutes += (cardio.duration_seconds ?? 0) / 60
       } else {
         warnings.push(input.profile.language === 'en'
@@ -408,6 +494,7 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
     : generatedPlan
 
   const issues = validateGeneratedPlan(plan, input)
+  const quality = calculatePlanQualityMetrics(plan, input)
   const appliedRules = [
     RULE_IDS.progressiveResistance,
     RULE_IDS.multiSet,
@@ -419,12 +506,16 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
     ...(input.profile.primaryGoal === 'lose_weight' ? [RULE_IDS.concurrentWeightLoss] : []),
     ...(input.history ? [RULE_IDS.adaptiveRegeneration] : []),
     ...(input.previousPlan ? [RULE_IDS.progressionContinuity] : []),
+    RULE_IDS.sessionDensity,
+    RULE_IDS.muscleFrequency,
+    RULE_IDS.weeklyMuscleVolume,
+    ...(['lose_weight', 'improve_endurance', 'stay_active'].includes(input.profile.primaryGoal) ? [RULE_IDS.structuredCardio] : []),
   ]
 
   return {
     success: !issues.some(issue => issue.severity === 'error'),
     plan,
-    metadata: metadata(appliedRules, warnings),
+    metadata: metadata(appliedRules, warnings, quality),
     issues,
   }
 }

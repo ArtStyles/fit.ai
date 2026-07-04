@@ -183,6 +183,11 @@ La generación de planes usa exclusivamente el motor determinista local. El moto
 no consume tokens, valida seguridad, equipamiento, duración y dosis, y guarda
 cada plan de forma transaccional.
 
+Desde la versión 1.2, la estructura también controla densidad por duración,
+frecuencia de los grupos musculares principales, volumen semanal por grupo,
+cobertura de patrones de movimiento y variedad entre sesiones. Cada generación
+guarda un puntaje de calidad y sus métricas detalladas en `generation_metadata`.
+
 El chat y la interpretación de peticiones siguen usando Anthropic cuando existe
 una API key. Una petición de ajuste produce una intención tipada; el motor
 recalcula y valida el plan completo antes de mostrar la vista previa.

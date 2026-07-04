@@ -149,6 +149,27 @@ export interface EngineMetadata {
   appliedRuleIds: string[]
   warnings: string[]
   generatedAt: string
+  quality?: PlanQualityMetrics
+}
+
+export interface PlanQualityMetrics {
+  overallScore: number
+  sessionDensityScore: number
+  movementCoverageScore: number
+  muscleFrequencyScore: number
+  weeklyVolumeScore: number
+  totalExercises: number
+  averageExercisesPerSession: number
+  weeklyResistanceSets: number
+  weeklyCardioMinutes: number
+  sessionExerciseCounts: number[]
+  muscleGroupSets: Record<string, number>
+  muscleGroupFrequency: Record<string, number>
+  movementPatternFrequency: Partial<Record<MovementPattern, number>>
+  lowFrequencyMuscleGroups: string[]
+  underTargetMuscleGroups: string[]
+  excessiveVolumeMuscleGroups: string[]
+  flags: string[]
 }
 
 export interface EngineResult {

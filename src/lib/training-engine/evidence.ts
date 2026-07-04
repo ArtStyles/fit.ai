@@ -1,7 +1,7 @@
 import type { FitnessLevel, TrainingGoal } from './types'
 
-export const ENGINE_VERSION = '1.1.0'
-export const EVIDENCE_VERSION = '2026.1'
+export const ENGINE_VERSION = '1.2.0'
+export const EVIDENCE_VERSION = '2026.2'
 
 export const EVIDENCE_SOURCES = {
   acsm2026: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/',
@@ -100,4 +100,28 @@ export const RULE_IDS = {
   concurrentWeightLoss: 'CT-2025-FAT-MASS-LEAN-MASS',
   adaptiveRegeneration: 'FITAI-ADAPTIVE-REGEN-1',
   progressionContinuity: 'FITAI-PROGRESSION-CONTINUITY-1',
+  sessionDensity: 'FITAI-SESSION-DENSITY-1',
+  muscleFrequency: 'ACSM-2026-MAJOR-MUSCLES-2X',
+  weeklyMuscleVolume: 'ACSM-2026-WEEKLY-MUSCLE-VOLUME',
+  structuredCardio: 'FITAI-STRUCTURED-CARDIO-1',
 } as const
+
+export function getResistanceExerciseTarget(
+  durationMinutes: number,
+  goal: TrainingGoal,
+): number {
+  if (durationMinutes <= 30) return goal === 'gain_strength' ? 3 : 4
+  if (durationMinutes <= 45) return goal === 'gain_strength' ? 4 : 5
+  if (durationMinutes <= 60) {
+    if (goal === 'gain_strength') return 5
+    if (goal === 'build_muscle') return 7
+    return 6
+  }
+  return goal === 'gain_strength' ? 7 : 8
+}
+
+export function getWeeklySetTarget(goal: TrainingGoal): number {
+  if (goal === 'build_muscle') return 10
+  if (goal === 'gain_strength') return 8
+  return 4
+}
