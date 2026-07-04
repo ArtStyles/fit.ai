@@ -32,6 +32,23 @@ describe('plan adjustment intent', () => {
     expect(result.intent).toEqual({ type: 'change_duration', sessionDurationMinutes: 30 })
   })
 
+  it('does not treat a chest training request as a health change', async () => {
+    const result = await generatePlanAdjustmentIntent({
+      userId: 'user-1',
+      request: 'Quiero entrenar más el pecho',
+      context,
+    })
+    expect(result.intent.type).not.toBe('health_change')
+  })
+
+  it.each([
+    ['Haz más suave toda la semana', 'easier'],
+    ['Subir intensidad de toda la semana', 'harder'],
+  ])('creates a typed weekly intensity intent for %s', async (request, direction) => {
+    const result = await generatePlanAdjustmentIntent({ userId: 'user-1', request, context })
+    expect(result.intent).toEqual({ type: 'change_intensity', direction })
+  })
+
   it('only replaces an exercise that exists in context', async () => {
     const result = await generatePlanAdjustmentIntent({
       userId: 'user-1',
@@ -41,4 +58,3 @@ describe('plan adjustment intent', () => {
     expect(result.intent).toEqual({ type: 'replace_exercise', exerciseId: 'exercise-1' })
   })
 })
-

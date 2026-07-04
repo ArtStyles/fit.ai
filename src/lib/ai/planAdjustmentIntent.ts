@@ -19,12 +19,16 @@ export interface PlanIntentResult {
   model: string
 }
 
-const HEALTH_PATTERN = /dolor|duele|dol[ií]a|lesi[oó]n|molestia|pecho|mareo|desmayo|cirug|m[eé]dic|pain|injury/i
+const HEALTH_PATTERN = /dolor|duele|dol[ií]a|lesi[oó]n|molestia|mareo|desmayo|cirug|m[eé]dic|pain|injury/i
+
+export function isHealthChangeRequest(request: string): boolean {
+  return HEALTH_PATTERN.test(request)
+}
 
 function mockIntent(request: string, context: PlanIntentContext): PlanIntentResult {
   const lower = request.toLowerCase()
   let intent: PlanAdjustmentIntent
-  if (HEALTH_PATTERN.test(request)) {
+  if (isHealthChangeRequest(request)) {
     intent = { type: 'health_change' }
   } else {
     const dayMatch = lower.match(/([2-6])\s*d[ií]as?/)
@@ -81,7 +85,7 @@ export async function generatePlanAdjustmentIntent(options: {
   request: string
   context: PlanIntentContext
 }): Promise<PlanIntentResult> {
-  if (HEALTH_PATTERN.test(options.request)) return mockIntent(options.request, options.context)
+  if (isHealthChangeRequest(options.request)) return mockIntent(options.request, options.context)
   if (process.env.USE_AI_MOCK === 'true' || !process.env.ANTHROPIC_API_KEY) {
     return mockIntent(options.request, options.context)
   }

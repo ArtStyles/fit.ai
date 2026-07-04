@@ -7,7 +7,7 @@ import { summarizeChanges, validateAdjustmentChanges } from '@/lib/ai/adjustment
 import { loadCoachContextText } from '@/lib/ai/coachContextLoader'
 import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
 import type { AdjustmentChange, AdjustmentContext } from '@/lib/ai/adjustments'
-import { generatePlanAdjustmentIntent } from '@/lib/ai/planAdjustmentIntent'
+import { generatePlanAdjustmentIntent, isHealthChangeRequest } from '@/lib/ai/planAdjustmentIntent'
 import { generatePlan } from './generatePlan'
 import type { CardioModality, PlanAdjustmentIntent } from '@/lib/training-engine'
 
@@ -46,6 +46,22 @@ type WorkoutExerciseRow = {
   exercise: { name: string } | { name: string }[] | null
 }
 
+async function getOwnedActivePlan(
+  supabase: SupabaseServerClient,
+  userId: string,
+  planId: string,
+): Promise<{ id: string } | null> {
+  const { data: plan } = await (supabase
+    .from('workout_plans') as any)
+    .select('id')
+    .eq('id', planId)
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle() as { data: { id: string } | null }
+
+  return plan
+}
+
 function getExerciseName(row: WorkoutExerciseRow): string {
   if (Array.isArray(row.exercise)) return row.exercise[0]?.name ?? 'Ejercicio'
   return row.exercise?.name ?? 'Ejercicio'
@@ -68,13 +84,7 @@ async function getOwnedActiveWorkout(
 
   if (!workout?.plan_id) return null
 
-  const { data: plan } = await (supabase
-    .from('workout_plans') as any)
-    .select('id')
-    .eq('id', workout.plan_id)
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .maybeSingle() as { data: { id: string } | null }
+  const plan = await getOwnedActivePlan(supabase, userId, workout.plan_id)
 
   if (!plan) return null
 
@@ -105,26 +115,27 @@ async function loadAdjustmentContext(
 }
 
 export async function suggestPlanAdjustment(
-  workoutId: string,
+  planId: string,
   request: string,
 ): Promise<SuggestPlanAdjustmentResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
-  const workout = await getOwnedActiveWorkout(supabase, user.id, workoutId)
-  if (!workout) return { success: false, error: 'Entrenamiento no encontrado en tu plan activo' }
+  const plan = await getOwnedActivePlan(supabase, user.id, planId)
+  if (!plan) return { success: false, error: 'Plan activo no encontrado' }
   if (!request.trim()) return { success: false, error: 'Describe qué quieres cambiar' }
 
-  const [userLimit, globalBudget, profileResult, exerciseResult] = await Promise.all([
+  const [userLimit, globalBudget, profileResult, workoutsResult] = await Promise.all([
     checkUserRateLimit(user.id, 'plan_adjustment'),
     checkGlobalDailyBudget(),
     (supabase.from('profiles') as any)
       .select('days_per_week, session_duration_minutes, available_equipment, cardio_preferences')
       .eq('id', user.id)
       .single(),
-    (supabase.from('workout_exercises') as any)
-      .select('exercise:exercises(id, name)')
-      .eq('workout_id', workoutId),
+    (supabase.from('workouts') as any)
+      .select('id')
+      .eq('plan_id', plan.id)
+      .eq('user_id', user.id),
   ])
   if (!userLimit.allowed) return { success: false, error: userLimit.reason }
   if (!globalBudget.allowed) return { success: false, error: globalBudget.reason }
@@ -135,13 +146,21 @@ export async function suggestPlanAdjustment(
     available_equipment: string[]
     cardio_preferences: CardioModality[]
   } | null
+  const workoutIds = ((workoutsResult.data ?? []) as Array<{ id: string }>).map(workout => workout.id)
+  const exerciseResult = workoutIds.length > 0
+    ? await (supabase.from('workout_exercises') as any)
+        .select('exercise:exercises(id, name)')
+        .in('workout_id', workoutIds)
+    : { data: [] }
   const relationRows = (exerciseResult.data ?? []) as Array<{
     exercise: { id: string; name: string } | Array<{ id: string; name: string }> | null
   }>
-  const planExercises = relationRows.flatMap(row => {
+  const planExerciseMap = new Map<string, { id: string; name: string }>()
+  relationRows.forEach(row => {
     const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
-    return exercise ? [{ id: exercise.id, name: exercise.name }] : []
+    if (exercise) planExerciseMap.set(exercise.id, exercise)
   })
+  const planExercises = Array.from(planExerciseMap.values())
 
   try {
     const interpreted = await generatePlanAdjustmentIntent({
@@ -190,8 +209,15 @@ export async function suggestPlanAdjustment(
 }
 
 export async function applyPlanAdjustment(
+  planId: string,
   intent: PlanAdjustmentIntent,
 ): Promise<ApplyAdjustmentResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: 'No autenticado' }
+  const plan = await getOwnedActivePlan(supabase, user.id, planId)
+  if (!plan) return { success: false, error: 'El plan activo cambió. Vuelve a generar la vista previa.' }
+
   const result = await generatePlan({
     mode: 'plan_adjustment',
     adjustmentIntent: intent,
@@ -218,6 +244,15 @@ export async function suggestWorkoutAdjustment(
 
   const workout = await getOwnedActiveWorkout(supabase, user.id, workoutId)
   if (!workout) return { success: false, error: 'Entrenamiento no encontrado en tu plan activo' }
+
+  if (isHealthChangeRequest(trimmed)) {
+    return {
+      success: true,
+      suggestion: 'No aplicaré cambios automáticos relacionados con dolor, lesión o síntomas. Actualiza tu cribado de preparación y consulta a un profesional cualificado si la molestia persiste o empeora.',
+      changes: [],
+      changesSummary: [],
+    }
+  }
 
   const [userLimit, globalBudget] = await Promise.all([
     checkUserRateLimit(user.id, 'plan_adjustment'),

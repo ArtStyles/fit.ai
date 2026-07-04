@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
+import { PlanAdjustButton } from '@/components/plan/PlanAdjustButton'
 import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
 import { PlanViewTabs } from '@/components/plan/PlanViewTabs'
 import { WorkoutAdjustButton } from '@/components/plan/WorkoutAdjustButton'
@@ -384,6 +385,7 @@ export default async function PlanPage() {
               <p className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t('Acciones del plan')}
               </p>
+              <PlanAdjustButton planId={planRaw.id} />
               <PlanRegenerateButton />
               <Button asChild variant="outline" className="h-11 w-full border-border/60 bg-muted/10">
                 <PendingLink href="/history">
@@ -594,10 +596,12 @@ export default async function PlanPage() {
                         {t('Disponible el {day}.', { day: dayLabel.toLowerCase() })}
                       </p>
                     )}
-                    <WorkoutAdjustButton
-                      workoutId={workout.id}
-                      workoutName={workout.displayName}
-                    />
+                    {exercises.length > 0 ? (
+                      <WorkoutAdjustButton
+                        workoutId={workout.id}
+                        workoutName={workout.displayName}
+                      />
+                    ) : null}
                   </div>
 
                   <WorkoutExerciseList

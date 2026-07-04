@@ -1,9 +1,8 @@
 /**
  * adjustmentGenerator.ts — Punto de entrada unificado de ajustes de rutina.
  *
- * Igual que planGenerator.ts:
- *   USE_AI_MOCK=true / sin ANTHROPIC_API_KEY → mock local determinista
- *   en otro caso → Claude real (modelo coach, Haiku por defecto)
+ * USE_AI_MOCK=true / sin ANTHROPIC_API_KEY → asistente local.
+ * En otro caso usa Claude (modelo coach, Haiku por defecto).
  */
 
 import 'server-only'

@@ -5,79 +5,84 @@ import { useRouter } from 'next/navigation'
 import { Check, ChevronRight, Send, Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useToast } from '@/components/feedback/ToastProvider'
-import { applyWorkoutAdjustment, suggestWorkoutAdjustment } from '@/app/actions/adjustPlan'
-import type { AdjustmentChange } from '@/lib/ai/adjustments'
+import { applyPlanAdjustment, suggestPlanAdjustment } from '@/app/actions/adjustPlan'
+import type { PlanAdjustmentIntent } from '@/lib/training-engine'
 import { AssistantSuggestion } from './AssistantSuggestion'
+import { ReadinessReviewDialog } from './ReadinessReviewDialog'
 
 interface Props {
-  workoutId: string
-  workoutName: string
+  planId: string
 }
 
 const QUICK_REQUESTS = [
-  'Haz esta sesión más corta',
-  'Aumenta un poco la intensidad de esta sesión',
-  'Haz esta sesión más fácil',
+  'Quiero entrenar 4 días por semana',
+  'Quiero sesiones de 45 minutos',
+  'Haz más suave toda la semana',
+  'Subir intensidad de toda la semana',
 ]
 
-export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
+export function PlanAdjustButton({ planId }: Props) {
   const router = useRouter()
   const { showToast } = useToast()
   const [open, setOpen] = useState(false)
   const [request, setRequest] = useState('')
   const [suggestion, setSuggestion] = useState<string | null>(null)
-  const [changes, setChanges] = useState<AdjustmentChange[]>([])
+  const [intent, setIntent] = useState<PlanAdjustmentIntent | null>(null)
   const [changesSummary, setChangesSummary] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [readinessOpen, setReadinessOpen] = useState(false)
 
   async function handleSubmit(nextRequest: string) {
     if (!nextRequest.trim() || loading) return
     setLoading(true)
     setError(null)
     setSuggestion(null)
-    setChanges([])
+    setIntent(null)
     setChangesSummary([])
 
-    const result = await suggestWorkoutAdjustment(workoutId, nextRequest)
+    const result = await suggestPlanAdjustment(planId, nextRequest)
     setLoading(false)
 
     if (!result.success) {
-      setError(result.error ?? 'No se pudo analizar esta sesión')
+      setError(result.error ?? 'No se pudo analizar el plan semanal')
+      if (result.requiresReadinessReview) setReadinessOpen(true)
       return
     }
     setSuggestion(result.suggestion ?? '')
-    setChanges(result.changes ?? [])
+    setIntent(result.intent ?? null)
     setChangesSummary(result.changesSummary ?? [])
   }
 
   async function handleApply() {
-    if (applying || changes.length === 0) return
+    if (applying || !intent) return
     setApplying(true)
     setError(null)
 
-    const result = await applyWorkoutAdjustment(workoutId, changes)
+    const result = await applyPlanAdjustment(planId, intent)
     setApplying(false)
 
     if (!result.success) {
-      setError(result.error ?? 'No se pudieron aplicar los cambios')
+      setError(result.error ?? 'No se pudieron aplicar los cambios semanales')
       return
     }
 
     showToast({
-      title: 'Sesión ajustada',
-      description: `${result.appliedCount ?? changes.length} cambios aplicados solo a ${workoutName}.`,
+      title: 'Plan semanal ajustado',
+      description: 'Se recalculó y validó toda la semana.',
       variant: 'success',
     })
     setOpen(false)
+    window.dispatchEvent(new Event('fitai:navigation-start'))
+    router.replace('/plan')
     router.refresh()
   }
 
   function resetDialog() {
     setRequest('')
     setSuggestion(null)
-    setChanges([])
+    setIntent(null)
     setChangesSummary([])
     setError(null)
   }
@@ -87,10 +92,10 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
       <button
         type="button"
         onClick={() => { resetDialog(); setOpen(true) }}
-        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-violet-500/30 px-3.5 py-2.5 text-xs font-semibold text-violet-300 transition-colors hover:bg-violet-500/10"
+        className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-violet-500/30 bg-violet-500/5 px-4 text-sm font-semibold text-violet-200 transition-colors hover:bg-violet-500/10"
       >
-        <Sparkles className="h-3.5 w-3.5" />
-        Ajustar esta sesión
+        <Sparkles className="h-4 w-4" />
+        Ajustar plan semanal
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -98,7 +103,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-sm text-white">
               <Sparkles className="h-4 w-4 text-violet-400" />
-              Ajustar esta sesión — {workoutName}
+              Ajustar todo el plan semanal
             </DialogTitle>
           </DialogHeader>
 
@@ -111,7 +116,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
 
                 {changesSummary.length > 0 ? (
                   <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">Cambios en esta sesión</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">Cambios en toda la semana</p>
                     <ul className="space-y-1.5">
                       {changesSummary.map(line => (
                         <li key={line} className="flex items-start gap-2 text-sm text-gray-300">
@@ -121,45 +126,36 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
                       ))}
                     </ul>
                   </div>
-                ) : (
-                  <p className="text-center text-xs text-gray-500">Sugerencia informativa; no se aplicarán cambios automáticos.</p>
-                )}
+                ) : null}
 
+                <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+                  Al aplicar, se reemplazará el plan activo completo por una versión recalculada.
+                </p>
                 {error ? <p className="text-xs text-red-400">{error}</p> : null}
 
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={resetDialog}
-                    className="flex-1 rounded-lg border border-border/50 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
+                  <button type="button" onClick={resetDialog} className="flex-1 rounded-lg border border-border/50 py-2.5 text-sm text-muted-foreground hover:text-foreground">
                     Otra petición
                   </button>
-                  {changes.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={handleApply}
-                      disabled={applying}
-                      className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
-                    >
-                      {applying ? 'Aplicando…' : 'Aplicar a esta sesión'}
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => setOpen(false)} className="flex-1 rounded-lg bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500">
-                      Cerrar
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleApply}
+                    disabled={applying || !intent}
+                    className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                  >
+                    {applying ? 'Aplicando…' : 'Aplicar a toda la semana'}
+                  </button>
                 </div>
               </>
             ) : loading ? (
               <div className="flex flex-col items-center gap-3 py-6">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
-                <p className="text-xs text-gray-400">Analizando únicamente esta sesión…</p>
+                <p className="text-xs text-gray-400">Recalculando la vista previa semanal…</p>
               </div>
             ) : (
               <>
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Ajustes rápidos de esta sesión</p>
+                  <p className="text-xs font-medium text-muted-foreground">Cambios que afectan toda la semana</p>
                   {QUICK_REQUESTS.map(quickRequest => (
                     <button
                       key={quickRequest}
@@ -182,16 +178,16 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
                         void handleSubmit(request)
                       }
                     }}
-                    placeholder="Describe qué cambiar solo en esta sesión..."
+                    placeholder="Describe qué cambiar en toda la semana..."
                     rows={2}
                     className="flex-1 resize-none bg-transparent text-sm text-white placeholder:text-gray-500 focus:outline-none"
                   />
                   <button
                     type="button"
-                    aria-label="Analizar ajuste de esta sesión"
+                    aria-label="Analizar ajuste semanal"
                     onClick={() => { void handleSubmit(request) }}
                     disabled={!request.trim()}
-                    className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:opacity-40"
+                    className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40"
                   >
                     <Send className="h-3.5 w-3.5" />
                   </button>
@@ -202,6 +198,12 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ReadinessReviewDialog
+        open={readinessOpen}
+        onOpenChange={setReadinessOpen}
+        onSaved={() => { if (request.trim()) void handleSubmit(request) }}
+      />
     </>
   )
 }
