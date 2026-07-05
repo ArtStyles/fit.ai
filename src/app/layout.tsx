@@ -7,6 +7,7 @@ import { SkipLink } from '@/components/accessibility/SkipLink'
 import { NativeAppInit } from '@/components/native/NativeAppInit'
 import { cookies, headers } from 'next/headers'
 import { normalizeLanguage } from '@/lib/i18n'
+import { SITE_URL } from '@/lib/seo/site'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import '@/styles/globals.css'
 
@@ -25,6 +26,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
+  metadataBase: SITE_URL,
   title: { default: 'Vekira', template: '%s | Vekira' },
   description: 'Tu entrenador personal con IA. Rutinas adaptativas semana a semana.',
   manifest: '/manifest.json',
