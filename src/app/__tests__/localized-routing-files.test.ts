@@ -17,12 +17,15 @@ describe('localized public route files', () => {
     expect(layout).not.toContain('<html')
   })
 
-  it('renders bilingual temporary hero copy in the public main region', () => {
+  it('renders the approved bilingual home content in the public main region', () => {
     const page = source('../[locale]/page.tsx')
+    const content = source('../../lib/marketing/homeContent.ts')
 
     expect(page).toContain('id="app-main-content"')
-    expect(page).toContain('Avanza con un plan que aprende de ti.')
-    expect(page).toContain('Move forward with a plan that learns from you.')
+    expect(page).toContain('HOME_CONTENT')
+    expect(page).toContain('<HeroSection')
+    expect(content).toContain('Convierte cada entrenamiento en el siguiente paso de tu progresión.')
+    expect(content).toContain('Turn every workout into the next step in your progression.')
   })
 
   it('permanently redirects the legacy selector alias to the neutral root', () => {
