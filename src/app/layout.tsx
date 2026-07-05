@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import { Barlow_Condensed, Plus_Jakarta_Sans } from 'next/font/google'
 import { ToastProvider } from '@/components/feedback/ToastProvider'
 import { ActionNotice } from '@/components/feedback/ActionNotice'
+import { SkipLink } from '@/components/accessibility/SkipLink'
 import { NativeAppInit } from '@/components/native/NativeAppInit'
 import { cookies } from 'next/headers'
 import { normalizeLanguage } from '@/lib/i18n'
@@ -44,8 +45,6 @@ export const viewport: Viewport = {
   themeColor: '#7c3aed',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: 'cover',
 }
 
@@ -55,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang={language} className={`dark ${barlowCondensed.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
       <body className="bg-background font-sans text-foreground antialiased">
+        <SkipLink />
         <I18nProvider language={language} syncDocumentLanguage={false}>
           <NativeAppInit />
           <ToastProvider>

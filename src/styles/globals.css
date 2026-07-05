@@ -34,6 +34,23 @@
 
     --radius: 0.5rem;
 
+    --surface-1: 240 4% 7%;
+    --surface-2: 240 4% 10%;
+    --surface-3: 240 4% 14%;
+    --status-success: 142 71% 45%;
+    --status-warning: 38 92% 50%;
+    --status-danger: 0 72% 51%;
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --radius-control: 0.75rem;
+    --radius-card: 1rem;
+    --motion-fast: 150ms;
+    --motion-normal: 240ms;
+
     /* Capacitor 8 injects --safe-area-inset-* on Android WebViews that need
        a fallback; modern WebViews and iOS provide the env() values directly. */
     --app-safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
@@ -70,6 +87,23 @@
     --border: 240 4% 14%;
     --input: 240 4% 14%;
     --ring: 258 90% 66%;
+
+    --surface-1: 240 4% 7%;
+    --surface-2: 240 4% 10%;
+    --surface-3: 240 4% 14%;
+    --status-success: 142 71% 45%;
+    --status-warning: 38 92% 50%;
+    --status-danger: 0 72% 51%;
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --radius-control: 0.75rem;
+    --radius-card: 1rem;
+    --motion-fast: 150ms;
+    --motion-normal: 240ms;
 
     /* fitness tokens */
     --energy: 24 95% 55%;

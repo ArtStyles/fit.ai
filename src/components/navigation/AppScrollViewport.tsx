@@ -23,6 +23,8 @@ export function AppScrollViewport({ children }: AppScrollViewportProps) {
 
   return (
     <main
+      id="app-main-content"
+      tabIndex={-1}
       ref={viewportRef}
       className="fitai-safe-content-bottom min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-none"
       data-app-scroll-viewport
