@@ -7,6 +7,6 @@ export default defineConfig({
     environment: 'node',
     setupFiles:  ['./src/lib/ai/__tests__/setup.ts'],
     // Excluir archivos de Next.js (app/, pages/) que no son tests
-    exclude:     ['**/node_modules/**', '**/.next/**'],
+    exclude:     ['**/node_modules/**', '**/.next/**', 'tests/e2e/**'],
   },
 })
