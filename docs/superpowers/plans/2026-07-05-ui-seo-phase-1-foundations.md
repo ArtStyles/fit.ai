@@ -20,6 +20,59 @@
 
 ---
 
+### Task 0: Restore a clean lint baseline
+
+**Files:**
+- Modify: `eslint.config.mjs`
+- Modify: `src/app/actions/posts.ts`
+- Modify if required by the root-cause fix: `src/components/social/PostMedia.tsx`
+- Modify if required by the root-cause fix: `src/components/social/ProfilePostGrid.tsx`
+
+**Interfaces:**
+- Produces: a clean ESLint baseline without disabling unknown rules.
+- Consumes: the existing flat ESLint configuration and current Next.js/TypeScript dependencies.
+
+- [ ] **Step 1: Reproduce and document the three baseline errors**
+
+Run: `& '.\node_modules\.bin\eslint.cmd' .`
+
+Expected before the fix: one `@typescript-eslint/ban-types` error in `posts.ts` and two missing-rule errors for `@next/next/no-img-element` in the social image components.
+
+- [ ] **Step 2: Investigate the root causes before editing**
+
+Inspect `eslint.config.mjs`, the three reported files, installed ESLint packages, and recent commits touching them. Record in the task report why the generic default type is rejected and why inline suppressions reference a rule that the active flat config does not register.
+
+- [ ] **Step 3: Apply the smallest root-cause fixes**
+
+Replace the banned empty-object default with a type-safe empty object that preserves the `ActionResult` generic contract:
+
+```ts
+export type ActionResult<T = Record<never, never>> =
+  | ({ ok: true } & T)
+  | { ok: false; error: string }
+```
+
+For the two image files, either register the existing Next.js lint plugin correctly in the flat configuration or remove the stale suppressions only if investigation proves the project intentionally does not enable Next lint rules. Do not add a new dependency, disable ESLint globally, or convert the images as part of this baseline task.
+
+- [ ] **Step 4: Verify the baseline**
+
+Run:
+
+```powershell
+& '.\node_modules\.bin\eslint.cmd' .
+& '.\node_modules\.bin\tsc.cmd' --noEmit --incremental false
+& '.\node_modules\.bin\vitest.cmd' run
+```
+
+Expected: ESLint and TypeScript exit 0; all 236 baseline tests pass. The known Vite `vite-tsconfig-paths` deprecation notice may remain because changing the test runner is outside this task.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add eslint.config.mjs src/app/actions/posts.ts src/components/social/PostMedia.tsx src/components/social/ProfilePostGrid.tsx
+git commit -m "fix(lint): restore clean baseline"
+```
+
 ### Task 1: Design tokens, zoom, and skip navigation
 
 **Files:**
