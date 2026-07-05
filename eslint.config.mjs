@@ -1,8 +1,16 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import { createRequire } from 'node:module';
+import { dirname } from 'node:path';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
+
+const require = createRequire(import.meta.url);
+const nextConfigDirectory = dirname(require.resolve('eslint-config-next/package.json'));
+const nextPlugin = require(require.resolve('@next/eslint-plugin-next', {
+  paths: [nextConfigDirectory],
+}));
 
 export default tseslint.config(
   { ignores: ['dist', '.next', 'node_modules'] },
@@ -14,6 +22,7 @@ export default tseslint.config(
       globals: globals.browser,
     },
     plugins: {
+      '@next/next': nextPlugin,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
     },

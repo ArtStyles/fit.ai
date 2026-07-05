@@ -15,7 +15,7 @@ import { postStoragePath } from '@/lib/images/post'
 
 const BUCKET = 'posts'
 
-export type ActionResult<T = {}> =
+export type ActionResult<T = Record<never, never>> =
   | ({ ok: true } & T)
   | { ok: false; error: string }
 
