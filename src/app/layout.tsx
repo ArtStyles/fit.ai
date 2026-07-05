@@ -5,7 +5,7 @@ import { ToastProvider } from '@/components/feedback/ToastProvider'
 import { ActionNotice } from '@/components/feedback/ActionNotice'
 import { SkipLink } from '@/components/accessibility/SkipLink'
 import { NativeAppInit } from '@/components/native/NativeAppInit'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { normalizeLanguage } from '@/lib/i18n'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import '@/styles/globals.css'
@@ -49,7 +49,8 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const language = normalizeLanguage(cookies().get('fitai-language')?.value)
+  const storedLanguage = cookies().get('fitai-language')?.value
+  const language = normalizeLanguage(headers().get('x-public-locale') ?? storedLanguage)
 
   return (
     <html lang={language} className={`dark ${barlowCondensed.variable} ${plusJakarta.variable}`} suppressHydrationWarning>

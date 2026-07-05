@@ -1,13 +1,37 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/', '/login', '/register', '/auth/callback', '/privacy', '/pricing', '/suspended']
+const PUBLIC_EXACT = ['/', '/login', '/register', '/auth/callback', '/privacy', '/pricing', '/suspended']
+
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_EXACT.includes(pathname)
+    || pathname.startsWith('/auth/')
+    || /^\/(es|en)(\/|$)/.test(pathname)
+}
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
   const requestHeaders = new Headers(request.headers)
-  let supabaseResponse = NextResponse.next({
-    request: { headers: requestHeaders },
-  })
+  const publicLocale = pathname.match(/^\/(es|en)(?:\/|$)/)?.[1]
+
+  if (publicLocale) requestHeaders.set('x-public-locale', publicLocale)
+
+  const createForwardedResponse = () => {
+    const response = NextResponse.next({
+      request: { headers: requestHeaders },
+    })
+
+    if (publicLocale) {
+      response.cookies.set('fitai-language', publicLocale, {
+        path: '/',
+        sameSite: 'lax',
+      })
+    }
+
+    return response
+  }
+
+  let supabaseResponse = createForwardedResponse()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,9 +41,7 @@ export async function middleware(request: NextRequest) {
         getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request: { headers: requestHeaders },
-          })
+          supabaseResponse = createForwardedResponse()
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           )
@@ -30,8 +52,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { pathname } = request.nextUrl
-  const isPublic = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith('/auth'))
+  const isPublic = isPublicPath(pathname)
 
   if (user) {
     const { data: accessProfile } = await supabase
@@ -54,9 +75,7 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set('x-fitai-user-id', user.id)
     if (user.email) requestHeaders.set('x-fitai-user-email', user.email)
 
-    const refreshedResponse = NextResponse.next({
-      request: { headers: requestHeaders },
-    })
+    const refreshedResponse = createForwardedResponse()
     supabaseResponse.cookies.getAll().forEach(cookie => {
       refreshedResponse.cookies.set(cookie)
     })
