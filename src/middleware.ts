@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_EXACT = ['/', '/login', '/register', '/auth/callback', '/privacy', '/pricing', '/suspended']
+const PUBLIC_EXACT = ['/', '/login', '/register', '/auth/callback', '/privacy', '/pricing', '/suspended', '/language-selector']
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_EXACT.includes(pathname)
@@ -14,6 +14,7 @@ export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   const publicLocale = pathname.match(/^\/(es|en)(?:\/|$)/)?.[1]
 
+  requestHeaders.delete('x-public-locale')
   if (publicLocale) requestHeaders.set('x-public-locale', publicLocale)
 
   const createForwardedResponse = () => {

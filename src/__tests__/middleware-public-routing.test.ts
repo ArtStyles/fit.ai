@@ -39,6 +39,15 @@ describe('public middleware routing', () => {
     expect(isPublicPath('/dashboard')).toBe(false)
   })
 
+  it('allows unauthenticated requests to reach the legacy language selector alias', async () => {
+    mockSupabaseUser(null)
+
+    const response = await middleware(new NextRequest('https://vekira.test/language-selector'))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('location')).toBeNull()
+  })
+
   it('forwards and persists the locale on a localized public request', async () => {
     mockSupabaseUser(null)
 
@@ -47,6 +56,18 @@ describe('public middleware routing', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('en')
     expect(response.cookies.get('fitai-language')?.value).toBe('en')
+  })
+
+  it('removes a client-supplied locale header from unprefixed requests', async () => {
+    mockSupabaseUser(null)
+    const request = new NextRequest('https://vekira.test/', {
+      headers: { 'x-public-locale': 'en' },
+    })
+
+    const response = await middleware(request)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-request-x-public-locale')).toBeNull()
   })
 
   it('allows authenticated users to visit localized public pages', async () => {
