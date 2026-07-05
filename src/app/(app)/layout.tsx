@@ -1,8 +1,5 @@
 import { requireAppUserContext } from '@/lib/auth/server'
-import { PageTransition } from '@/components/navigation/PageTransition'
-import { AppScrollViewport } from '@/components/navigation/AppScrollViewport'
-import { BottomNav } from '@/components/navigation/BottomNav'
-import { ChatFab } from '@/components/navigation/ChatFab'
+import { AppShell } from '@/components/navigation/AppShell'
 import { AndroidBackHandler } from '@/components/native/AndroidBackHandler'
 import { SocialPushNotificationsInit } from '@/components/native/SocialPushNotificationsInit'
 import { TimezoneSync } from '@/components/profile/TimezoneSync'
@@ -15,16 +12,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <I18nProvider language={language}>
-      <div className="fixed bottom-0 left-[var(--app-safe-area-left)] right-[var(--app-safe-area-right)] top-[var(--app-safe-area-top)] flex flex-col overflow-hidden">
-        <AndroidBackHandler />
-        <SocialPushNotificationsInit />
-        <TimezoneSync current={profile.timezone} />
-        <AppScrollViewport>
-          <PageTransition>{children}</PageTransition>
-        </AppScrollViewport>
-        <ChatFab />
-        <BottomNav />
-      </div>
+      <AndroidBackHandler />
+      <SocialPushNotificationsInit />
+      <TimezoneSync current={profile.timezone} />
+      <AppShell>{children}</AppShell>
     </I18nProvider>
   )
 }

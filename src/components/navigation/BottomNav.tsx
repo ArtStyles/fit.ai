@@ -1,28 +1,14 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { BarChart2, Dumbbell, Home, Settings, Users, type LucideIcon } from 'lucide-react'
 import { PendingLink } from './PendingLink'
+import { APP_NAV_ITEMS, isAppNavItemActive } from './appNavigation'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { hapticImpact } from '@/lib/native/haptics'
 
 // Routes where the bottom bar should be hidden (full-screen flows)
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
-
-type Tab = {
-  href:  string
-  label: string
-  icon:  LucideIcon
-}
-
-const TABS: Tab[] = [
-  { href: '/dashboard', label: 'Inicio',     icon: Home         },
-  { href: '/plan',      label: 'Rutina',     icon: Dumbbell     },
-  { href: '/feed',      label: 'Comunidad',  icon: Users        },
-  { href: '/settings',  label: 'Ajustes',    icon: Settings     },
-  { href: '/history',   label: 'Historial',  icon: BarChart2    },
-]
 
 export function BottomNav() {
   const pathname = usePathname()
@@ -33,13 +19,12 @@ export function BottomNav() {
   return (
     <nav
       aria-label={t('Navegación principal')}
-      className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/30 bg-background"
+      className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-background/95 backdrop-blur lg:hidden"
     >
-      <div className="mx-auto flex h-14 max-w-lg items-center justify-around px-2">
-        {TABS.map(({ href, label, icon: Icon }) => {
-          const isActive =
-            pathname === href ||
-            (href !== '/dashboard' && pathname.startsWith(href + '/'))
+      <div className="mx-auto flex h-16 max-w-lg items-center px-2">
+        {APP_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          const isActive = isAppNavItemActive(pathname, href)
+          const isTrainAction = href === '/entrenar'
 
           return (
             <PendingLink
@@ -49,15 +34,17 @@ export function BottomNav() {
               aria-label={t(label)}
               aria-current={isActive ? 'page' : undefined}
               onClick={() => { void hapticImpact('light') }}
-              className="group relative flex min-w-[4.5rem] touch-manipulation flex-col items-center justify-center px-1 py-1.5 outline-none [aria-busy=true]:opacity-100"
+              className="group relative flex min-w-0 flex-1 cursor-pointer touch-manipulation flex-col items-center justify-center px-1 py-1.5 outline-none [aria-busy=true]:opacity-100"
             >
-              {/* Instagram-like feedback: compress on press, then pop into the active state. */}
               <span
                 className={cn(
-                  'flex h-11 w-11 items-center justify-center rounded-[14px] transition-[color,transform] duration-150 ease-out group-active:scale-[0.82] group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background',
-                  isActive
+                  'flex items-center justify-center transition-[color,background-color,transform,box-shadow] duration-200 ease-out group-active:scale-90 group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background',
+                  isTrainAction
+                    ? '-translate-y-2 h-14 w-14 rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/30 group-hover:bg-primary/90'
+                    : 'h-10 w-10 rounded-xl',
+                  !isTrainAction && isActive
                     ? 'fitai-nav-selected text-primary'
-                    : 'text-muted-foreground group-hover:text-foreground/70',
+                    : !isTrainAction && 'text-muted-foreground group-hover:text-foreground',
                 )}
               >
                 {isActive && href === '/dashboard' ? (
@@ -73,10 +60,16 @@ export function BottomNav() {
                 ) : (
                   <Icon
                     aria-hidden="true"
-                    className="h-[23px] w-[23px] transition-[stroke-width] duration-150"
-                    strokeWidth={isActive ? 2.75 : 2}
+                    className={cn('transition-[stroke-width] duration-150', isTrainAction ? 'h-6 w-6' : 'h-[22px] w-[22px]')}
+                    strokeWidth={isActive || isTrainAction ? 2.75 : 2}
                   />
                 )}
+              </span>
+              <span className={cn(
+                'mt-0.5 max-w-full truncate text-[10px] font-semibold leading-none transition-colors',
+                isTrainAction ? '-mt-1 text-primary' : isActive ? 'text-primary' : 'text-muted-foreground',
+              )}>
+                {t(label)}
               </span>
             </PendingLink>
           )

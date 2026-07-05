@@ -8,6 +8,7 @@ export type TranslationValues = Record<string, string | number>
 const ENGLISH: Record<string, string> = {
   'Inicio': 'Home',
   'Plan': 'Plan',
+  'Entrenar': 'Train',
   'Comunidad': 'Community',
   'Ajustes': 'Settings',
   'Historial': 'History',
