@@ -39,6 +39,7 @@ public/swe-worker-*.js
 android/app/google-services.json
 
 # Local browser/test artifacts
+.worktrees/
 .chrome-*/
 artifacts/
 dashboard-*.png
