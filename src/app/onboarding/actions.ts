@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { OnboardingAnswers } from './types'
 import type { Database } from '@/types/database'
+import { dateOfBirthFromAge } from '@/lib/profile/age'
 
 type ProfileUpdate = Database['public']['Tables']['profiles']['Update']
 
@@ -12,12 +13,8 @@ export async function saveOnboardingAnswers(answers: OnboardingAnswers): Promise
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Convert age string → ISO date (Jan 1 of birth year, good enough for fitness calcs)
-  let date_of_birth: string | null = null
-  const age = parseInt(answers.age, 10)
-  if (!isNaN(age) && age > 0) {
-    date_of_birth = `${new Date().getFullYear() - age}-01-01`
-  }
+  // Convert validated decimal age → ISO date (Jan 1 of birth year, good enough for fitness calcs)
+  const date_of_birth = dateOfBirthFromAge(answers.age)
 
   const movementLimitations = answers.limitation_regions.map(region => ({
     region,

@@ -54,4 +54,10 @@ describe('confirmation numeric validation', () => {
     expect(result.valid).toBe(false)
     expect(result.errors.age).toBeTruthy()
   })
+
+  it('rejects scientific notation instead of interpreting it differently at save time', () => {
+    const result = validateConfirmationFields({ ...valid, age: '9e1' })
+    expect(result.valid).toBe(false)
+    expect(result.errors.age).toBeTruthy()
+  })
 })

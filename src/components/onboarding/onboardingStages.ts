@@ -1,5 +1,6 @@
 import { defaultAnswers, type OnboardingAnswers } from '@/app/onboarding/types'
 import { validateUsername } from '@/lib/social/username'
+import { parseDecimalAge } from '@/lib/profile/age'
 import { validateConfirmationFields } from './confirmationValidation'
 
 export const ONBOARDING_STAGES = [
@@ -113,7 +114,7 @@ function parsePersistedAnswers(value: unknown): OnboardingAnswers | null {
     !isNullableOneOf(value.limitation_status, LIMITATION_STATUSES) ||
     typeof value.movements_to_avoid !== 'string' ||
     typeof value.clinician_cleared !== 'boolean' ||
-    !isBoundedNumericString(value.age, 18, 100, true) ||
+    !(value.age === '' || typeof value.age === 'string' && parseDecimalAge(value.age) !== null) ||
     !isBoundedNumericString(value.weight_kg, 30, 300) ||
     !isBoundedNumericString(value.height_cm, 100, 250) ||
     !isNullableOneOf(value.gender, GENDERS)

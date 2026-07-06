@@ -1,4 +1,5 @@
 import type { OnboardingAnswers } from '@/app/onboarding/types'
+import { parseDecimalAge } from '@/lib/profile/age'
 
 export interface ConfirmationFieldErrors {
   age?: string
@@ -19,7 +20,7 @@ export function validateConfirmationFields(answers: OnboardingAnswers): {
 } {
   const errors: ConfirmationFieldErrors = {}
 
-  if (!validBoundedNumber(answers.age, 18, 100, true)) {
+  if (parseDecimalAge(answers.age) === null) {
     errors.age = 'Introduce una edad entre 18 y 100 años.'
   }
   if (!validBoundedNumber(answers.weight_kg, 30, 300)) {
