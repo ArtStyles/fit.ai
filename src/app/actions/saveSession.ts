@@ -9,6 +9,10 @@ import type { WorkoutStartAccessReason } from '@/lib/workouts/access'
 import type { ProgressionSuggestion } from '@/lib/progression'
 import type { PRRecord } from '@/lib/progression/records'
 import { zipPreviousPerformanceRows } from '@/components/session/sessionViewModel'
+import {
+  createSessionResultSnapshot,
+  decodeSessionResultSnapshot,
+} from '@/lib/session/resultSnapshot'
 
 export type { PRRecord } from '@/lib/progression/records'
 
@@ -144,6 +148,140 @@ function buildExerciseLogNote(exercise: ExercisePayload): string | null {
   return null
 }
 
+type ExerciseLogPayload = {
+  exercise_id: string
+  sets_completed: number
+  reps_completed: number[]
+  weights_kg: number[]
+  rpe_values: Array<number | null>
+  duration_seconds: number | null
+  notes: string | null
+}
+
+type SessionOutcome = {
+  prs: PRRecord[]
+  progressions: ProgressionSuggestion[]
+  exerciseLogs: ExerciseLogPayload[]
+}
+
+async function deriveSessionOutcome(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  payload: SaveSessionPayload,
+  excludedProgressLogId: string | null = null,
+): Promise<SessionOutcome> {
+  const workoutExerciseIds = payload.exercises
+    .filter(ex => (ex.source ?? 'planned') === 'planned' && isUuid(ex.workoutExerciseId))
+    .map(ex => ex.workoutExerciseId)
+  const exerciseIds = Array.from(new Set(payload.exercises.map(ex => ex.exerciseId)))
+
+  let historyPromise: Promise<{ data: HistoricalLogRow[] | null }>
+  if (exerciseIds.length === 0) {
+    historyPromise = Promise.resolve({ data: [] })
+  } else {
+    let historyQuery = (supabase
+      .from('exercise_logs') as any)
+      .select('exercise_id, weights_kg, reps_completed, progress_log_id, progress_logs!inner(user_id, completed_at)')
+      .in('exercise_id', exerciseIds)
+      .eq('progress_logs.user_id', userId)
+
+    if (excludedProgressLogId) {
+      historyQuery = historyQuery.neq('progress_log_id', excludedProgressLogId)
+    }
+    historyPromise = historyQuery as Promise<{ data: HistoricalLogRow[] | null }>
+  }
+
+  const [{ data: metaRows }, { data: historyRows }] = await Promise.all([
+    workoutExerciseIds.length > 0
+      ? ((supabase
+          .from('workout_exercises') as any)
+          .select(`
+            id,
+            exercise_id,
+            sets,
+            reps,
+            weight_kg,
+            target_rpe,
+            exercise:exercises(is_compound)
+          `)
+          .in('id', workoutExerciseIds) as Promise<{ data: ExerciseMetaRow[] | null }>)
+      : Promise.resolve({ data: [] as ExerciseMetaRow[] }),
+    historyPromise,
+  ])
+
+  const metadataByWorkoutExercise = new Map((metaRows ?? []).map(row => [row.id, row]))
+  const historyByExercise = groupByExerciseId(historyRows ?? [])
+  const exercisesWithData = payload.exercises.filter(ex =>
+    ex.sets.some(set => set.completed) || (ex.status === 'skipped' && Boolean(ex.skipReason)),
+  )
+
+  const progressions = buildProgressionSuggestions(payload.exercises
+    .filter(ex => ex.targetReps !== null && ex.targetReps !== undefined)
+    .map(ex => {
+      const meta = metadataByWorkoutExercise.get(ex.workoutExerciseId)
+      const relatedExercise = meta ? getExerciseRelation(meta) : null
+      const usePlanMeta = (ex.source ?? 'planned') === 'planned'
+
+      return {
+        exerciseId: ex.exerciseId,
+        exerciseName: ex.name,
+        isCompound: usePlanMeta ? Boolean(relatedExercise?.is_compound) : Boolean(ex.isCompound),
+        targetSets: usePlanMeta ? meta?.sets ?? ex.sets.length : ex.targetSets ?? ex.sets.length,
+        targetReps: usePlanMeta ? meta?.reps ?? null : ex.targetReps ?? null,
+        targetRpe: usePlanMeta ? meta?.target_rpe ?? 7 : ex.targetRpe ?? 7,
+        suggestedWeightKg: usePlanMeta ? meta?.weight_kg ?? null : null,
+        previousLogCount: historyByExercise[ex.exerciseId]?.length ?? 0,
+        recentMaxWeightsKg: recentMaxWeights(historyByExercise[ex.exerciseId] ?? []).slice(0, 3),
+        status: ex.status,
+        sets: ex.sets,
+      }
+    }))
+
+  const exerciseLogs = exercisesWithData.map(ex => {
+    const completedSets = ex.sets.filter(set => set.completed)
+
+    return {
+      exercise_id: ex.exerciseId,
+      sets_completed: completedSets.length,
+      reps_completed: completedSets.map(set => Math.max(0, parseInt(set.reps) || 0)),
+      weights_kg: completedSets.map(set => Math.max(0, parseFloat(set.weightKg) || 0)),
+      rpe_values: completedSets.map(set => set.rpe),
+      duration_seconds: completedSets.reduce((total, set) => total + Math.max(0, set.durationSeconds ?? 0), 0) || null,
+      notes: buildExerciseLogNote(ex),
+    }
+  })
+
+  const prs: PRRecord[] = []
+  for (const ex of exercisesWithData) {
+    const currentSets = ex.sets
+      .filter(set => set.completed)
+      .map(set => ({
+        weightKg: Math.max(0, parseFloat(set.weightKg) || 0),
+        reps: Math.max(0, parseInt(set.reps) || 0),
+      }))
+
+    const prevLogs = historyByExercise[ex.exerciseId] ?? []
+    const historySets = zipPreviousPerformanceRows(prevLogs.map(log => ({
+      weightsKg: log.weights_kg,
+      reps: log.reps_completed,
+    }))).map(set => ({
+      weightKg: Number(set.weightKg) || 0,
+      reps: Number(set.reps) || 0,
+    }))
+
+    const record = detectPersonalRecord({
+      exerciseName: ex.name,
+      currentSets,
+      historySets,
+      hasHistory: prevLogs.length > 0,
+    })
+
+    if (record) prs.push(record)
+  }
+
+  return { prs, progressions, exerciseLogs }
+}
+
 async function updateActivePlanTargets(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -235,17 +373,25 @@ export async function saveSession(
 
   const { data: existingSession } = await (supabase
     .from('progress_logs') as any)
-    .select('id')
+    .select('id, session_result_snapshot')
     .eq('user_id', user.id)
     .eq('client_session_id', payload.clientSessionId)
-    .maybeSingle() as { data: { id: string } | null }
+    .maybeSingle() as { data: { id: string; session_result_snapshot: unknown } | null }
 
   if (existingSession) {
+    const storedResult = decodeSessionResultSnapshot(existingSession.session_result_snapshot)
+    const outcome = storedResult ?? await deriveSessionOutcome(
+      supabase,
+      user.id,
+      payload,
+      existingSession.id,
+    )
+
     return {
       success: true,
       progressLogId: existingSession.id,
-      prs: [],
-      progressions: [],
+      prs: outcome.prs,
+      progressions: outcome.progressions,
     }
   }
 
@@ -277,116 +423,11 @@ export async function saveSession(
     Math.round((payload.finishedAt - payload.startedAt) / 60_000),
   )
 
-  const workoutExerciseIds = payload.exercises
-    .filter(ex => (ex.source ?? 'planned') === 'planned' && isUuid(ex.workoutExerciseId))
-    .map(ex => ex.workoutExerciseId)
-  const exerciseIds = Array.from(new Set(payload.exercises.map(ex => ex.exerciseId)))
-
-  const [{ data: metaRows }, { data: historyRows }] = await Promise.all([
-    workoutExerciseIds.length > 0
-      ? (supabase
-          .from('workout_exercises') as any)
-          .select(`
-            id,
-            exercise_id,
-            sets,
-            reps,
-            weight_kg,
-            target_rpe,
-            exercise:exercises(is_compound)
-          `)
-          .in('id', workoutExerciseIds) as Promise<{ data: ExerciseMetaRow[] | null }>
-      : Promise.resolve({ data: [] as ExerciseMetaRow[] }),
-    exerciseIds.length > 0
-      ? (supabase
-          .from('exercise_logs') as any)
-          .select('exercise_id, weights_kg, reps_completed, progress_log_id, progress_logs!inner(user_id, completed_at)')
-          .in('exercise_id', exerciseIds)
-          .eq('progress_logs.user_id', user.id) as Promise<{ data: HistoricalLogRow[] | null }>
-      : Promise.resolve({ data: [] as HistoricalLogRow[] }),
-  ])
-
-  const metadataByWorkoutExercise = new Map((metaRows ?? []).map(row => [row.id, row]))
-  const historyByExercise = groupByExerciseId(historyRows ?? [])
-  const exercisesWithData = payload.exercises.filter(ex =>
-    ex.sets.some(set => set.completed) || (ex.status === 'skipped' && Boolean(ex.skipReason)),
+  const candidateOutcome = await deriveSessionOutcome(supabase, user.id, payload)
+  const candidateSnapshot = createSessionResultSnapshot(
+    candidateOutcome.prs,
+    candidateOutcome.progressions,
   )
-
-  const progressions = buildProgressionSuggestions(payload.exercises
-    .filter(ex => ex.targetReps !== null && ex.targetReps !== undefined)
-    .map(ex => {
-    const meta = metadataByWorkoutExercise.get(ex.workoutExerciseId)
-    const relatedExercise = meta ? getExerciseRelation(meta) : null
-    const usePlanMeta = (ex.source ?? 'planned') === 'planned'
-
-    return {
-      exerciseId: ex.exerciseId,
-      exerciseName: ex.name,
-      isCompound: usePlanMeta ? Boolean(relatedExercise?.is_compound) : Boolean(ex.isCompound),
-      targetSets: usePlanMeta ? meta?.sets ?? ex.sets.length : ex.targetSets ?? ex.sets.length,
-      targetReps: usePlanMeta ? meta?.reps ?? null : ex.targetReps ?? null,
-      targetRpe: usePlanMeta ? meta?.target_rpe ?? 7 : ex.targetRpe ?? 7,
-      suggestedWeightKg: usePlanMeta ? meta?.weight_kg ?? null : null,
-      previousLogCount: historyByExercise[ex.exerciseId]?.length ?? 0,
-      recentMaxWeightsKg: recentMaxWeights(historyByExercise[ex.exerciseId] ?? []).slice(0, 3),
-      status: ex.status,
-      sets: ex.sets,
-    }
-  }))
-
-  const prs: PRRecord[] = []
-  let exerciseLogs: Array<{
-    exercise_id: string
-    sets_completed: number
-    reps_completed: number[]
-    weights_kg: number[]
-    rpe_values: Array<number | null>
-    duration_seconds: number | null
-    notes: string | null
-  }> = []
-
-  if (exercisesWithData.length > 0) {
-    exerciseLogs = exercisesWithData.map(ex => {
-      const completedSets = ex.sets.filter(set => set.completed)
-
-      return {
-        exercise_id: ex.exerciseId,
-        sets_completed: completedSets.length,
-        reps_completed: completedSets.map(set => Math.max(0, parseInt(set.reps) || 0)),
-        weights_kg: completedSets.map(set => Math.max(0, parseFloat(set.weightKg) || 0)),
-        rpe_values: completedSets.map(set => set.rpe),
-        duration_seconds: completedSets.reduce((total, set) => total + Math.max(0, set.durationSeconds ?? 0), 0) || null,
-        notes: buildExerciseLogNote(ex),
-      }
-    })
-
-    for (const ex of exercisesWithData) {
-      const currentSets = ex.sets
-        .filter(set => set.completed)
-        .map(set => ({
-          weightKg: Math.max(0, parseFloat(set.weightKg) || 0),
-          reps: Math.max(0, parseInt(set.reps) || 0),
-        }))
-
-      const prevLogs = historyByExercise[ex.exerciseId] ?? []
-      const historySets = zipPreviousPerformanceRows(prevLogs.map(log => ({
-        weightsKg: log.weights_kg,
-        reps: log.reps_completed,
-      }))).map(set => ({
-        weightKg: Number(set.weightKg) || 0,
-        reps: Number(set.reps) || 0,
-      }))
-
-      const record = detectPersonalRecord({
-        exerciseName: ex.name,
-        currentSets,
-        historySets,
-        hasHistory: prevLogs.length > 0,
-      })
-
-      if (record) prs.push(record)
-    }
-  }
 
   const { data: persistedRows, error: persistenceError } = await (supabase as any).rpc(
     'save_session_log_atomic',
@@ -396,10 +437,15 @@ export async function saveSession(
       p_completed_at: new Date(payload.finishedAt).toISOString(),
       p_duration_minutes: durationMinutes,
       p_mood_rating: payload.moodRating,
-      p_exercise_logs: exerciseLogs,
+      p_exercise_logs: candidateOutcome.exerciseLogs,
+      p_result_snapshot: candidateSnapshot,
     },
   ) as {
-    data: Array<{ progress_log_id: string; inserted: boolean }> | null
+    data: Array<{
+      progress_log_id: string
+      inserted: boolean
+      result_snapshot: unknown
+    }> | null
     error: { message: string } | null
   }
 
@@ -415,11 +461,22 @@ export async function saveSession(
     }
   }
 
-  if (!persisted.inserted) {
-    return { success: true, progressLogId: persisted.progress_log_id, prs: [], progressions: [] }
+  const storedResult = decodeSessionResultSnapshot(persisted.result_snapshot)
+  const outcome = storedResult ?? await deriveSessionOutcome(
+    supabase,
+    user.id,
+    payload,
+    persisted.progress_log_id,
+  )
+
+  if (persisted.inserted) {
+    await updateActivePlanTargets(supabase, user.id, payload.workoutId, outcome.progressions)
   }
 
-  await updateActivePlanTargets(supabase, user.id, payload.workoutId, progressions)
-
-  return { success: true, progressLogId: persisted.progress_log_id, prs, progressions }
+  return {
+    success: true,
+    progressLogId: persisted.progress_log_id,
+    prs: outcome.prs,
+    progressions: outcome.progressions,
+  }
 }

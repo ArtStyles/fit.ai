@@ -465,6 +465,8 @@ export interface Database {
         Row: {
           id: string
           user_id: string
+          client_session_id: string | null
+          session_result_snapshot: Json | null
           workout_id: string | null
           completed_at: string
           duration_minutes: number | null
@@ -475,6 +477,8 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
+          client_session_id?: string | null
+          session_result_snapshot?: Json | null
           workout_id?: string | null
           completed_at?: string
           duration_minutes?: number | null
@@ -484,6 +488,7 @@ export interface Database {
         }
         Update: {
           client_session_id?: string | null
+          session_result_snapshot?: Json | null
           workout_id?: string | null
           duration_minutes?: number | null
           notes?: string | null
@@ -831,10 +836,12 @@ export interface Database {
           p_duration_minutes: number
           p_mood_rating: number | null
           p_exercise_logs: Json
+          p_result_snapshot: Json
         }
         Returns: Array<{
           progress_log_id: string
           inserted: boolean
+          result_snapshot: Json
         }>
       }
       get_dashboard_payload: {

@@ -113,7 +113,7 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
                 · {completedSets}/{totalSets} {t('series')}
               </span>
             )}
-            <SessionSyncStatus state={syncState} onRetry={onSyncRetry} className="min-h-0 basis-full" />
+            <SessionSyncStatus state={syncState} onRetry={onSyncRetry} className="basis-full" />
           </div>
         </div>
 

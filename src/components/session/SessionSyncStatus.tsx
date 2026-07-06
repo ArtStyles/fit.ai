@@ -26,7 +26,6 @@ export function SessionSyncStatus({
         className={cn(
           'inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm font-semibold text-red-300',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:cursor-default',
-          className,
         )}
         aria-label={label}
       >

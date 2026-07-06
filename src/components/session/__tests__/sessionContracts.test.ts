@@ -7,6 +7,8 @@ const exerciseCard = readFileSync(new URL('../ExerciseCard.tsx', import.meta.url
 const setRow = readFileSync(new URL('../SetRow.tsx', import.meta.url), 'utf8')
 const restTimer = readFileSync(new URL('../RestTimer.tsx', import.meta.url), 'utf8')
 const completion = readFileSync(new URL('../CompletionScreen.tsx', import.meta.url), 'utf8')
+const syncStatus = readFileSync(new URL('../SessionSyncStatus.tsx', import.meta.url), 'utf8')
+const sessionHeader = readFileSync(new URL('../SessionHeader.tsx', import.meta.url), 'utf8')
 const store = readFileSync(new URL('../../../store/sessionStore.ts', import.meta.url), 'utf8')
 const persistence = readFileSync(new URL('../../../lib/session/persistSession.ts', import.meta.url), 'utf8')
 
@@ -69,6 +71,13 @@ describe('active session wiring contracts', () => {
     expect(restTimer).toContain('min-h-[44px]')
     expect(restTimer).toContain('motion-reduce:animate-none')
     expect(restTimer).toContain('env(safe-area-inset-bottom)')
+  })
+
+  it('keeps error retry at 44px while non-error states remain noninteractive', () => {
+    expect(syncStatus).toMatch(/if \(state === 'error'\)[\s\S]+<button[\s\S]+min-h-\[44px\]/)
+    expect(syncStatus).toMatch(/const Icon =[\s\S]+return \([\s\S]+<div/)
+    expect(syncStatus).not.toMatch(/if \(state === 'error'\)[\s\S]+className,[\s\S]+aria-label/)
+    expect(sessionHeader).not.toContain('className="min-h-0 basis-full"')
   })
 
   it('orders completion sections and keeps navigation independent of motion', () => {

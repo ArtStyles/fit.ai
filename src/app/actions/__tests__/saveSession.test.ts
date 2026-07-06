@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createClient } from '@/lib/supabase/server'
+import { decodeSessionResultSnapshot } from '@/lib/session/resultSnapshot'
 import { saveSession, type SaveSessionPayload } from '../saveSession'
 
 const createClientMock = createClient as unknown as Mock
@@ -9,6 +10,7 @@ function query(result: { data: unknown; error?: unknown }) {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
     in: vi.fn(() => builder),
+    neq: vi.fn(() => builder),
     not: vi.fn(() => builder),
     gte: vi.fn(() => builder),
     lt: vi.fn(() => builder),
@@ -16,6 +18,7 @@ function query(result: { data: unknown; error?: unknown }) {
     maybeSingle: vi.fn(() => Promise.resolve(result)),
     single: vi.fn(() => Promise.resolve(result)),
     insert: vi.fn(() => builder),
+    update: vi.fn(() => builder),
     then: (
       resolve: (value: { data: unknown; error?: unknown }) => unknown,
       reject: (reason: unknown) => unknown,
@@ -50,18 +53,35 @@ const payload: SaveSessionPayload = {
   exercises: [],
 }
 
+const storedSnapshot = {
+  version: 1,
+  prs: [{ exerciseName: 'Press Banca', weightKg: 80, kind: 'weight' as const }],
+  progressions: [{
+    exerciseId: 'exercise-1',
+    exerciseName: 'Press Banca',
+    progressionType: 'weight' as const,
+    currentWeightKg: 80,
+    nextWeightKg: 82.5,
+    currentTargetReps: null,
+    nextTargetReps: null,
+    action: 'increase' as const,
+    reason: 'Completaste el objetivo.',
+    confidence: 'high' as const,
+  }],
+}
+
 function successfulSaveMock({
   existingId = null,
-  rpcData = [{ progress_log_id: 'log-new', inserted: true }],
+  rpcData = [{ progress_log_id: 'log-new', inserted: true, result_snapshot: storedSnapshot }],
   rpcError = null,
 }: {
   existingId?: string | null
-  rpcData?: Array<{ progress_log_id: string; inserted: boolean }> | null
+  rpcData?: Array<{ progress_log_id: string; inserted: boolean; result_snapshot: unknown }> | null
   rpcError?: { message: string } | null
 } = {}) {
   const supabase: any = createSupabaseMock({
     progress_logs: existingId
-      ? [{ data: { id: existingId } }]
+      ? [{ data: { id: existingId, session_result_snapshot: storedSnapshot } }]
       : [{ data: null }, { data: [] }, { data: [] }],
     profiles: [{ data: { timezone: 'UTC' } }],
     workouts: [{ data: workout }],
@@ -244,6 +264,26 @@ describe('saveSession idempotency', () => {
     vi.useRealTimers()
   })
 
+  it('validates a stored presentation snapshot', () => {
+    expect(decodeSessionResultSnapshot(storedSnapshot)).toEqual(storedSnapshot)
+    expect(decodeSessionResultSnapshot({ version: 1, prs: 'bad', progressions: [] })).toBeNull()
+  })
+
+  it('returns the stored presentation snapshot for the normal winner', async () => {
+    const supabase = successfulSaveMock()
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-new',
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
+    })
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic', expect.objectContaining({
+      p_result_snapshot: { version: 1, prs: [], progressions: [] },
+    }))
+  })
+
   it('returns the existing completed log on a lost-response retry without replaying side effects', async () => {
     const supabase = successfulSaveMock({ existingId: 'log-existing' })
     createClientMock.mockResolvedValue(supabase)
@@ -251,23 +291,92 @@ describe('saveSession idempotency', () => {
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: true,
       progressLogId: 'log-existing',
-      prs: [],
-      progressions: [],
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
     })
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+  it('applies progression side effects only for the original winner', async () => {
+    const winner: any = createSupabaseMock({
+      progress_logs: [{ data: null }, { data: [] }, { data: [] }],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [
+        { data: workout },
+        { data: { plan_id: 'plan-1' } },
+        { data: [{ id: 'workout-1' }] },
+      ],
+      workout_plans: [
+        { data: { id: 'plan-1' } },
+        { data: { id: 'plan-1' } },
+      ],
+      workout_exercises: [{ data: null, error: null }],
+    })
+    winner.rpc = vi.fn(() => Promise.resolve({
+      data: [{ progress_log_id: 'log-new', inserted: true, result_snapshot: storedSnapshot }],
+      error: null,
+    }))
+    const retried = successfulSaveMock({ existingId: 'log-new' })
+    createClientMock.mockResolvedValueOnce(winner).mockResolvedValueOnce(retried)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: true })
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: true })
+
+    expect(winner.from.mock.calls.filter(([table]: [string]) => table === 'workout_exercises')).toHaveLength(1)
+    expect(retried.from).not.toHaveBeenCalledWith('workout_exercises')
+  })
+
   it('returns the winner of a duplicate-constraint race without a second detail insert', async () => {
     const supabase = successfulSaveMock({
-      rpcData: [{ progress_log_id: 'log-winner', inserted: false }],
+      rpcData: [{ progress_log_id: 'log-winner', inserted: false, result_snapshot: storedSnapshot }],
     })
     createClientMock.mockResolvedValue(supabase)
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: true,
       progressLogId: 'log-winner',
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
     })
     expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
+  })
+
+  it.each([
+    ['missing', null],
+    ['invalid', { version: 1, prs: 'bad', progressions: [] }],
+  ])('reconstructs %s stored results while excluding the winning log', async (_label, resultSnapshot) => {
+    const fallbackPayload: SaveSessionPayload = {
+      ...payload,
+      exercises: [{
+        workoutExerciseId: 'session-exercise',
+        exerciseId: '22222222-2222-4222-8222-222222222222',
+        name: 'Press Banca',
+        isCompound: false,
+        targetSets: 1,
+        targetReps: 8,
+        targetRpe: 7,
+        source: 'ad_hoc',
+        sets: [{ weightKg: '10', reps: '8', rpe: 7, completed: true }],
+        status: 'completed',
+      }],
+    }
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: { id: 'log-existing', session_result_snapshot: resultSnapshot } }],
+      exercise_logs: [{ data: [] }],
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    const result = await saveSession(fallbackPayload)
+    expect(result).toMatchObject({
+      success: true,
+      progressLogId: 'log-existing',
+      prs: [{ exerciseName: 'Press Banca', weightKg: 10, kind: 'weight' }],
+    })
+    expect(result.progressions).toHaveLength(1)
+    const historyQuery = supabase.from.mock.results[1].value
+    expect(historyQuery.neq).toHaveBeenCalledWith('progress_log_id', 'log-existing')
+    expect(supabase.from).not.toHaveBeenCalledWith('workouts')
   })
 
   it('uses an atomic boundary so a detail failure can retry the same idempotency key', async () => {

@@ -1,5 +1,6 @@
 ALTER TABLE public.progress_logs
-  ADD COLUMN client_session_id UUID;
+  ADD COLUMN client_session_id UUID,
+  ADD COLUMN session_result_snapshot JSONB;
 
 CREATE UNIQUE INDEX progress_logs_user_client_session_unique
   ON public.progress_logs (user_id, client_session_id)
@@ -11,9 +12,10 @@ CREATE OR REPLACE FUNCTION public.save_session_log_atomic(
   p_completed_at TIMESTAMPTZ,
   p_duration_minutes INTEGER,
   p_mood_rating INTEGER,
-  p_exercise_logs JSONB
+  p_exercise_logs JSONB,
+  p_result_snapshot JSONB
 )
-RETURNS TABLE(progress_log_id UUID, inserted BOOLEAN)
+RETURNS TABLE(progress_log_id UUID, inserted BOOLEAN, result_snapshot JSONB)
 LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = public
@@ -22,6 +24,7 @@ DECLARE
   v_user_id UUID := auth.uid();
   v_progress_log_id UUID;
   v_inserted BOOLEAN := FALSE;
+  v_result_snapshot JSONB;
 BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Authentication required';
@@ -31,6 +34,7 @@ BEGIN
     user_id,
     workout_id,
     client_session_id,
+    session_result_snapshot,
     completed_at,
     duration_minutes,
     mood_rating
@@ -38,6 +42,7 @@ BEGIN
     v_user_id,
     p_workout_id,
     p_client_session_id,
+    p_result_snapshot,
     p_completed_at,
     p_duration_minutes,
     p_mood_rating
@@ -45,13 +50,14 @@ BEGIN
   ON CONFLICT (user_id, client_session_id)
     WHERE client_session_id IS NOT NULL
     DO NOTHING
-  RETURNING id INTO v_progress_log_id;
+  RETURNING id, session_result_snapshot
+    INTO v_progress_log_id, v_result_snapshot;
 
   v_inserted := FOUND;
 
   IF NOT v_inserted THEN
-    SELECT id
-      INTO v_progress_log_id
+    SELECT id, session_result_snapshot
+      INTO v_progress_log_id, v_result_snapshot
       FROM public.progress_logs
      WHERE user_id = v_user_id
        AND client_session_id = p_client_session_id;
@@ -88,9 +94,9 @@ BEGIN
     );
   END IF;
 
-  RETURN QUERY SELECT v_progress_log_id, v_inserted;
+  RETURN QUERY SELECT v_progress_log_id, v_inserted, v_result_snapshot;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.save_session_log_atomic(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.save_session_log_atomic(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB) TO authenticated;
+REVOKE ALL ON FUNCTION public.save_session_log_atomic(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.save_session_log_atomic(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB) TO authenticated;
