@@ -512,7 +512,7 @@ export default async function DashboardPage() {
         todayWorkout: todayWorkout
           ? { name: todayWorkout.name, exercise_count: todayWorkout.exercise_count }
           : null,
-        isCompletedToday:  !!todayLog,
+        isCompletedToday:  hasSessionToday,
         progressionCount:  activeAdjustmentCount,
         topRecord:         topRecordHighlight
           ? { exerciseName: topRecordHighlight.exerciseName, maxWeightKg: topRecordHighlight.maxWeightKg }
@@ -529,6 +529,7 @@ export default async function DashboardPage() {
     promo: dashboardBanner ? { title: dashboardBanner.title } : null,
     todayWorkout,
     isCompletedToday: Boolean(todayLog),
+    hasSessionToday,
     nextWorkout: nextWorkoutDay?.workout ?? null,
     nextWorkoutIsoDay: nextWorkoutDay?.iso ?? null,
     recoverableWorkout: recoverableDay?.workout ?? null,

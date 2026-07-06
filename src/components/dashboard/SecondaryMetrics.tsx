@@ -5,6 +5,12 @@ import { PendingLink } from '@/components/navigation/PendingLink'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { Sparkline } from './Sparkline'
 import type { DashboardViewModel } from './dashboardViewModel'
+import {
+  formatDashboardDuration,
+  formatDashboardLoad,
+  formatDashboardRelativeDate,
+  formatDashboardReps,
+} from './dashboardFormatters'
 
 export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['secondaryMetrics'] }) {
   const { language, t } = useI18n()
@@ -47,14 +53,32 @@ export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['sec
             {metrics.latestSession && (
               <PendingLink href={`/history/${metrics.latestSession.id}`} className="flex min-h-14 items-center gap-3 rounded-2xl border border-border/70 bg-card p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
                 <Activity className="h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
-                <span className="min-w-0 flex-1"><span className="block text-base font-semibold text-foreground">{t('Última sesión')}</span><span className="block truncate text-sm text-muted-foreground">{metrics.latestSession.workoutName}</span></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base font-semibold text-foreground">{t('Última sesión')}</span>
+                  <span className="block truncate text-sm text-muted-foreground">
+                    {[
+                      metrics.latestSession.workoutName,
+                      formatDashboardRelativeDate(metrics.latestSession.completedAt, language),
+                      formatDashboardDuration(metrics.latestSession.durationMinutes, language),
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               </PendingLink>
             )}
             {metrics.topRecord && (
               <PendingLink href={`/exercises/${metrics.topRecord.exerciseId}`} className="flex min-h-14 items-center gap-3 rounded-2xl border border-border/70 bg-card p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
                 <Medal className="h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
-                <span className="min-w-0 flex-1"><span className="block text-base font-semibold text-foreground">{t('Mejor marca personal')}</span><span className="block truncate text-sm text-muted-foreground">{metrics.topRecord.exerciseName} · {metrics.topRecord.maxWeightKg} kg</span></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base font-semibold text-foreground">{t('Mejor marca personal')}</span>
+                  <span className="block truncate text-sm text-muted-foreground">
+                    {[
+                      metrics.topRecord.exerciseName,
+                      formatDashboardLoad(metrics.topRecord.maxWeightKg, language),
+                      formatDashboardReps(metrics.topRecord.repsAtMaxWeight, language),
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               </PendingLink>
             )}

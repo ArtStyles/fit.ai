@@ -59,6 +59,7 @@ export function selectDashboardNotice(input: DashboardNoticeInput): DashboardNot
 export type DashboardViewModelInput = DashboardNoticeInput & {
   todayWorkout: DashboardWorkout | null
   isCompletedToday: boolean
+  hasSessionToday: boolean
   nextWorkout: DashboardWorkout | null
   nextWorkoutIsoDay: number | null
   recoverableWorkout: DashboardWorkout | null
@@ -77,7 +78,7 @@ export type DashboardViewModelInput = DashboardNoticeInput & {
 }
 
 export type DashboardToday = {
-  state: 'available' | 'completed' | 'rest' | 'needs-plan'
+  state: 'available' | 'completed' | 'completed-for-today' | 'rest' | 'needs-plan'
   workout: DashboardWorkout | null
   href: string | null
   nextWorkout: DashboardWorkout | null
@@ -144,9 +145,28 @@ function deriveToday(input: DashboardViewModelInput): DashboardToday {
   }
 
   if (!input.todayWorkout) {
+    if (input.hasSessionToday) {
+      return {
+        state: 'completed-for-today',
+        workout: null,
+        href: null,
+        nextWorkout: input.nextWorkout,
+        nextWorkoutIsoDay: input.nextWorkoutIsoDay,
+      }
+    }
     return {
       state: 'rest',
       workout: null,
+      href: null,
+      nextWorkout: input.nextWorkout,
+      nextWorkoutIsoDay: input.nextWorkoutIsoDay,
+    }
+  }
+
+  if (input.hasSessionToday && !input.isCompletedToday) {
+    return {
+      state: 'completed-for-today',
+      workout: input.todayWorkout,
       href: null,
       nextWorkout: input.nextWorkout,
       nextWorkoutIsoDay: input.nextWorkoutIsoDay,
@@ -164,7 +184,7 @@ function deriveToday(input: DashboardViewModelInput): DashboardToday {
 
 function deriveRecommendation(input: DashboardViewModelInput): DashboardRecommendation | null {
   if (input.needsPlan) return null
-  if (input.recoverableWorkout) {
+  if (input.recoverableWorkout && !input.hasSessionToday) {
     return {
       kind: 'recover-session',
       workout: input.recoverableWorkout,
@@ -202,13 +222,20 @@ function deriveRecommendation(input: DashboardViewModelInput): DashboardRecommen
 }
 
 export function buildDashboardViewModel(input: DashboardViewModelInput): DashboardViewModel {
+  const daysByIso = new Map<number, DashboardWeekDay>()
+  for (const day of input.weekDays) {
+    if (day.isoDay < 1 || day.isoDay > 7 || daysByIso.has(day.isoDay)) continue
+    daysByIso.set(day.isoDay, day)
+  }
+  const normalizedDays = Array.from(daysByIso.values()).sort((a, b) => a.isoDay - b.isoDay)
+
   return {
     notice: selectDashboardNotice(input),
     today: deriveToday(input),
     weekly: {
-      days: input.weekDays,
-      completed: input.sessionsThisWeek,
-      scheduled: input.scheduledThisWeek,
+      days: normalizedDays,
+      completed: normalizedDays.filter(day => day.workout && day.isCompleted).length,
+      scheduled: normalizedDays.filter(day => day.workout).length,
     },
     recommendation: deriveRecommendation(input),
     secondaryMetrics: {

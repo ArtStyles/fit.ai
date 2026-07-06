@@ -18,6 +18,23 @@ const workout = {
 
 const nextWorkout = { ...workout, id: 'workout-2', name: 'Piernas', day_of_week: 3 }
 
+function weekDay(
+  isoDay: number,
+  scheduledWorkout: typeof workout | null,
+  isCompleted = false,
+) {
+  return {
+    isoDay,
+    dateStr: `2026-07-${String(5 + isoDay).padStart(2, '0')}`,
+    workout: scheduledWorkout,
+    isCompleted,
+    isToday: isoDay === 1,
+    isRecoverable: false,
+    completedDurationMinutes: isCompleted ? 45 : null,
+    completedLogId: isCompleted ? `log-${isoDay}` : null,
+  }
+}
+
 function input(overrides: Partial<DashboardViewModelInput> = {}): DashboardViewModelInput {
   return {
     needsPlan: false,
@@ -26,6 +43,7 @@ function input(overrides: Partial<DashboardViewModelInput> = {}): DashboardViewM
     promo: null,
     todayWorkout: workout,
     isCompletedToday: false,
+    hasSessionToday: false,
     nextWorkout,
     nextWorkoutIsoDay: 3,
     recoverableWorkout: null,
@@ -82,12 +100,49 @@ describe('dashboard view model', () => {
   })
 
   it('marks today complete without offering the session again', () => {
-    expect(buildDashboardViewModel(input({ isCompletedToday: true })).today).toMatchObject({
+    expect(buildDashboardViewModel(input({ isCompletedToday: true, hasSessionToday: true })).today).toMatchObject({
       state: 'completed',
       workout,
       href: null,
       nextWorkout,
       nextWorkoutIsoDay: 3,
+    })
+  })
+
+  it('locks today when a different or recoverable workout was completed today', () => {
+    const viewModel = buildDashboardViewModel(input({
+      isCompletedToday: false,
+      hasSessionToday: true,
+      recoverableWorkout: workout,
+      recoverableIsoDay: 1,
+    }))
+
+    expect(viewModel.today).toMatchObject({
+      state: 'completed-for-today',
+      workout,
+      href: null,
+      nextWorkout,
+      nextWorkoutIsoDay: 3,
+    })
+    expect(viewModel.recommendation).not.toMatchObject({ kind: 'recover-session' })
+  })
+
+  it('keeps today available when no workout was completed today', () => {
+    expect(buildDashboardViewModel(input({ isCompletedToday: false, hasSessionToday: false })).today)
+      .toMatchObject({ state: 'available', href: '/session/workout-1' })
+  })
+
+  it('locks after a different completion even when there is no next scheduled day', () => {
+    expect(buildDashboardViewModel(input({
+      isCompletedToday: false,
+      hasSessionToday: true,
+      nextWorkout: null,
+      nextWorkoutIsoDay: null,
+    })).today).toMatchObject({
+      state: 'completed-for-today',
+      href: null,
+      nextWorkout: null,
+      nextWorkoutIsoDay: null,
     })
   })
 
@@ -119,8 +174,62 @@ describe('dashboard view model', () => {
     expect(buildDashboardViewModel(input({ weekDays })).weekly).toEqual({
       days: weekDays,
       completed: 1,
-      scheduled: 3,
+      scheduled: 1,
     })
+  })
+
+  it('ignores raw logs from a previous plan when active-plan cells are incomplete', () => {
+    const weekly = buildDashboardViewModel(input({
+      weekDays: [weekDay(1, workout, false)],
+      sessionsThisWeek: 4,
+      scheduledThisWeek: 4,
+    })).weekly
+
+    expect(weekly).toMatchObject({ completed: 0, scheduled: 1 })
+  })
+
+  it('counts duplicate logs represented by one completed day only once', () => {
+    const weekly = buildDashboardViewModel(input({
+      weekDays: [weekDay(1, workout, true)],
+      sessionsThisWeek: 2,
+    })).weekly
+
+    expect(weekly.completed).toBe(1)
+  })
+
+  it('does not schedule workouts with null weekdays', () => {
+    const weekly = buildDashboardViewModel(input({
+      weekDays: Array.from({ length: 7 }, (_, index) => weekDay(index + 1, null)),
+      scheduledThisWeek: 2,
+    })).weekly
+
+    expect(weekly.scheduled).toBe(0)
+  })
+
+  it('deduplicates duplicate scheduled weekday cells with map semantics', () => {
+    const weekly = buildDashboardViewModel(input({
+      weekDays: [weekDay(1, workout, true), weekDay(1, nextWorkout, true)],
+      scheduledThisWeek: 2,
+      sessionsThisWeek: 2,
+    })).weekly
+
+    expect(weekly.days).toHaveLength(1)
+    expect(weekly).toMatchObject({ completed: 1, scheduled: 1 })
+  })
+
+  it('reports counts that exactly match the normalized rendered grid', () => {
+    const weekly = buildDashboardViewModel(input({
+      weekDays: [
+        weekDay(1, workout, true),
+        weekDay(2, null),
+        weekDay(3, nextWorkout, false),
+      ],
+      sessionsThisWeek: 9,
+      scheduledThisWeek: 9,
+    })).weekly
+
+    expect(weekly.completed).toBe(weekly.days.filter(day => day.workout && day.isCompleted).length)
+    expect(weekly.scheduled).toBe(weekly.days.filter(day => day.workout).length)
   })
 
   it('prioritizes a recoverable session as the single next recommendation', () => {

@@ -4,16 +4,7 @@ import { CheckCircle2, ChevronRight, Clock3, Dumbbell, Moon } from 'lucide-react
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import type { DashboardToday } from './dashboardViewModel'
-
-const DAY_NAMES: Record<number, string> = {
-  1: 'lunes',
-  2: 'martes',
-  3: 'miércoles',
-  4: 'jueves',
-  5: 'viernes',
-  6: 'sábado',
-  7: 'domingo',
-}
+import { DASHBOARD_DAY_KEYS } from './dashboardI18n'
 
 export function TodayActionCard({ today }: { today: DashboardToday }) {
   const { t } = useI18n()
@@ -35,11 +26,31 @@ export function TodayActionCard({ today }: { today: DashboardToday }) {
           <div className="mt-5 rounded-2xl border border-border/70 bg-background/60 p-4">
             <p className="text-sm font-semibold text-muted-foreground">{t('Próxima sesión')}</p>
             <p className="mt-1 text-base font-semibold text-foreground">{today.nextWorkout.name}</p>
-            <p className="mt-1 text-base text-violet-300">{t(DAY_NAMES[today.nextWorkoutIsoDay])}</p>
+            <p className="mt-1 text-base text-violet-300">{t(DASHBOARD_DAY_KEYS[today.nextWorkoutIsoDay])}</p>
           </div>
         ) : (
           <p className="mt-5 text-base font-medium text-foreground">{t('No hay otra sesión programada esta semana.')}</p>
         )}
+      </section>
+    )
+  }
+
+  if (today.state === 'completed-for-today') {
+    return (
+      <section aria-labelledby="today-title" className="rounded-3xl border border-violet-400/30 bg-violet-500/10 p-5 sm:p-6">
+        <div className="flex items-center gap-2 text-violet-300">
+          <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+          <p className="text-sm font-bold uppercase tracking-[0.12em]">{t('Completado hoy')}</p>
+        </div>
+        <h2 id="today-title" className="mt-4 font-display text-2xl font-bold text-foreground">{t('Ya completaste una sesión hoy.')}</h2>
+        <p className="mt-2 text-base leading-relaxed text-muted-foreground">
+          {today.nextWorkout && today.nextWorkoutIsoDay
+            ? t('Tu próxima sesión es {workout} el {day}.', {
+                workout: today.nextWorkout.name,
+                day: t(DASHBOARD_DAY_KEYS[today.nextWorkoutIsoDay]),
+              })
+            : t('No hay otra sesión programada esta semana.')}
+        </p>
       </section>
     )
   }
@@ -58,8 +69,10 @@ export function TodayActionCard({ today }: { today: DashboardToday }) {
         <p className="mt-2 text-base leading-relaxed text-muted-foreground">{t('La sesión de hoy ya está hecha. Prioriza tu recuperación.')}</p>
         {today.nextWorkout && today.nextWorkoutIsoDay && (
           <p className="mt-4 text-base text-foreground">
-            {t('Próxima:')} <span className="font-semibold">{today.nextWorkout.name}</span>{' '}
-            <span className="text-violet-300">{t(DAY_NAMES[today.nextWorkoutIsoDay])}</span>
+            {t('Próxima: {workout} · {day}', {
+              workout: today.nextWorkout.name,
+              day: t(DASHBOARD_DAY_KEYS[today.nextWorkoutIsoDay]),
+            })}
           </p>
         )}
       </section>
@@ -74,10 +87,10 @@ export function TodayActionCard({ today }: { today: DashboardToday }) {
         {workout.focus && <p className="mt-2 text-base text-violet-100/85">{workout.focus}</p>}
         <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-base text-violet-50">
           {workout.exercise_count > 0 && (
-            <span className="inline-flex items-center gap-2"><Dumbbell className="h-5 w-5 text-violet-200" aria-hidden="true" />{workout.exercise_count} {t('ejercicios')}</span>
+            <span className="inline-flex items-center gap-2"><Dumbbell className="h-5 w-5 text-violet-200" aria-hidden="true" />{t(workout.exercise_count === 1 ? '{count} ejercicio' : '{count} ejercicios', { count: workout.exercise_count })}</span>
           )}
           {workout.estimated_duration_minutes && (
-            <span className="inline-flex items-center gap-2"><Clock3 className="h-5 w-5 text-violet-200" aria-hidden="true" />{workout.estimated_duration_minutes} min</span>
+            <span className="inline-flex items-center gap-2"><Clock3 className="h-5 w-5 text-violet-200" aria-hidden="true" />{t('{minutes} min', { minutes: workout.estimated_duration_minutes })}</span>
           )}
         </div>
         {today.href && (

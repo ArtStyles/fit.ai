@@ -23,7 +23,9 @@ export function WeeklyStatus({ weekly }: { weekly: DashboardViewModel['weekly'] 
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-sm font-bold uppercase tracking-[0.12em] text-violet-300">{t('Esta semana')}</p>
-          <h2 id="weekly-title" className="mt-1 font-display text-xl font-bold text-foreground">{weekly.completed} de {weekly.scheduled} {t('sesiones')}</h2>
+          <h2 id="weekly-title" className="mt-1 font-display text-xl font-bold text-foreground">
+            {t('{completed} de {scheduled} sesiones', { completed: weekly.completed, scheduled: weekly.scheduled })}
+          </h2>
         </div>
         <PendingLink href="/calendario" className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-violet-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
           {t('Ver calendario')}

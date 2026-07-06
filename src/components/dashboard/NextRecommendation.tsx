@@ -3,18 +3,21 @@
 import { ArrowRight, MessageCircle, RotateCcw, Sparkles, TrendingUp } from 'lucide-react'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import type { TranslationValues } from '@/lib/i18n'
 import type { DashboardRecommendation } from './dashboardViewModel'
+import { DASHBOARD_DAY_KEYS } from './dashboardI18n'
 
-const DAY_NAMES: Record<number, string> = {
-  1: 'lunes', 2: 'martes', 3: 'miércoles', 4: 'jueves', 5: 'viernes', 6: 'sábado', 7: 'domingo',
-}
-
-function getRecommendationContent(recommendation: DashboardRecommendation, t: (source: string) => string) {
+function getRecommendationContent(
+  recommendation: DashboardRecommendation,
+  t: (source: string, values?: TranslationValues) => string,
+) {
   if (recommendation.kind === 'recover-session') {
     return {
       icon: RotateCcw,
       title: t('Recupera tu sesión pendiente'),
-      description: `${recommendation.workout.name}${recommendation.isoDay ? ` · ${t(DAY_NAMES[recommendation.isoDay])}` : ''}`,
+      description: recommendation.isoDay
+        ? t('{workout} · {day}', { workout: recommendation.workout.name, day: t(DASHBOARD_DAY_KEYS[recommendation.isoDay]) })
+        : recommendation.workout.name,
       action: t('Entrenar ahora'),
     }
   }
@@ -22,7 +25,10 @@ function getRecommendationContent(recommendation: DashboardRecommendation, t: (s
     return {
       icon: TrendingUp,
       title: t('Revisa los ajustes de tu plan'),
-      description: `${recommendation.adjustmentCount} ${t(recommendation.adjustmentCount === 1 ? 'progresión sugerida' : 'progresiones sugeridas')}`,
+      description: t(
+        recommendation.adjustmentCount === 1 ? '{count} progresión sugerida' : '{count} progresiones sugeridas',
+        { count: recommendation.adjustmentCount },
+      ),
       action: t('Ver ajustes'),
     }
   }
@@ -37,7 +43,9 @@ function getRecommendationContent(recommendation: DashboardRecommendation, t: (s
   return {
     icon: Sparkles,
     title: t('Prepara tu próxima sesión'),
-    description: `${recommendation.workout.name}${recommendation.isoDay ? ` · ${t(DAY_NAMES[recommendation.isoDay])}` : ''}`,
+    description: recommendation.isoDay
+      ? t('{workout} · {day}', { workout: recommendation.workout.name, day: t(DASHBOARD_DAY_KEYS[recommendation.isoDay]) })
+      : recommendation.workout.name,
     action: t('Ver plan'),
   }
 }
