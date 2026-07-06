@@ -179,12 +179,12 @@ export function ConfirmationStage({
             {summary.map(item => {
               const Icon = item.icon
               return (
-                <div key={item.label} className="flex min-h-16 items-center gap-3 rounded-2xl border border-border bg-card/60 p-4">
-                  <Icon className="h-5 w-5 shrink-0 text-violet-600" aria-hidden="true" />
-                  <div>
-                    <dt className="text-base font-semibold text-foreground">{item.label}</dt>
-                    <dd className="text-base leading-6 text-muted-foreground">{item.value}</dd>
-                  </div>
+                <div key={item.label} className="grid min-h-16 grid-cols-[auto_1fr] items-center gap-x-3 rounded-2xl border border-border bg-card/60 p-4">
+                  <dt className="contents">
+                    <Icon className="row-span-2 h-5 w-5 shrink-0 text-violet-600" aria-hidden="true" />
+                    <span className="text-base font-semibold text-foreground">{item.label}</span>
+                  </dt>
+                  <dd className="col-start-2 text-base leading-6 text-muted-foreground">{item.value}</dd>
                 </div>
               )
             })}
