@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, MailCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { trackEvent } from '@/lib/analytics/events'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import type { AppLanguage } from '@/lib/i18n'
@@ -89,6 +90,11 @@ export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale
       email,
       code,
       onVerified: href => {
+        void trackEvent('signup_completed', {
+          locale,
+          screen: 'register',
+          authenticated: true,
+        })
         showToast({
           title: copy.verifiedTitle,
           description: copy.verifiedDescription,

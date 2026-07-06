@@ -313,11 +313,6 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
     }
 
     if (result.kind === 'verification-required') {
-      void trackEvent('signup_completed', {
-        locale,
-        screen: 'register',
-        authenticated: false,
-      })
       setVerifyEmail(email)
       showToast({
         title: copy.checkEmailTitle,

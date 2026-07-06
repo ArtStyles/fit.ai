@@ -37,9 +37,7 @@ describe('product events migration', () => {
 
   it('constrains locale and pathname and creates funnel query indexes', () => {
     expect(migration).toContain("locale TEXT CHECK (locale IN ('es', 'en'))")
-    expect(migration).toContain("path LIKE '/%'")
-    expect(migration).toContain("position('?' IN path) = 0")
-    expect(migration).toContain("position('#' IN path) = 0")
+    expect(migration).toContain("path IN ('/', '/es', '/en', '/register', '/onboarding')")
     expect(migration).toContain('product_events_occurred_at_idx')
     expect(migration).toContain('product_events_name_idx')
   })

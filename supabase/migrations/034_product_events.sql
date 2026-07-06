@@ -18,14 +18,7 @@ CREATE TABLE public.product_events (
   anonymous_id UUID NOT NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   locale TEXT CHECK (locale IN ('es', 'en')),
-  path TEXT CHECK (
-    path IS NULL OR (
-      path LIKE '/%'
-      AND char_length(path) <= 200
-      AND position('?' IN path) = 0
-      AND position('#' IN path) = 0
-    )
-  ),
+  path TEXT CHECK (path IS NULL OR path IN ('/', '/es', '/en', '/register', '/onboarding')),
   properties JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 

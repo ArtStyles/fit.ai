@@ -91,10 +91,20 @@ describe('POST /api/analytics', () => {
       name: 'landing_view',
       properties: { path: '/es?token=secret' },
     }))
+    const piiInAllowedKey = await POST(request({
+      name: 'signup_started',
+      properties: { source: 'private@example.com' },
+    }))
+    const unknownStaticPath = await POST(request({
+      name: 'landing_view',
+      properties: { path: '/invite/secret-token' },
+    }))
 
     expect(invalidName.status).toBe(400)
     expect(sensitiveKey.status).toBe(400)
     expect(unsafePath.status).toBe(400)
+    expect(piiInAllowedKey.status).toBe(400)
+    expect(unknownStaticPath.status).toBe(400)
     expect(createServiceClientMock).not.toHaveBeenCalled()
   })
 

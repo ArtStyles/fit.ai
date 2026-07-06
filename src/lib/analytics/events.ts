@@ -12,12 +12,24 @@ export type AnalyticsEventName =
   | 'plan_adjustment_used'
   | 'organic_page_cta_clicked'
 
-type AnalyticsScalar = string | number | boolean
+export const ANALYTICS_LOCALES = ['es', 'en'] as const
+export const ANALYTICS_PATHS = ['/', '/es', '/en', '/register', '/onboarding'] as const
+export const ANALYTICS_STAGES = [
+  'profile', 'availability', 'equipment', 'safety', 'confirmation', 'generating',
+] as const
+export const ANALYTICS_SOURCES = ['landing', 'guide'] as const
+export const ANALYTICS_SCREENS = ['landing', 'register', 'onboarding'] as const
+export const ANALYTICS_DURATION_BUCKETS = ['short', 'medium', 'long'] as const
 
-export type AnalyticsProperties = Partial<Record<
-  'locale' | 'path' | 'stage' | 'source' | 'screen' | 'authenticated' | 'duration_bucket',
-  AnalyticsScalar
->>
+export type AnalyticsProperties = {
+  locale?: (typeof ANALYTICS_LOCALES)[number]
+  path?: (typeof ANALYTICS_PATHS)[number]
+  stage?: (typeof ANALYTICS_STAGES)[number]
+  source?: (typeof ANALYTICS_SOURCES)[number]
+  screen?: (typeof ANALYTICS_SCREENS)[number]
+  authenticated?: boolean
+  duration_bucket?: (typeof ANALYTICS_DURATION_BUCKETS)[number]
+}
 
 export type SanitizedAnalyticsEvent = {
   name: AnalyticsEventName
@@ -50,7 +62,6 @@ const PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
 ])
 
 const MAX_PROPERTIES_BYTES = 1024
-const MAX_PATH_LENGTH = 200
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
@@ -58,39 +69,18 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null
 }
 
-function isScalar(value: unknown): value is AnalyticsScalar {
-  return (
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    typeof value === 'number' && Number.isFinite(value)
-  )
+function isOneOf<T extends string>(value: unknown, values: readonly T[]): value is T {
+  return typeof value === 'string' && (values as readonly string[]).includes(value)
 }
 
-function isSafePath(path: string): boolean {
-  if (!path.startsWith('/') || path.length > MAX_PATH_LENGTH || path.includes('?') || path.includes('#')) {
-    return false
-  }
-
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(path)
-  } catch {
-    return false
-  }
-
-  const hasControlCharacter = Array.from(decoded).some(character => {
-    const code = character.charCodeAt(0)
-    return code <= 31 || code === 127
-  })
-  if (decoded.includes('@') || hasControlCharacter) return false
-
-  const normalized = decoded.toLowerCase()
-  return !(
-    /(?:^|\/)(?:u|user|users|profile)\/[^/]+/.test(normalized) ||
-    /(?:^|\/)(?:buscar|search)\/[^/]+/.test(normalized) ||
-    /(?:^|\/)(?:token|verify|confirm|reset)(?:\/|$)/.test(normalized) ||
-    /(?:^|\/)auth\/(?:callback|confirm|verify|reset)(?:\/|$)/.test(normalized)
-  )
+const PROPERTY_VALIDATORS: Record<keyof AnalyticsProperties, (value: unknown) => boolean> = {
+  locale: value => isOneOf(value, ANALYTICS_LOCALES),
+  path: value => isOneOf(value, ANALYTICS_PATHS),
+  stage: value => isOneOf(value, ANALYTICS_STAGES),
+  source: value => isOneOf(value, ANALYTICS_SOURCES),
+  screen: value => isOneOf(value, ANALYTICS_SCREENS),
+  authenticated: value => typeof value === 'boolean',
+  duration_bucket: value => isOneOf(value, ANALYTICS_DURATION_BUCKETS),
 }
 
 function serializedByteLength(value: unknown): number {
@@ -104,16 +94,17 @@ export function sanitizeEvent(input: unknown): SanitizedAnalyticsEvent | null {
     if (typeof input.name !== 'string' || !EVENT_NAMES.has(input.name as AnalyticsEventName)) return null
     if (!isPlainRecord(input.properties)) return null
 
-    const properties: AnalyticsProperties = {}
+    const properties: Record<string, string | boolean> = {}
     for (const [key, value] of Object.entries(input.properties)) {
-      if (!PROPERTY_KEYS.has(key as keyof AnalyticsProperties) || !isScalar(value)) return null
-      if (key === 'path' && (typeof value !== 'string' || !isSafePath(value))) return null
-      properties[key as keyof AnalyticsProperties] = value
+      if (!PROPERTY_KEYS.has(key as keyof AnalyticsProperties)) return null
+      const propertyKey = key as keyof AnalyticsProperties
+      if (!PROPERTY_VALIDATORS[propertyKey](value)) return null
+      properties[key] = value as string | boolean
     }
 
     if (serializedByteLength(properties) > MAX_PROPERTIES_BYTES) return null
 
-    return { name: input.name as AnalyticsEventName, properties }
+    return { name: input.name as AnalyticsEventName, properties: properties as AnalyticsProperties }
   } catch {
     return null
   }

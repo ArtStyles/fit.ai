@@ -48,17 +48,17 @@ describe('sanitizeEvent', () => {
     expect(sanitizeEvent({ name, properties: {} })).toEqual({ name, properties: {} })
   })
 
-  it('accepts every allowlisted scalar property', () => {
-    const properties = {
-      locale: 'es',
-      path: '/es',
-      stage: 2,
-      source: 'landing',
-      screen: 'home',
-      authenticated: false,
-      duration_bucket: 'short',
-    }
-
+  it.each([
+    ['locale', 'es'], ['locale', 'en'],
+    ['path', '/'], ['path', '/es'], ['path', '/en'], ['path', '/register'], ['path', '/onboarding'],
+    ['stage', 'profile'], ['stage', 'availability'], ['stage', 'equipment'],
+    ['stage', 'safety'], ['stage', 'confirmation'], ['stage', 'generating'],
+    ['source', 'landing'], ['source', 'guide'],
+    ['screen', 'landing'], ['screen', 'register'], ['screen', 'onboarding'],
+    ['authenticated', true], ['authenticated', false],
+    ['duration_bucket', 'short'], ['duration_bucket', 'medium'], ['duration_bucket', 'long'],
+  ])('accepts documented %s value %j', (key, value) => {
+    const properties = { [key]: value }
     expect(sanitizeEvent({ name: 'landing_view', properties }))
       .toEqual({ name: 'landing_view', properties })
   })
@@ -84,7 +84,23 @@ describe('sanitizeEvent', () => {
   })
 
   it.each([
-    null,
+    ['locale', ['fr', 'user@example.com', 'private_username', 'knee injury', 'es\n', 'x'.repeat(65), 1, true, null]],
+    ['path', ['/invite/secret-token', '/member/private_username', '/es/arbitrary-slug', '/user@example.com', '/onboarding\n', `/${'x'.repeat(200)}`, 1, true, null]],
+    ['stage', ['unknown', 'user@example.com', 'private_username', 'knee injury', 'profile\n', 'x'.repeat(65), 1, true, null]],
+    ['source', ['unknown', 'user@example.com', 'private_username', 'knee injury', 'landing\n', 'x'.repeat(65), 1, true, null]],
+    ['screen', ['home', 'user@example.com', 'private_username', 'knee injury', 'landing\n', 'x'.repeat(65), 1, true, null]],
+    ['authenticated', ['true', 'user@example.com', 'private_username', 'knee injury', 'true\n', 'x'.repeat(65), 1, null]],
+    ['duration_bucket', ['tiny', 'user@example.com', 'private_username', 'knee injury', 'short\n', 'x'.repeat(65), 1, true, null]],
+  ])('rejects unsafe %s values', (key, values) => {
+    for (const value of values) {
+      expect(sanitizeEvent({
+        name: 'landing_view',
+        properties: { [key]: value },
+      }), `${key} accepted ${String(value)}`).toBeNull()
+    }
+  })
+
+  it.each([
     undefined,
     ['nested'],
     { nested: true },
@@ -92,10 +108,7 @@ describe('sanitizeEvent', () => {
     Number.POSITIVE_INFINITY,
     Number.NEGATIVE_INFINITY,
   ])('rejects non-scalar or non-JSON-safe value %j', value => {
-    expect(sanitizeEvent({
-      name: 'landing_view',
-      properties: { source: value },
-    })).toBeNull()
+    expect(sanitizeEvent({ name: 'landing_view', properties: { source: value } })).toBeNull()
   })
 
   it.each([
@@ -113,14 +126,10 @@ describe('sanitizeEvent', () => {
     'es',
     'es?email=user@example.com',
     '/es#token',
+    '/invite/secret-token',
+    '/member/private_username',
+    '/es/arbitrary-slug',
     '/u/private_username',
-    '/es/u/private_username',
-    '/buscar/private-term',
-    '/search/private-term',
-    '/en/search/private-term',
-    '/reset/token-value',
-    '/es/reset/token-value',
-    '/auth/callback/token-value',
     '/user@example.com',
     '/user%40example.com',
     `/${'a'.repeat(200)}`,
@@ -128,25 +137,10 @@ describe('sanitizeEvent', () => {
     expect(sanitizeEvent({ name: 'landing_view', properties: { path } })).toBeNull()
   })
 
-  it('accepts pathname-only values at the 200 character boundary', () => {
-    const path = `/${'a'.repeat(199)}`
-    expect(sanitizeEvent({ name: 'landing_view', properties: { path } }))
-      .toEqual({ name: 'landing_view', properties: { path } })
-  })
-
-  it('accepts properties serialized to exactly 1 KB and rejects one byte more', () => {
-    const emptySize = new TextEncoder().encode(JSON.stringify({ source: '' })).byteLength
-    const exact = { source: 'a'.repeat(1024 - emptySize) }
-    const tooLarge = { source: 'a'.repeat(1025 - emptySize) }
-
-    expect(sanitizeEvent({ name: 'landing_view', properties: exact })).not.toBeNull()
-    expect(sanitizeEvent({ name: 'landing_view', properties: tooLarge })).toBeNull()
-  })
-
-  it('measures property size as UTF-8 bytes', () => {
+  it('rejects oversized and multi-byte free-form property values', () => {
     expect(sanitizeEvent({
       name: 'landing_view',
-      properties: { source: 'é'.repeat(510) },
+      properties: { source: '\u00e9'.repeat(510) },
     })).toBeNull()
   })
 })
@@ -159,7 +153,7 @@ describe('trackEvent', () => {
     const fetchMock = vi.fn()
     globalThis.fetch = fetchMock
 
-    await trackEvent('landing_view', { locale: 'en', path: '/ignored?secret=yes' })
+    await trackEvent('landing_view', { locale: 'en', path: '/onboarding' })
 
     expect(sendBeacon).toHaveBeenCalledOnce()
     const [url, body] = sendBeacon.mock.calls[0]!
@@ -199,7 +193,7 @@ describe('trackEvent', () => {
   })
 
   it('does not transmit an event that becomes invalid after pathname capture', async () => {
-    setBrowser('/u/private_username')
+    setBrowser('/invite/secret-token')
     const sendBeacon = vi.fn(() => true)
     setNavigator({ sendBeacon })
     const fetchMock = vi.fn()
