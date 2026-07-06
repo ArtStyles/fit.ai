@@ -58,6 +58,49 @@ describe('public middleware routing', () => {
     expect(response.cookies.get('fitai-language')?.value).toBe('en')
   })
 
+  it.each(['en', 'es'] as const)(
+    'forwards %s from a supported registration query for the document language',
+    async locale => {
+      mockSupabaseUser(null)
+
+      const response = await middleware(
+        new NextRequest(`https://vekira.test/register?locale=${locale}`),
+      )
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('x-middleware-request-x-public-locale')).toBe(locale)
+      expect(response.cookies.get('fitai-language')?.value).toBe(locale)
+    },
+  )
+
+  it('rejects unsupported and forged registration locales while preserving the locale cookie', async () => {
+    mockSupabaseUser(null)
+    const request = new NextRequest('https://vekira.test/register?locale=pt', {
+      headers: {
+        cookie: 'fitai-language=en',
+        'x-public-locale': 'pt',
+      },
+    })
+
+    const response = await middleware(request)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('en')
+    expect(response.cookies.get('fitai-language')?.value).toBe('en')
+  })
+
+  it('falls back to Spanish instead of trusting a forged registration locale header', async () => {
+    mockSupabaseUser(null)
+    const request = new NextRequest('https://vekira.test/register?locale=pt', {
+      headers: { 'x-public-locale': 'en' },
+    })
+
+    const response = await middleware(request)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('es')
+  })
+
   it('removes a client-supplied locale header from unprefixed requests', async () => {
     mockSupabaseUser(null)
     const request = new NextRequest('https://vekira.test/', {

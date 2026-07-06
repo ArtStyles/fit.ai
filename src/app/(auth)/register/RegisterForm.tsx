@@ -10,7 +10,8 @@ import { PendingLink } from '@/components/navigation/PendingLink'
 import type { AppLanguage } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { VerifyCodeStep } from './VerifyCodeStep'
-import { registrationLegalLinks, signupMetadata } from './registerProfile'
+import { signUpForRegistration } from './authFlow'
+import { registrationLegalLinks } from './registerProfile'
 
 type RegisterFieldErrors = {
   email?: string
@@ -275,28 +276,35 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
     }
 
     const supabase = createClient()
-    const { data, error: signupError } = await supabase.auth.signUp({
+    const result = await signUpForRegistration({
+      signUp: credentials => supabase.auth.signUp(credentials),
       email,
       password,
-      options: { data: signupMetadata(locale) },
+      locale,
+      onAuthenticated: href => {
+        showToast({ title: copy.createdTitle, description: copy.createdDescription, variant: 'success' })
+        window.dispatchEvent(new Event('fitai:navigation-start'))
+        router.push(href)
+        router.refresh()
+      },
     })
 
-    if (signupError) {
-      const message = getRegisterErrorMessage(signupError.message, copy)
+    if (result.kind === 'error') {
+      const message = getRegisterErrorMessage(result.message, copy)
       setError(message)
       showToast({ title: copy.createErrorTitle, description: message, variant: 'error' })
       setLoading(false)
       return
     }
 
-    if (data.user?.identities && data.user.identities.length === 0) {
+    if (result.kind === 'duplicate') {
       setError(copy.existingAccount)
       showToast({ title: copy.existingTitle, description: copy.existingAccount, variant: 'error' })
       setLoading(false)
       return
     }
 
-    if (!data.session) {
+    if (result.kind === 'verification-required') {
       setVerifyEmail(email)
       showToast({
         title: copy.checkEmailTitle,
@@ -306,11 +314,6 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
       setLoading(false)
       return
     }
-
-    showToast({ title: copy.createdTitle, description: copy.createdDescription, variant: 'success' })
-    window.dispatchEvent(new Event('fitai:navigation-start'))
-    router.push('/onboarding')
-    router.refresh()
   }
 
   if (verifyEmail) {

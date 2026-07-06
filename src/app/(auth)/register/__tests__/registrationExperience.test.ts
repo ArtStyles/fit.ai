@@ -10,11 +10,12 @@ function source(relativePath: string): string {
 describe('registration experience', () => {
   it('asks only for email and password before verification', () => {
     const form = source('../RegisterForm.tsx')
+    const authFlow = source('../authFlow.ts')
 
     expect(form).not.toContain('name="full_name"')
     expect(form).not.toContain('name="confirm_password"')
     expect(form).toContain("fd.get('email')")
-    expect(form).toContain('signupMetadata(locale)')
+    expect(authFlow).toContain('signupMetadata(locale)')
   })
 
   it('has one page heading and replaces proof claims with product benefits', () => {
@@ -35,6 +36,22 @@ describe('registration experience', () => {
     for (const claim of forbiddenClaims) expect(page.toLowerCase()).not.toContain(claim.toLowerCase())
   })
 
+  it('keeps selected-plan early-access copy informational in both languages', () => {
+    const page = source('../page.tsx')
+    const earlyAccessBodies = Array.from(
+      page.matchAll(/earlyAccessBody: '([^']+)'/g),
+      match => match[1],
+    )
+
+    expect(earlyAccessBodies).toEqual([
+      'Esta opción es informativa y no cambia el proceso de registro.',
+      'This option is informational and does not change the registration process.',
+    ])
+    for (const body of earlyAccessBodies) {
+      expect(body).not.toMatch(/registramos tu interés|recorded your interest|reserv(?:a|e|ed)|notific(?:a|ation|ied)/i)
+    }
+  })
+
   it('renders keyboard-accessible locale-aware legal links', () => {
     const form = source('../RegisterForm.tsx')
 
@@ -50,8 +67,9 @@ describe('registration experience', () => {
 
     expect(form).toContain('setVerifyEmail(email)')
     expect(form).toContain('<VerifyCodeStep')
-    expect(verification).toContain('supabase.auth.verifyOtp')
-    expect(verification).toContain("router.push('/onboarding')")
+    expect(form).toContain('signUpForRegistration')
+    expect(verification).toContain('verifyRegistrationCode')
+    expect(verification).toContain('resendRegistrationCode')
   })
 })
 

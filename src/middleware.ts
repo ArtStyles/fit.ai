@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { normalizeLanguage } from '@/lib/i18n'
 
 const PUBLIC_EXACT = ['/', '/login', '/register', '/auth/callback', '/privacy', '/pricing', '/suspended', '/language-selector']
 
@@ -12,7 +13,14 @@ export function isPublicPath(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const requestHeaders = new Headers(request.headers)
-  const publicLocale = pathname.match(/^\/(es|en)(?:\/|$)/)?.[1]
+  const pathLocale = pathname.match(/^\/(es|en)(?:\/|$)/)?.[1]
+  const registrationQueryLocale = request.nextUrl.searchParams.get('locale')
+  const registrationLocale = pathname === '/register'
+    ? registrationQueryLocale === 'es' || registrationQueryLocale === 'en'
+      ? registrationQueryLocale
+      : normalizeLanguage(request.cookies.get('fitai-language')?.value)
+    : undefined
+  const publicLocale = pathLocale ?? registrationLocale
 
   requestHeaders.delete('x-public-locale')
   if (publicLocale) requestHeaders.set('x-public-locale', publicLocale)

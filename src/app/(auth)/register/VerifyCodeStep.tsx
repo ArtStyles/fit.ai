@@ -13,6 +13,7 @@ import {
   getVerifyErrorMessage,
   getResendErrorMessage,
 } from './verification'
+import { resendRegistrationCode, verifyRegistrationCode } from './authFlow'
 
 const RESEND_COOLDOWN_SECONDS = 45
 
@@ -83,29 +84,30 @@ export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale
 
     setVerifying(true)
     const supabase = createClient()
-    const { error: verifyError } = await supabase.auth.verifyOtp({
+    const result = await verifyRegistrationCode({
+      verifyOtp: input => supabase.auth.verifyOtp(input),
       email,
-      token: code,
-      type: 'signup',
+      code,
+      onVerified: href => {
+        showToast({
+          title: copy.verifiedTitle,
+          description: copy.verifiedDescription,
+          variant: 'success',
+        })
+        window.dispatchEvent(new Event('fitai:navigation-start'))
+        router.push(href)
+        router.refresh()
+      },
     })
 
-    if (verifyError) {
-      const spanishMessage = getVerifyErrorMessage(verifyError.message)
+    if (result.kind === 'error') {
+      const spanishMessage = getVerifyErrorMessage(result.message)
       const message = locale === 'es' ? spanishMessage : 'The code is invalid or expired. Request a new one and try again.'
       setError(message)
       showToast({ title: copy.verifyErrorTitle, description: message, variant: 'error' })
       setVerifying(false)
       return
     }
-
-    showToast({
-      title: copy.verifiedTitle,
-      description: copy.verifiedDescription,
-      variant: 'success',
-    })
-    window.dispatchEvent(new Event('fitai:navigation-start'))
-    router.push('/onboarding')
-    router.refresh()
   }
 
   async function handleResend() {
@@ -114,10 +116,13 @@ export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale
     setResending(true)
 
     const supabase = createClient()
-    const { error: resendError } = await supabase.auth.resend({ type: 'signup', email })
+    const result = await resendRegistrationCode({
+      resend: input => supabase.auth.resend(input),
+      email,
+    })
 
-    if (resendError) {
-      const spanishMessage = getResendErrorMessage(resendError.message)
+    if (result.kind === 'error') {
+      const spanishMessage = getResendErrorMessage(result.message)
       const message = locale === 'es' ? spanishMessage : 'Wait a moment before requesting another code.'
       setError(message)
       showToast({ title: copy.resendErrorTitle, description: message, variant: 'error' })
