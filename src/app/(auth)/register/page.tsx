@@ -1,144 +1,180 @@
 import type { Metadata } from 'next'
-import { TrendingUp, Users, Award } from 'lucide-react'
-import { VekiraLogo } from '@/components/branding/VekiraLogo'
-import { RegisterForm } from './RegisterForm'
+import { cookies } from 'next/headers'
 import Link from 'next/link'
+import { CalendarRange, ClipboardCheck, Sparkles, TrendingUp } from 'lucide-react'
+import { VekiraLogo } from '@/components/branding/VekiraLogo'
 import { BrandTopBar } from '@/components/navigation/BrandTopBar'
+import type { AppLanguage } from '@/lib/i18n'
+import { RegisterForm } from './RegisterForm'
+import { registrationLocale } from './registerProfile'
 
-export const metadata: Metadata = { title: 'Crear cuenta' }
-
-const STATS = [
-  { value: '10K+', label: 'Usuarios activos' },
-  { value: '200+', label: 'Rutinas en biblioteca' },
-  { value: '98%',  label: 'Satisfacción' },
-]
-
-const SELECTED_PLAN_COPY: Record<string, string> = {
-  'pro-monthly': 'Vekira Pro mensual · USD 9.99/mes',
-  'pro-annual': 'Vekira Pro anual · USD 59.99/año',
+export const metadata: Metadata = {
+  title: 'Crear cuenta | Sign up',
+  robots: { index: false, follow: true },
 }
 
-export default function RegisterPage({ searchParams }: { searchParams?: { plan?: string } }) {
-  const selectedPlan = searchParams?.plan && SELECTED_PLAN_COPY[searchParams.plan]
+const EARLY_ACCESS_PLANS = new Set(['pro-monthly', 'pro-annual'])
+
+const PAGE_COPY: Record<AppLanguage, {
+  signIn: string
+  title: string
+  subtitle: string
+  earlyAccessLabel: string
+  earlyAccessBody: string
+  panelEyebrow: string
+  panelTitle: string
+  panelBody: string
+  copyright: string
+}> = {
+  es: {
+    signIn: 'Iniciar sesión',
+    title: 'Crea tu cuenta.',
+    subtitle: 'Empieza con tu correo y una contraseña.',
+    earlyAccessLabel: 'Preferencia de acceso anticipado',
+    earlyAccessBody: 'Registramos tu interés en conocer Vekira Pro cuando esté disponible.',
+    panelEyebrow: 'Tu entrenamiento, conectado',
+    panelTitle: 'Convierte cada registro en contexto para tu próxima semana.',
+    panelBody: 'Vekira reúne planificación, seguimiento y progresión en un mismo lugar.',
+    copyright: 'Todos los derechos reservados.',
+  },
+  en: {
+    signIn: 'Sign in',
+    title: 'Create your account.',
+    subtitle: 'Start with your email and a password.',
+    earlyAccessLabel: 'Early-access preference',
+    earlyAccessBody: 'We recorded your interest in learning about Vekira Pro when it becomes available.',
+    panelEyebrow: 'Your training, connected',
+    panelTitle: 'Turn every log into context for your next week.',
+    panelBody: 'Vekira brings planning, tracking, and progression together in one place.',
+    copyright: 'All rights reserved.',
+  },
+}
+
+const BENEFITS = [
+  {
+    icon: CalendarRange,
+    title: { es: 'Semana adaptable', en: 'Adaptive week' },
+    body: {
+      es: 'Tu planificación puede ajustarse según tus sesiones y tu disponibilidad.',
+      en: 'Your plan can adjust based on your sessions and availability.',
+    },
+  },
+  {
+    icon: ClipboardCheck,
+    title: { es: 'Registro guiado', en: 'Guided logging' },
+    body: {
+      es: 'Anota series, repeticiones, carga y esfuerzo mientras entrenas.',
+      en: 'Log sets, repetitions, load, and effort while you train.',
+    },
+  },
+  {
+    icon: TrendingUp,
+    title: { es: 'Progresión visible', en: 'Visible progression' },
+    body: {
+      es: 'Consulta tu historial y la evolución de cada ejercicio.',
+      en: 'Review your history and how each exercise changes over time.',
+    },
+  },
+] as const
+
+type RegisterPageProps = {
+  searchParams?: { plan?: string; locale?: string }
+}
+
+export default function RegisterPage({ searchParams }: RegisterPageProps) {
+  const locale = registrationLocale(
+    searchParams?.locale,
+    cookies().get('fitai-language')?.value,
+  )
+  const selectedPlan = searchParams?.plan && EARLY_ACCESS_PLANS.has(searchParams.plan)
     ? searchParams.plan
     : null
+  const copy = PAGE_COPY[locale]
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen overflow-x-hidden bg-background">
       <BrandTopBar
+        homeHref={`/${locale}`}
         right={(
-          <Link href="/login" className="inline-flex h-11 items-center rounded-xl px-3 text-sm font-semibold text-violet-300 transition-colors hover:bg-violet-500/10 hover:text-violet-200">
-            Iniciar sesión
+          <Link
+            href="/login"
+            className="inline-flex h-11 items-center rounded-xl px-3 text-sm font-semibold text-violet-300 transition-colors hover:bg-violet-500/10 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            {copy.signIn}
           </Link>
         )}
       />
 
       <div className="flex min-h-[calc(100dvh-4.25rem)]">
-
-      {/* ── Left: Form panel ── */}
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 sm:px-12 bg-background">
-
-        {/* Mobile logo */}
-        <VekiraLogo className="mb-8 lg:hidden" markClassName="h-9 w-9" />
-
-        <div className="w-full max-w-sm">
-          <div className="mb-7 space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight text-foreground">
-              Crea tu cuenta.
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {selectedPlan ? 'Crea tu cuenta para continuar con Pro.' : 'Empieza gratis. Sin tarjeta de crédito.'}
-            </p>
-          </div>
-
-          {selectedPlan && (
-            <div className="mb-5 flex items-center gap-3 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3">
-              <Award className="h-5 w-5 shrink-0 text-violet-300" />
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">Plan seleccionado</p>
-                <p className="mt-0.5 text-sm font-semibold text-foreground">{SELECTED_PLAN_COPY[selectedPlan]}</p>
-                <p className="mt-1 text-xs text-muted-foreground">No se realizará ningún cobro en esta fase.</p>
-              </div>
+        <main id="app-main-content" className="flex flex-1 flex-col items-center justify-center bg-background px-5 py-10 sm:px-12 sm:py-12">
+          <div className="w-full max-w-sm">
+            <div className="mb-7 space-y-2">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                {copy.title}
+              </h1>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {copy.subtitle}
+              </p>
             </div>
-          )}
 
-          <RegisterForm selectedPlan={selectedPlan} />
-        </div>
-      </div>
-
-      {/* ── Right: Branding panel ── */}
-      <div className="relative hidden lg:flex lg:w-[45%] flex-col justify-between p-12 bg-gradient-to-br from-violet-950 via-indigo-950 to-violet-900 overflow-hidden">
-
-        {/* Grid pattern */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0
-            bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),
-                linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)]
-            bg-[size:40px_40px]
-            [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_40%,transparent_100%)]"
-        />
-
-        {/* Background glow */}
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-32 -right-32 h-96 w-96 rounded-full bg-violet-600/25 blur-3xl" />
-          <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-indigo-600/25 blur-3xl" />
-          <div className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/10 blur-2xl" />
-        </div>
-
-        {/* Logo */}
-        <VekiraLogo className="relative" markClassName="h-9 w-9" wordmarkClassName="text-white" />
-
-        {/* Main copy */}
-        <div className="relative space-y-10">
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-violet-400">
-              Únete hoy
-            </p>
-            <h2 className="text-4xl font-bold leading-tight text-white">
-              Transforma
-              <br />
-              <span className="bg-gradient-to-r from-violet-300 to-indigo-300 bg-clip-text text-transparent">
-                tu cuerpo.
-              </span>
-            </h2>
-            <p className="text-base text-violet-200/70 leading-relaxed max-w-xs">
-              Únete a personas que ya usan Vekira para alcanzar
-              sus objetivos de forma más inteligente.
-            </p>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            {STATS.map(({ value, label }) => (
-              <div key={label} className="rounded-xl bg-white/5 border border-white/10 p-4 text-center">
-                <p className="text-2xl font-bold text-white">{value}</p>
-                <p className="mt-0.5 text-xs text-violet-300/60">{label}</p>
+            {selectedPlan && (
+              <div className="mb-5 flex items-start gap-3 rounded-xl border border-violet-500/25 bg-violet-500/5 px-4 py-3">
+                <Sparkles aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
+                <div>
+                  <p className="text-xs font-semibold text-violet-200">{copy.earlyAccessLabel}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy.earlyAccessBody}</p>
+                </div>
               </div>
-            ))}
+            )}
+
+            <RegisterForm locale={locale} />
+          </div>
+        </main>
+
+        <aside className="relative hidden w-[45%] flex-col justify-between overflow-hidden bg-gradient-to-br from-violet-950 via-indigo-950 to-violet-900 p-12 lg:flex" aria-label={copy.panelEyebrow}>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_40%,transparent_100%)]"
+          />
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+            <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-violet-600/25 blur-3xl" />
+            <div className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-indigo-600/25 blur-3xl" />
           </div>
 
-          {/* Icons row */}
-          <div className="flex items-center gap-4">
-            {[TrendingUp, Users, Award].map((Icon, i) => (
-              <div
-                key={i}
-                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10"
-              >
-                <Icon className="h-4.5 w-4.5 text-violet-300" />
-              </div>
-            ))}
-            <p className="text-sm text-violet-300/60">
-              Progreso real, resultados reales.
-            </p>
-          </div>
-        </div>
+          <VekiraLogo className="relative" markClassName="h-9 w-9" wordmarkClassName="text-white" />
 
-        {/* Footer */}
-        <p className="relative text-xs text-violet-400/50">
-          © {new Date().getFullYear()} Vekira. Todos los derechos reservados.
-        </p>
-      </div>
+          <div className="relative max-w-md space-y-8">
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-300">
+                {copy.panelEyebrow}
+              </p>
+              <h2 className="text-3xl font-bold leading-tight text-white xl:text-4xl">
+                {copy.panelTitle}
+              </h2>
+              <p className="text-base leading-7 text-violet-100/75">
+                {copy.panelBody}
+              </p>
+            </div>
+
+            <ul className="space-y-4">
+              {BENEFITS.map(({ icon: Icon, title, body }) => (
+                <li key={title.es} className="flex gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-400/10 text-violet-200">
+                    <Icon aria-hidden="true" className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h3 className="font-semibold text-white">{title[locale]}</h3>
+                    <p className="mt-1 text-sm leading-6 text-violet-100/70">{body[locale]}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="relative text-xs text-violet-200/55">
+            © {new Date().getFullYear()} Vekira. {copy.copyright}
+          </p>
+        </aside>
       </div>
     </div>
   )

@@ -1,130 +1,217 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import type { AppLanguage } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { VerifyCodeStep } from './VerifyCodeStep'
+import { registrationLegalLinks, signupMetadata } from './registerProfile'
 
 type RegisterFieldErrors = {
-  fullName?: string
   email?: string
   password?: string
-  confirmPassword?: string
+}
+
+type RegisterCopy = {
+  emailLabel: string
+  emailPlaceholder: string
+  passwordLabel: string
+  passwordPlaceholder: string
+  passwordRequirements: string
+  passwordLength: string
+  passwordLetter: string
+  passwordNumber: string
+  showPassword: string
+  hidePassword: string
+  emailRequired: string
+  emailInvalid: string
+  passwordRequired: string
+  passwordMissing: string
+  existingAccount: string
+  passwordRejected: string
+  signupDisabled: string
+  tooManyAttempts: string
+  genericError: string
+  reviewFields: string
+  incompleteTitle: string
+  incompleteDescription: string
+  createErrorTitle: string
+  existingTitle: string
+  checkEmailTitle: string
+  checkEmailDescription: string
+  createdTitle: string
+  createdDescription: string
+  creating: string
+  createAccount: string
+  legalPrefix: string
+  terms: string
+  legalJoin: string
+  privacy: string
+  setupHint: string
+  accountQuestion: string
+  signIn: string
+}
+
+const COPY: Record<AppLanguage, RegisterCopy> = {
+  es: {
+    emailLabel: 'Correo electrónico',
+    emailPlaceholder: 'tu@email.com',
+    passwordLabel: 'Contraseña',
+    passwordPlaceholder: 'Mínimo 8 caracteres',
+    passwordRequirements: 'Requisitos de contraseña',
+    passwordLength: '8 caracteres',
+    passwordLetter: 'Una letra',
+    passwordNumber: 'Un número',
+    showPassword: 'Mostrar contraseña',
+    hidePassword: 'Ocultar contraseña',
+    emailRequired: 'Escribe tu correo.',
+    emailInvalid: 'Escribe un correo válido.',
+    passwordRequired: 'Crea una contraseña.',
+    passwordMissing: 'La contraseña necesita',
+    existingAccount: 'Ya existe una cuenta con este correo. Intenta iniciar sesión.',
+    passwordRejected: 'La contraseña no cumple los requisitos mínimos.',
+    signupDisabled: 'El registro está desactivado temporalmente.',
+    tooManyAttempts: 'Demasiados intentos. Espera un momento e intenta de nuevo.',
+    genericError: 'No se pudo crear la cuenta. Intenta nuevamente.',
+    reviewFields: 'Revisa los campos marcados.',
+    incompleteTitle: 'Datos incompletos',
+    incompleteDescription: 'Corrige el formulario antes de crear la cuenta.',
+    createErrorTitle: 'No se pudo crear la cuenta',
+    existingTitle: 'Cuenta existente',
+    checkEmailTitle: 'Revisa tu correo',
+    checkEmailDescription: 'Te enviamos un código de 8 dígitos para confirmar tu cuenta.',
+    createdTitle: 'Cuenta creada',
+    createdDescription: 'Completa tu perfil para generar tu primer plan.',
+    creating: 'Creando cuenta...',
+    createAccount: 'Crear cuenta',
+    legalPrefix: 'Al crear tu cuenta, aceptas los',
+    terms: 'Términos de uso',
+    legalJoin: 'y confirmas que has leído la',
+    privacy: 'Política de privacidad',
+    setupHint: 'Después podrás ajustar objetivo, equipo disponible y días de entrenamiento.',
+    accountQuestion: '¿Ya tienes cuenta?',
+    signIn: 'Iniciar sesión',
+  },
+  en: {
+    emailLabel: 'Email address',
+    emailPlaceholder: 'you@example.com',
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'At least 8 characters',
+    passwordRequirements: 'Password requirements',
+    passwordLength: '8 characters',
+    passwordLetter: 'One letter',
+    passwordNumber: 'One number',
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
+    emailRequired: 'Enter your email.',
+    emailInvalid: 'Enter a valid email.',
+    passwordRequired: 'Create a password.',
+    passwordMissing: 'Your password needs',
+    existingAccount: 'An account already exists for this email. Try signing in.',
+    passwordRejected: 'The password does not meet the minimum requirements.',
+    signupDisabled: 'Registration is temporarily unavailable.',
+    tooManyAttempts: 'Too many attempts. Wait a moment and try again.',
+    genericError: 'We could not create the account. Try again.',
+    reviewFields: 'Review the highlighted fields.',
+    incompleteTitle: 'Incomplete information',
+    incompleteDescription: 'Correct the form before creating your account.',
+    createErrorTitle: 'Could not create account',
+    existingTitle: 'Account already exists',
+    checkEmailTitle: 'Check your email',
+    checkEmailDescription: 'We sent an 8-digit code to confirm your account.',
+    createdTitle: 'Account created',
+    createdDescription: 'Complete your profile to generate your first plan.',
+    creating: 'Creating account...',
+    createAccount: 'Create account',
+    legalPrefix: 'By creating your account, you agree to the',
+    terms: 'Terms of use',
+    legalJoin: 'and acknowledge the',
+    privacy: 'Privacy policy',
+    setupHint: 'You can set your goal, available equipment, and training days next.',
+    accountQuestion: 'Already have an account?',
+    signIn: 'Sign in',
+  },
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-function passwordRules(password: string) {
+function passwordRules(password: string, copy: RegisterCopy) {
   return [
-    { id: 'length', label: '8 caracteres', valid: password.length >= 8 },
-    { id: 'letter', label: 'Una letra', valid: /[A-Za-z]/.test(password) },
-    { id: 'number', label: 'Un número', valid: /[0-9]/.test(password) },
+    { id: 'length', label: copy.passwordLength, valid: password.length >= 8 },
+    { id: 'letter', label: copy.passwordLetter, valid: /[A-Za-z]/.test(password) },
+    { id: 'number', label: copy.passwordNumber, valid: /[0-9]/.test(password) },
   ]
 }
 
-function validateRegister({
-  fullName,
-  email,
-  password,
-  confirmPassword,
-}: {
-  fullName: string
-  email: string
-  password: string
-  confirmPassword: string
-}): RegisterFieldErrors {
+function validateRegister(
+  { email, password }: { email: string; password: string },
+  copy: RegisterCopy,
+): RegisterFieldErrors {
   const errors: RegisterFieldErrors = {}
 
-  if (!fullName) {
-    errors.fullName = 'Escribe tu nombre.'
-  } else if (fullName.length < 2) {
-    errors.fullName = 'El nombre debe tener al menos 2 caracteres.'
-  }
-
   if (!email) {
-    errors.email = 'Escribe tu correo.'
+    errors.email = copy.emailRequired
   } else if (!EMAIL_PATTERN.test(email)) {
-    errors.email = 'Escribe un correo válido.'
+    errors.email = copy.emailInvalid
   }
 
-  const missingRules = passwordRules(password).filter(rule => !rule.valid)
+  const missingRules = passwordRules(password, copy).filter(rule => !rule.valid)
   if (!password) {
-    errors.password = 'Crea una contraseña.'
+    errors.password = copy.passwordRequired
   } else if (missingRules.length > 0) {
-    errors.password = `La contraseña necesita: ${missingRules.map(rule => rule.label.toLowerCase()).join(', ')}.`
-  }
-
-  if (!confirmPassword) {
-    errors.confirmPassword = 'Confirma tu contraseña.'
-  } else if (password !== confirmPassword) {
-    errors.confirmPassword = 'Las contraseñas no coinciden.'
+    errors.password = `${copy.passwordMissing}: ${missingRules.map(rule => rule.label.toLowerCase()).join(', ')}.`
   }
 
   return errors
 }
 
-function getRegisterErrorMessage(message: string) {
+function getRegisterErrorMessage(message: string, copy: RegisterCopy) {
   const normalized = message.toLowerCase()
 
   if (normalized.includes('already registered') || normalized.includes('already exists')) {
-    return 'Ya existe una cuenta con este correo. Intenta iniciar sesión.'
+    return copy.existingAccount
   }
+  if (normalized.includes('invalid') && normalized.includes('email')) return copy.emailInvalid
+  if (normalized.includes('password')) return copy.passwordRejected
+  if (normalized.includes('signup') && normalized.includes('disabled')) return copy.signupDisabled
+  if (normalized.includes('rate limit') || normalized.includes('too many')) return copy.tooManyAttempts
 
-  if (normalized.includes('invalid') && normalized.includes('email')) {
-    return 'Escribe un correo válido.'
-  }
-
-  if (normalized.includes('password')) {
-    return 'La contraseña no cumple los requisitos mínimos.'
-  }
-
-  if (normalized.includes('signup') && normalized.includes('disabled')) {
-    return 'El registro está desactivado temporalmente.'
-  }
-
-  if (normalized.includes('rate limit') || normalized.includes('too many')) {
-    return 'Demasiados intentos. Espera un momento e intenta de nuevo.'
-  }
-
-  return 'No se pudo crear la cuenta. Intenta nuevamente.'
+  return copy.genericError
 }
 
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null
 
-  return (
-    <p id={id} className="text-xs text-red-400">
-      {message}
-    </p>
-  )
+  return <p id={id} className="text-xs text-red-400">{message}</p>
 }
 
-function PasswordChecklist({ password }: { password: string }) {
-  const rules = passwordRules(password)
+function PasswordChecklist({ password, copy }: { password: string; copy: RegisterCopy }) {
+  const rules = passwordRules(password, copy)
 
   return (
     <div className="rounded-lg border border-border/50 bg-muted/10 px-3 py-2">
       <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-        Requisitos de contraseña
+        {copy.passwordRequirements}
       </p>
-      <div className="grid gap-1.5">
+      <ul className="grid gap-1.5">
         {rules.map(rule => (
-          <div
+          <li
             key={rule.id}
             className={cn(
               'flex items-center gap-2 text-xs transition-colors',
               rule.valid ? 'text-green-400' : 'text-muted-foreground',
             )}
           >
-            <CheckCircle2 className={cn('h-3.5 w-3.5', !rule.valid && 'opacity-35')} />
+            <CheckCircle2 aria-hidden="true" className={cn('h-3.5 w-3.5', !rule.valid && 'opacity-35')} />
             {rule.label}
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   )
 }
@@ -133,35 +220,37 @@ function PasswordToggleButton({
   visible,
   disabled,
   onClick,
+  copy,
 }: {
   visible: boolean
   disabled: boolean
   onClick: () => void
+  copy: RegisterCopy
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+      aria-label={visible ? copy.hidePassword : copy.showPassword}
+      className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      {visible ? <EyeOff aria-hidden="true" className="h-4 w-4" /> : <Eye aria-hidden="true" className="h-4 w-4" />}
     </button>
   )
 }
 
-export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | null }) {
+export function RegisterForm({ locale }: { locale: AppLanguage }) {
   const router = useRouter()
   const { showToast } = useToast()
+  const copy = COPY[locale]
+  const legalLinks = registrationLegalLinks(locale)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({})
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
   const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -170,21 +259,15 @@ export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | 
     setLoading(true)
 
     const fd = new FormData(e.currentTarget)
-    const fullName = String(fd.get('full_name') ?? '').trim().replace(/\s+/g, ' ')
     const email = String(fd.get('email') ?? '').trim().toLowerCase()
-    const validationErrors = validateRegister({
-      fullName,
-      email,
-      password,
-      confirmPassword,
-    })
+    const validationErrors = validateRegister({ email, password }, copy)
 
     if (Object.keys(validationErrors).length > 0) {
       setFieldErrors(validationErrors)
-      setError('Revisa los campos marcados.')
+      setError(copy.reviewFields)
       showToast({
-        title: 'Datos incompletos',
-        description: 'Corrige el formulario antes de crear la cuenta.',
+        title: copy.incompleteTitle,
+        description: copy.incompleteDescription,
         variant: 'error',
       })
       setLoading(false)
@@ -192,37 +275,23 @@ export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | 
     }
 
     const supabase = createClient()
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error: signupError } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          full_name: fullName,
-          ...(selectedPlan ? { selected_plan: selectedPlan } : {}),
-        },
-      },
+      options: { data: signupMetadata(locale) },
     })
 
-    if (error) {
-      const message = getRegisterErrorMessage(error.message)
+    if (signupError) {
+      const message = getRegisterErrorMessage(signupError.message, copy)
       setError(message)
-      showToast({
-        title: 'No se pudo crear la cuenta',
-        description: message,
-        variant: 'error',
-      })
+      showToast({ title: copy.createErrorTitle, description: message, variant: 'error' })
       setLoading(false)
       return
     }
 
     if (data.user?.identities && data.user.identities.length === 0) {
-      const message = 'Ya existe una cuenta con este correo. Intenta iniciar sesión.'
-      setError(message)
-      showToast({
-        title: 'Cuenta existente',
-        description: message,
-        variant: 'error',
-      })
+      setError(copy.existingAccount)
+      showToast({ title: copy.existingTitle, description: copy.existingAccount, variant: 'error' })
       setLoading(false)
       return
     }
@@ -230,26 +299,22 @@ export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | 
     if (!data.session) {
       setVerifyEmail(email)
       showToast({
-        title: 'Revisa tu correo',
-        description: 'Te enviamos un código de 8 dígitos para confirmar tu cuenta.',
+        title: copy.checkEmailTitle,
+        description: copy.checkEmailDescription,
         variant: 'success',
       })
       setLoading(false)
       return
     }
 
-    showToast({
-      title: 'Cuenta creada',
-      description: 'Completa tu perfil para generar tu primer plan.',
-      variant: 'success',
-    })
+    showToast({ title: copy.createdTitle, description: copy.createdDescription, variant: 'success' })
     window.dispatchEvent(new Event('fitai:navigation-start'))
     router.push('/onboarding')
     router.refresh()
   }
 
   if (verifyEmail) {
-    return <VerifyCodeStep email={verifyEmail} />
+    return <VerifyCodeStep email={verifyEmail} locale={locale} />
   }
 
   return (
@@ -261,33 +326,8 @@ export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | 
       )}
 
       <div className="space-y-1.5">
-        <label
-          htmlFor="full_name"
-          className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground"
-        >
-          Nombre completo
-        </label>
-        <input
-          id="full_name"
-          name="full_name"
-          type="text"
-          required
-          disabled={loading}
-          autoComplete="name"
-          placeholder="Juan García"
-          aria-invalid={Boolean(fieldErrors.fullName)}
-          aria-describedby={fieldErrors.fullName ? 'register-name-error' : undefined}
-          className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70"
-        />
-        <FieldError id="register-name-error" message={fieldErrors.fullName} />
-      </div>
-
-      <div className="space-y-1.5">
-        <label
-          htmlFor="email"
-          className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground"
-        >
-          Correo electrónico
+        <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {copy.emailLabel}
         </label>
         <input
           id="email"
@@ -298,20 +338,17 @@ export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | 
           autoComplete="email"
           inputMode="email"
           autoCapitalize="none"
-          placeholder="tu@email.com"
+          placeholder={copy.emailPlaceholder}
           aria-invalid={Boolean(fieldErrors.email)}
           aria-describedby={fieldErrors.email ? 'register-email-error' : undefined}
-          className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70"
+          className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
         />
         <FieldError id="register-email-error" message={fieldErrors.email} />
       </div>
 
       <div className="space-y-1.5">
-        <label
-          htmlFor="password"
-          className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground"
-        >
-          Contraseña
+        <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {copy.passwordLabel}
         </label>
         <div className="relative">
           <input
@@ -321,77 +358,64 @@ export function RegisterForm({ selectedPlan = null }: { selectedPlan?: string | 
             required
             disabled={loading}
             autoComplete="new-password"
-            placeholder="Mínimo 8 caracteres"
+            placeholder={copy.passwordPlaceholder}
             value={password}
             onChange={e => setPassword(e.target.value)}
             aria-invalid={Boolean(fieldErrors.password)}
-            aria-describedby={fieldErrors.password ? 'register-password-error' : 'register-password-help'}
-            className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70"
+            aria-describedby={fieldErrors.password ? 'register-password-error register-password-help' : 'register-password-help'}
+            className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 pr-12 text-base text-foreground placeholder:text-muted-foreground/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
           />
           <PasswordToggleButton
             visible={showPass}
             disabled={loading}
-            onClick={() => setShowPass(v => !v)}
+            onClick={() => setShowPass(value => !value)}
+            copy={copy}
           />
         </div>
         <FieldError id="register-password-error" message={fieldErrors.password} />
         <div id="register-password-help">
-          <PasswordChecklist password={password} />
+          <PasswordChecklist password={password} copy={copy} />
         </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <label
-          htmlFor="confirm_password"
-          className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground"
-        >
-          Confirmar contraseña
-        </label>
-        <div className="relative">
-          <input
-            id="confirm_password"
-            name="confirm_password"
-            type={showConfirm ? 'text' : 'password'}
-            required
-            disabled={loading}
-            autoComplete="new-password"
-            placeholder="Repite tu contraseña"
-            value={confirmPassword}
-            onChange={e => setConfirmPassword(e.target.value)}
-            aria-invalid={Boolean(fieldErrors.confirmPassword)}
-            aria-describedby={fieldErrors.confirmPassword ? 'register-confirm-error' : undefined}
-            className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70"
-          />
-          <PasswordToggleButton
-            visible={showConfirm}
-            disabled={loading}
-            onClick={() => setShowConfirm(v => !v)}
-          />
-        </div>
-        <FieldError id="register-confirm-error" message={fieldErrors.confirmPassword} />
       </div>
 
       <button
         type="submit"
         disabled={loading}
-        className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-indigo-600 text-sm font-semibold text-white tracking-wide transition-all hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-indigo-600 text-sm font-semibold tracking-wide text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-        {loading ? 'Creando cuenta...' : selectedPlan ? 'Crear cuenta y continuar' : 'Crear cuenta'}
+        {loading && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
+        {loading ? copy.creating : copy.createAccount}
       </button>
 
-      <p className="text-center text-xs text-muted-foreground/70">
-        Después podrás ajustar objetivo, equipo disponible y días de entrenamiento.
+      <p className="text-center text-xs leading-6 text-muted-foreground">
+        {copy.legalPrefix}{' '}
+        <Link
+          href={legalLinks.terms}
+          className="inline-flex min-h-11 items-center rounded-md font-semibold text-indigo-300 underline decoration-indigo-400/60 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+        >
+          {copy.terms}
+        </Link>{' '}
+        {copy.legalJoin}{' '}
+        <Link
+          href={legalLinks.privacy}
+          className="inline-flex min-h-11 items-center rounded-md font-semibold text-indigo-300 underline decoration-indigo-400/60 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+        >
+          {copy.privacy}
+        </Link>.
+      </p>
+
+      <p className="text-center text-xs leading-5 text-muted-foreground">
+        {copy.setupHint}
       </p>
 
       <p className="text-center text-sm text-muted-foreground">
-        ¿Ya tienes cuenta?{' '}
+        {copy.accountQuestion}{' '}
         <PendingLink
           href="/login"
-          className="inline-flex items-center font-semibold text-indigo-400 transition-colors hover:text-indigo-300"
+          className="inline-flex min-h-11 items-center rounded-md font-semibold text-indigo-400 transition-colors hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
           spinnerClassName="h-3.5 w-3.5"
         >
-          Iniciar sesión
+          {copy.signIn}
         </PendingLink>
       </p>
     </form>
