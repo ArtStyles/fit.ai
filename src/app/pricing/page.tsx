@@ -1,14 +1,14 @@
 import type { Metadata } from 'next'
 import { Crown } from 'lucide-react'
 import { getAppUserContext } from '@/lib/auth/server'
-import { PricingSelector } from '@/components/pricing/PricingSelector'
+import { EarlyAccessPlans } from '@/components/pricing/EarlyAccessPlans'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { Badge } from '@/components/ui/badge'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 
 export const metadata: Metadata = {
-  title: 'Precios',
-  description: 'Elige Vekira Pro mensual o anual y desbloquea una experiencia de entrenamiento sin límites.',
+  title: 'Planes',
+  description: 'Compara las funciones disponibles en los planes Free y Pro de Vekira durante el acceso anticipado.',
 }
 
 export default async function PricingPage() {
@@ -35,18 +35,8 @@ export default async function PricingPage() {
         )}
       />
 
-      <div className="mx-auto max-w-4xl px-4 sm:px-6">
-        <section className="mx-auto max-w-xl pb-8 pt-14 text-center sm:pt-20">
-          <p className="text-sm font-semibold text-violet-300">Vekira Pro</p>
-          <h1 className="mt-3 font-display text-4xl font-black tracking-tight text-foreground sm:text-5xl">
-            Elige tu ritmo.
-          </h1>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Todas las herramientas para crear, ajustar y seguir tu entrenamiento en un único plan.
-          </p>
-        </section>
-
-        <PricingSelector isAuthenticated={isAuthenticated} isPro={isPro} />
+      <div className="mx-auto max-w-5xl px-4 pb-4 pt-14 sm:px-6 sm:pt-20">
+        <EarlyAccessPlans isAuthenticated={isAuthenticated} />
       </div>
     </main>
   )

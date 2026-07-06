@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-for (const path of ['/', '/es', '/en']) {
+for (const path of ['/', '/es', '/en', '/pricing']) {
   test(`${path} has no serious accessibility violations or horizontal overflow`, async ({ page }) => {
     await page.goto(path)
     await expect(page.locator('main')).toBeVisible()
