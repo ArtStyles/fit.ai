@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { trackEvent } from '@/lib/analytics/events'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import type { AppLanguage } from '@/lib/i18n'
@@ -275,6 +276,8 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
       return
     }
 
+    void trackEvent('signup_started', { locale, screen: 'register' })
+
     const supabase = createClient()
     const result = await signUpForRegistration({
       signUp: credentials => supabase.auth.signUp(credentials),
@@ -282,6 +285,11 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
       password,
       locale,
       onAuthenticated: href => {
+        void trackEvent('signup_completed', {
+          locale,
+          screen: 'register',
+          authenticated: true,
+        })
         showToast({ title: copy.createdTitle, description: copy.createdDescription, variant: 'success' })
         window.dispatchEvent(new Event('fitai:navigation-start'))
         router.push(href)
@@ -305,6 +313,11 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
     }
 
     if (result.kind === 'verification-required') {
+      void trackEvent('signup_completed', {
+        locale,
+        screen: 'register',
+        authenticated: false,
+      })
       setVerifyEmail(email)
       showToast({
         title: copy.checkEmailTitle,

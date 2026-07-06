@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 030_dashboard_banner
+ * Last updated: migration 034_product_events
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -15,6 +15,31 @@ export type Json = string | number | boolean | null | { [key: string]: Json } | 
 export interface Database {
   public: {
     Tables: {
+
+      product_events: {
+        Row: {
+          id: string
+          occurred_at: string
+          event_name: string
+          anonymous_id: string
+          user_id: string | null
+          locale: 'es' | 'en' | null
+          path: string | null
+          properties: Json
+        }
+        Insert: {
+          id?: string
+          occurred_at?: string
+          event_name: string
+          anonymous_id: string
+          user_id?: string | null
+          locale?: 'es' | 'en' | null
+          path?: string | null
+          properties?: Json
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
 
       // ─── profiles ─────────────────────────────────────────────────────────
 

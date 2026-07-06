@@ -1,0 +1,38 @@
+CREATE TABLE public.product_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  event_name TEXT NOT NULL CHECK (event_name IN (
+    'landing_view',
+    'primary_cta_clicked',
+    'language_changed',
+    'signup_started',
+    'signup_completed',
+    'onboarding_step_completed',
+    'onboarding_abandoned',
+    'plan_generated',
+    'first_session_started',
+    'first_session_completed',
+    'plan_adjustment_used',
+    'organic_page_cta_clicked'
+  )),
+  anonymous_id UUID NOT NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  locale TEXT CHECK (locale IN ('es', 'en')),
+  path TEXT CHECK (
+    path IS NULL OR (
+      path LIKE '/%'
+      AND char_length(path) <= 200
+      AND position('?' IN path) = 0
+      AND position('#' IN path) = 0
+    )
+  ),
+  properties JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+ALTER TABLE public.product_events ENABLE ROW LEVEL SECURITY;
+-- Deliberately no anon/authenticated policies: only the server service role writes events.
+
+CREATE INDEX product_events_occurred_at_idx
+  ON public.product_events (occurred_at DESC);
+CREATE INDEX product_events_name_idx
+  ON public.product_events (event_name, occurred_at DESC);

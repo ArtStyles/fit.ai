@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { TrackPageView } from '@/components/analytics/TrackPageView'
 import { HeroSection } from '@/components/marketing/HeroSection'
 import { MarketingFaq } from '@/components/marketing/MarketingFaq'
 import { MarketingFooter } from '@/components/marketing/MarketingFooter'
@@ -39,6 +40,7 @@ export default function LocalizedHome({ params }: LocalizedHomeProps) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <TrackPageView locale={locale} />
       <MarketingHeader locale={locale} cta={content.hero.cta} />
       <main id="app-main-content">
         <HeroSection content={content.hero} locale={locale} />

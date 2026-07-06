@@ -22,6 +22,7 @@ import {
 import { ProfileStage } from '@/components/onboarding/ProfileStage'
 import { SafetyStage } from '@/components/onboarding/SafetyStage'
 import { runAutomaticOnboarding, type AutomaticOnboardingOutcome } from '@/components/onboarding/onboardingWorkflow'
+import { trackEvent } from '@/lib/analytics/events'
 import { cn } from '@/lib/utils'
 import { saveOnboardingAnswers } from './actions'
 import { defaultAnswers, type OnboardingAnswers } from './types'
@@ -143,6 +144,8 @@ export default function OnboardingWizard() {
   const [safetyReviewed, setSafetyReviewed] = useState(false)
   const [hydrated, setHydrated] = useState(false)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
+  const completedRef = useRef(false)
+  const abandonmentTrackedRef = useRef(false)
 
   useEffect(() => {
     const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY)
@@ -160,6 +163,28 @@ export default function OnboardingWizard() {
     localStorage.setItem(ONBOARDING_STORAGE_KEY, serializeOnboardingState(answers, stage, safetyReviewed))
   }, [answers, hydrated, safetyReviewed, stage])
 
+  useEffect(() => {
+    if (!hydrated) return
+
+    function handleVisibilityChange() {
+      if (
+        document.visibilityState !== 'hidden' ||
+        completedRef.current ||
+        abandonmentTrackedRef.current
+      ) return
+
+      abandonmentTrackedRef.current = true
+      void trackEvent('onboarding_abandoned', {
+        stage,
+        screen: 'onboarding',
+        authenticated: true,
+      })
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [hydrated, stage])
+
   function update<K extends keyof OnboardingAnswers>(key: K, value: OnboardingAnswers[K]) {
     setAnswers(previous => ({ ...previous, [key]: value }))
     if (stage === 'safety') setSafetyReviewed(false)
@@ -169,6 +194,11 @@ export default function OnboardingWizard() {
   function goNext() {
     const next = nextStage(stage)
     if (next) {
+      void trackEvent('onboarding_step_completed', {
+        stage,
+        screen: 'onboarding',
+        authenticated: true,
+      })
       if (stage === 'safety') setSafetyReviewed(true)
       setStage(next)
     }
@@ -187,6 +217,11 @@ export default function OnboardingWizard() {
       requiresProfessionalClearance(answers)
     ) return
     setSubmissionError(null)
+    void trackEvent('onboarding_step_completed', {
+      stage: 'confirmation',
+      screen: 'onboarding',
+      authenticated: true,
+    })
     setStage('generating')
   }
 
@@ -198,6 +233,12 @@ export default function OnboardingWizard() {
     )
 
     if (outcome.phase === 'success') {
+      completedRef.current = true
+      void trackEvent('plan_generated', {
+        stage: 'generating',
+        screen: 'onboarding',
+        authenticated: true,
+      })
       localStorage.removeItem(ONBOARDING_STORAGE_KEY)
       window.dispatchEvent(new Event('fitai:navigation-start'))
       router.replace('/dashboard')
@@ -215,6 +256,12 @@ export default function OnboardingWizard() {
     }
     try {
       await runManualStart(answers, saveOnboardingAnswers, () => {
+        completedRef.current = true
+        void trackEvent('onboarding_step_completed', {
+          stage: 'confirmation',
+          screen: 'onboarding',
+          authenticated: true,
+        })
         localStorage.removeItem(ONBOARDING_STORAGE_KEY)
         router.replace('/plan')
         router.refresh()
