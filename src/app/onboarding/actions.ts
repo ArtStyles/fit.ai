@@ -43,6 +43,7 @@ export async function saveOnboardingAnswers(answers: OnboardingAnswers): Promise
       : 'cleared'
 
   const payload: ProfileUpdate = {
+    full_name:                 answers.full_name.trim() || null,
     primary_goal:              answers.goal as ProfileUpdate['primary_goal'],
     fitness_level:             answers.fitness_level as ProfileUpdate['fitness_level'],
     days_per_week:             answers.days_per_week,

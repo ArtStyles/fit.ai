@@ -1,4 +1,6 @@
 export interface OnboardingAnswers {
+  full_name: string
+  username: string
   goal: string | null
   fitness_level: string | null
   days_per_week: number | null
@@ -23,6 +25,8 @@ export interface OnboardingAnswers {
 }
 
 export const defaultAnswers: OnboardingAnswers = {
+  full_name: '',
+  username: '',
   goal: null,
   fitness_level: null,
   days_per_week: null,

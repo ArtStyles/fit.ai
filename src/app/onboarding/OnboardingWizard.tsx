@@ -1,982 +1,263 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertTriangle, Dumbbell, Loader2, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, Dumbbell, Loader2 } from 'lucide-react'
+import { generatePlan, type GeneratePlanResult } from '@/app/actions/generatePlan'
+import { AvailabilityStage } from '@/components/onboarding/AvailabilityStage'
+import { ConfirmationStage } from '@/components/onboarding/ConfirmationStage'
+import { EquipmentStage } from '@/components/onboarding/EquipmentStage'
+import {
+  ONBOARDING_STORAGE_KEY,
+  canContinueStage,
+  deserializeOnboardingState,
+  nextStage,
+  previousStage,
+  requiresProfessionalClearance,
+  runAutomaticStart,
+  runManualStart,
+  serializeOnboardingState,
+  stageProgress,
+  type OnboardingStageId,
+} from '@/components/onboarding/onboardingStages'
+import { ProfileStage } from '@/components/onboarding/ProfileStage'
+import { SafetyStage } from '@/components/onboarding/SafetyStage'
 import { cn } from '@/lib/utils'
 import { saveOnboardingAnswers } from './actions'
-import { generatePlan, type GeneratePlanResult } from '@/app/actions/generatePlan'
-import { type OnboardingAnswers, defaultAnswers } from './types'
-import { checkUsernameAvailable, updateUsername } from '@/app/actions/username'
-import { validateUsername } from '@/lib/social/username'
+import { defaultAnswers, type OnboardingAnswers } from './types'
 
-// ─── Step sequence ────────────────────────────────────────────────────────────
-
-type StepKey =
-  | 'username' | 'goal' | 'level' | 'days' | 'duration'
-  | 'location' | 'equipment' | 'cardio' | 'readiness' | 'limitations' | 'physical'
-  | 'planChoice' | 'generating'
-
-function buildSteps(answers: OnboardingAnswers): StepKey[] {
-  const base: StepKey[] = ['username', 'goal', 'level', 'days', 'duration', 'location']
-  if (answers.gym_type === 'home_basic' || answers.gym_type === 'full_gym') {
-    base.push('equipment')
-  }
-  return [...base, 'cardio', 'readiness', 'limitations', 'physical', 'planChoice', 'generating']
-}
-
-const STORAGE_KEY = 'fitai_onboarding_v2'
-
-// ─── Shared step props ────────────────────────────────────────────────────────
-
-interface StepProps {
-  answers: OnboardingAnswers
-  update: <K extends keyof OnboardingAnswers>(k: K, v: OnboardingAnswers[K]) => void
-  onNext: () => void
-  onBack: () => void
-  isFirst: boolean
-}
-
-// ─── Reusable UI atoms ────────────────────────────────────────────────────────
-
-function OptionCard({
-  selected, onClick, emoji, label, sublabel,
-}: {
-  selected: boolean; onClick: () => void
-  emoji: string; label: string; sublabel?: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'w-full text-left rounded-2xl border-2 px-5 py-4 transition-all duration-150',
-        'flex items-center gap-4 active:scale-[0.98]',
-        selected
-          ? 'border-violet-500 bg-violet-500/10'
-          : 'border-border bg-muted/20 hover:border-border/80',
-      )}
-    >
-      <span className="text-2xl leading-none flex-shrink-0">{emoji}</span>
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-foreground text-base leading-tight">{label}</p>
-        {sublabel && <p className="text-xs text-muted-foreground mt-0.5">{sublabel}</p>}
-      </div>
-      <div className={cn(
-        'flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
-        selected ? 'border-violet-500 bg-violet-500' : 'border-border',
-      )}>
-        {selected && <Check className="w-3 h-3 text-white" />}
-      </div>
-    </button>
-  )
-}
-
-function ChipButton({
-  selected, onClick, label,
-}: {
-  selected: boolean; onClick: () => void; label: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex-1 py-4 rounded-xl border-2 font-bold text-lg transition-all duration-150 active:scale-95',
-        selected
-          ? 'border-violet-500 bg-violet-500 text-white'
-          : 'border-border bg-muted/20 text-muted-foreground hover:border-border/80',
-      )}
-    >
-      {label}
-    </button>
-  )
-}
-
-// ─── Step shell (back btn + heading + CTA) ────────────────────────────────────
-
-function StepShell({
-  title, subtitle, children,
-  onNext, onBack, canProceed, isFirst,
-  ctaLabel = 'Continuar',
-}: {
-  title: string
-  subtitle?: string
-  children: React.ReactNode
-  onNext: () => void
-  onBack: () => void
-  canProceed: boolean
-  isFirst: boolean
-  ctaLabel?: string
-}) {
-  return (
-    <div className="flex flex-col min-h-[calc(100vh-3rem)] px-5 pt-4 pb-10 max-w-md mx-auto w-full">
-      {/* Back */}
-      <div className="h-9 flex items-center">
-        {!isFirst && (
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span className="text-sm font-medium">Atrás</span>
-          </button>
-        )}
-      </div>
-
-      {/* Heading */}
-      <div className="mt-8 mb-7">
-        <h2 className="text-[1.6rem] font-bold text-foreground leading-tight">{title}</h2>
-        {subtitle && (
-          <p className="text-muted-foreground text-sm mt-2 leading-relaxed">{subtitle}</p>
-        )}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1">{children}</div>
-
-      {/* CTA */}
-      <div className="mt-8">
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={!canProceed}
-          className={cn(
-            'w-full py-4 rounded-2xl font-bold text-base transition-all duration-150',
-            canProceed
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] shadow-lg shadow-primary/20'
-              : 'bg-muted text-muted-foreground cursor-not-allowed',
-          )}
-        >
-          {ctaLabel}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Steps ────────────────────────────────────────────────────────────────────
-
-function Step0Username({ onNext, onBack, isFirst }: StepProps) {
-  const [value, setValue] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [available, setAvailable] = useState<boolean | null>(null)
-  const [checking, setChecking] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const reqId = useRef(0)
-
-  useEffect(() => {
-    setAvailable(null)
-    const v = validateUsername(value)
-    if (!v.ok) { setError(value ? v.error : null); setChecking(false); return }
-    setError(null)
-    setChecking(true)
-    const id = ++reqId.current
-    const t = setTimeout(async () => {
-      const res = await checkUsernameAvailable(v.value)
-      if (id !== reqId.current) return
-      setAvailable(res.available)
-      if (!res.available) setError(res.error ?? 'Ese nombre de usuario ya está en uso.')
-      setChecking(false)
-    }, 350)
-    return () => clearTimeout(t)
-  }, [value])
-
-  const canProceed = available === true && !checking && !saving
-
-  async function handleNext() {
-    setSaving(true)
-    const res = await updateUsername(value)
-    setSaving(false)
-    if (res.ok) onNext()
-    else setError(res.error)
-  }
-
-  return (
-    <StepShell
-      title="Elige tu nombre de usuario"
-      subtitle="Así te encontrarán y verán tu perfil. Podrás cambiarlo más adelante."
-      isFirst={isFirst} onNext={handleNext} onBack={onBack}
-      canProceed={canProceed}
-      ctaLabel={saving ? 'Guardando…' : 'Continuar'}
-    >
-      <div className="space-y-2">
-        <div className="flex items-center rounded-xl border-2 border-border bg-muted/20 px-4">
-          <span className="text-muted-foreground">@</span>
-          <input
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            autoFocus
-            autoCapitalize="none"
-            maxLength={20}
-            placeholder="tu_usuario"
-            className="h-12 flex-1 bg-transparent px-2 text-base text-foreground outline-none placeholder:text-muted-foreground/40"
-          />
-          {checking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-          {!checking && available === true && <Check className="h-4 w-4 text-green-500" />}
-        </div>
-        {error && <p className="text-xs text-red-400">{error}</p>}
-        {!error && available === true && <p className="text-xs text-green-500">Disponible</p>}
-      </div>
-    </StepShell>
-  )
-}
-
-function Step1Goal({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const options = [
-    { value: 'lose_weight',       emoji: '🔥', label: 'Perder grasa',   sublabel: 'Reducir grasa corporal' },
-    { value: 'build_muscle',      emoji: '💪', label: 'Ganar músculo',  sublabel: 'Hipertrofia y volumen' },
-    { value: 'gain_strength',     emoji: '⚡', label: 'Ganar fuerza',   sublabel: 'Levantar más peso' },
-    { value: 'stay_active',       emoji: '✨', label: 'Mantenerme',     sublabel: 'Fitness general y salud' },
-    { value: 'improve_endurance', emoji: '🏃', label: 'Resistencia',    sublabel: 'Cardio y aguante' },
-  ]
-  return (
-    <StepShell
-      title="¿Cuál es tu objetivo principal?"
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={answers.goal !== null}
-    >
-      <div className="space-y-3">
-        {options.map(o => (
-          <OptionCard key={o.value} selected={answers.goal === o.value}
-            onClick={() => update('goal', o.value)} {...o} />
-        ))}
-      </div>
-    </StepShell>
-  )
-}
-
-function Step2Level({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const options = [
-    { value: 'beginner',     emoji: '🌱', label: 'Principiante', sublabel: 'Menos de 6 meses entrenando' },
-    { value: 'intermediate', emoji: '🔄', label: 'Intermedio',   sublabel: 'Entre 6 meses y 2 años' },
-    { value: 'advanced',     emoji: '🏆', label: 'Avanzado',     sublabel: 'Más de 2 años' },
-  ]
-  return (
-    <StepShell
-      title="¿Cuál es tu nivel de experiencia?"
-      subtitle="Esto calibra la intensidad de tus rutinas."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={answers.fitness_level !== null}
-    >
-      <div className="space-y-3">
-        {options.map(o => (
-          <OptionCard key={o.value} selected={answers.fitness_level === o.value}
-            onClick={() => update('fitness_level', o.value)} {...o} />
-        ))}
-      </div>
-    </StepShell>
-  )
-}
-
-function Step3Days({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  return (
-    <StepShell
-      title="¿Cuántos días puedes entrenar?"
-      subtitle="Por semana. La consistencia importa más que la frecuencia."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={answers.days_per_week !== null}
-    >
-      <div className="flex gap-2.5">
-        {[2, 3, 4, 5, 6].map(d => (
-          <ChipButton key={d} selected={answers.days_per_week === d}
-            onClick={() => update('days_per_week', d)} label={String(d)} />
-        ))}
-      </div>
-      {answers.days_per_week !== null && (
-        <p className="text-muted-foreground text-sm text-center mt-4">
-          {answers.days_per_week} días por semana
-        </p>
-      )}
-    </StepShell>
-  )
-}
-
-function Step4Duration({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const options = [
-    { value: 30, label: '30 min' },
-    { value: 45, label: '45 min' },
-    { value: 60, label: '1 hora' },
-    { value: 90, label: '1h 30' },
-  ]
-  return (
-    <StepShell
-      title="¿Cuánto tiempo tienes por sesión?"
-      subtitle="Incluyendo calentamiento y vuelta a la calma."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={answers.session_duration !== null}
-    >
-      <div className="grid grid-cols-2 gap-3">
-        {options.map(o => (
-          <button key={o.value} type="button"
-            onClick={() => update('session_duration', o.value)}
-            className={cn(
-              'py-6 rounded-2xl border-2 font-bold text-xl transition-all duration-150 active:scale-95',
-              answers.session_duration === o.value
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-border bg-muted/20 text-muted-foreground hover:border-border/80',
-            )}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-    </StepShell>
-  )
-}
-
-function Step5Location({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const options = [
-    { value: 'home_no_equipment', emoji: '🏠', label: 'Casa sin equipo',   sublabel: 'Solo peso corporal' },
-    { value: 'home_basic',        emoji: '🏋️', label: 'Casa con básicos',  sublabel: 'Mancuernas, bandas, etc.' },
-    { value: 'full_gym',          emoji: '🏟️', label: 'Gimnasio completo', sublabel: 'Acceso a todo el equipo' },
-  ]
-  return (
-    <StepShell
-      title="¿Dónde entrenas?"
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={answers.gym_type !== null}
-    >
-      <div className="space-y-3">
-        {options.map(o => (
-          <OptionCard key={o.value} selected={answers.gym_type === o.value}
-            onClick={() => {
-              update('gym_type', o.value)
-              if (o.value === 'home_no_equipment') update('equipment', [])
-            }}
-            {...o}
-          />
-        ))}
-      </div>
-    </StepShell>
-  )
-}
-
-const EQUIPMENT_OPTIONS = [
-  { value: 'dumbbells',        label: 'Mancuernas',   emoji: '🏋️' },
-  { value: 'barbell',          label: 'Barra',        emoji: '⚖️' },
-  { value: 'bench',            label: 'Banco',        emoji: '🪑' },
-  { value: 'kettlebell',       label: 'Kettlebell',   emoji: '🫧' },
-  { value: 'resistance_bands', label: 'Bandas',       emoji: '🌀' },
-  { value: 'cable_machine',    label: 'Polea/Cable',  emoji: '🔗' },
-  { value: 'pull_up_bar',      label: 'Dominadas',    emoji: '🏗️' },
-  { value: 'trx',              label: 'TRX',          emoji: '🎯' },
+const GENERATION_MESSAGES = [
+  'Guardando tu perfil…',
+  'Seleccionando ejercicios compatibles…',
+  'Diseñando tu primera semana…',
+  'Preparando tu panel…',
 ]
 
-function Step6Equipment({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const toggle = (v: string) => {
-    const next = answers.equipment.includes(v)
-      ? answers.equipment.filter(e => e !== v)
-      : [...answers.equipment, v]
-    update('equipment', next)
-  }
-  const count = answers.equipment.length
-  return (
-    <StepShell
-      title="¿Qué equipo tienes disponible?"
-      subtitle="Selecciona todo lo que tengas. Puedes actualizar esto más adelante."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={true}
-      ctaLabel={count > 0 ? `Continuar (${count} seleccionados)` : 'Continuar sin equipo extra'}
-    >
-      <div className="grid grid-cols-2 gap-2.5">
-        {EQUIPMENT_OPTIONS.map(eq => {
-          const sel = answers.equipment.includes(eq.value)
-          return (
-            <button key={eq.value} type="button" onClick={() => toggle(eq.value)}
-              className={cn(
-                'py-4 px-3 rounded-xl border-2 transition-all duration-150 active:scale-95',
-                'flex flex-col items-center gap-1.5',
-                sel ? 'border-primary bg-primary/10' : 'border-border bg-muted/20 hover:border-border/80',
-              )}
-            >
-              <span className="text-2xl">{eq.emoji}</span>
-              <span className={cn('text-xs font-medium text-center leading-tight',
-                sel ? 'text-primary' : 'text-muted-foreground')}>
-                {eq.label}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-    </StepShell>
-  )
-}
-
-const CARDIO_OPTIONS = [
-  { value: 'walking', label: 'Caminar', emoji: '🚶' },
-  { value: 'running', label: 'Correr', emoji: '🏃' },
-  { value: 'cycling', label: 'Bicicleta', emoji: '🚴' },
-  { value: 'elliptical', label: 'Elíptica', emoji: '🔄' },
-  { value: 'rowing', label: 'Remo', emoji: '🚣' },
-  { value: 'stairs', label: 'Escaleras', emoji: '🪜' },
-  { value: 'jump_rope', label: 'Cuerda', emoji: '➰' },
-] as const
-
-function StepCardioPreferences({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const toggle = (value: OnboardingAnswers['cardio_preferences'][number]) => {
-    update('cardio_preferences', answers.cardio_preferences.includes(value)
-      ? answers.cardio_preferences.filter(item => item !== value)
-      : [...answers.cardio_preferences, value])
-  }
-
-  return (
-    <StepShell title="¿Qué cardio te gustaría hacer?"
-      subtitle="Selecciona las modalidades que aceptarías. Solo usaremos opciones compatibles con tu equipo y limitaciones."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={answers.cardio_preferences.length > 0}>
-      <div className="grid grid-cols-2 gap-2.5">
-        {CARDIO_OPTIONS.map(option => {
-          const selected = answers.cardio_preferences.includes(option.value)
-          return (
-            <button key={option.value} type="button" onClick={() => toggle(option.value)} aria-pressed={selected}
-              className={cn('rounded-xl border-2 px-3 py-4 text-left transition-colors',
-                selected ? 'border-primary bg-primary/10' : 'border-border bg-muted/20')}>
-              <span className="text-xl" aria-hidden>{option.emoji}</span>
-              <p className={cn('mt-1 text-sm font-semibold', selected ? 'text-primary' : 'text-foreground')}>{option.label}</p>
-            </button>
-          )
-        })}
-      </div>
-    </StepShell>
-  )
-}
-
-const WARNING_OPTIONS = [
-  ['chest_discomfort', 'Molestia o dolor en pecho, cuello, mandíbula o brazos'],
-  ['dyspnea_at_rest_or_mild', 'Falta de aire en reposo o con esfuerzo leve'],
-  ['dizziness_or_syncope', 'Mareo intenso, desmayo o pérdida de conciencia'],
-  ['palpitations_or_unusual_fatigue', 'Palpitaciones o fatiga inusual con actividad normal'],
-] as const
-
-function StepReadiness({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const toggleWarning = (value: string) => {
-    update('warning_symptoms', answers.warning_symptoms.includes(value)
-      ? answers.warning_symptoms.filter(item => item !== value)
-      : [...answers.warning_symptoms, value])
-  }
-
-  return (
-    <StepShell title="Preparación para entrenar"
-      subtitle="Este cribado no diagnostica. Indica si el plan automático puede continuar o si necesitas orientación profesional."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={answers.activity_level !== null}>
-      <div className="space-y-5">
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-foreground">Actividad durante los últimos 3 meses</p>
-          {[
-            ['inactive', 'Casi ninguna actividad planificada'],
-            ['insufficiently_active', 'Algo de actividad, menos de 3 días por semana'],
-            ['regularly_active', '30 minutos moderados, al menos 3 días por semana'],
-          ].map(([value, label]) => (
-            <button key={value} type="button"
-              onClick={() => update('activity_level', value as OnboardingAnswers['activity_level'])}
-              className={cn('w-full rounded-xl border px-4 py-3 text-left text-sm',
-                answers.activity_level === value ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-foreground">Marca cualquier señal que presentes</p>
-          {WARNING_OPTIONS.map(([value, label]) => (
-            <label key={value} className="flex gap-3 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground">
-              <input type="checkbox" checked={answers.warning_symptoms.includes(value)} onChange={() => toggleWarning(value)} className="mt-0.5" />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-        <label className="flex gap-3 text-sm text-muted-foreground">
-          <input type="checkbox" checked={answers.known_disease} onChange={event => update('known_disease', event.target.checked)} />
-          Tengo una enfermedad cardiovascular, metabólica o renal diagnosticada.
-        </label>
-        <label className="flex gap-3 text-sm text-muted-foreground">
-          <input type="checkbox" checked={answers.recent_surgery} onChange={event => update('recent_surgery', event.target.checked)} />
-          Tuve una cirugía reciente o tengo una restricción médica vigente.
-        </label>
-        {(answers.known_disease || answers.recent_surgery || answers.warning_symptoms.length > 0) ? (
-          <label className="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-            <input type="checkbox" checked={answers.medically_cleared} onChange={event => update('medically_cleared', event.target.checked)} />
-            Un profesional sanitario me autorizó expresamente a comenzar o continuar este nivel de ejercicio.
-          </label>
-        ) : null}
-      </div>
-    </StepShell>
-  )
-}
-
-const LIMITATION_REGIONS = ['hombro', 'codo', 'muñeca', 'espalda', 'cadera', 'rodilla', 'tobillo']
-
-function StepLimitations({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const toggleRegion = (region: string) => {
-    update('limitation_regions', answers.limitation_regions.includes(region)
-      ? answers.limitation_regions.filter(item => item !== region)
-      : [...answers.limitation_regions, region])
-  }
-  const hasLimitations = answers.limitation_regions.length > 0
-
-  return (
-    <StepShell title="¿Tienes alguna limitación musculoesquelética?"
-      subtitle="Selecciona la zona y describe únicamente movimientos que un profesional te haya indicado evitar."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={!hasLimitations || answers.limitation_status !== null}
-      ctaLabel={hasLimitations ? 'Guardar limitaciones' : 'Sin limitaciones, continuar'}>
-      <div className="space-y-5">
-        <div className="flex flex-wrap gap-2">
-          {LIMITATION_REGIONS.map(region => (
-            <button key={region} type="button" onClick={() => toggleRegion(region)}
-              aria-pressed={answers.limitation_regions.includes(region)}
-              className={cn('rounded-full border px-3 py-2 text-sm capitalize',
-                answers.limitation_regions.includes(region) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>
-              {region}
-            </button>
-          ))}
-        </div>
-        {hasLimitations ? (
-          <>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                ['stable', 'Estable'],
-                ['recovering', 'Recuperación'],
-                ['acute', 'Aguda'],
-              ].map(([value, label]) => (
-                <button key={value} type="button" onClick={() => update('limitation_status', value as OnboardingAnswers['limitation_status'])}
-                  className={cn('rounded-xl border px-2 py-3 text-xs font-semibold',
-                    answers.limitation_status === value ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <textarea value={answers.movements_to_avoid} onChange={event => update('movements_to_avoid', event.target.value)}
-              placeholder="Movimientos a evitar, separados por comas. Ej.: squat, vertical_push"
-              rows={3} className="w-full resize-none rounded-xl border-2 border-border bg-muted/20 px-4 py-3 text-sm text-foreground" />
-            <label className="flex gap-3 text-sm text-muted-foreground">
-              <input type="checkbox" checked={answers.clinician_cleared} onChange={event => update('clinician_cleared', event.target.checked)} />
-              Un profesional me autorizó a entrenar respetando estas restricciones.
-            </label>
-          </>
-        ) : null}
-      </div>
-    </StepShell>
-  )
-}
-
-function Step8Physical({ answers, update, onNext, onBack, isFirst }: StepProps) {
-  const genders = [
-    { value: 'male',   label: 'Hombre' },
-    { value: 'female', label: 'Mujer' },
-    { value: 'other',  label: 'Otro' },
-  ]
-  const parsedAge = Number(answers.age)
-  const isValid = parsedAge >= 18 && parsedAge <= 100 && answers.weight_kg !== '' && answers.height_cm !== '' && answers.gender !== null
-
-  const inputClass = cn(
-    'w-full rounded-xl border-2 border-border bg-muted/20 px-4 py-3.5',
-    'text-foreground placeholder:text-muted-foreground/40 text-base',
-    'focus:outline-none focus:border-primary/50 transition-colors',
-  )
-
-  return (
-    <StepShell
-      title="Tus datos físicos"
-      subtitle="Usados solo para personalizar tu plan. No se muestran ni comparten."
-      isFirst={isFirst} onNext={onNext} onBack={onBack}
-      canProceed={isValid}
-    >
-      <div className="space-y-5">
-        {/* Gender */}
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Sexo</label>
-          <div className="flex gap-2">
-            {genders.map(g => (
-              <ChipButton key={g.value} selected={answers.gender === g.value}
-                onClick={() => update('gender', g.value)} label={g.label} />
-            ))}
-          </div>
-        </div>
-
-        {/* Age */}
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Edad</label>
-          <div className="relative">
-            <input type="number" min={18} max={100}
-              value={answers.age} onChange={e => update('age', e.target.value)}
-              placeholder="25" className={inputClass} />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/60 text-sm">años</span>
-          </div>
-        </div>
-
-        {/* Weight + Height */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Peso</label>
-            <div className="relative">
-              <input type="number" min={30} max={300}
-                value={answers.weight_kg} onChange={e => update('weight_kg', e.target.value)}
-                placeholder="70" className={cn(inputClass, 'pr-10')} />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 text-xs">kg</span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Altura</label>
-            <div className="relative">
-              <input type="number" min={100} max={250}
-                value={answers.height_cm} onChange={e => update('height_cm', e.target.value)}
-                placeholder="175" className={cn(inputClass, 'pr-10')} />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 text-xs">cm</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </StepShell>
-  )
-}
-
-const AUTO_GENERATION_MSGS = [
-  'Guardando tu perfil...',
-  'Seleccionando ejercicios compatibles...',
-  'Diseñando tu primera semana...',
-  'Preparando tu dashboard...',
-]
-
-function Step9PlanChoice({
-  onGenerate,
-  onManual,
-  onBack,
-}: {
-  onGenerate: () => void
-  onManual: () => void
-  onBack: () => void
-}) {
-  return (
-    <div className="flex min-h-[calc(100vh-3rem)] flex-col px-5 pb-10 pt-4">
-      <div className="h-9">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span className="text-sm font-medium">Atras</span>
-        </button>
-      </div>
-
-      <div className="mx-auto mt-12 w-full max-w-md">
-        <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-3xl border-2 border-primary/30 bg-primary/10">
-          <Dumbbell className="h-8 w-8 text-primary" />
-        </div>
-        <h2 className="text-[1.6rem] font-bold leading-tight text-foreground">
-          Como quieres empezar?
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Puedes generar una rutina basada en evidencia ahora o guardar tu perfil y crear el plan manualmente.
-        </p>
-
-        <div className="mt-8 space-y-3">
-          <button
-            type="button"
-            onClick={onGenerate}
-            className="w-full rounded-2xl bg-primary px-5 py-4 text-left text-primary-foreground shadow-lg shadow-primary/20 active:scale-[0.98]"
-          >
-            <p className="font-bold">Generar plan basado en evidencia</p>
-            <p className="mt-1 text-xs opacity-80">Usa reglas versionadas y validadas para crear tu primera semana.</p>
-          </button>
-          <button
-            type="button"
-            onClick={onManual}
-            className="w-full rounded-2xl border-2 border-border bg-muted/20 px-5 py-4 text-left active:scale-[0.98]"
-          >
-            <p className="font-bold text-foreground">Crear manualmente</p>
-            <p className="mt-1 text-xs text-muted-foreground">Guarda el perfil y arma tus dias y ejercicios a tu ritmo.</p>
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Step9GeneratingAuto({ onFinish }: { onFinish: () => Promise<GeneratePlanResult> }) {
-  const [msgIdx, setMsgIdx] = useState(0)
-  const [status, setStatus] = useState<'loading' | 'error'>('loading')
+function GeneratingState({ onFinish }: { onFinish: () => Promise<GeneratePlanResult> }) {
+  const [messageIndex, setMessageIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [retryNonce, setRetryNonce] = useState(0)
   const startedRef = useRef(false)
   const onFinishRef = useRef(onFinish)
-  useEffect(() => { onFinishRef.current = onFinish })
+
+  useEffect(() => {
+    onFinishRef.current = onFinish
+  }, [onFinish])
 
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true
-    setStatus('loading')
     setError(null)
-    setMsgIdx(0)
+    setMessageIndex(0)
 
-    let idx = 0
-    const interval = setInterval(() => {
-      idx++
-      if (idx < AUTO_GENERATION_MSGS.length) {
-        setMsgIdx(idx)
-      } else {
-        clearInterval(interval)
-      }
+    let index = 0
+    const interval = window.setInterval(() => {
+      index += 1
+      if (index < GENERATION_MESSAGES.length) setMessageIndex(index)
+      else window.clearInterval(interval)
     }, 1600)
 
     onFinishRef.current()
       .then(result => {
-        if (result.success) return
-        clearInterval(interval)
-        setStatus('error')
-        setError(result.error ?? 'No pudimos generar tu plan ahora.')
+        if (!result.success) {
+          window.clearInterval(interval)
+          setError(result.error ?? 'No pudimos generar tu plan ahora.')
+        }
       })
-      .catch(err => {
-        clearInterval(interval)
-        setStatus('error')
-        setError(err instanceof Error ? err.message : 'No pudimos generar tu plan ahora.')
+      .catch(reason => {
+        window.clearInterval(interval)
+        setError(reason instanceof Error ? reason.message : 'No pudimos generar tu plan ahora.')
       })
 
-    return () => {
-      clearInterval(interval)
-    }
+    return () => window.clearInterval(interval)
   }, [retryNonce])
 
-  if (status === 'error') {
+  if (error) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
-        <div className="mb-8 flex h-20 w-20 items-center justify-center rounded-3xl border-2 border-primary/30 bg-primary/10">
-          <Dumbbell className="h-10 w-10 text-primary" />
-        </div>
-
-        <h2 className="mb-3 text-2xl font-bold text-foreground">Tu perfil se guardó</h2>
-        <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-          No pudimos generar el plan ahora. Puedes reintentarlo sin perder tus datos.
-        </p>
-
-        {error && (
-          <p className="mt-4 max-w-sm rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            {error}
-          </p>
-        )}
-
+      <main className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-xl flex-col items-center justify-center px-5 py-12 text-center">
+        <span className="grid h-20 w-20 place-items-center rounded-3xl border-2 border-red-500/30 bg-red-500/10">
+          <AlertTriangle className="h-10 w-10 text-red-600 dark:text-red-300" aria-hidden="true" />
+        </span>
+        <h1 className="mt-7 text-3xl font-bold text-foreground">Tu perfil se guardó</h1>
+        <p className="mt-3 text-base leading-7 text-muted-foreground">No pudimos generar el plan ahora. Puedes reintentarlo sin perder tus datos.</p>
+        <p role="alert" className="mt-5 w-full rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-base text-foreground">{error}</p>
         <button
           type="button"
           onClick={() => {
             startedRef.current = false
             setRetryNonce(value => value + 1)
           }}
-          className="mt-8 w-full max-w-sm rounded-2xl bg-primary py-4 text-base font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 active:scale-[0.98]"
+          className="mt-7 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 py-3 text-base font-bold text-white transition-colors hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none"
         >
+          <RefreshCw className="h-5 w-5" aria-hidden="true" />
           Reintentar generación
         </button>
-      </div>
+      </main>
     )
   }
 
+  const progress = ((messageIndex + 1) / GENERATION_MESSAGES.length) * 100
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
-      <motion.div
-        animate={{ scale: [1, 1.06, 1], opacity: [0.8, 1, 0.8] }}
-        transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
-        className="mb-10"
+    <main className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-xl flex-col items-center justify-center px-5 py-12 text-center">
+      <span className="relative grid h-24 w-24 place-items-center rounded-3xl border-2 border-violet-500/30 bg-violet-500/10">
+        <Dumbbell className="h-12 w-12 text-violet-600 dark:text-violet-300" aria-hidden="true" />
+        <Loader2 className="absolute -right-2 -top-2 h-8 w-8 animate-spin text-fuchsia-500 motion-reduce:animate-none" aria-hidden="true" />
+      </span>
+      <p className="mt-8 text-base font-semibold text-primary">Paso 5 de 5 completado</p>
+      <h1 className="mt-2 text-3xl font-bold text-foreground">Preparando tu primer plan</h1>
+      <p className="mt-3 min-h-7 text-base leading-7 text-muted-foreground" aria-live="polite">{GENERATION_MESSAGES[messageIndex]}</p>
+      <div
+        className="mt-8 h-2 w-full overflow-hidden rounded-full bg-violet-950/15 dark:bg-violet-100/15"
+        role="progressbar"
+        aria-label="Progreso de generación del plan"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress}
       >
-        <div className="flex h-24 w-24 items-center justify-center rounded-3xl border-2 border-primary/30 bg-primary/10">
-          <Dumbbell className="h-12 w-12 text-primary" />
-        </div>
-      </motion.div>
-
-      <h2 className="mb-3 text-2xl font-bold text-foreground">Preparando tu primer plan</h2>
-
-      <AnimatePresence mode="wait">
-        <motion.p
-          key={msgIdx}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.25 }}
-          className="text-base text-muted-foreground"
-        >
-          {AUTO_GENERATION_MSGS[msgIdx]}
-        </motion.p>
-      </AnimatePresence>
-
-      <div className="mt-10 flex gap-2">
-        {AUTO_GENERATION_MSGS.map((_, i) => (
-          <motion.div
-            key={i}
-            animate={{ opacity: i <= msgIdx ? 1 : 0.2, scale: i === msgIdx ? 1.3 : 1 }}
-            transition={{ duration: 0.2 }}
-            className={cn('h-2 w-2 rounded-full', i <= msgIdx ? 'bg-primary' : 'bg-border')}
-          />
+        <div className="h-full rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-500 transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="mt-4 flex gap-2" aria-hidden="true">
+        {GENERATION_MESSAGES.map((_, index) => (
+          <span key={index} className={cn('h-2.5 w-2.5 rounded-full', index <= messageIndex ? 'bg-violet-600' : 'bg-border')} />
         ))}
       </div>
-    </div>
+    </main>
   )
 }
-
-const slideVariants = {
-  enter: (dir: number) => ({ x: dir > 0 ? '100%' : '-100%', opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (dir: number) => ({ x: dir > 0 ? '-28%' : '28%', opacity: 0 }),
-}
-
-// ─── Wizard controller ────────────────────────────────────────────────────────
 
 export default function OnboardingWizard() {
   const router = useRouter()
   const [answers, setAnswers] = useState<OnboardingAnswers>(defaultAnswers)
-  const [stepKey, setStepKey] = useState<StepKey>('username')
-  const [direction, setDirection] = useState<1 | -1>(1)
+  const [stage, setStage] = useState<OnboardingStageId>('profile')
+  const [safetyReviewed, setSafetyReviewed] = useState(false)
   const [hydrated, setHydrated] = useState(false)
+  const [submissionError, setSubmissionError] = useState<string | null>(null)
 
-  // Rehydrate from localStorage
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const saved = JSON.parse(raw) as { answers: OnboardingAnswers; step: StepKey }
-        if (saved.answers) setAnswers({ ...defaultAnswers, ...saved.answers })
-        if (saved.step && saved.step !== 'generating') setStepKey(saved.step)
-      }
-    } catch { /* corrupt data — start fresh */ }
+    const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY)
+    if (raw) {
+      const saved = deserializeOnboardingState(raw)
+      setAnswers(saved.answers)
+      setStage(saved.stage)
+      setSafetyReviewed(saved.safetyReviewed)
+    }
     setHydrated(true)
   }, [])
 
-  // Persist on every change
   useEffect(() => {
     if (!hydrated) return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ answers, step: stepKey }))
-  }, [answers, stepKey, hydrated])
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, serializeOnboardingState(answers, stage, safetyReviewed))
+  }, [answers, hydrated, safetyReviewed, stage])
 
-  const steps = buildSteps(answers)
-  // slice(0,-1) keeps StepKey[] type (avoids narrowing to Exclude<StepKey,'generating'>[])
-  const contentSteps = steps.slice(0, -1) as StepKey[]
-  const currentIdx = steps.indexOf(stepKey)
-  const contentIdx = contentSteps.indexOf(stepKey)
-
-  const progress = stepKey === 'generating'
-    ? 100
-    : contentSteps.length > 1
-      ? (contentIdx / (contentSteps.length - 1)) * 100
-      : 0
+  function update<K extends keyof OnboardingAnswers>(key: K, value: OnboardingAnswers[K]) {
+    setAnswers(previous => ({ ...previous, [key]: value }))
+    if (stage === 'safety') setSafetyReviewed(false)
+    setSubmissionError(null)
+  }
 
   function goNext() {
-    const next = steps[currentIdx + 1]
-    if (next) { setDirection(1); setStepKey(next) }
+    const next = nextStage(stage)
+    if (next) {
+      if (stage === 'safety') setSafetyReviewed(true)
+      setStage(next)
+    }
   }
 
   function goBack() {
-    const prev = steps[currentIdx - 1]
-    if (prev) { setDirection(-1); setStepKey(prev) }
+    const previous = previousStage(stage)
+    if (previous && previous !== 'generating') setStage(previous)
   }
 
-  function update<K extends keyof OnboardingAnswers>(k: K, v: OnboardingAnswers[K]) {
-    setAnswers(prev => ({ ...prev, [k]: v }))
+  function startAutomaticGeneration() {
+    if (
+      stage !== 'confirmation' ||
+      !safetyReviewed ||
+      !canContinueStage('confirmation', answers) ||
+      requiresProfessionalClearance(answers)
+    ) return
+    setSubmissionError(null)
+    setStage('generating')
   }
 
-  const handleFinish = useCallback(async () => {
+  const handleAutomaticFinish = useCallback(async (): Promise<GeneratePlanResult> => {
     try {
-      await saveOnboardingAnswers(answers)
-    } catch (err) {
-      console.error('Error saving onboarding:', err)
+      const result = await runAutomaticStart(
+        answers,
+        saveOnboardingAnswers,
+        () => generatePlan({ mode: 'initial' }),
+      )
+
+      if (result.success) {
+        localStorage.removeItem(ONBOARDING_STORAGE_KEY)
+        window.dispatchEvent(new Event('fitai:navigation-start'))
+        router.replace('/dashboard')
+        router.refresh()
+      }
+
+      return result
+    } catch (reason) {
+      console.error('Error saving onboarding:', reason)
       return {
         success: false,
-        error: err instanceof Error ? err.message : 'No pudimos guardar tu perfil.',
+        error: reason instanceof Error ? reason.message : 'No pudimos guardar tu perfil.',
       }
     }
-
-    const result = await generatePlan({ mode: 'initial' })
-
-    if (result.success) {
-      localStorage.removeItem(STORAGE_KEY)
-      window.dispatchEvent(new Event('fitai:navigation-start'))
-      router.replace('/dashboard')
-      router.refresh()
-    }
-
-    return result
   }, [answers, router])
 
-  const handleManualStart = useCallback(async () => {
+  async function handleManualStart() {
+    setSubmissionError(null)
+    if (!safetyReviewed) {
+      setStage('safety')
+      return
+    }
     try {
-      await saveOnboardingAnswers(answers)
-      localStorage.removeItem(STORAGE_KEY)
-      router.replace('/plan')
-      router.refresh()
-    } catch (err) {
-      console.error('Error saving onboarding:', err)
+      await runManualStart(answers, saveOnboardingAnswers, () => {
+        localStorage.removeItem(ONBOARDING_STORAGE_KEY)
+        router.replace('/plan')
+        router.refresh()
+      })
+    } catch (reason) {
+      console.error('Error saving onboarding:', reason)
+      setSubmissionError(reason instanceof Error ? reason.message : 'No pudimos guardar tu perfil.')
     }
-  }, [answers, router])
+  }
 
   if (!hydrated) return null
 
-  const stepProps: StepProps = {
-    answers, update, onNext: goNext, onBack: goBack,
-    isFirst: currentIdx === 0,
+  const progress = stageProgress(stage)
+  const commonProps = {
+    answers,
+    update,
+    current: progress.current,
+    total: progress.total,
+    onBack: goBack,
+    onNext: goNext,
   }
 
-  const stepMap: Record<StepKey, React.ReactNode> = {
-    username:   <Step0Username  {...stepProps} />,
-    goal:       <Step1Goal      {...stepProps} />,
-    level:      <Step2Level     {...stepProps} />,
-    days:       <Step3Days      {...stepProps} />,
-    duration:   <Step4Duration  {...stepProps} />,
-    location:   <Step5Location  {...stepProps} />,
-    equipment:  <Step6Equipment {...stepProps} />,
-    cardio:     <StepCardioPreferences {...stepProps} />,
-    readiness:  <StepReadiness {...stepProps} />,
-    limitations:<StepLimitations {...stepProps} />,
-    physical:   <Step8Physical  {...stepProps} />,
-    planChoice: <Step9PlanChoice onGenerate={goNext} onManual={handleManualStart} onBack={goBack} />,
-    generating: <Step9GeneratingAuto onFinish={handleFinish} />,
+  switch (stage) {
+    case 'profile':
+      return <ProfileStage {...commonProps} />
+    case 'availability':
+      return <AvailabilityStage {...commonProps} />
+    case 'equipment':
+      return <EquipmentStage {...commonProps} />
+    case 'safety':
+      return <SafetyStage {...commonProps} />
+    case 'confirmation':
+      return (
+        <ConfirmationStage
+          answers={answers}
+          update={update}
+          current={progress.current}
+          total={progress.total}
+          onBack={goBack}
+          onAutomatic={startAutomaticGeneration}
+          onManual={handleManualStart}
+          submissionError={submissionError}
+        />
+      )
+    case 'generating':
+      return <GeneratingState onFinish={handleAutomaticFinish} />
   }
-
-  return (
-    <div className="min-h-screen bg-background overflow-x-hidden">
-
-      {/* Progress bar — sticky, not fixed (stays part of flow) */}
-      {stepKey !== 'generating' && (
-        <div className="sticky top-0 z-50 bg-background/95 backdrop-blur-sm">
-          <div className="h-0.5 bg-border">
-            <motion.div
-              className="h-full bg-primary"
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-            />
-          </div>
-          <div className="flex justify-center gap-1.5 px-5 pt-2.5 pb-1.5">
-            {contentSteps.map((_, i) => (
-              <motion.div
-                key={i}
-                animate={{
-                  width: i === contentIdx ? 20 : 6,
-                  opacity: i <= contentIdx ? 1 : 0.25,
-                }}
-                transition={{ duration: 0.3, ease: 'easeOut' }}
-                className={cn(
-                  'h-1.5 rounded-full',
-                  i <= contentIdx ? 'bg-primary' : 'bg-border',
-                )}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Step with slide animation */}
-      <AnimatePresence mode="wait" custom={direction}>
-        <motion.div
-          key={stepKey}
-          custom={direction}
-          variants={slideVariants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-        >
-          {stepMap[stepKey]}
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  )
 }
