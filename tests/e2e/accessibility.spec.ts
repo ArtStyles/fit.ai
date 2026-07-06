@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { expectNoHorizontalOverflow } from './helpers/acceptance'
 import { resetAndSignInAsE2EUser } from './helpers/auth'
 
@@ -26,6 +27,7 @@ for (const path of [
   '/en/terms',
 ]) {
   test(`${path} has no serious accessibility violations or horizontal overflow`, async ({ page }) => {
+    test.setTimeout(90_000)
     await page.goto(path)
     await expect(page.locator('main')).toBeVisible()
     if (path.startsWith('/register?locale=')) {

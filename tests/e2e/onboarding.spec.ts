@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { resetAndSignInAsE2EUser } from './helpers/auth'
 
 test.describe.configure({ mode: 'serial' })

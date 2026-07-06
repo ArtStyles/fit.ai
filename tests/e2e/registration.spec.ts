@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { mockRegistrationEmailBoundary } from './helpers/acceptance'
 
 test.describe.configure({ mode: 'serial' })
@@ -26,11 +26,27 @@ for (const registration of [
   },
 ] as const) {
   test(`${registration.locale} registration keeps the approved two-field verification flow`, async ({ page }) => {
-    await mockRegistrationEmailBoundary(page, registration.locale)
+    const email = `registration-${registration.locale}@example.test`
+    const password = 'E2E-registration-123!'
+    const signupBoundary = await mockRegistrationEmailBoundary(page, {
+      locale: registration.locale,
+      email,
+      password,
+    })
     await page.goto(`/register?locale=${registration.locale}`)
 
     await expect(page.locator('html')).toHaveAttribute('lang', registration.locale)
-    await expect(page.locator('form input:not([type="hidden"])')).toHaveCount(2)
+    const visibleControls = page.locator('form input:visible, form select:visible, form textarea:visible')
+    await expect(visibleControls).toHaveCount(2)
+    expect(await visibleControls.evaluateAll(controls => controls.map(control => ({
+      tag: control.tagName.toLowerCase(),
+      name: control.getAttribute('name'),
+      type: control.getAttribute('type'),
+      required: control.hasAttribute('required'),
+    })))).toEqual([
+      { tag: 'input', name: 'email', type: 'email', required: true },
+      { tag: 'input', name: 'password', type: 'password', required: true },
+    ])
     await expect(page.getByLabel(registration.emailLabel, { exact: true })).toHaveAttribute('required', '')
     await expect(page.getByLabel(registration.passwordLabel, { exact: true })).toHaveAttribute('required', '')
     await expect(page.getByRole('link', { name: registration.terms.name, exact: true }))
@@ -38,9 +54,10 @@ for (const registration of [
     await expect(page.getByRole('link', { name: registration.privacy.name, exact: true }))
       .toHaveAttribute('href', registration.privacy.href)
 
-    await page.getByLabel(registration.emailLabel, { exact: true }).fill(`registration-${registration.locale}@example.test`)
-    await page.getByLabel(registration.passwordLabel, { exact: true }).fill('E2E-registration-123!')
+    await page.getByLabel(registration.emailLabel, { exact: true }).fill(email)
+    await page.getByLabel(registration.passwordLabel, { exact: true }).fill(password)
     await page.getByRole('button', { name: registration.submit, exact: true }).click()
+    await signupBoundary.assertRequest()
 
     await expect(page.getByText(registration.verification, { exact: true })).toBeVisible()
     await expect(page.getByLabel(registration.codeLabel, { exact: true })).toBeVisible()

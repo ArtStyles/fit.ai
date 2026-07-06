@@ -1,4 +1,4 @@
-import { test } from '@playwright/test'
+import { test } from './fixtures'
 import { expectLandingContract } from './helpers/acceptance'
 
 test.describe.configure({ mode: 'serial' })
