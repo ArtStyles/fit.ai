@@ -9,6 +9,7 @@ import { PageTopBar } from '@/components/navigation/PageTopBar'
 export const metadata: Metadata = {
   title: 'Planes',
   description: 'Compara las funciones disponibles en los planes Free y Pro de Vekira durante el acceso anticipado.',
+  robots: { index: false, follow: true },
 }
 
 export default async function PricingPage() {

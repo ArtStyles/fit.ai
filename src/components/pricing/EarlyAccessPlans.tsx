@@ -89,7 +89,7 @@ export function EarlyAccessPlans({ isAuthenticated }: EarlyAccessPlansProps) {
             href="/register"
             className="inline-flex h-12 min-w-52 items-center justify-center rounded-md bg-violet-600 px-6 text-sm font-bold text-white ring-offset-background transition-colors hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            Continuar gratis
+            Crear mi plan gratis
           </PendingLink>
         )}
       </div>
