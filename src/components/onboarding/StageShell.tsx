@@ -119,22 +119,27 @@ export function OptionButton({
   icon: Icon,
   label,
   description,
+  disabled = false,
 }: {
   selected: boolean
   onClick: () => void
   icon: LucideIcon
   label: string
   description?: string
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       aria-pressed={selected}
+      disabled={disabled}
       onClick={onClick}
       className={cn(
         'flex min-h-14 w-full items-center gap-4 rounded-2xl border-2 px-4 py-3 text-left transition-colors duration-200',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none',
-        selected
+        disabled
+          ? 'cursor-not-allowed border-border bg-muted/60 text-muted-foreground opacity-70'
+          : selected
           ? 'border-violet-500 bg-violet-500/10 text-foreground'
           : 'border-border bg-card/60 text-foreground hover:border-violet-500/50',
       )}

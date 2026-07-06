@@ -3,18 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Dumbbell, Loader2, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { generatePlan, type GeneratePlanResult } from '@/app/actions/generatePlan'
+import { generatePlan } from '@/app/actions/generatePlan'
 import { AvailabilityStage } from '@/components/onboarding/AvailabilityStage'
 import { ConfirmationStage } from '@/components/onboarding/ConfirmationStage'
 import { EquipmentStage } from '@/components/onboarding/EquipmentStage'
 import {
   ONBOARDING_STORAGE_KEY,
   canContinueStage,
-  deserializeOnboardingState,
+  hydrateOnboardingState,
   nextStage,
   previousStage,
   requiresProfessionalClearance,
-  runAutomaticStart,
   runManualStart,
   serializeOnboardingState,
   stageProgress,
@@ -22,6 +21,7 @@ import {
 } from '@/components/onboarding/onboardingStages'
 import { ProfileStage } from '@/components/onboarding/ProfileStage'
 import { SafetyStage } from '@/components/onboarding/SafetyStage'
+import { runAutomaticOnboarding, type AutomaticOnboardingOutcome } from '@/components/onboarding/onboardingWorkflow'
 import { cn } from '@/lib/utils'
 import { saveOnboardingAnswers } from './actions'
 import { defaultAnswers, type OnboardingAnswers } from './types'
@@ -33,9 +33,11 @@ const GENERATION_MESSAGES = [
   'Preparando tu panel…',
 ]
 
-function GeneratingState({ onFinish }: { onFinish: () => Promise<GeneratePlanResult> }) {
+type AutomaticFailure = Extract<AutomaticOnboardingOutcome, { phase: 'save_error' | 'generation_error' }>
+
+function GeneratingState({ onFinish }: { onFinish: () => Promise<AutomaticOnboardingOutcome> }) {
   const [messageIndex, setMessageIndex] = useState(0)
-  const [error, setError] = useState<string | null>(null)
+  const [failure, setFailure] = useState<AutomaticFailure | null>(null)
   const [retryNonce, setRetryNonce] = useState(0)
   const startedRef = useRef(false)
   const onFinishRef = useRef(onFinish)
@@ -47,7 +49,7 @@ function GeneratingState({ onFinish }: { onFinish: () => Promise<GeneratePlanRes
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true
-    setError(null)
+    setFailure(null)
     setMessageIndex(0)
 
     let index = 0
@@ -58,29 +60,37 @@ function GeneratingState({ onFinish }: { onFinish: () => Promise<GeneratePlanRes
     }, 1600)
 
     onFinishRef.current()
-      .then(result => {
-        if (!result.success) {
+      .then(outcome => {
+        if (outcome.phase !== 'success') {
           window.clearInterval(interval)
-          setError(result.error ?? 'No pudimos generar tu plan ahora.')
+          setFailure(outcome)
         }
       })
       .catch(reason => {
         window.clearInterval(interval)
-        setError(reason instanceof Error ? reason.message : 'No pudimos generar tu plan ahora.')
+        setFailure({
+          phase: 'generation_error',
+          error: reason instanceof Error ? reason.message : 'No pudimos generar tu plan ahora.',
+        })
       })
 
     return () => window.clearInterval(interval)
   }, [retryNonce])
 
-  if (error) {
+  if (failure) {
+    const saveFailed = failure.phase === 'save_error'
     return (
       <main className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-xl flex-col items-center justify-center px-5 py-12 text-center">
         <span className="grid h-20 w-20 place-items-center rounded-3xl border-2 border-red-500/30 bg-red-500/10">
           <AlertTriangle className="h-10 w-10 text-red-600 dark:text-red-300" aria-hidden="true" />
         </span>
-        <h1 className="mt-7 text-3xl font-bold text-foreground">Tu perfil se guardó</h1>
-        <p className="mt-3 text-base leading-7 text-muted-foreground">No pudimos generar el plan ahora. Puedes reintentarlo sin perder tus datos.</p>
-        <p role="alert" className="mt-5 w-full rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-base text-foreground">{error}</p>
+        <h1 className="mt-7 text-3xl font-bold text-foreground">{saveFailed ? 'No pudimos guardar tu perfil' : 'Tu perfil se guardó'}</h1>
+        <p className="mt-3 text-base leading-7 text-muted-foreground">
+          {saveFailed
+            ? 'Tus respuestas siguen guardadas en este dispositivo. Revisa tu conexión y vuelve a intentarlo.'
+            : 'No pudimos generar el plan ahora. Puedes reintentarlo sin perder tus datos.'}
+        </p>
+        <p role="alert" className="mt-5 w-full rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-base text-foreground">{failure.error}</p>
         <button
           type="button"
           onClick={() => {
@@ -90,7 +100,7 @@ function GeneratingState({ onFinish }: { onFinish: () => Promise<GeneratePlanRes
           className="mt-7 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 py-3 text-base font-bold text-white transition-colors hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none"
         >
           <RefreshCw className="h-5 w-5" aria-hidden="true" />
-          Reintentar generación
+          {saveFailed ? 'Reintentar guardado' : 'Reintentar generación'}
         </button>
       </main>
     )
@@ -137,7 +147,7 @@ export default function OnboardingWizard() {
   useEffect(() => {
     const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY)
     if (raw) {
-      const saved = deserializeOnboardingState(raw)
+      const saved = hydrateOnboardingState(raw)
       setAnswers(saved.answers)
       setStage(saved.stage)
       setSafetyReviewed(saved.safetyReviewed)
@@ -180,29 +190,21 @@ export default function OnboardingWizard() {
     setStage('generating')
   }
 
-  const handleAutomaticFinish = useCallback(async (): Promise<GeneratePlanResult> => {
-    try {
-      const result = await runAutomaticStart(
-        answers,
-        saveOnboardingAnswers,
-        () => generatePlan({ mode: 'initial' }),
-      )
+  const handleAutomaticFinish = useCallback(async (): Promise<AutomaticOnboardingOutcome> => {
+    const outcome = await runAutomaticOnboarding(
+      answers,
+      saveOnboardingAnswers,
+      () => generatePlan({ mode: 'initial' }),
+    )
 
-      if (result.success) {
-        localStorage.removeItem(ONBOARDING_STORAGE_KEY)
-        window.dispatchEvent(new Event('fitai:navigation-start'))
-        router.replace('/dashboard')
-        router.refresh()
-      }
-
-      return result
-    } catch (reason) {
-      console.error('Error saving onboarding:', reason)
-      return {
-        success: false,
-        error: reason instanceof Error ? reason.message : 'No pudimos guardar tu perfil.',
-      }
+    if (outcome.phase === 'success') {
+      localStorage.removeItem(ONBOARDING_STORAGE_KEY)
+      window.dispatchEvent(new Event('fitai:navigation-start'))
+      router.replace('/dashboard')
+      router.refresh()
     }
+
+    return outcome
   }, [answers, router])
 
   async function handleManualStart() {

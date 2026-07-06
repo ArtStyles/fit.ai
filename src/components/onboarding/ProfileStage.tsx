@@ -18,6 +18,7 @@ import {
 import { checkUsernameAvailable, updateUsername } from '@/app/actions/username'
 import { validateUsername } from '@/lib/social/username'
 import { canContinueStage } from './onboardingStages'
+import { checkUsernameAvailability, commitUsername } from './profileUsername'
 import { focusableControlClass, OptionButton, StageShell, type OnboardingStageProps } from './StageShell'
 
 const GOALS = [
@@ -36,15 +37,15 @@ const LEVELS = [
 
 export function ProfileStage({ answers, update, current, total, onNext }: OnboardingStageProps) {
   const [error, setError] = useState<string | null>(null)
-  const [available, setAvailable] = useState<boolean | null>(null)
+  const [availableUsername, setAvailableUsername] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [saving, setSaving] = useState(false)
-  const requestId = useRef(0)
+  const latestUsername = useRef(answers.username)
+  latestUsername.current = answers.username
 
   useEffect(() => {
-    const id = ++requestId.current
     const validation = validateUsername(answers.username)
-    setAvailable(null)
+    setAvailableUsername(null)
     if (!validation.ok) {
       setError(answers.username ? validation.error : null)
       setChecking(false)
@@ -53,25 +54,53 @@ export function ProfileStage({ answers, update, current, total, onNext }: Onboar
 
     setError(null)
     setChecking(true)
-    const timeout = setTimeout(async () => {
-      const result = await checkUsernameAvailable(validation.value)
-      if (id !== requestId.current) return
-      setAvailable(result.available)
-      setError(result.available ? null : result.error ?? 'Ese nombre de usuario ya está en uso.')
-      setChecking(false)
+    let active = true
+    const timeout = setTimeout(() => {
+      void checkUsernameAvailability({
+        raw: validation.value,
+        check: checkUsernameAvailable,
+        getCurrentRaw: () => latestUsername.current,
+      }).then(outcome => {
+        if (!active || outcome.status === 'stale') return
+        if (outcome.status === 'available') {
+          setAvailableUsername(outcome.normalized)
+          setError(null)
+        } else {
+          setAvailableUsername(null)
+          setError(outcome.error)
+        }
+      }).finally(() => {
+        if (active) setChecking(false)
+      })
     }, 350)
 
-    return () => clearTimeout(timeout)
+    return () => {
+      active = false
+      clearTimeout(timeout)
+    }
   }, [answers.username])
 
-  const canContinue = canContinueStage('profile', answers, available === true) && !checking && !saving
+  const currentValidation = validateUsername(answers.username)
+  const usernameAvailable = currentValidation.ok && availableUsername === currentValidation.value
+  const canContinue = canContinueStage('profile', answers, usernameAvailable) && !checking && !saving
 
   async function handleNext() {
     setSaving(true)
-    const result = await updateUsername(answers.username)
-    setSaving(false)
-    if (result.ok) onNext()
-    else setError(result.error)
+    try {
+      const outcome = await commitUsername({
+        raw: answers.username,
+        update: updateUsername,
+        getCurrentRaw: () => latestUsername.current,
+        onSuccess: onNext,
+      })
+      if (outcome.status === 'rejected' || outcome.status === 'invalid' || outcome.status === 'error') {
+        setError(outcome.error)
+      } else if (outcome.status === 'stale') {
+        setError('El nombre de usuario cambió. Comprueba su disponibilidad de nuevo.')
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -101,6 +130,7 @@ export function ProfileStage({ answers, update, current, total, onNext }: Onboar
               id="full_name"
               name="full_name"
               autoComplete="name"
+              disabled={saving}
               value={answers.full_name}
               onChange={event => update('full_name', event.target.value)}
               placeholder="Tu nombre"
@@ -118,6 +148,7 @@ export function ProfileStage({ answers, update, current, total, onNext }: Onboar
                 autoCapitalize="none"
                 autoComplete="username"
                 maxLength={20}
+                disabled={saving}
                 value={answers.username}
                 onChange={event => update('username', event.target.value)}
                 placeholder="tu_usuario"
@@ -126,10 +157,10 @@ export function ProfileStage({ answers, update, current, total, onNext }: Onboar
                 className={`${focusableControlClass} w-full pl-11 pr-11`}
               />
               {checking ? <Loader2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-muted-foreground motion-reduce:animate-none" aria-label="Comprobando disponibilidad" /> : null}
-              {!checking && available ? <CheckCircle2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-emerald-600" aria-hidden="true" /> : null}
+              {!checking && usernameAvailable ? <CheckCircle2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-emerald-600" aria-hidden="true" /> : null}
             </div>
             <p id="username-status" className={`text-base ${error ? 'text-red-600 dark:text-red-300' : 'text-muted-foreground'}`} aria-live="polite">
-              {error ?? (available ? 'Nombre disponible.' : 'Entre 3 y 20 caracteres; usa letras, números o guion bajo.')}
+              {error ?? (usernameAvailable ? 'Nombre disponible.' : 'Entre 3 y 20 caracteres; usa letras, números o guion bajo.')}
             </p>
           </div>
         </section>
@@ -145,6 +176,7 @@ export function ProfileStage({ answers, update, current, total, onNext }: Onboar
                 icon={option.icon}
                 label={option.label}
                 description={option.description}
+                disabled={saving}
               />
             ))}
           </div>
@@ -161,6 +193,7 @@ export function ProfileStage({ answers, update, current, total, onNext }: Onboar
                 icon={option.icon}
                 label={option.label}
                 description={option.description}
+                disabled={saving}
               />
             ))}
           </div>

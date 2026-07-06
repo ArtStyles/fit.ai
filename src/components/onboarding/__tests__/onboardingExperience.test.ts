@@ -27,6 +27,9 @@ describe('five-stage onboarding experience', () => {
   it('keeps every approved field visible in its containing stage', () => {
     const profile = source('ProfileStage.tsx')
     for (const field of ['full_name', 'username', 'goal', 'fitness_level']) expect(profile).toContain(field)
+    expect(profile).toContain('checkUsernameAvailability')
+    expect(profile).toContain('commitUsername')
+    expect(profile).toContain('disabled={saving}')
 
     const availability = source('AvailabilityStage.tsx')
     for (const field of ['days_per_week', 'session_duration', 'cardio_preferences', 'activity_level']) expect(availability).toContain(field)
@@ -42,6 +45,9 @@ describe('five-stage onboarding experience', () => {
 
     const confirmation = source('ConfirmationStage.tsx')
     for (const field of ['age', 'gender', 'height_cm', 'weight_kg']) expect(confirmation).toContain(field)
+    for (const errorId of ['age-error', 'weight-error', 'height-error', 'gender-error']) expect(confirmation).toContain(errorId)
+    expect(confirmation).toContain('aria-describedby="age-error"')
+    expect(confirmation).toContain('aria-invalid={Boolean(validation.errors.age)}')
   })
 
   it('surfaces the professional-clearance block before automatic generation', () => {
@@ -49,6 +55,16 @@ describe('five-stage onboarding experience', () => {
     expect(confirmation).toContain('requiresProfessionalClearance')
     expect(confirmation).toContain('necesitas orientación o autorización de un profesional')
     expect(confirmation).toContain('disabled={automaticDisabled}')
+  })
+
+  it('renders truthful copy for save and generation failure phases', () => {
+    const wizard = readFileSync(new URL('../../../app/onboarding/OnboardingWizard.tsx', import.meta.url), 'utf8')
+    expect(wizard).toContain('runAutomaticOnboarding')
+    expect(wizard).toContain("failure.phase === 'save_error'")
+    expect(wizard).toContain('No pudimos guardar tu perfil')
+    expect(wizard).toContain('Tu perfil se guardó')
+    expect(wizard).toContain('Reintentar guardado')
+    expect(wizard).toContain('Reintentar generación')
   })
 
   it('uses Lucide components instead of emoji glyphs', () => {

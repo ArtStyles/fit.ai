@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { AlertTriangle, CalendarDays, Dumbbell, HeartPulse, MapPin, Ruler, Scale, Sparkles, UserRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OnboardingAnswers } from '@/app/onboarding/types'
-import { canContinueStage, requiresProfessionalClearance } from './onboardingStages'
+import { requiresProfessionalClearance } from './onboardingStages'
+import { validateConfirmationFields } from './confirmationValidation'
 import { focusableControlClass, StageShell, type AnswerUpdate } from './StageShell'
 
 const GENDERS = [
@@ -55,7 +56,8 @@ export function ConfirmationStage({
   submissionError,
 }: ConfirmationStageProps) {
   const [manualBusy, setManualBusy] = useState(false)
-  const demographicsValid = canContinueStage('confirmation', answers)
+  const validation = validateConfirmationFields(answers)
+  const demographicsValid = validation.valid
   const professionalBlock = requiresProfessionalClearance(answers)
   const automaticDisabled = !demographicsValid || professionalBlock || manualBusy
 
@@ -118,7 +120,7 @@ export function ConfirmationStage({
           <p className="mt-1 text-base leading-6 text-muted-foreground">Se usan solo para personalizar el plan; no se muestran en tu perfil público.</p>
 
           <div className="mt-5 space-y-5">
-            <fieldset>
+            <fieldset aria-describedby="gender-error">
               <legend className="mb-2 text-base font-semibold text-foreground">Sexo</legend>
               <div className="grid grid-cols-3 gap-2">
                 {GENDERS.map(([value, label]) => (
@@ -136,6 +138,7 @@ export function ConfirmationStage({
                   </button>
                 ))}
               </div>
+              {validation.errors.gender ? <p id="gender-error" className="mt-2 text-base text-red-600 dark:text-red-300">{validation.errors.gender}</p> : null}
             </fieldset>
 
             <div className="grid gap-4 sm:grid-cols-3">
@@ -143,28 +146,30 @@ export function ConfirmationStage({
                 <label htmlFor="age" className="text-base font-semibold text-foreground">Edad</label>
                 <div className="relative">
                   <UserRound className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                  <input id="age" name="age" type="number" min={18} max={100} value={answers.age} onChange={event => update('age', event.target.value)} placeholder="25" className={`${focusableControlClass} w-full pl-11`} />
+                  <input id="age" name="age" type="number" min={18} max={100} value={answers.age} onChange={event => update('age', event.target.value)} placeholder="25" aria-describedby="age-error" aria-invalid={Boolean(validation.errors.age)} className={`${focusableControlClass} w-full pl-11`} />
                 </div>
+                {validation.errors.age ? <p id="age-error" className="text-base text-red-600 dark:text-red-300">{validation.errors.age}</p> : null}
               </div>
 
               <div className="space-y-2">
                 <label htmlFor="weight_kg" className="text-base font-semibold text-foreground">Peso (kg)</label>
                 <div className="relative">
                   <Scale className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                  <input id="weight_kg" name="weight_kg" type="number" min={30} max={300} value={answers.weight_kg} onChange={event => update('weight_kg', event.target.value)} placeholder="70" className={`${focusableControlClass} w-full pl-11`} />
+                  <input id="weight_kg" name="weight_kg" type="number" min={30} max={300} value={answers.weight_kg} onChange={event => update('weight_kg', event.target.value)} placeholder="70" aria-describedby="weight-error" aria-invalid={Boolean(validation.errors.weight_kg)} className={`${focusableControlClass} w-full pl-11`} />
                 </div>
+                {validation.errors.weight_kg ? <p id="weight-error" className="text-base text-red-600 dark:text-red-300">{validation.errors.weight_kg}</p> : null}
               </div>
 
               <div className="space-y-2">
                 <label htmlFor="height_cm" className="text-base font-semibold text-foreground">Altura (cm)</label>
                 <div className="relative">
                   <Ruler className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                  <input id="height_cm" name="height_cm" type="number" min={100} max={250} value={answers.height_cm} onChange={event => update('height_cm', event.target.value)} placeholder="175" className={`${focusableControlClass} w-full pl-11`} />
+                  <input id="height_cm" name="height_cm" type="number" min={100} max={250} value={answers.height_cm} onChange={event => update('height_cm', event.target.value)} placeholder="175" aria-describedby="height-error" aria-invalid={Boolean(validation.errors.height_cm)} className={`${focusableControlClass} w-full pl-11`} />
                 </div>
+                {validation.errors.height_cm ? <p id="height-error" className="text-base text-red-600 dark:text-red-300">{validation.errors.height_cm}</p> : null}
               </div>
             </div>
 
-            {!demographicsValid ? <p className="text-base text-red-600 dark:text-red-300">Completa sexo, edad entre 18 y 100 años, peso y altura para continuar.</p> : null}
           </div>
         </section>
 

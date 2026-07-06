@@ -130,6 +130,66 @@ describe('onboarding stages', () => {
     expect(deserializeOnboardingState(legacy).stage).toBe('profile')
   })
 
+  describe('persisted answer runtime schema', () => {
+    const resetState = {
+      answers: defaultAnswers,
+      stage: 'profile',
+      safetyReviewed: false,
+    }
+
+    function persisted(answers: unknown, extras: Record<string, unknown> = {}) {
+      return JSON.stringify({ answers, stage: 'confirmation', safetyReviewed: true, ...extras })
+    }
+
+    it.each([
+      ['wrong scalar type', { ...completeAnswers, full_name: 42 }],
+      ['wrong array type', { ...completeAnswers, equipment: 'dumbbells' }],
+      ['invalid goal enum', { ...completeAnswers, goal: 'transform_everything' }],
+      ['invalid equipment enum', { ...completeAnswers, equipment: ['spaceship'] }],
+      ['invalid cardio enum', { ...completeAnswers, cardio_preferences: ['swimming'] }],
+      ['invalid activity enum', { ...completeAnswers, activity_level: 'extreme' }],
+      ['invalid gender enum', { ...completeAnswers, gender: 'unknown_value' }],
+      ['NaN age string', { ...completeAnswers, age: 'NaN' }],
+      ['infinite height string', { ...completeAnswers, height_cm: 'Infinity' }],
+      ['out-of-range age', { ...completeAnswers, age: '101' }],
+      ['out-of-range weight', { ...completeAnswers, weight_kg: '301' }],
+      ['out-of-range height', { ...completeAnswers, height_cm: '99' }],
+      ['malformed warning symptoms', { ...completeAnswers, warning_symptoms: null }],
+      ['malformed limitation regions', { ...completeAnswers, limitation_regions: {} }],
+      ['invalid warning enum', { ...completeAnswers, warning_symptoms: ['not_a_real_warning'] }],
+      ['invalid limitation enum', { ...completeAnswers, limitation_regions: ['neck'] }],
+      ['invalid limitation status', { ...completeAnswers, limitation_status: 'unknown' }],
+      ['wrong safety boolean', { ...completeAnswers, clinician_cleared: 'yes' }],
+    ])('resets safely for %s', (_case, malformedAnswers) => {
+      expect(deserializeOnboardingState(persisted(malformedAnswers))).toEqual(resetState)
+    })
+
+    it('discards unknown fields instead of carrying them to save', () => {
+      const withExtraIdentity = { ...completeAnswers, display_name: 'Injected name' }
+
+      expect(deserializeOnboardingState(persisted(withExtraIdentity))).toEqual({
+        answers: completeAnswers,
+        stage: 'confirmation',
+        safetyReviewed: true,
+      })
+    })
+
+    it('defaults missing legacy identity fields and returns to profile', () => {
+      const withoutIdentity = { ...completeAnswers } as Partial<OnboardingAnswers>
+      delete withoutIdentity.full_name
+      delete withoutIdentity.username
+
+      expect(deserializeOnboardingState(JSON.stringify({
+        answers: withoutIdentity,
+        step: 'planChoice',
+      }))).toEqual({
+        answers: { ...completeAnswers, full_name: '', username: '' },
+        stage: 'profile',
+        safetyReviewed: true,
+      })
+    })
+  })
+
   it('makes safety reachable in both directions and never skippable', () => {
     expect(nextStage('equipment')).toBe('safety')
     expect(nextStage('safety')).toBe('confirmation')
