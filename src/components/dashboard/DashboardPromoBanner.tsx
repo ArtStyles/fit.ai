@@ -22,20 +22,20 @@ const KIND_CONFIG: Record<DashboardBannerKind, {
   event: {
     label: 'Evento',
     icon: CalendarDays,
-    surface: 'border-sky-400/25 bg-gradient-to-br from-sky-600/25 via-blue-500/10 to-violet-500/10',
-    accent: 'bg-sky-400/15 text-sky-100',
+    surface: 'border-violet-400/25 bg-gradient-to-br from-violet-600/25 via-indigo-500/10 to-violet-500/10',
+    accent: 'bg-violet-400/15 text-violet-100',
   },
   promotion: {
     label: 'Promoción',
     icon: Sparkles,
-    surface: 'border-amber-400/25 bg-gradient-to-br from-amber-500/25 via-orange-500/10 to-rose-500/10',
-    accent: 'bg-amber-300/15 text-amber-100',
+    surface: 'border-violet-400/25 bg-gradient-to-br from-violet-600/25 via-fuchsia-500/10 to-indigo-500/10',
+    accent: 'bg-violet-300/15 text-violet-100',
   },
   info: {
     label: 'Información',
     icon: Info,
-    surface: 'border-emerald-400/25 bg-gradient-to-br from-emerald-600/20 via-teal-500/10 to-cyan-500/10',
-    accent: 'bg-emerald-300/15 text-emerald-100',
+    surface: 'border-violet-400/25 bg-gradient-to-br from-violet-600/20 via-indigo-500/10 to-fuchsia-500/10',
+    accent: 'bg-violet-300/15 text-violet-100',
   },
 }
 
@@ -53,7 +53,7 @@ export function DashboardPromoBanner({
   const isExternal = banner.cta_href?.startsWith('https://') ?? false
 
   const cta = banner.cta_label && banner.cta_href ? (
-    <span className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-white/95 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm transition-transform group-hover:translate-x-0.5">
+    <span className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white/95 px-4 py-2 text-sm font-bold text-slate-950 shadow-sm transition-colors group-hover:bg-violet-50 motion-reduce:transition-none">
       {banner.cta_label}
       <ArrowRight className="h-3.5 w-3.5" />
     </span>
@@ -72,7 +72,7 @@ export function DashboardPromoBanner({
           alt=""
           fill
           sizes="(max-width: 512px) 100vw, 512px"
-          className="-z-20 object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+          className="-z-20 object-cover"
           unoptimized={banner.image_url.startsWith('blob:')}
         />
       )}
@@ -91,7 +91,7 @@ export function DashboardPromoBanner({
             {banner.title || t('Título del banner')}
           </h2>
           {banner.description && (
-            <p className="mt-2 line-clamp-3 max-w-sm text-sm leading-relaxed text-white/75">
+            <p className="mt-2 line-clamp-3 max-w-sm text-base leading-relaxed text-white/85">
               {banner.description}
             </p>
           )}

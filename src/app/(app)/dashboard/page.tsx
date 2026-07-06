@@ -1,13 +1,10 @@
 import { DashboardHeader }    from '@/components/dashboard/DashboardHeader'
-import { HeroCard }           from '@/components/dashboard/HeroCard'
-import { WeekCalendar }       from '@/components/dashboard/WeekCalendar'
-import { QuickStats }         from '@/components/dashboard/QuickStats'
-import { AINotesBanner }      from '@/components/dashboard/AINotesBanner'
-import { CheckInBanner }      from '@/components/dashboard/CheckInBanner'
-import { ProgressHighlights } from '@/components/dashboard/ProgressHighlights'
-import { DailyBrief }         from '@/components/dashboard/DailyBrief'
-import { DashboardPromoBanner } from '@/components/dashboard/DashboardPromoBanner'
-import { PendingLink }        from '@/components/navigation/PendingLink'
+import { DashboardNotice } from '@/components/dashboard/DashboardNotice'
+import { TodayActionCard } from '@/components/dashboard/TodayActionCard'
+import { WeeklyStatus } from '@/components/dashboard/WeeklyStatus'
+import { NextRecommendation } from '@/components/dashboard/NextRecommendation'
+import { SecondaryMetrics } from '@/components/dashboard/SecondaryMetrics'
+import { buildDashboardViewModel } from '@/components/dashboard/dashboardViewModel'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import {
@@ -507,13 +504,6 @@ export default async function DashboardPage() {
     new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7, tz).getTime()
   )
 
-  // ── Momentum Score (0-100) ────────────────────────────────────────────────
-  const momentumScore = Math.min(100, Math.round(
-    Math.min(streak * 4, 40) +
-    (scheduledThisWeek > 0 ? (sessionsThisWeek / scheduledThisWeek) * 40 : 0) +
-    Math.min(weekVolumeKg / 500 * 20, 20),
-  ))
-
   // ── Brief diario personalizado (sólo cuando hay un plan activo) ────────────
   const dailyBriefMessage = planRaw
     ? generateDailyBrief({
@@ -532,125 +522,51 @@ export default async function DashboardPage() {
       })
     : null
 
+  const dashboard = buildDashboardViewModel({
+    needsPlan: !planRaw,
+    checkInDue: isCheckInDue(profile?.last_check_in_at ?? null),
+    aiNotes: showAiBanner ? planRaw?.ai_notes ?? null : null,
+    promo: dashboardBanner ? { title: dashboardBanner.title } : null,
+    todayWorkout,
+    isCompletedToday: Boolean(todayLog),
+    nextWorkout: nextWorkoutDay?.workout ?? null,
+    nextWorkoutIsoDay: nextWorkoutDay?.iso ?? null,
+    recoverableWorkout: recoverableDay?.workout ?? null,
+    recoverableIsoDay: recoverableDay?.isoDay ?? null,
+    weekDays,
+    sessionsThisWeek,
+    scheduledThisWeek,
+    streak,
+    weekVolumeKg,
+    volumeSeries,
+    hasCompletedSessions,
+    dailyBriefMessage,
+    latestSession,
+    topRecord: topRecordHighlight,
+    activeAdjustmentCount,
+  })
+
   return (
     <div className="min-h-screen bg-background pb-28">
       <DashboardHeader
         greeting={getGreeting(language)}
         firstName={firstName}
         avatarUrl={profile?.avatar_url ?? null}
-        momentumScore={momentumScore}
         username={profile?.username ?? null}
-        subscriptionTier={profile.subscription_tier}
       />
 
-      <main className="mx-auto max-w-lg px-4">
-        {dashboardBanner && (
-          <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
-            style={{ animationDelay: '40ms' }}
-          >
-            <DashboardPromoBanner banner={dashboardBanner} />
-          </section>
-        )}
-
-        {showAiBanner && (
-          <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
-            style={{ animationDelay: '80ms' }}
-          >
-            <AINotesBanner
-              aiNotes={planRaw!.ai_notes!}
-              planName={planRaw!.name}
-              bannerContext={bannerContext}
-            />
-          </section>
-        )}
-
-        {dailyBriefMessage && (
-          <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
-            style={{ animationDelay: showAiBanner ? '160ms' : '80ms' }}
-          >
-            <DailyBrief message={dailyBriefMessage} />
-          </section>
-        )}
-
-        {isCheckInDue(profile?.last_check_in_at ?? null) && (
-          <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
-            style={{ animationDelay: '200ms' }}
-          >
-            <CheckInBanner />
-          </section>
-        )}
-
-        <section
-          className="animate-in fade-in slide-in-from-bottom-3 mt-6 duration-500"
-          style={{ animationDelay: showAiBanner ? '240ms' : '160ms' }}
-        >
-          <HeroCard
-            todayWorkout={todayWorkout}
-            isCompletedToday={!!todayLog}
-            planExists={!!planRaw}
-            nextWorkout={nextWorkoutDay?.workout ?? null}
-            nextWorkoutIsoDay={nextWorkoutDay?.iso ?? null}
-            recoverableWorkout={recoverableDay?.workout ?? null}
-            recoverableIsoDay={recoverableDay?.isoDay ?? null}
-            streak={streak}
-            weekDone={sessionsThisWeek}
-            weekTotal={scheduledThisWeek}
-          />
-        </section>
-
-        {workouts.length > 0 && (
-          <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-10 duration-500"
-            style={{ animationDelay: '320ms' }}
-          >
-            <WeekCalendar days={weekDays} todayIso={todayIso} />
-            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-              <PendingLink
-                href="/plan"
-                className="inline-flex text-sm font-medium text-violet-400 underline-offset-4 hover:underline"
-              >
-                Ver plan completo →
-              </PendingLink>
-              <PendingLink
-                href="/calendario"
-                className="inline-flex text-sm font-medium text-violet-400 underline-offset-4 hover:underline"
-              >
-                Ver calendario →
-              </PendingLink>
-            </div>
-          </section>
-        )}
-
-        <section
-          className="animate-in fade-in slide-in-from-bottom-3 mt-10 duration-500"
-          style={{ animationDelay: '400ms' }}
-        >
-          <QuickStats
-            streak={streak}
-            sessionsThisWeek={sessionsThisWeek}
-            scheduledThisWeek={scheduledThisWeek}
-            volumeKg={Math.round(weekVolumeKg)}
-            volumeSeries={volumeSeries}
-            hasCompletedSessions={hasCompletedSessions}
-          />
-        </section>
-
-        {hasCompletedSessions && (
-          <section
-            className="animate-in fade-in slide-in-from-bottom-3 mt-10 duration-500"
-            style={{ animationDelay: '480ms' }}
-          >
-            <ProgressHighlights
-              latestSession={latestSession}
-              topRecord={topRecordHighlight}
-              activeAdjustments={activeAdjustmentCount}
-            />
-          </section>
-        )}
+      <main className="mx-auto grid max-w-3xl gap-8 px-4 pt-6 sm:px-6 lg:gap-10">
+        <DashboardNotice
+          notice={dashboard.notice}
+          aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}
+          planName={planRaw?.name ?? null}
+          bannerContext={bannerContext}
+          promo={dashboardBanner}
+        />
+        <TodayActionCard today={dashboard.today} />
+        <WeeklyStatus weekly={dashboard.weekly} />
+        <NextRecommendation recommendation={dashboard.recommendation} />
+        <SecondaryMetrics metrics={dashboard.secondaryMetrics} />
       </main>
     </div>
   )
