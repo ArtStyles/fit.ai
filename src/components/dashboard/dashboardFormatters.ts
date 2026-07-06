@@ -1,22 +1,32 @@
 import { dateLocale, translate, type AppLanguage } from '@/lib/i18n'
+import { getLocalDateString } from '@/lib/workouts/schedule'
+
+function calendarDayNumber(date: Date, timeZone: string): number {
+  const [year, month, day] = getLocalDateString(date, timeZone).split('-').map(Number)
+  return Date.UTC(year, month - 1, day) / (24 * 60 * 60 * 1000)
+}
 
 export function formatDashboardRelativeDate(
   value: string | null,
   language: AppLanguage,
-  now = new Date(),
+  timeZone: string,
+  referenceInstant: string,
 ): string {
   if (!value) return translate(language, 'Fecha no disponible')
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return translate(language, 'Fecha no disponible')
+  const reference = new Date(referenceInstant)
 
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  if (date.toDateString() === now.toDateString()) return translate(language, 'Hoy')
-  if (date.toDateString() === yesterday.toDateString()) return translate(language, 'Ayer')
+  if (Number.isFinite(reference.getTime())) {
+    const difference = calendarDayNumber(reference, timeZone) - calendarDayNumber(date, timeZone)
+    if (difference === 0) return translate(language, 'Hoy')
+    if (difference === 1) return translate(language, 'Ayer')
+  }
 
   return new Intl.DateTimeFormat(dateLocale(language), {
     day: 'numeric',
     month: 'short',
+    timeZone,
   }).format(date)
 }
 

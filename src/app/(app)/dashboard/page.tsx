@@ -374,6 +374,7 @@ export default async function DashboardPage() {
   const { supabase, user, profile } = await requireAppUserContext()
   const language = exerciseLanguage(profile.language)
   const t = createTranslator(language)
+  const referenceNow = new Date()
 
   // ── Perfil del usuario ─────────────────────────────────────────────────────
   const firstName = profile?.full_name?.split(' ')[0]
@@ -381,9 +382,9 @@ export default async function DashboardPage() {
     ?? t('Campeón')
 
   const tz        = resolveUserTimeZone(profile?.timezone)
-  const todayIso  = getIsoWeekday(new Date(), tz)
-  const weekStart = getCurrentWeekMonday(new Date(), tz)
-  const todayStr  = getLocalDateString(new Date(), tz)
+  const todayIso  = getIsoWeekday(referenceNow, tz)
+  const weekStart = getCurrentWeekMonday(referenceNow, tz)
+  const todayStr  = getLocalDateString(referenceNow, tz)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
   const [dashboardPayload, { data: bannerRaw }] = await Promise.all([
@@ -391,7 +392,7 @@ export default async function DashboardPage() {
       supabase,
       user.id,
       weekStart,
-      addCalendarDays(new Date(), -30, tz),
+      addCalendarDays(referenceNow, -30, tz),
     ),
     supabase
       .from('dashboard_banners')
@@ -440,7 +441,7 @@ export default async function DashboardPage() {
   let streak = 0
   if (allRecentLogs.length > 0) {
     const logDateSet = new Set(allRecentLogs.map(l => getLocalDateString(new Date(l.completed_at), tz)))
-    let check = new Date()
+    let check = referenceNow
     while (logDateSet.has(getLocalDateString(check, tz))) {
       streak++
       check = addCalendarDays(check, -1, tz)
@@ -501,7 +502,7 @@ export default async function DashboardPage() {
   // Banner del plan: usa ai_notes como columna legacy para notas del motor o de IA.
   const showAiBanner = !!(
     planRaw?.ai_notes &&
-    new Date(planRaw.created_at).getTime() > addCalendarDays(new Date(), -7, tz).getTime()
+    new Date(planRaw.created_at).getTime() > addCalendarDays(referenceNow, -7, tz).getTime()
   )
 
   // ── Brief diario personalizado (sólo cuando hay un plan activo) ────────────
@@ -519,6 +520,9 @@ export default async function DashboardPage() {
           : null,
         weekSessions:      sessionsThisWeek,
         scheduledSessions: scheduledThisWeek,
+      }, {
+        locale: language,
+        variantSeed: Number(todayStr.slice(-2)),
       })
     : null
 
@@ -545,6 +549,8 @@ export default async function DashboardPage() {
     latestSession,
     topRecord: topRecordHighlight,
     activeAdjustmentCount,
+    timeZone: tz,
+    referenceInstant: referenceNow.toISOString(),
   })
 
   return (

@@ -43,6 +43,7 @@ const dashboardEnglish: [string, string][] = [
   ['Preguntar al coach', 'Ask the coach'],
   ['Volumen semanal', 'Weekly volume'],
   ['Tendencia de volumen', 'Volume trend'],
+  ['Ver calendario', 'View calendar'],
 ]
 
 describe('dashboard English catalog', () => {

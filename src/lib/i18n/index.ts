@@ -116,6 +116,7 @@ const ENGLISH: Record<string, string> = {
   'domingo': 'Sunday',
   '{completed} de {scheduled} sesiones': '{completed} of {scheduled} sessions',
   'Ver plan completo': 'View full plan',
+  'Ver calendario': 'View calendar',
   'Nota de tu plan': 'Plan note',
   'Ya completaste una sesión hoy.': 'You already completed a session today.',
   'Tu próxima sesión es {workout} el {day}.': 'Your next session is {workout} on {day}.',

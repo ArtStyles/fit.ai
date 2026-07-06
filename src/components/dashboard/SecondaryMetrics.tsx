@@ -58,7 +58,12 @@ export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['sec
                   <span className="block truncate text-sm text-muted-foreground">
                     {[
                       metrics.latestSession.workoutName,
-                      formatDashboardRelativeDate(metrics.latestSession.completedAt, language),
+                      formatDashboardRelativeDate(
+                        metrics.latestSession.completedAt,
+                        language,
+                        metrics.timeZone,
+                        metrics.referenceInstant,
+                      ),
                       formatDashboardDuration(metrics.latestSession.durationMinutes, language),
                     ].filter(Boolean).join(' · ')}
                   </span>

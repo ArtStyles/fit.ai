@@ -59,6 +59,8 @@ function input(overrides: Partial<DashboardViewModelInput> = {}): DashboardViewM
     latestSession: null,
     topRecord: null,
     activeAdjustmentCount: 0,
+    timeZone: 'America/Havana',
+    referenceInstant: '2026-07-06T12:00:00.000Z',
     ...overrides,
   }
 }
@@ -282,6 +284,8 @@ describe('dashboard view model', () => {
       latestSession,
       topRecord,
       activeAdjustments: 0,
+      timeZone: 'America/Havana',
+      referenceInstant: '2026-07-06T12:00:00.000Z',
     })
   })
 

@@ -75,6 +75,8 @@ export type DashboardViewModelInput = DashboardNoticeInput & {
   latestSession: DashboardLatestSession
   topRecord: DashboardTopRecord
   activeAdjustmentCount: number
+  timeZone: string
+  referenceInstant: string
 }
 
 export type DashboardToday = {
@@ -130,6 +132,8 @@ export type DashboardViewModel = {
     latestSession: DashboardLatestSession
     topRecord: DashboardTopRecord
     activeAdjustments: number
+    timeZone: string
+    referenceInstant: string
   }
 }
 
@@ -246,6 +250,8 @@ export function buildDashboardViewModel(input: DashboardViewModelInput): Dashboa
       latestSession: input.latestSession,
       topRecord: input.topRecord,
       activeAdjustments: input.activeAdjustmentCount,
+      timeZone: input.timeZone,
+      referenceInstant: input.referenceInstant,
     },
   }
 }
