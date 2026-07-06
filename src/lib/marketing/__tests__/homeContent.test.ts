@@ -7,6 +7,8 @@ describe('bilingual home content', () => {
     expect(content.hero.title.length).toBeGreaterThan(30)
     expect(content.loop).toHaveLength(4)
     expect(content.previews).toHaveLength(3)
+    expect(typeof content.faqTitle).toBe('string')
+    expect(content.faqTitle?.trim()).not.toBe('')
     expect(content.faq.length).toBeGreaterThanOrEqual(5)
   })
 

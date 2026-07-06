@@ -6,6 +6,7 @@ export type HomeContent = {
   loop: Array<{ title: string; body: string }>
   previews: Array<{ title: string; body: string; screen: 'dashboard' | 'session' | 'progress' }>
   safety: { title: string; body: string }
+  faqTitle: string
   faq: Array<{ question: string; answer: string }>
   finalCta: { title: string; body: string; cta: string }
 }
@@ -38,6 +39,7 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
       title: 'Un plan debe respetar tu contexto.',
       body: 'Vekira considera equipo, duración y restricciones declaradas. No sustituye orientación médica.',
     },
+    faqTitle: 'Preguntas frecuentes',
     faq: [
       { question: '¿Necesito gimnasio?', answer: 'No. El plan usa el lugar y el equipo que declares.' },
       { question: '¿Sirve si estoy empezando?', answer: 'Sí. La experiencia modifica volumen, selección y progresión.' },
@@ -78,6 +80,7 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
       title: 'A plan should respect your context.',
       body: 'Vekira considers equipment, duration, and declared restrictions. It does not replace medical guidance.',
     },
+    faqTitle: 'Frequently asked questions',
     faq: [
       { question: 'Do I need a gym?', answer: 'No. Your plan uses the location and equipment you declare.' },
       { question: 'Is it suitable for beginners?', answer: 'Yes. Experience changes volume, exercise selection, and progression.' },

@@ -20,12 +20,17 @@ describe('localized public route files', () => {
   it('renders the approved bilingual home content in the public main region', () => {
     const page = source('../[locale]/page.tsx')
     const content = source('../../lib/marketing/homeContent.ts')
+    const faq = source('../../components/marketing/MarketingFaq.tsx')
 
     expect(page).toContain('id="app-main-content"')
     expect(page).toContain('HOME_CONTENT')
     expect(page).toContain('<HeroSection')
+    expect(page).toContain('title={content.faqTitle}')
     expect(content).toContain('Convierte cada entrenamiento en el siguiente paso de tu progresión.')
     expect(content).toContain('Turn every workout into the next step in your progression.')
+    expect(faq).toContain('<section')
+    expect(faq.match(/<h2/g)).toHaveLength(1)
+    expect(faq).toContain('<h3')
   })
 
   it('permanently redirects the legacy selector alias to the neutral root', () => {

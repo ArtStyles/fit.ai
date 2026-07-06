@@ -45,7 +45,7 @@ export default function LocalizedHome({ params }: LocalizedHomeProps) {
         <TrainingLoopSection problem={content.problem} loop={content.loop} />
         <ProductPreviewSection previews={content.previews} />
         <SafetySection content={content.safety} />
-        <MarketingFaq items={content.faq} />
+        <MarketingFaq title={content.faqTitle} items={content.faq} />
       </main>
       <MarketingFooter content={content.finalCta} locale={locale} />
     </div>
