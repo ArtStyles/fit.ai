@@ -63,4 +63,32 @@ describe('session store side effects', () => {
     expect(useSessionStore.getState().restTimer).toBeNull()
     expect(useSessionStore.getState().isFinished).toBe(true)
   })
+
+  it('creates one stable client session id and preserves it on restore', () => {
+    const original = useSessionStore.getState().clientSessionId
+    expect(original).toMatch(/^[0-9a-f-]{36}$/i)
+
+    const state = useSessionStore.getState()
+    state.restoreSession({
+      clientSessionId: original,
+      workoutId: state.workoutId,
+      workoutName: state.workoutName,
+      startedAt: state.startedAt,
+      exercises: state.exercises,
+    })
+    expect(useSessionStore.getState().clientSessionId).toBe(original)
+  })
+
+  it('migrates a legacy backup to one stable id without regenerating during edits', () => {
+    const state = useSessionStore.getState()
+    state.restoreSession({
+      workoutId: state.workoutId,
+      workoutName: state.workoutName,
+      startedAt: state.startedAt,
+      exercises: state.exercises,
+    })
+    const migrated = useSessionStore.getState().clientSessionId
+    useSessionStore.getState().updateSetField('we-one', 0, 'reps', '9')
+    expect(useSessionStore.getState().clientSessionId).toBe(migrated)
+  })
 })

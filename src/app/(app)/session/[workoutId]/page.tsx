@@ -6,6 +6,7 @@ import { buildInitialExercises } from '@/store/sessionStore'
 import { getWorkoutStartAccess } from '@/lib/workouts/access'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
+import { zipPreviousPerformanceRows } from '@/components/session/sessionViewModel'
 
 // ─── Tipos de datos crudos del servidor ──────────────────────────────────────
 
@@ -117,7 +118,11 @@ export default async function SessionPage({ params }: PageProps) {
   ])
 
   // ── Pesos/reps de la última sesión para pre-rellenar ──────────────────────
-  type LastLogRow = { exercise_id: string | null; weights_kg: number[] | null; reps_completed: number[] | null }
+  type LastLogRow = {
+    exercise_id: string | null
+    weights_kg: Array<number | null> | null
+    reps_completed: Array<number | null> | null
+  }
   let lastExerciseLogs: LastLogRow[] = []
 
   if (lastLogRow?.id) {
@@ -129,17 +134,23 @@ export default async function SessionPage({ params }: PageProps) {
   }
 
   // exerciseId → { weightsKg (por serie), reps (por serie) }
-  const lastSessionMap = new Map(
-    lastExerciseLogs
-      .filter(l => l.exercise_id != null)
-      .map(l => [
-        l.exercise_id!,
-        {
-          weightsKg: (l.weights_kg ?? []).filter((w): w is number => w != null && w > 0),
-          reps:      (l.reps_completed ?? []).filter((r): r is number => r != null && r > 0),
-        },
-      ]),
-  )
+  const historyRowsByExercise = lastExerciseLogs.reduce<Map<string, LastLogRow[]>>((map, row) => {
+    if (!row.exercise_id) return map
+    const rowsForExercise = map.get(row.exercise_id) ?? []
+    rowsForExercise.push(row)
+    map.set(row.exercise_id, rowsForExercise)
+    return map
+  }, new Map())
+  const lastSessionMap = new Map(Array.from(historyRowsByExercise, ([exerciseId, historyRows]) => {
+    const performance = zipPreviousPerformanceRows(historyRows.map(row => ({
+      weightsKg: row.weights_kg,
+      reps: row.reps_completed,
+    })))
+    return [exerciseId, {
+      weightsKg: performance.map(set => typeof set.weightKg === 'number' ? set.weightKg : null),
+      reps: performance.map(set => typeof set.reps === 'number' ? set.reps : null),
+    }] as const
+  }))
 
   const rows = weRows ?? []
 

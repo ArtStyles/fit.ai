@@ -8,6 +8,7 @@ function query(result: { data: unknown; error?: unknown }) {
   const builder: Record<string, unknown> = {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    in: vi.fn(() => builder),
     not: vi.fn(() => builder),
     gte: vi.fn(() => builder),
     lt: vi.fn(() => builder),
@@ -36,15 +37,38 @@ function createSupabaseMock(results: Record<string, { data: unknown; error?: unk
       })),
     },
     from: vi.fn((table: string) => query(queues[table]?.shift() ?? { data: null })),
+    rpc: vi.fn(() => Promise.resolve({ data: null, error: { message: 'mock rpc' } })),
   }
 }
 
 const payload: SaveSessionPayload = {
+  clientSessionId: '11111111-1111-4111-8111-111111111111',
   workoutId: 'workout-1',
   startedAt: Date.parse('2026-05-27T15:30:00.000Z'),
   finishedAt: Date.parse('2026-05-27T16:00:00.000Z'),
   moodRating: null,
   exercises: [],
+}
+
+function successfulSaveMock({
+  existingId = null,
+  rpcData = [{ progress_log_id: 'log-new', inserted: true }],
+  rpcError = null,
+}: {
+  existingId?: string | null
+  rpcData?: Array<{ progress_log_id: string; inserted: boolean }> | null
+  rpcError?: { message: string } | null
+} = {}) {
+  const supabase: any = createSupabaseMock({
+    progress_logs: existingId
+      ? [{ data: { id: existingId } }]
+      : [{ data: null }, { data: [] }, { data: [] }],
+    profiles: [{ data: { timezone: 'UTC' } }],
+    workouts: [{ data: workout }],
+    workout_plans: [{ data: { id: 'plan-1' } }],
+  }) as any
+  supabase.rpc = vi.fn(() => Promise.resolve({ data: rpcData, error: rpcError }))
+  return supabase
 }
 
 const workout = {
@@ -83,6 +107,7 @@ describe('saveSession access guard', () => {
   it('rejects workouts outside the recovery window', async () => {
     // Viernes (ISO 5) todavía no llega con "hoy" = miércoles
     createClientMock.mockResolvedValue(createSupabaseMock({
+      progress_logs: [{ data: null }],
       workouts: [{ data: { ...workout, day_of_week: 5 } }],
     }))
 
@@ -94,6 +119,7 @@ describe('saveSession access guard', () => {
 
   it('rejects workouts from inactive plans', async () => {
     createClientMock.mockResolvedValue(createSupabaseMock({
+      progress_logs: [{ data: null }],
       workouts: [{ data: workout }],
       workout_plans: [{ data: null }],
     }))
@@ -108,7 +134,7 @@ describe('saveSession access guard', () => {
     createClientMock.mockResolvedValue(createSupabaseMock({
       workouts: [{ data: workout }],
       workout_plans: [{ data: { id: 'plan-1' } }],
-      progress_logs: [{ data: [{ id: 'log-1' }] }],
+      progress_logs: [{ data: null }, { data: [{ id: 'log-1' }] }],
     }))
 
     await expect(saveSession(payload)).resolves.toMatchObject({
@@ -121,7 +147,7 @@ describe('saveSession access guard', () => {
     createClientMock.mockResolvedValue(createSupabaseMock({
       workouts: [{ data: { ...workout, day_of_week: 2 } }],
       workout_plans: [{ data: { id: 'plan-1' } }],
-      progress_logs: [{ data: [{ id: 'log-1' }] }],
+      progress_logs: [{ data: null }, { data: [{ id: 'log-1' }] }],
     }))
 
     await expect(saveSession(payload)).resolves.toMatchObject({
@@ -176,7 +202,7 @@ describe('saveSession access guard', () => {
     createClientMock.mockResolvedValue(createSupabaseMock({
       workouts: [{ data: workout }],
       workout_plans: [{ data: { id: 'plan-1' } }],
-      progress_logs: [{ data: [] }, { data: [] }, { data: null, error: { message: 'mock insert' } }],
+      progress_logs: [{ data: null }, { data: [] }, { data: [] }],
     }))
 
     const result = await saveSession({
@@ -197,12 +223,63 @@ describe('saveSession access guard', () => {
     createClientMock.mockResolvedValue(createSupabaseMock({
       workouts: [{ data: workout }],
       workout_plans: [{ data: { id: 'plan-1' } }],
-      progress_logs: [{ data: [] }, { data: [{ id: 'log-other' }] }],
+      progress_logs: [{ data: null }, { data: [] }, { data: [{ id: 'log-other' }] }],
     }))
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: false,
       error: 'Ya registraste una sesión hoy. Máximo una sesión por día.',
     })
+  })
+})
+
+describe('saveSession idempotency', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-27T16:00:00.000Z'))
+    createClientMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('returns the existing completed log on a lost-response retry without replaying side effects', async () => {
+    const supabase = successfulSaveMock({ existingId: 'log-existing' })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-existing',
+      prs: [],
+      progressions: [],
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('returns the winner of a duplicate-constraint race without a second detail insert', async () => {
+    const supabase = successfulSaveMock({
+      rpcData: [{ progress_log_id: 'log-winner', inserted: false }],
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-winner',
+    })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses an atomic boundary so a detail failure can retry the same idempotency key', async () => {
+    const failed = successfulSaveMock({ rpcData: null, rpcError: { message: 'detail rejected' } })
+    const retried = successfulSaveMock()
+    createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: false, error: 'detail rejected' })
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: true, progressLogId: 'log-new' })
+    expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic', expect.objectContaining({
+      p_client_session_id: payload.clientSessionId,
+    }))
+    expect(retried.rpc).toHaveBeenCalledTimes(1)
   })
 })

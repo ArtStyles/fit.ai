@@ -9,21 +9,29 @@
 import type { ExerciseSession } from '@/store/sessionStore'
 
 export interface SessionSnapshot {
+  clientSessionId: string
   workoutId:   string
   workoutName: string
   startedAt:   number
   exercises:   ExerciseSession[]
 }
 
+export type PersistenceResult = { ok: true } | { ok: false; error: string }
+
 function backupKey(workoutId: string): string {
   return `fitai_session_${workoutId}`
 }
 
-export function saveBackup(snapshot: SessionSnapshot): void {
+function persistenceError(error: unknown): string {
+  return error instanceof Error ? error.message : 'Local storage unavailable'
+}
+
+export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {
   try {
     localStorage.setItem(backupKey(snapshot.workoutId), JSON.stringify(snapshot))
-  } catch {
-    // localStorage puede estar lleno o desactivado — ignorar
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: persistenceError(error) }
   }
 }
 
@@ -39,10 +47,11 @@ export function loadBackup(workoutId: string): SessionSnapshot | null {
   }
 }
 
-export function clearBackup(workoutId: string): void {
+export function clearBackup(workoutId: string): PersistenceResult {
   try {
     localStorage.removeItem(backupKey(workoutId))
-  } catch {
-    // ignorar
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: persistenceError(error) }
   }
 }

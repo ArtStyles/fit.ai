@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, useReducedMotion } from 'framer-motion'
 import { CheckCircle2, Clock, Dumbbell, Loader2, TrendingUp, Weight } from 'lucide-react'
@@ -13,7 +13,14 @@ import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { SessionSyncStatus } from './SessionSyncStatus'
-import type { SessionSyncEvent, SessionSyncState } from './sessionViewModel'
+import {
+  syncEventForStorageResult,
+  type SessionSyncErrorSource,
+  type SessionSyncEvent,
+  type SessionSyncState,
+} from './sessionViewModel'
+import { createSessionRequestGate } from './sessionRequestGate'
+import type { PersistenceResult } from '@/lib/session/persistSession'
 
 const containerMotion = {
   hidden: { opacity: 0 },
@@ -50,11 +57,20 @@ function progressionTarget(suggestion: ProgressionSuggestion): string {
 interface Props {
   workoutId: string
   syncState: SessionSyncState
-  onSyncEvent: (event: SessionSyncEvent) => void
-  onClearBackup: () => void
+  syncErrorSource: SessionSyncErrorSource
+  onSyncEvent: (event: SessionSyncEvent, source?: SessionSyncErrorSource) => void
+  onRetryLocalBackup: () => void
+  onClearBackup: () => PersistenceResult
 }
 
-export function CompletionScreen({ workoutId, syncState, onSyncEvent, onClearBackup }: Props) {
+export function CompletionScreen({
+  workoutId,
+  syncState,
+  syncErrorSource,
+  onSyncEvent,
+  onRetryLocalBackup,
+  onClearBackup,
+}: Props) {
   const router = useRouter()
   const reduceMotion = useReducedMotion()
   const { showToast } = useToast()
@@ -63,7 +79,10 @@ export function CompletionScreen({ workoutId, syncState, onSyncEvent, onClearBac
   const startedAt = useSessionStore(state => state.startedAt)
   const finishedAt = useSessionStore(state => state.finishedAt)
   const workoutName = useSessionStore(state => state.workoutName)
+  const clientSessionId = useSessionStore(state => state.clientSessionId)
   const clearSession = useSessionStore(state => state.clearSession)
+  const requestGateRef = useRef(createSessionRequestGate())
+  const serverSavedRef = useRef<string | null>(null)
 
   const [moodRating, setMoodRating] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -71,6 +90,9 @@ export function CompletionScreen({ workoutId, syncState, onSyncEvent, onClearBac
   const [prs, setPrs] = useState<PRRecord[]>([])
   const [progressions, setProgressions] = useState<ProgressionSuggestion[]>([])
   const [progressLogId, setProgressLogId] = useState<string | null>(null)
+  const [cleanupComplete, setCleanupComplete] = useState(false)
+
+  useEffect(() => () => requestGateRef.current.invalidate(), [])
 
   const completedExercises = exercises.filter(exercise => exercise.status === 'completed').length
   const completedSets = exercises.reduce(
@@ -84,14 +106,27 @@ export function CompletionScreen({ workoutId, syncState, onSyncEvent, onClearBac
   const visibleProgressions = progressions.filter(isActionableProgression).slice(0, 3)
   const saved = progressLogId !== null
 
+  const retryCleanup = useCallback(() => {
+    onSyncEvent('retry')
+    const result = onClearBackup()
+    onSyncEvent(syncEventForStorageResult('delete', result), result.ok ? null : 'backup-delete')
+    setCleanupComplete(result.ok)
+    setSaveError(result.ok ? null : t('La sesión está guardada, pero falta limpiar el respaldo local.'))
+  }, [onClearBackup, onSyncEvent, t])
+
   const doSave = useCallback(async () => {
-    if (syncState === 'error') onSyncEvent('retry')
+    if (serverSavedRef.current) return
+    const requestToken = requestGateRef.current.begin()
+    if (requestToken === null) return
+
+    if (syncErrorSource === 'server') onSyncEvent('retry')
     else onSyncEvent('server-save')
     setIsSaving(true)
     setSaveError(null)
 
     try {
       const result = await saveSession({
+        clientSessionId,
         workoutId,
         startedAt,
         finishedAt: finishedAt || Date.now(),
@@ -116,30 +151,49 @@ export function CompletionScreen({ workoutId, syncState, onSyncEvent, onClearBac
 
       if (!result.success || !result.progressLogId) {
         const message = result.error ?? t('No se pudo guardar la sesión')
-        setSaveError(message)
-        onSyncEvent('server-error')
-        showToast({ title: t('No se pudo guardar'), description: message, variant: 'error' })
+        requestGateRef.current.commit(requestToken, () => {
+          setSaveError(message)
+          onSyncEvent('server-error', 'server')
+          showToast({ title: t('No se pudo guardar'), description: message, variant: 'error' })
+        })
         return
       }
 
-      onClearBackup()
-      setPrs(result.prs)
-      setProgressions(result.progressions)
-      setProgressLogId(result.progressLogId)
-      onSyncEvent('server-success')
-      void hapticSuccess()
-      showToast({ title: t('Sesión guardada'), description: t('Tu progreso quedó sincronizado.'), variant: 'success' })
+      requestGateRef.current.commit(requestToken, () => {
+        serverSavedRef.current = result.progressLogId
+        setPrs(result.prs)
+        setProgressions(result.progressions)
+        setProgressLogId(result.progressLogId)
+
+        const cleanupResult = onClearBackup()
+        const cleanupEvent = syncEventForStorageResult('delete', cleanupResult)
+        onSyncEvent(cleanupEvent, cleanupResult.ok ? null : 'backup-delete')
+        setCleanupComplete(cleanupResult.ok)
+
+        if (cleanupResult.ok) {
+          setSaveError(null)
+          void hapticSuccess()
+          showToast({ title: t('Sesión guardada'), description: t('Tu progreso quedó sincronizado.'), variant: 'success' })
+        } else {
+          const cleanupMessage = t('La sesión está guardada, pero falta limpiar el respaldo local.')
+          setSaveError(cleanupMessage)
+          showToast({ title: t('Limpieza local pendiente'), description: cleanupMessage, variant: 'error' })
+        }
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : t('Error de red')
-      setSaveError(message)
-      onSyncEvent('server-error')
-      showToast({ title: t('Error de sincronización'), description: message, variant: 'error' })
+      requestGateRef.current.commit(requestToken, () => {
+        setSaveError(message)
+        onSyncEvent('server-error', 'server')
+        showToast({ title: t('Error de sincronización'), description: message, variant: 'error' })
+      })
     } finally {
-      setIsSaving(false)
+      if (requestGateRef.current.finish(requestToken)) setIsSaving(false)
     }
-  }, [exercises, finishedAt, moodRating, onClearBackup, onSyncEvent, showToast, startedAt, syncState, t, workoutId])
+  }, [clientSessionId, exercises, finishedAt, moodRating, onClearBackup, onSyncEvent, showToast, startedAt, syncErrorSource, t, workoutId])
 
   function handleDone() {
+    if (!cleanupComplete) return
     clearSession()
     window.dispatchEvent(new Event('fitai:navigation-start'))
     router.replace('/dashboard')
@@ -168,7 +222,14 @@ export function CompletionScreen({ workoutId, syncState, onSyncEvent, onClearBac
             {t('{count} ejercicios completados', { count: completedExercises })}
           </p>
 
-          <SessionSyncStatus state={syncState} onRetry={syncState === 'error' ? doSave : undefined} />
+          <SessionSyncStatus
+            state={syncState}
+            onRetry={syncState === 'error'
+              ? syncErrorSource === 'backup-delete' ? retryCleanup
+                : syncErrorSource === 'backup-write' ? onRetryLocalBackup
+                  : doSave
+              : undefined}
+          />
           {saveError ? <p role="alert" className="text-sm text-red-300">{saveError}</p> : null}
 
           {!saved ? (
@@ -230,11 +291,11 @@ export function CompletionScreen({ workoutId, syncState, onSyncEvent, onClearBac
         </motion.section>
 
         <motion.section variants={itemMotion} data-section="share" className="flex justify-start">
-          {progressLogId ? <ShareSessionButton progressLogId={progressLogId} /> : null}
+          {progressLogId && cleanupComplete ? <ShareSessionButton progressLogId={progressLogId} /> : null}
         </motion.section>
 
         <motion.section variants={itemMotion} data-section="dashboard">
-          <Button onClick={handleDone} disabled={!saved} className="h-14 w-full bg-violet-600 text-base font-bold text-white hover:bg-violet-500">
+          <Button onClick={handleDone} disabled={!saved || !cleanupComplete} className="h-14 w-full bg-violet-600 text-base font-bold text-white hover:bg-violet-500">
             <CheckCircle2 className="mr-2 h-5 w-5" aria-hidden="true" />
             {t('Volver al dashboard')}
           </Button>

@@ -68,6 +68,7 @@ export interface RestTimerState {
 
 export interface SessionState {
   // ── Datos ──────────────────────────────────────────────────────────────────
+  clientSessionId: string
   workoutId:   string
   workoutName: string
   startedAt:   number            // Date.now()
@@ -78,7 +79,7 @@ export interface SessionState {
 
   // ── Acciones ───────────────────────────────────────────────────────────────
   initSession:     (workoutId: string, workoutName: string, exercises: ExerciseSession[]) => void
-  restoreSession:  (snapshot: { workoutId: string; workoutName: string; startedAt: number; exercises: ExerciseSession[] }) => void
+  restoreSession:  (snapshot: { clientSessionId?: string; workoutId: string; workoutName: string; startedAt: number; exercises: ExerciseSession[] }) => void
   toggleExpanded:  (workoutExerciseId: string) => void
   updateSetField:  (weId: string, setIdx: number, field: 'weightKg' | 'reps', value: string) => void
   updateSetDuration: (weId: string, setIdx: number, seconds: number) => void
@@ -102,18 +103,18 @@ export interface SessionState {
 function buildInitialSets(
   targetSets:      number,
   suggestedWeight: number | null,
-  lastWeightsKg?:  number[] | null,
-  lastReps?:       number[] | null,
+  lastWeightsKg?:  Array<number | null> | null,
+  lastReps?:       Array<number | null> | null,
   targetDuration?: number | null,
 ): SetData[] {
   return Array.from({ length: targetSets }, (_, i) => {
     // Usar valor de la última sesión por índice; si el nuevo plan tiene más series
     // que la última sesión, repetir el último valor disponible.
     const lastW = lastWeightsKg?.length
-      ? (lastWeightsKg[i] ?? lastWeightsKg[lastWeightsKg.length - 1])
+      ? (i < lastWeightsKg.length ? lastWeightsKg[i] : lastWeightsKg[lastWeightsKg.length - 1])
       : null
     const lastR = lastReps?.length
-      ? (lastReps[i] ?? lastReps[lastReps.length - 1])
+      ? (i < lastReps.length ? lastReps[i] : lastReps[lastReps.length - 1])
       : null
 
     return {
@@ -126,6 +127,16 @@ function buildInitialSets(
       completed: false,
     }
   })
+}
+
+function createClientSessionId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
+  const bytes = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -172,6 +183,7 @@ function buildFlexibleExercise(
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   // ── Estado inicial ─────────────────────────────────────────────────────────
+  clientSessionId: '',
   workoutId:   '',
   workoutName: '',
   startedAt:   0,
@@ -189,6 +201,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       expanded: i === 0,
     }))
     set({
+      clientSessionId: createClientSessionId(),
       workoutId,
       workoutName,
       startedAt:  Date.now(),
@@ -201,8 +214,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── restoreSession ────────────────────────────────────────────────────────
   // Restaura el estado completo desde un backup (localStorage) sin resetear
-  restoreSession({ workoutId, workoutName, startedAt, exercises }) {
+  restoreSession({ clientSessionId, workoutId, workoutName, startedAt, exercises }) {
     set({
+      clientSessionId: clientSessionId ?? createClientSessionId(),
       workoutId,
       workoutName,
       startedAt,
@@ -471,6 +485,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   // ── clearSession ──────────────────────────────────────────────────────────
   clearSession() {
     set({
+      clientSessionId: '',
       workoutId:   '',
       workoutName: '',
       startedAt:   0,
@@ -501,8 +516,8 @@ export function buildInitialExercises(
     suggestedWeight:   number | null
     weightSuggestionBasis: 'user_baseline_pending' | 'estimated_from_profile' | 'based_on_previous_logs' | null
     notes:             string | null
-    lastWeightsKg:     number[] | null
-    lastReps:          number[] | null
+    lastWeightsKg:     Array<number | null> | null
+    lastReps:          Array<number | null> | null
   }>,
 ): ExerciseSession[] {
   return rows.map(r => ({
@@ -511,7 +526,7 @@ export function buildInitialExercises(
     originalName:        null,
     source:              'planned' as const,
     skipReason:          null,
-    hasLastSessionData:  !!(r.lastWeightsKg && r.lastWeightsKg.length > 0),
+    hasLastSessionData:  Math.max(r.lastWeightsKg?.length ?? 0, r.lastReps?.length ?? 0) > 0,
     previousPerformance: Math.max(r.lastWeightsKg?.length ?? 0, r.lastReps?.length ?? 0) > 0
       ? Array.from({ length: Math.max(r.lastWeightsKg?.length ?? 0, r.lastReps?.length ?? 0) }, (_, index) => ({
         weightKg: r.lastWeightsKg?.[index] ?? null,

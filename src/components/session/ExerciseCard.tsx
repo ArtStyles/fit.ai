@@ -8,7 +8,7 @@ import { SetRow } from './SetRow'
 import { TimedSetRow } from './TimedSetRow'
 import { SessionExercisePicker } from '@/components/session/SessionExercisePicker'
 import { PreviousPerformance } from './PreviousPerformance'
-import { currentSetIndex } from './sessionViewModel'
+import { isCurrentSet } from './sessionViewModel'
 import { useSessionStore } from '@/store/sessionStore'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 
@@ -86,7 +86,6 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
 
   // Número de series completadas
   const completedSets = sets.filter(s => s.completed).length
-  const activeSetIndex = currentSetIndex(sets)
 
   return (
     <div className={cn(
@@ -245,7 +244,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
               data={set}
               targetSeconds={targetDuration}
               isActive={isActive}
-              isCurrent={i === activeSetIndex}
+               isCurrent={isCurrentSet(status, i, sets)}
               onDurationChange={seconds => updateSetDuration(weId, i, seconds)}
               onRpeChange={rpe => selectRpe(weId, i, rpe)}
               onComplete={() => completeSet(weId, i)}
@@ -256,7 +255,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
               setNumber={i + 1}
               data={set}
               isActive={isActive}
-              isCurrent={i === activeSetIndex}
+               isCurrent={isCurrentSet(status, i, sets)}
               onWeightChange={v => updateSetField(weId, i, 'weightKg', v)}
               onRepsChange={v   => updateSetField(weId, i, 'reps', v)}
               onRpeChange={rpe  => selectRpe(weId, i, rpe)}

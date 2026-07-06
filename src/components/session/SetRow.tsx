@@ -6,6 +6,7 @@ import { hapticImpact } from '@/lib/native/haptics'
 import { RPESelector } from './RPESelector'
 import { setInputMode } from './sessionViewModel'
 import type { SetData } from '@/store/sessionStore'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 interface Props {
   setNumber: number
@@ -23,6 +24,7 @@ export function SetRow({
   onWeightChange, onRepsChange, onRpeChange, onComplete,
   isActive, isCurrent,
 }: Props) {
+  const { t } = useI18n()
   const { weightKg, reps, rpe, completed } = data
 
   return (
@@ -36,14 +38,14 @@ export function SetRow({
       {/* Número de serie */}
       <span className={cn('text-center text-xs font-semibold tabular-nums', completed ? 'text-green-400' : isCurrent ? 'text-violet-200' : 'text-muted-foreground')}>
         {setNumber}
-        {isCurrent && !completed ? <span className="sr-only"> Serie actual</span> : null}
+        {isCurrent && !completed ? <span className="sr-only"> {t('Serie actual')}</span> : null}
       </span>
 
       {/* Peso (kg) */}
       <label className="relative block min-w-0">
-        <span className="sr-only">Peso en kilogramos</span>
+        <span className="sr-only">{t('Peso en kilogramos')}</span>
         <input
-          aria-label="Peso en kilogramos"
+          aria-label={t('Peso en kilogramos')}
           type="number"
           inputMode={setInputMode('weight')}
           step="0.1"
@@ -59,14 +61,14 @@ export function SetRow({
             completed && 'border-green-500/30 text-green-300',
           )}
         />
-        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">kg</span>
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">{t('kg')}</span>
       </label>
 
       {/* Reps */}
       <label className="relative block min-w-0">
-        <span className="sr-only">Repeticiones</span>
+        <span className="sr-only">{t('Repeticiones')}</span>
         <input
-          aria-label="Repeticiones"
+          aria-label={t('Repeticiones')}
           type="number"
           inputMode={setInputMode('reps')}
           min="0"
@@ -81,12 +83,12 @@ export function SetRow({
             completed && 'border-green-500/30 text-green-300',
           )}
         />
-        <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">reps</span>
+        <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground">{t('reps')}</span>
       </label>
 
       {/* RPE */}
       <div className="col-span-2 col-start-2 row-start-2 flex justify-center sm:col-span-1 sm:col-start-auto sm:row-start-auto">
-        <span className="mr-2 self-center text-xs font-semibold text-muted-foreground sm:hidden">RPE</span>
+        <span className="mr-2 self-center text-xs font-semibold text-muted-foreground sm:hidden">{t('RPE')}</span>
         <RPESelector
           value={rpe}
           onChange={onRpeChange}
@@ -99,7 +101,7 @@ export function SetRow({
         type="button"
         onClick={() => { void hapticImpact('medium'); onComplete() }}
         disabled={!isActive || completed}
-        aria-label={completed ? 'Serie completada' : 'Completar serie'}
+        aria-label={completed ? t('Serie completada') : t('Completar serie')}
         className={cn(
           'col-start-4 row-span-2 row-start-1 h-11 w-11 self-center rounded-full border-2 flex items-center justify-center sm:col-start-auto sm:row-span-1 sm:row-start-auto',
           'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none',

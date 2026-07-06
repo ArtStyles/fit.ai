@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 interface Props {
   value:    number | null
@@ -22,6 +23,7 @@ const RPE_COLORS: Record<number, string> = {
 }
 
 export function RPESelector({ value, onChange, disabled }: Props) {
+  const { t } = useI18n()
   const displayed = value ?? '—'
   const colorClass = value ? (RPE_COLORS[value] ?? 'text-foreground') : 'text-muted-foreground'
 
@@ -44,7 +46,7 @@ export function RPESelector({ value, onChange, disabled }: Props) {
         type="button"
         onClick={decrement}
         className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
-        aria-label="Reducir RPE"
+        aria-label={t('Reducir RPE')}
       >
         <span className="text-sm font-bold">−</span>
       </button>
@@ -57,7 +59,7 @@ export function RPESelector({ value, onChange, disabled }: Props) {
         type="button"
         onClick={increment}
         className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
-        aria-label="Aumentar RPE"
+        aria-label={t('Aumentar RPE')}
       >
         <span className="text-sm font-bold">+</span>
       </button>

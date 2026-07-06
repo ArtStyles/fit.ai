@@ -1,5 +1,6 @@
 export type SessionSyncState = 'saved-local' | 'syncing' | 'synced' | 'error'
-export type SessionSyncEvent = 'local-backup' | 'server-save' | 'server-success' | 'server-error' | 'retry'
+export type SessionSyncEvent = 'local-backup' | 'local-error' | 'server-save' | 'server-success' | 'server-error' | 'retry'
+export type SessionSyncErrorSource = 'backup-write' | 'backup-delete' | 'server' | null
 export type SetFieldKind = 'weight' | 'reps' | 'rpe'
 export type SessionLocale = 'es' | 'en'
 
@@ -7,6 +8,11 @@ export interface PreviousPerformanceSet {
   weightKg: number | string | null
   reps: number | string | null
   durationSeconds?: number | null
+}
+
+export interface PreviousPerformanceRow {
+  weightsKg: Array<number | null> | null
+  reps: Array<number | null> | null
 }
 
 export const COMPLETION_SECTION_ORDER = [
@@ -50,6 +56,14 @@ export function nextSessionSyncState(
   return 'error'
 }
 
+export function syncEventForStorageResult(
+  operation: 'write' | 'delete',
+  result: { ok: true } | { ok: false; error: string },
+): SessionSyncEvent {
+  if (!result.ok) return 'local-error'
+  return operation === 'write' ? 'local-backup' : 'server-success'
+}
+
 function formatDuration(seconds: number): string {
   const safeSeconds = Math.max(0, Math.round(seconds))
   return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`
@@ -85,8 +99,25 @@ export function formatPreviousPerformance(
   return values.length > 0 ? values.join(' · ') : null
 }
 
+export function zipPreviousPerformanceRows(rows: PreviousPerformanceRow[]): PreviousPerformanceSet[] {
+  return rows.flatMap(row => {
+    const setCount = Math.max(row.weightsKg?.length ?? 0, row.reps?.length ?? 0)
+    return Array.from({ length: setCount }, (_, index) => ({
+      weightKg: row.weightsKg?.[index] ?? null,
+      reps: row.reps?.[index] ?? null,
+    }))
+  })
+}
+
 export function currentSetIndex(sets: Array<{ completed: boolean }>): number {
   if (sets.length === 0) return -1
-  const incompleteIndex = sets.findIndex(set => !set.completed)
-  return incompleteIndex === -1 ? sets.length - 1 : incompleteIndex
+  return sets.findIndex(set => !set.completed)
+}
+
+export function isCurrentSet(
+  status: 'pending' | 'active' | 'completed' | 'skipped',
+  index: number,
+  sets: Array<{ completed: boolean }>,
+): boolean {
+  return status === 'active' && index === currentSetIndex(sets)
 }

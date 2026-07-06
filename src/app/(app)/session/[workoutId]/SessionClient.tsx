@@ -12,12 +12,15 @@ import { SessionRoutineTools } from '@/components/session/SessionRoutineTools'
 import { PreSessionScreen }   from '@/components/session/PreSessionScreen'
 import {
   nextSessionSyncState,
+  syncEventForStorageResult,
+  type SessionSyncErrorSource,
   type SessionSyncEvent,
   type SessionSyncState,
 } from '@/components/session/sessionViewModel'
 import type { ProgressionItem } from '@/components/session/PreSessionScreen'
 import { saveBackup, loadBackup, clearBackup } from '@/lib/session/persistSession'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
+import type { SessionSnapshot } from '@/lib/session/persistSession'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -59,10 +62,21 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
   const storeWorkoutId    = useSessionStore(s => s.workoutId)
   const startedAt         = useSessionStore(s => s.startedAt)
   const workoutNameStore  = useSessionStore(s => s.workoutName)
-  const [syncState, setSyncState] = useState<SessionSyncState>('saved-local')
-  const onSyncEvent = useCallback((event: SessionSyncEvent) => {
+  const clientSessionId   = useSessionStore(s => s.clientSessionId)
+  const [syncState, setSyncState] = useState<SessionSyncState>('syncing')
+  const [syncErrorSource, setSyncErrorSource] = useState<SessionSyncErrorSource>(null)
+  const latestBackupRef = useRef<SessionSnapshot | null>(null)
+  const onSyncEvent = useCallback((event: SessionSyncEvent, source: SessionSyncErrorSource = null) => {
     setSyncState(current => nextSessionSyncState(current, event))
+    setSyncErrorSource(event === 'local-error' || event === 'server-error' ? source : null)
   }, [])
+  const retryLocalBackup = useCallback(() => {
+    const snapshot = latestBackupRef.current
+    if (!snapshot) return
+    onSyncEvent('retry')
+    const result = saveBackup(snapshot)
+    onSyncEvent(syncEventForStorageResult('write', result), result.ok ? null : 'backup-write')
+  }, [onSyncEvent])
 
   // Pre-calcular progresiones desde la prop del servidor (antes de hidratación)
   const progressions = extractProgressions(exercises)
@@ -103,14 +117,17 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     if (!storeWorkoutId || storeWorkoutId !== workoutId) return
     if (isFinished) return   // no sobrescribir backup después de finalizar
 
-    saveBackup({
+    const snapshot = {
+      clientSessionId,
       workoutId:   storeWorkoutId,
       workoutName: workoutNameStore,
       startedAt,
       exercises:   storeExercises,
-    })
-    setSyncState(current => nextSessionSyncState(current, 'local-backup'))
-  }, [storeExercises, isFinished, storeWorkoutId, workoutId, workoutNameStore, startedAt])
+    }
+    latestBackupRef.current = snapshot
+    const result = saveBackup(snapshot)
+    onSyncEvent(syncEventForStorageResult('write', result), result.ok ? null : 'backup-write')
+  }, [clientSessionId, storeExercises, isFinished, onSyncEvent, storeWorkoutId, workoutId, workoutNameStore, startedAt])
 
   // ── Conectar el ticker del rest timer ─────────────────────────────────────
   useRestTimer()
@@ -138,7 +155,9 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
       <CompletionScreen
         workoutId={workoutId}
         syncState={syncState}
+        syncErrorSource={syncErrorSource}
         onSyncEvent={onSyncEvent}
+        onRetryLocalBackup={retryLocalBackup}
         onClearBackup={() => clearBackup(workoutId)}
       />
     )
@@ -148,7 +167,11 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* Header sticky */}
       <div data-session-sync-state={syncState}>
-        <SessionHeader onFinish={finishSession} syncState={syncState} />
+        <SessionHeader
+          onFinish={finishSession}
+          syncState={syncState}
+          onSyncRetry={syncErrorSource === 'backup-write' ? retryLocalBackup : undefined}
+        />
       </div>
 
       {/* Lista de ejercicios con scroll */}

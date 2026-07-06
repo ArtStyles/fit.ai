@@ -8,6 +8,7 @@ import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 import type { WorkoutStartAccessReason } from '@/lib/workouts/access'
 import type { ProgressionSuggestion } from '@/lib/progression'
 import type { PRRecord } from '@/lib/progression/records'
+import { zipPreviousPerformanceRows } from '@/components/session/sessionViewModel'
 
 export type { PRRecord } from '@/lib/progression/records'
 
@@ -68,6 +69,7 @@ export interface ExercisePayload {
 }
 
 export interface SaveSessionPayload {
+  clientSessionId: string
   workoutId: string
   startedAt: number
   finishedAt: number
@@ -97,8 +99,8 @@ type HistoricalLogRelation = { user_id: string; completed_at: string }
 
 type HistoricalLogRow = {
   exercise_id: string
-  weights_kg: number[] | null
-  reps_completed: number[] | null
+  weights_kg: Array<number | null> | null
+  reps_completed: Array<number | null> | null
   progress_log_id: string
   progress_logs: HistoricalLogRelation | HistoricalLogRelation[] | null
 }
@@ -227,6 +229,26 @@ export async function saveSession(
     }
   }
 
+  if (!isUuid(payload.clientSessionId)) {
+    return { success: false, progressLogId: null, prs: [], progressions: [], error: 'Identificador de sesión inválido' }
+  }
+
+  const { data: existingSession } = await (supabase
+    .from('progress_logs') as any)
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('client_session_id', payload.clientSessionId)
+    .maybeSingle() as { data: { id: string } | null }
+
+  if (existingSession) {
+    return {
+      success: true,
+      progressLogId: existingSession.id,
+      prs: [],
+      progressions: [],
+    }
+  }
+
   const { data: profileRow } = await (supabase
     .from('profiles') as any)
     .select('timezone')
@@ -255,29 +277,6 @@ export async function saveSession(
     Math.round((payload.finishedAt - payload.startedAt) / 60_000),
   )
 
-  const { data: progressLog, error: progressLogError } = await (supabase
-    .from('progress_logs') as any)
-    .insert({
-      user_id: user.id,
-      workout_id: payload.workoutId,
-      duration_minutes: durationMinutes,
-      completed_at: new Date(payload.finishedAt).toISOString(),
-      mood_rating: payload.moodRating,
-    })
-    .select('id')
-    .single() as { data: { id: string } | null; error: { message: string } | null }
-
-  if (progressLogError || !progressLog) {
-    console.error('[saveSession] progress_logs insert failed:', progressLogError)
-    return {
-      success: false,
-      progressLogId: null,
-      prs: [],
-      progressions: [],
-      error: progressLogError?.message ?? 'No se pudo guardar la sesión',
-    }
-  }
-
   const workoutExerciseIds = payload.exercises
     .filter(ex => (ex.source ?? 'planned') === 'planned' && isUuid(ex.workoutExerciseId))
     .map(ex => ex.workoutExerciseId)
@@ -303,8 +302,7 @@ export async function saveSession(
           .from('exercise_logs') as any)
           .select('exercise_id, weights_kg, reps_completed, progress_log_id, progress_logs!inner(user_id, completed_at)')
           .in('exercise_id', exerciseIds)
-          .eq('progress_logs.user_id', user.id)
-          .neq('progress_log_id', progressLog.id) as Promise<{ data: HistoricalLogRow[] | null }>
+          .eq('progress_logs.user_id', user.id) as Promise<{ data: HistoricalLogRow[] | null }>
       : Promise.resolve({ data: [] as HistoricalLogRow[] }),
   ])
 
@@ -337,13 +335,21 @@ export async function saveSession(
   }))
 
   const prs: PRRecord[] = []
+  let exerciseLogs: Array<{
+    exercise_id: string
+    sets_completed: number
+    reps_completed: number[]
+    weights_kg: number[]
+    rpe_values: Array<number | null>
+    duration_seconds: number | null
+    notes: string | null
+  }> = []
 
   if (exercisesWithData.length > 0) {
-    const exerciseLogs = exercisesWithData.map(ex => {
+    exerciseLogs = exercisesWithData.map(ex => {
       const completedSets = ex.sets.filter(set => set.completed)
 
       return {
-        progress_log_id: progressLog.id,
         exercise_id: ex.exerciseId,
         sets_completed: completedSets.length,
         reps_completed: completedSets.map(set => Math.max(0, parseInt(set.reps) || 0)),
@@ -354,26 +360,6 @@ export async function saveSession(
       }
     })
 
-    const { error: exerciseLogError } = await (supabase
-      .from('exercise_logs') as any)
-      .insert(exerciseLogs) as { error: { message: string } | null }
-
-    if (exerciseLogError) {
-      console.error('[saveSession] exercise_logs insert failed:', exerciseLogError)
-      await (supabase
-        .from('progress_logs') as any)
-        .delete()
-        .eq('id', progressLog.id)
-
-      return {
-        success: false,
-        progressLogId: null,
-        prs: [],
-        progressions: [],
-        error: exerciseLogError.message ?? 'No se pudo guardar el detalle de la sesión',
-      }
-    }
-
     for (const ex of exercisesWithData) {
       const currentSets = ex.sets
         .filter(set => set.completed)
@@ -383,14 +369,13 @@ export async function saveSession(
         }))
 
       const prevLogs = historyByExercise[ex.exerciseId] ?? []
-      const historySets = prevLogs.flatMap(log => {
-        const weights = log.weights_kg ?? []
-        const reps = log.reps_completed ?? []
-        return weights.map((weight, i) => ({
-          weightKg: Number(weight) || 0,
-          reps: Number(reps[i]) || 0,
-        }))
-      })
+      const historySets = zipPreviousPerformanceRows(prevLogs.map(log => ({
+        weightsKg: log.weights_kg,
+        reps: log.reps_completed,
+      }))).map(set => ({
+        weightKg: Number(set.weightKg) || 0,
+        reps: Number(set.reps) || 0,
+      }))
 
       const record = detectPersonalRecord({
         exerciseName: ex.name,
@@ -403,7 +388,38 @@ export async function saveSession(
     }
   }
 
+  const { data: persistedRows, error: persistenceError } = await (supabase as any).rpc(
+    'save_session_log_atomic',
+    {
+      p_client_session_id: payload.clientSessionId,
+      p_workout_id: payload.workoutId,
+      p_completed_at: new Date(payload.finishedAt).toISOString(),
+      p_duration_minutes: durationMinutes,
+      p_mood_rating: payload.moodRating,
+      p_exercise_logs: exerciseLogs,
+    },
+  ) as {
+    data: Array<{ progress_log_id: string; inserted: boolean }> | null
+    error: { message: string } | null
+  }
+
+  const persisted = persistedRows?.[0]
+  if (persistenceError || !persisted) {
+    console.error('[saveSession] atomic session save failed:', persistenceError)
+    return {
+      success: false,
+      progressLogId: null,
+      prs: [],
+      progressions: [],
+      error: persistenceError?.message ?? 'No se pudo guardar la sesión',
+    }
+  }
+
+  if (!persisted.inserted) {
+    return { success: true, progressLogId: persisted.progress_log_id, prs: [], progressions: [] }
+  }
+
   await updateActivePlanTargets(supabase, user.id, payload.workoutId, progressions)
 
-  return { success: true, progressLogId: progressLog.id, prs, progressions }
+  return { success: true, progressLogId: persisted.progress_log_id, prs, progressions }
 }

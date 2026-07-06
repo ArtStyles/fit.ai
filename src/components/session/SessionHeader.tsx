@@ -43,9 +43,10 @@ function formatTime(seconds: number): string {
 interface Props {
   onFinish: () => void
   syncState: SessionSyncState
+  onSyncRetry?: () => void
 }
 
-export function SessionHeader({ onFinish, syncState }: Props) {
+export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
   const { t } = useI18n()
   const router        = useRouter()
   const workoutName   = useSessionStore(s => s.workoutName)
@@ -112,7 +113,7 @@ export function SessionHeader({ onFinish, syncState }: Props) {
                 · {completedSets}/{totalSets} {t('series')}
               </span>
             )}
-            <SessionSyncStatus state={syncState} className="min-h-0 basis-full" />
+            <SessionSyncStatus state={syncState} onRetry={onSyncRetry} className="min-h-0 basis-full" />
           </div>
         </div>
 

@@ -307,6 +307,7 @@ export interface Database {
       workout_plans: {
         Row: {
           id: string
+          client_session_id: string | null
           user_id: string
           name: string
           description: string | null
@@ -331,6 +332,7 @@ export interface Database {
         }
         Insert: {
           id?: string
+          client_session_id?: string | null
           user_id: string
           name: string
           description?: string | null
@@ -481,6 +483,7 @@ export interface Database {
           energy_rating?: number | null
         }
         Update: {
+          client_session_id?: string | null
           workout_id?: string | null
           duration_minutes?: number | null
           notes?: string | null
@@ -819,6 +822,20 @@ export interface Database {
           p_profile_updates?: Json
         }
         Returns: string
+      }
+      save_session_log_atomic: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+          p_completed_at: string
+          p_duration_minutes: number
+          p_mood_rating: number | null
+          p_exercise_logs: Json
+        }
+        Returns: Array<{
+          progress_log_id: string
+          inserted: boolean
+        }>
       }
       get_dashboard_payload: {
         Args: {
