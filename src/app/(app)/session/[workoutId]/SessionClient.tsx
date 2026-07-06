@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSessionStore }    from '@/store/sessionStore'
 import { useRestTimer }       from '@/hooks/useRestTimer'
 import { useWakeLock }        from '@/hooks/useWakeLock'
@@ -10,6 +10,11 @@ import { RestTimer }          from '@/components/session/RestTimer'
 import { CompletionScreen }   from '@/components/session/CompletionScreen'
 import { SessionRoutineTools } from '@/components/session/SessionRoutineTools'
 import { PreSessionScreen }   from '@/components/session/PreSessionScreen'
+import {
+  nextSessionSyncState,
+  type SessionSyncEvent,
+  type SessionSyncState,
+} from '@/components/session/sessionViewModel'
 import type { ProgressionItem } from '@/components/session/PreSessionScreen'
 import { saveBackup, loadBackup, clearBackup } from '@/lib/session/persistSession'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
@@ -54,6 +59,10 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
   const storeWorkoutId    = useSessionStore(s => s.workoutId)
   const startedAt         = useSessionStore(s => s.startedAt)
   const workoutNameStore  = useSessionStore(s => s.workoutName)
+  const [syncState, setSyncState] = useState<SessionSyncState>('saved-local')
+  const onSyncEvent = useCallback((event: SessionSyncEvent) => {
+    setSyncState(current => nextSessionSyncState(current, event))
+  }, [])
 
   // Pre-calcular progresiones desde la prop del servidor (antes de hidratación)
   const progressions = extractProgressions(exercises)
@@ -100,6 +109,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
       startedAt,
       exercises:   storeExercises,
     })
+    setSyncState(current => nextSessionSyncState(current, 'local-backup'))
   }, [storeExercises, isFinished, storeWorkoutId, workoutId, workoutNameStore, startedAt])
 
   // ── Conectar el ticker del rest timer ─────────────────────────────────────
@@ -124,13 +134,22 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
 
   // ── Pantalla de finalización ──────────────────────────────────────────────
   if (isFinished) {
-    return <CompletionScreen workoutId={workoutId} onClearBackup={() => clearBackup(workoutId)} />
+    return (
+      <CompletionScreen
+        workoutId={workoutId}
+        syncState={syncState}
+        onSyncEvent={onSyncEvent}
+        onClearBackup={() => clearBackup(workoutId)}
+      />
+    )
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* Header sticky */}
-      <SessionHeader onFinish={finishSession} />
+      <div data-session-sync-state={syncState}>
+        <SessionHeader onFinish={finishSession} syncState={syncState} />
+      </div>
 
       {/* Lista de ejercicios con scroll */}
       <main className="flex-1 overflow-y-auto">

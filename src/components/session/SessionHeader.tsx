@@ -10,7 +10,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { useSessionStore } from '@/store/sessionStore'
-import { SyncStatusIndicator } from '@/components/session/SyncStatusIndicator'
+import { SessionSyncStatus } from '@/components/session/SessionSyncStatus'
+import type { SessionSyncState } from '@/components/session/sessionViewModel'
 import { useBackHandler } from '@/lib/native/backHandlers'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
@@ -41,9 +42,10 @@ function formatTime(seconds: number): string {
 
 interface Props {
   onFinish: () => void
+  syncState: SessionSyncState
 }
 
-export function SessionHeader({ onFinish }: Props) {
+export function SessionHeader({ onFinish, syncState }: Props) {
   const { t } = useI18n()
   const router        = useRouter()
   const workoutName   = useSessionStore(s => s.workoutName)
@@ -98,10 +100,10 @@ export function SessionHeader({ onFinish }: Props) {
         {/* Nombre del workout + progreso */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">{workoutName}</p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <p className={cn(
               'font-display text-base font-bold leading-none tabular-nums',
-              elapsed > 0 ? 'text-indigo-400' : 'text-muted-foreground',
+              elapsed > 0 ? 'text-violet-300' : 'text-muted-foreground',
             )}>
               {formatTime(elapsed)}
             </p>
@@ -110,7 +112,7 @@ export function SessionHeader({ onFinish }: Props) {
                 · {completedSets}/{totalSets} {t('series')}
               </span>
             )}
-            <SyncStatusIndicator />
+            <SessionSyncStatus state={syncState} className="min-h-0 basis-full" />
           </div>
         </div>
 

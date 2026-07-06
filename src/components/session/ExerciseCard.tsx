@@ -1,12 +1,14 @@
 'use client'
 
-import { CheckCircle2, ChevronDown, ChevronUp, History, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronUp, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
 import { cn }    from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import { SetRow } from './SetRow'
 import { TimedSetRow } from './TimedSetRow'
 import { SessionExercisePicker } from '@/components/session/SessionExercisePicker'
+import { PreviousPerformance } from './PreviousPerformance'
+import { currentSetIndex } from './sessionViewModel'
 import { useSessionStore } from '@/store/sessionStore'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 
@@ -37,7 +39,7 @@ function StatusBadge({ status }: { status: ExerciseSession['status'] }) {
   }
   if (status === 'active') {
     return (
-      <span className="h-2 w-2 rounded-full bg-indigo-400 animate-pulse inline-block" />
+      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-violet-400 motion-reduce:animate-none" />
     )
   }
   return null
@@ -84,11 +86,12 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
 
   // Número de series completadas
   const completedSets = sets.filter(s => s.completed).length
+  const activeSetIndex = currentSetIndex(sets)
 
   return (
     <div className={cn(
       'rounded-xl border transition-all overflow-hidden',
-      isActive    && 'border-indigo-500/70 bg-indigo-500/[0.07] shadow-[0_0_0_1px_rgba(99,102,241,0.25),0_10px_30px_-12px_rgba(79,70,229,0.5)]',
+      isActive    && 'border-violet-500/70 bg-violet-500/[0.07] shadow-[0_0_0_1px_rgba(139,92,246,0.25),0_10px_30px_-12px_rgba(109,40,217,0.5)]',
       isCompleted && 'border-green-500/20 bg-green-500/5',
       isSkipped   && 'border-border/30 bg-transparent opacity-50',
       !isActive && !isCompleted && !isSkipped && 'border-border/40 bg-muted/5',
@@ -98,7 +101,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
         {/* Indicador de estado lateral */}
         <div className={cn(
           'shrink-0 w-1 h-8 rounded-full',
-          isActive    && 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]',
+          isActive    && 'bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.8)]',
           isCompleted && 'bg-green-500',
           isSkipped   && 'bg-muted-foreground/20',
           !isActive && !isCompleted && !isSkipped && 'bg-border/40',
@@ -110,7 +113,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           alt={name}
           variant="thumb"
           zoomable
-          className="h-10 w-10 shrink-0"
+          className={cn('shrink-0', isActive ? 'h-16 w-16' : 'h-10 w-10')}
         />
 
         {/* Zona de expandir/colapsar */}
@@ -122,7 +125,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           disabled={!canExpand}
           className={cn(
             'flex flex-1 items-center gap-3 rounded-lg text-left',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60',
             canExpand && 'cursor-pointer',
           )}
         >
@@ -130,8 +133,9 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
               <span className={cn(
-                'text-sm font-semibold truncate',
-                isActive    && 'text-indigo-200',
+                'font-semibold truncate',
+                isActive ? 'text-lg' : 'text-sm',
+                isActive    && 'text-violet-200',
                 isCompleted && 'text-green-300',
                 isSkipped   && 'text-muted-foreground line-through',
                 !isActive && !isCompleted && !isSkipped && 'text-foreground/80',
@@ -199,21 +203,14 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
 
           {/* Target reps */}
           {targetReps && (
-            <p className="text-xs text-indigo-300 px-1">
+            <p className="px-1 text-xs text-violet-300">
               Objetivo: {targetReps} reps · RPE {exercise.targetRpe}
             </p>
           )}
           {targetDuration && (
-            <p className="px-1 text-xs text-indigo-300">
+            <p className="px-1 text-xs text-violet-300">
               Objetivo: {Math.floor(targetDuration / 60)}:{String(targetDuration % 60).padStart(2, '0')} · RPE {exercise.targetRpe}
             </p>
-          )}
-
-          {exercise.hasLastSessionData && (
-            <div className="inline-flex items-center gap-1 rounded-md bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
-              <History className="h-3 w-3" />
-              Pesos de tu última sesión
-            </div>
           )}
 
           {weightSuggestionBasis === 'based_on_previous_logs' && suggestedWeight !== null && (
@@ -223,8 +220,10 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
             </div>
           )}
 
+          <PreviousPerformance performance={exercise.previousPerformance} />
+
           {/* Cabecera de la tabla */}
-          <div className={cn('grid gap-1.5 px-1', targetDuration ? 'grid-cols-[28px_1fr_64px_44px]' : 'grid-cols-[28px_1fr_1fr_64px_44px]')}>
+          <div className={cn('hidden gap-1.5 px-1 sm:grid', targetDuration ? 'grid-cols-[28px_1fr_112px_44px]' : 'grid-cols-[28px_1fr_1fr_112px_44px]')}>
             <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">#</span>
             {targetDuration ? (
               <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Tiempo</span>
@@ -246,6 +245,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
               data={set}
               targetSeconds={targetDuration}
               isActive={isActive}
+              isCurrent={i === activeSetIndex}
               onDurationChange={seconds => updateSetDuration(weId, i, seconds)}
               onRpeChange={rpe => selectRpe(weId, i, rpe)}
               onComplete={() => completeSet(weId, i)}
@@ -256,6 +256,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
               setNumber={i + 1}
               data={set}
               isActive={isActive}
+              isCurrent={i === activeSetIndex}
               onWeightChange={v => updateSetField(weId, i, 'weightKg', v)}
               onRepsChange={v   => updateSetField(weId, i, 'reps', v)}
               onRpeChange={rpe  => selectRpe(weId, i, rpe)}

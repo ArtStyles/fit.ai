@@ -43,20 +43,20 @@ export function RPESelector({ value, onChange, disabled }: Props) {
       <button
         type="button"
         onClick={decrement}
-        className="h-11 w-9 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-90 transition-all rounded-lg hover:bg-muted/20"
+        className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
         aria-label="Reducir RPE"
       >
         <span className="text-sm font-bold">−</span>
       </button>
 
-      <span className={cn('w-6 text-center text-sm font-bold tabular-nums', colorClass)}>
+      <span className={cn('w-5 text-center text-sm font-bold tabular-nums', colorClass)}>
         {displayed}
       </span>
 
       <button
         type="button"
         onClick={increment}
-        className="h-11 w-9 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-90 transition-all rounded-lg hover:bg-muted/20"
+        className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
         aria-label="Aumentar RPE"
       >
         <span className="text-sm font-bold">+</span>

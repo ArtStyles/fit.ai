@@ -10,6 +10,12 @@ export interface SetData {
   completed: boolean
 }
 
+export interface PreviousPerformanceData {
+  weightKg: number | null
+  reps: number | null
+  durationSeconds?: number | null
+}
+
 export type SessionExerciseSource = 'planned' | 'replacement' | 'ad_hoc'
 
 export interface SessionExerciseDraft {
@@ -50,6 +56,7 @@ export interface ExerciseSession {
   status:            'pending' | 'active' | 'completed' | 'skipped'
   expanded:          boolean
   hasLastSessionData: boolean         // true cuando pesos/reps vienen de la sesión anterior
+  previousPerformance: PreviousPerformanceData[] | null
 }
 
 export interface RestTimerState {
@@ -58,8 +65,6 @@ export interface RestTimerState {
   exerciseId:       string   // ejercicio que disparó el timer
   isRunning:        boolean
 }
-
-export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 export interface SessionState {
   // ── Datos ──────────────────────────────────────────────────────────────────
@@ -70,7 +75,6 @@ export interface SessionState {
   exercises:   ExerciseSession[]
   restTimer:   RestTimerState | null
   isFinished:  boolean
-  syncStatus:  SyncStatus
 
   // ── Acciones ───────────────────────────────────────────────────────────────
   initSession:     (workoutId: string, workoutName: string, exercises: ExerciseSession[]) => void
@@ -90,7 +94,6 @@ export interface SessionState {
   clearRestTimer:  () => void
   applyProgressions: (updates: Array<{ weId: string; weightKg: number }>) => void
   finishSession:   () => void
-  setSyncStatus:   (status: SyncStatus) => void
   clearSession:    () => void
 }
 
@@ -160,6 +163,7 @@ function buildFlexibleExercise(
     source,
     skipReason: null,
     hasLastSessionData: false,
+    previousPerformance: null,
     sets: buildInitialSets(targetSets, null, null, null, draft.targetDuration ?? original?.targetDuration ?? null),
     status: original?.status === 'active' ? 'active' : 'pending',
     expanded: original?.status === 'active',
@@ -175,7 +179,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   exercises:   [],
   restTimer:   null,
   isFinished:  false,
-  syncStatus:  'idle',
 
   // ── initSession ───────────────────────────────────────────────────────────
   initSession(workoutId, workoutName, exercises) {
@@ -193,7 +196,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       exercises:  initialExercises,
       restTimer:  null,
       isFinished: false,
-      syncStatus: 'idle',
     })
   },
 
@@ -211,10 +213,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         originalName: exercise.originalName ?? null,
         source: exercise.source ?? 'planned',
         skipReason: exercise.skipReason ?? null,
+        previousPerformance: exercise.previousPerformance ?? null,
       })),
       restTimer:  null,
       isFinished: false,
-      syncStatus: 'idle',
     })
   },
 
@@ -463,12 +465,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── finishSession ─────────────────────────────────────────────────────────
   finishSession() {
-    set({ isFinished: true, finishedAt: Date.now(), restTimer: null, syncStatus: 'idle' })
-  },
-
-  // ── setSyncStatus ─────────────────────────────────────────────────────────
-  setSyncStatus(status) {
-    set({ syncStatus: status })
+    set({ isFinished: true, finishedAt: Date.now(), restTimer: null })
   },
 
   // ── clearSession ──────────────────────────────────────────────────────────
@@ -481,7 +478,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       exercises:   [],
       restTimer:   null,
       isFinished:  false,
-      syncStatus:  'idle',
     })
   },
 }))
@@ -516,6 +512,12 @@ export function buildInitialExercises(
     source:              'planned' as const,
     skipReason:          null,
     hasLastSessionData:  !!(r.lastWeightsKg && r.lastWeightsKg.length > 0),
+    previousPerformance: Math.max(r.lastWeightsKg?.length ?? 0, r.lastReps?.length ?? 0) > 0
+      ? Array.from({ length: Math.max(r.lastWeightsKg?.length ?? 0, r.lastReps?.length ?? 0) }, (_, index) => ({
+        weightKg: r.lastWeightsKg?.[index] ?? null,
+        reps: r.lastReps?.[index] ?? null,
+      }))
+      : null,
     sets:     buildInitialSets(r.targetSets, r.suggestedWeight, r.lastWeightsKg, r.lastReps, r.targetDuration),
     status:   'pending' as const,
     expanded: false,

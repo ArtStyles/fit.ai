@@ -56,13 +56,13 @@ export function RestTimer() {
   const dashOffset = circ * (1 - progress)
 
   return (
-    <div className="fixed bottom-6 inset-x-4 z-30 pointer-events-none flex justify-center">
+    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 flex justify-center">
       <div
         className={cn(
           'pointer-events-auto',
           'flex items-center gap-4 px-5 py-3.5 rounded-2xl shadow-xl',
           'border border-border/60 bg-background/95 backdrop-blur-md',
-          'animate-in fade-in slide-in-from-bottom-4 duration-300',
+          'animate-in fade-in slide-in-from-bottom-4 duration-300 motion-reduce:animate-none',
           'transition-colors',
           isLow && 'border-red-500/50 bg-red-500/10 shadow-[0_0_28px_rgba(239,68,68,0.4)]',
         )}
@@ -87,7 +87,7 @@ export function RestTimer() {
               strokeLinecap="round"
               className={cn(
                 'transition-all',
-                isLow ? 'stroke-red-400' : 'stroke-indigo-400',
+                isLow ? 'stroke-red-400' : 'stroke-violet-400',
               )}
             />
           </svg>
@@ -109,14 +109,14 @@ export function RestTimer() {
             <button
               type="button"
               onClick={() => extendTimer(30)}
-              className="flex-1 h-11 rounded-lg border border-border/60 bg-muted/20 text-sm font-semibold text-foreground hover:bg-muted/40 transition-colors"
+              className="min-h-[44px] flex-1 rounded-lg border border-border/60 bg-muted/20 text-sm font-semibold text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
             >
               +30s
             </button>
             <button
               type="button"
               onClick={clearTimer}
-              className="flex-1 h-11 rounded-lg border border-border/60 bg-muted/20 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              className="min-h-[44px] flex-1 rounded-lg border border-border/60 bg-muted/20 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
             >
               {t('Saltar')}
             </button>
@@ -127,7 +127,7 @@ export function RestTimer() {
         <button
           type="button"
           onClick={clearTimer}
-          className="shrink-0 h-10 w-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground transition-colors"
+          className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
           aria-label={t('Cerrar timer')}
         >
           <X className="h-4 w-4" />
