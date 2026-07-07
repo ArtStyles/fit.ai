@@ -307,7 +307,6 @@ export interface Database {
       workout_plans: {
         Row: {
           id: string
-          client_session_id: string | null
           user_id: string
           name: string
           description: string | null
@@ -332,7 +331,6 @@ export interface Database {
         }
         Insert: {
           id?: string
-          client_session_id?: string | null
           user_id: string
           name: string
           description?: string | null

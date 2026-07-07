@@ -7,6 +7,12 @@ const migration = readFileSync(
 )
 const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
 
+function tableTypeBlock(tableName: string, nextTableName: string): string {
+  const block = databaseTypes.match(new RegExp(`${tableName}: \\{[\\s\\S]+?\\n\\s+${nextTableName}: \\{`))
+  expect(block, `${tableName} table type block`).not.toBeNull()
+  return block![0]
+}
+
 describe('session save idempotency migration', () => {
   it('adds an existing-row-compatible idempotency key and partial unique index', () => {
     expect(migration).toContain('ADD COLUMN client_session_id UUID')
@@ -26,11 +32,20 @@ describe('session save idempotency migration', () => {
     expect(migration).not.toMatch(/EXCEPTION\s+WHEN\s+OTHERS/i)
   })
 
-  it('updates generated table and RPC types', () => {
-    expect(databaseTypes.match(/client_session_id/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+  it('scopes generated idempotency table fields to progress logs', () => {
+    const progressLogs = tableTypeBlock('progress_logs', 'exercise_logs')
+    const workoutPlans = tableTypeBlock('workout_plans', 'workouts')
+
+    expect(progressLogs.match(/client_session_id/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+    expect(progressLogs.match(/session_result_snapshot/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+    expect(workoutPlans).not.toContain('client_session_id')
+    expect(workoutPlans).not.toContain('session_result_snapshot')
+    expect(migration).not.toMatch(/ALTER TABLE public\.workout_plans[\s\S]+client_session_id/i)
+  })
+
+  it('updates generated RPC types', () => {
     expect(databaseTypes).toContain('save_session_log_atomic:')
     expect(databaseTypes).toContain('p_client_session_id: string')
     expect(databaseTypes).toContain('p_result_snapshot: Json')
-    expect(databaseTypes.match(/session_result_snapshot/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
   })
 })

@@ -5,10 +5,12 @@ const sessionClient = readFileSync(new URL('../../../app/(app)/session/[workoutI
 const sessionPage = readFileSync(new URL('../../../app/(app)/session/[workoutId]/page.tsx', import.meta.url), 'utf8')
 const exerciseCard = readFileSync(new URL('../ExerciseCard.tsx', import.meta.url), 'utf8')
 const setRow = readFileSync(new URL('../SetRow.tsx', import.meta.url), 'utf8')
+const timedSetRow = readFileSync(new URL('../TimedSetRow.tsx', import.meta.url), 'utf8')
 const restTimer = readFileSync(new URL('../RestTimer.tsx', import.meta.url), 'utf8')
 const completion = readFileSync(new URL('../CompletionScreen.tsx', import.meta.url), 'utf8')
 const syncStatus = readFileSync(new URL('../SessionSyncStatus.tsx', import.meta.url), 'utf8')
 const sessionHeader = readFileSync(new URL('../SessionHeader.tsx', import.meta.url), 'utf8')
+const rpeSelector = readFileSync(new URL('../RPESelector.tsx', import.meta.url), 'utf8')
 const store = readFileSync(new URL('../../../store/sessionStore.ts', import.meta.url), 'utf8')
 const persistence = readFileSync(new URL('../../../lib/session/persistSession.ts', import.meta.url), 'utf8')
 
@@ -78,6 +80,14 @@ describe('active session wiring contracts', () => {
     expect(syncStatus).toMatch(/const Icon =[\s\S]+return \([\s\S]+<div/)
     expect(syncStatus).not.toMatch(/if \(state === 'error'\)[\s\S]+className,[\s\S]+aria-label/)
     expect(sessionHeader).not.toContain('className="min-h-0 basis-full"')
+  })
+
+  it('semantically disables inactive and completed RPE controls before handlers can fire', () => {
+    expect(setRow).toContain('disabled={!isActive || completed}')
+    expect(timedSetRow).toContain('disabled={!isActive || data.completed}')
+    expect(rpeSelector.match(/disabled=\{disabled\}/g)).toHaveLength(2)
+    expect(rpeSelector).toMatch(/function decrement\(\) \{[\s\S]+if \(disabled\) return[\s\S]+onChange\(next\)/)
+    expect(rpeSelector).toMatch(/function increment\(\) \{[\s\S]+if \(disabled\) return[\s\S]+onChange\(next\)/)
   })
 
   it('orders completion sections and keeps navigation independent of motion', () => {

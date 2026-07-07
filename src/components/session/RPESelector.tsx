@@ -28,11 +28,13 @@ export function RPESelector({ value, onChange, disabled }: Props) {
   const colorClass = value ? (RPE_COLORS[value] ?? 'text-foreground') : 'text-muted-foreground'
 
   function decrement() {
+    if (disabled) return
     const next = Math.max(1, (value ?? 7) - 1)
     onChange(next)
   }
 
   function increment() {
+    if (disabled) return
     const next = Math.min(10, (value ?? 7) + 1)
     onChange(next)
   }
@@ -45,6 +47,7 @@ export function RPESelector({ value, onChange, disabled }: Props) {
       <button
         type="button"
         onClick={decrement}
+        disabled={disabled}
         className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
         aria-label={t('Reducir RPE')}
       >
@@ -58,6 +61,7 @@ export function RPESelector({ value, onChange, disabled }: Props) {
       <button
         type="button"
         onClick={increment}
+        disabled={disabled}
         className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 motion-reduce:transition-none"
         aria-label={t('Aumentar RPE')}
       >
