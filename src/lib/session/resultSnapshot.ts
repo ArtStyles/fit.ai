@@ -15,47 +15,102 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-function isNullableNumber(value: unknown): value is number | null {
-  return value === null || isFiniteNumber(value)
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const actualKeys = Object.keys(value)
+  return actualKeys.length === keys.length && actualKeys.every(key => keys.includes(key))
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) > 0
+}
+
+function isNullablePositiveInteger(value: unknown): value is number | null {
+  return value === null || isPositiveInteger(value)
+}
+
+function isNullableNonNegativeNumber(value: unknown): value is number | null {
+  return value === null || (isFiniteNumber(value) && value >= 0)
 }
 
 function isPersonalRecord(value: unknown): value is PRRecord {
   if (!isObject(value)) return false
-  if (typeof value.exerciseName !== 'string' || !isFiniteNumber(value.weightKg)) return false
-  if (typeof value.kind !== 'string' || !['weight', 'e1rm', 'reps'].includes(value.kind)) return false
-  if (value.e1rmKg !== undefined && !isFiniteNumber(value.e1rmKg)) return false
-  if (value.reps !== undefined && !isFiniteNumber(value.reps)) return false
-  return true
+  if (typeof value.exerciseName !== 'string' || value.exerciseName.trim() === '') return false
+
+  if (value.kind === 'weight') {
+    return hasExactKeys(value, ['exerciseName', 'weightKg', 'kind']) &&
+      isFiniteNumber(value.weightKg) && value.weightKg > 0
+  }
+
+  if (value.kind === 'e1rm') {
+    return hasExactKeys(value, ['exerciseName', 'weightKg', 'kind', 'e1rmKg']) &&
+      isFiniteNumber(value.weightKg) && value.weightKg > 0 &&
+      isFiniteNumber(value.e1rmKg) && value.e1rmKg > 0
+  }
+
+  if (value.kind === 'reps') {
+    return hasExactKeys(value, ['exerciseName', 'weightKg', 'kind', 'reps']) &&
+      value.weightKg === 0 && isPositiveInteger(value.reps)
+  }
+
+  return false
 }
 
 function isProgressionSuggestion(value: unknown): value is ProgressionSuggestion {
   if (!isObject(value)) return false
 
-  return (
-    typeof value.exerciseId === 'string' &&
-    typeof value.exerciseName === 'string' &&
+  const requiredKeys = [
+    'exerciseId',
+    'exerciseName',
+    'progressionType',
+    'currentWeightKg',
+    'nextWeightKg',
+    'currentTargetReps',
+    'nextTargetReps',
+    'action',
+    'reason',
+    'confidence',
+  ]
+  const exactShape = hasExactKeys(value, requiredKeys) ||
+    hasExactKeys(value, [...requiredKeys, 'stalled'])
+
+  if (!exactShape) return false
+
+  const commonFieldsValid = (
+    typeof value.exerciseId === 'string' && value.exerciseId.trim() !== '' &&
+    typeof value.exerciseName === 'string' && value.exerciseName.trim() !== '' &&
     typeof value.progressionType === 'string' &&
     ['weight', 'reps'].includes(value.progressionType) &&
-    isNullableNumber(value.currentWeightKg) &&
-    isNullableNumber(value.nextWeightKg) &&
-    isNullableNumber(value.currentTargetReps) &&
-    isNullableNumber(value.nextTargetReps) &&
+    isNullableNonNegativeNumber(value.currentWeightKg) &&
+    isNullableNonNegativeNumber(value.nextWeightKg) &&
+    isNullablePositiveInteger(value.currentTargetReps) &&
+    isNullablePositiveInteger(value.nextTargetReps) &&
     typeof value.action === 'string' &&
     ['increase', 'hold', 'decrease', 'baseline'].includes(value.action) &&
-    typeof value.reason === 'string' &&
+    typeof value.reason === 'string' && value.reason.trim() !== '' &&
     typeof value.confidence === 'string' &&
     ['low', 'medium', 'high'].includes(value.confidence) &&
     (value.stalled === undefined || typeof value.stalled === 'boolean')
   )
+
+  if (!commonFieldsValid) return false
+
+  if (value.progressionType === 'weight') {
+    return value.currentTargetReps === null && value.nextTargetReps === null
+  }
+
+  return value.currentWeightKg === null && value.nextWeightKg === null &&
+    isPositiveInteger(value.currentTargetReps) && isPositiveInteger(value.nextTargetReps)
 }
 
-export function decodeSessionResultSnapshot(value: unknown): SessionResultSnapshot | null {
-  if (!isObject(value) || value.version !== 1) return null
+export function parseSessionResultSnapshot(value: unknown): SessionResultSnapshot | null {
+  if (!isObject(value) || !hasExactKeys(value, ['version', 'prs', 'progressions']) || value.version !== 1) return null
   if (!Array.isArray(value.prs) || !value.prs.every(isPersonalRecord)) return null
   if (!Array.isArray(value.progressions) || !value.progressions.every(isProgressionSuggestion)) return null
 
   return value as unknown as SessionResultSnapshot
 }
+
+export const decodeSessionResultSnapshot = parseSessionResultSnapshot
 
 export function createSessionResultSnapshot(
   prs: PRRecord[],

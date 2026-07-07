@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createClient } from '@/lib/supabase/server'
-import { decodeSessionResultSnapshot } from '@/lib/session/resultSnapshot'
+import { parseSessionResultSnapshot } from '@/lib/session/resultSnapshot'
 import { saveSession, type SaveSessionPayload } from '../saveSession'
 
 const createClientMock = createClient as unknown as Mock
@@ -51,6 +51,43 @@ const payload: SaveSessionPayload = {
   finishedAt: Date.parse('2026-05-27T16:00:00.000Z'),
   moodRating: null,
   exercises: [],
+}
+
+const fallbackPayload: SaveSessionPayload = {
+  ...payload,
+  exercises: [{
+    workoutExerciseId: 'session-exercise',
+    exerciseId: '22222222-2222-4222-8222-222222222222',
+    name: 'Press Banca',
+    isCompound: false,
+    targetSets: 1,
+    targetReps: 8,
+    targetRpe: 7,
+    source: 'ad_hoc',
+    sets: [{ weightKg: '10', reps: '8', rpe: 7, completed: true }],
+    status: 'completed',
+  }],
+}
+
+const winnerId = '55555555-5555-4555-8555-555555555555'
+const winnerCompletedAt = '2026-05-27T16:00:00.000Z'
+
+function historicalRow({
+  id,
+  completedAt,
+  weightKg,
+}: {
+  id: string
+  completedAt: string
+  weightKg: number
+}) {
+  return {
+    exercise_id: fallbackPayload.exercises[0].exerciseId,
+    weights_kg: [weightKg],
+    reps_completed: [8],
+    progress_log_id: id,
+    progress_logs: { user_id: 'user-1', completed_at: completedAt },
+  }
 }
 
 const storedSnapshot = {
@@ -265,8 +302,8 @@ describe('saveSession idempotency', () => {
   })
 
   it('validates a stored presentation snapshot', () => {
-    expect(decodeSessionResultSnapshot(storedSnapshot)).toEqual(storedSnapshot)
-    expect(decodeSessionResultSnapshot({ version: 1, prs: 'bad', progressions: [] })).toBeNull()
+    expect(parseSessionResultSnapshot(storedSnapshot)).toEqual(storedSnapshot)
+    expect(parseSessionResultSnapshot({ version: 1, prs: 'bad', progressions: [] })).toBeNull()
   })
 
   it('returns the stored presentation snapshot for the normal winner', async () => {
@@ -342,41 +379,141 @@ describe('saveSession idempotency', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
   })
 
+  it('reconstructs an invalid duplicate-race snapshot from history strictly before the winner', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        { data: null },
+        { data: [] },
+        { data: [] },
+        { data: { id: winnerId, completed_at: winnerCompletedAt, session_result_snapshot: null } },
+        { data: null, error: null },
+      ],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [{ data: workout }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      exercise_logs: [
+        { data: [] },
+        { data: [
+          historicalRow({
+            id: '11111111-1111-4111-8111-111111111111',
+            completedAt: '2026-05-27T15:00:00.000Z',
+            weightKg: 8,
+          }),
+          historicalRow({ id: winnerId, completedAt: winnerCompletedAt, weightKg: 10 }),
+          historicalRow({
+            id: '88888888-8888-4888-8888-888888888888',
+            completedAt: winnerCompletedAt,
+            weightKg: 20,
+          }),
+          historicalRow({
+            id: '99999999-9999-4999-8999-999999999999',
+            completedAt: '2026-05-28T16:00:00.000Z',
+            weightKg: 30,
+          }),
+        ] },
+      ],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: [{ progress_log_id: winnerId, inserted: false, result_snapshot: null }],
+      error: null,
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: winnerId,
+      prs: [{ exerciseName: 'Press Banca', weightKg: 10, kind: 'weight' }],
+    })
+
+    const historyQuery = supabase.from.mock.results[8].value
+    expect(historyQuery.lt).toHaveBeenCalledWith('progress_logs.completed_at', winnerCompletedAt)
+    expect(historyQuery.neq).toHaveBeenCalledWith('progress_log_id', winnerId)
+
+    const backfillQuery = supabase.from.mock.results[9].value
+    expect(backfillQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      session_result_snapshot: expect.objectContaining({ version: 1 }),
+    }))
+    expect(backfillQuery.eq).toHaveBeenCalledWith('id', winnerId)
+    expect(backfillQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(backfillQuery.eq).toHaveBeenCalledWith('client_session_id', payload.clientSessionId)
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
+  })
+
   it.each([
     ['missing', null],
     ['invalid', { version: 1, prs: 'bad', progressions: [] }],
-  ])('reconstructs %s stored results while excluding the winning log', async (_label, resultSnapshot) => {
-    const fallbackPayload: SaveSessionPayload = {
-      ...payload,
-      exercises: [{
-        workoutExerciseId: 'session-exercise',
-        exerciseId: '22222222-2222-4222-8222-222222222222',
-        name: 'Press Banca',
-        isCompound: false,
-        targetSets: 1,
-        targetReps: 8,
-        targetRpe: 7,
-        source: 'ad_hoc',
-        sets: [{ weightKg: '10', reps: '8', rpe: 7, completed: true }],
-        status: 'completed',
-      }],
-    }
+  ])('reconstructs and backfills %s results using only history strictly before the winner', async (_label, resultSnapshot) => {
     const supabase: any = createSupabaseMock({
-      progress_logs: [{ data: { id: 'log-existing', session_result_snapshot: resultSnapshot } }],
-      exercise_logs: [{ data: [] }],
+      progress_logs: [
+        { data: { id: winnerId, session_result_snapshot: resultSnapshot } },
+        { data: { id: winnerId, completed_at: winnerCompletedAt, session_result_snapshot: resultSnapshot } },
+        { data: null, error: null },
+      ],
+      exercise_logs: [{ data: [
+        historicalRow({
+          id: '11111111-1111-4111-8111-111111111111',
+          completedAt: '2026-05-27T15:00:00.000Z',
+          weightKg: 8,
+        }),
+        historicalRow({ id: winnerId, completedAt: winnerCompletedAt, weightKg: 10 }),
+        historicalRow({
+          id: '88888888-8888-4888-8888-888888888888',
+          completedAt: winnerCompletedAt,
+          weightKg: 20,
+        }),
+        historicalRow({
+          id: '99999999-9999-4999-8999-999999999999',
+          completedAt: '2026-05-28T16:00:00.000Z',
+          weightKg: 30,
+        }),
+      ] }],
     })
     createClientMock.mockResolvedValue(supabase)
 
     const result = await saveSession(fallbackPayload)
     expect(result).toMatchObject({
       success: true,
-      progressLogId: 'log-existing',
+      progressLogId: winnerId,
       prs: [{ exerciseName: 'Press Banca', weightKg: 10, kind: 'weight' }],
     })
     expect(result.progressions).toHaveLength(1)
-    const historyQuery = supabase.from.mock.results[1].value
-    expect(historyQuery.neq).toHaveBeenCalledWith('progress_log_id', 'log-existing')
+
+    const historyQuery = supabase.from.mock.results[2].value
+    expect(historyQuery.lt).toHaveBeenCalledWith('progress_logs.completed_at', winnerCompletedAt)
+    expect(historyQuery.neq).toHaveBeenCalledWith('progress_log_id', winnerId)
+
+    const ownerQuery = supabase.from.mock.results[1].value
+    expect(ownerQuery.eq).toHaveBeenCalledWith('id', winnerId)
+    expect(ownerQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(ownerQuery.eq).toHaveBeenCalledWith('client_session_id', payload.clientSessionId)
+
+    const backfillQuery = supabase.from.mock.results[3].value
+    expect(backfillQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      session_result_snapshot: expect.objectContaining({ version: 1 }),
+    }))
+    expect(backfillQuery.eq).toHaveBeenCalledWith('id', winnerId)
+    expect(backfillQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(backfillQuery.eq).toHaveBeenCalledWith('client_session_id', payload.clientSessionId)
     expect(supabase.from).not.toHaveBeenCalledWith('workouts')
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
+  })
+
+  it.each([null, 'not-a-date'])('fails closed when the authoritative timestamp is %s', async completedAt => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        { data: { id: winnerId, session_result_snapshot: null } },
+        { data: { id: winnerId, completed_at: completedAt, session_result_snapshot: null } },
+      ],
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
+      success: false,
+      progressLogId: null,
+      error: expect.stringContaining('resultado'),
+    })
+    expect(supabase.from).not.toHaveBeenCalledWith('exercise_logs')
+    expect(supabase.from.mock.calls.filter(([table]: [string]) => table === 'progress_logs')).toHaveLength(2)
   })
 
   it('uses an atomic boundary so a detail failure can retry the same idempotency key', async () => {

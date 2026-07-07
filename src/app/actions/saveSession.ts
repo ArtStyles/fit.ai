@@ -11,7 +11,8 @@ import type { PRRecord } from '@/lib/progression/records'
 import { zipPreviousPerformanceRows } from '@/components/session/sessionViewModel'
 import {
   createSessionResultSnapshot,
-  decodeSessionResultSnapshot,
+  parseSessionResultSnapshot,
+  type SessionResultSnapshot,
 } from '@/lib/session/resultSnapshot'
 
 export type { PRRecord } from '@/lib/progression/records'
@@ -99,7 +100,7 @@ type ExerciseMetaRow = {
   exercise: { is_compound: boolean } | { is_compound: boolean }[] | null
 }
 
-type HistoricalLogRelation = { user_id: string; completed_at: string }
+type HistoricalLogRelation = { user_id: string | null; completed_at: string | null }
 
 type HistoricalLogRow = {
   exercise_id: string
@@ -114,9 +115,48 @@ function getExerciseRelation(row: ExerciseMetaRow): { is_compound: boolean } | n
   return row.exercise
 }
 
+function getLogRelation(row: HistoricalLogRow): HistoricalLogRelation | null {
+  if (Array.isArray(row.progress_logs)) return row.progress_logs[0] ?? null
+  return row.progress_logs ?? null
+}
+
 function getLogCompletedAt(row: HistoricalLogRow): string {
-  if (Array.isArray(row.progress_logs)) return row.progress_logs[0]?.completed_at ?? ''
-  return row.progress_logs?.completed_at ?? ''
+  return getLogRelation(row)?.completed_at ?? ''
+}
+
+function isValidTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && Number.isFinite(Date.parse(value))
+}
+
+function normalizeTimestamp(value: unknown): string | null {
+  if (!isValidTimestamp(value)) return null
+  return new Date(value).toISOString()
+}
+
+function isStrictlyBeforeTimestamp(value: unknown, boundaryIso: string): boolean {
+  if (!isValidTimestamp(value)) return false
+  return Date.parse(value) < Date.parse(boundaryIso)
+}
+
+type HistoryBoundary = {
+  progressLogId: string
+  completedAt: string
+}
+
+function deterministicHistoryRows(
+  rows: HistoricalLogRow[],
+  userId: string,
+  boundary: HistoryBoundary | null,
+): HistoricalLogRow[] {
+  return rows.filter(row => {
+    const relation = getLogRelation(row)
+    if (relation?.user_id !== userId) return false
+
+    if (!boundary) return true
+    if (row.progress_log_id === boundary.progressLogId) return false
+
+    return isStrictlyBeforeTimestamp(relation.completed_at, boundary.completedAt)
+  })
 }
 
 /** Peso máximo por sesión previa, de la más reciente a la más antigua. */
@@ -164,11 +204,21 @@ type SessionOutcome = {
   exerciseLogs: ExerciseLogPayload[]
 }
 
+const RESULT_RECOVERY_ERROR = 'No se pudo reconstruir el resultado guardado de la sesión.'
+
+function snapshotToSessionOutcome(snapshot: SessionResultSnapshot): SessionOutcome {
+  return {
+    prs: snapshot.prs,
+    progressions: snapshot.progressions,
+    exerciseLogs: [],
+  }
+}
+
 async function deriveSessionOutcome(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   payload: SaveSessionPayload,
-  excludedProgressLogId: string | null = null,
+  historyBoundary: HistoryBoundary | null = null,
 ): Promise<SessionOutcome> {
   const workoutExerciseIds = payload.exercises
     .filter(ex => (ex.source ?? 'planned') === 'planned' && isUuid(ex.workoutExerciseId))
@@ -185,8 +235,10 @@ async function deriveSessionOutcome(
       .in('exercise_id', exerciseIds)
       .eq('progress_logs.user_id', userId)
 
-    if (excludedProgressLogId) {
-      historyQuery = historyQuery.neq('progress_log_id', excludedProgressLogId)
+    if (historyBoundary) {
+      historyQuery = historyQuery
+        .neq('progress_log_id', historyBoundary.progressLogId)
+        .lt('progress_logs.completed_at', historyBoundary.completedAt)
     }
     historyPromise = historyQuery as Promise<{ data: HistoricalLogRow[] | null }>
   }
@@ -210,7 +262,7 @@ async function deriveSessionOutcome(
   ])
 
   const metadataByWorkoutExercise = new Map((metaRows ?? []).map(row => [row.id, row]))
-  const historyByExercise = groupByExerciseId(historyRows ?? [])
+  const historyByExercise = groupByExerciseId(deterministicHistoryRows(historyRows ?? [], userId, historyBoundary))
   const exercisesWithData = payload.exercises.filter(ex =>
     ex.sets.some(set => set.completed) || (ex.status === 'skipped' && Boolean(ex.skipReason)),
   )
@@ -346,6 +398,80 @@ async function updateActivePlanTargets(
   }
 }
 
+type AuthoritativeSessionRow = {
+  id: string
+  completed_at: unknown
+  session_result_snapshot: unknown
+}
+
+type RecoveryResult =
+  | { success: true; outcome: SessionOutcome }
+  | { success: false; error: string }
+
+async function recoverLegacySessionOutcome(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  payload: SaveSessionPayload,
+  progressLogId: string,
+): Promise<RecoveryResult> {
+  const { data: authoritativeSession } = await (supabase
+    .from('progress_logs') as any)
+    .select('id, completed_at, session_result_snapshot')
+    .eq('id', progressLogId)
+    .eq('user_id', userId)
+    .eq('client_session_id', payload.clientSessionId)
+    .maybeSingle() as { data: AuthoritativeSessionRow | null }
+
+  if (!authoritativeSession || authoritativeSession.id !== progressLogId) {
+    return { success: false, error: RESULT_RECOVERY_ERROR }
+  }
+
+  const storedResult = parseSessionResultSnapshot(authoritativeSession.session_result_snapshot)
+  if (storedResult) {
+    return { success: true, outcome: snapshotToSessionOutcome(storedResult) }
+  }
+
+  const completedAt = normalizeTimestamp(authoritativeSession.completed_at)
+  if (!completedAt) {
+    return { success: false, error: RESULT_RECOVERY_ERROR }
+  }
+
+  const outcome = await deriveSessionOutcome(
+    supabase,
+    userId,
+    payload,
+    { progressLogId, completedAt },
+  )
+  const snapshot = parseSessionResultSnapshot(createSessionResultSnapshot(
+    outcome.prs,
+    outcome.progressions,
+  ))
+
+  if (!snapshot) {
+    return { success: false, error: RESULT_RECOVERY_ERROR }
+  }
+
+  const { error } = await ((supabase
+    .from('progress_logs') as any)
+    .update({ session_result_snapshot: snapshot })
+    .eq('id', progressLogId)
+    .eq('user_id', userId)
+    .eq('client_session_id', payload.clientSessionId)) as { error: { message: string } | null }
+
+  if (error) {
+    console.error('[saveSession] legacy result snapshot backfill failed:', error)
+  }
+
+  return {
+    success: true,
+    outcome: {
+      ...outcome,
+      prs: snapshot.prs,
+      progressions: snapshot.progressions,
+    },
+  }
+}
+
 export async function saveSession(
   payload: SaveSessionPayload,
 ): Promise<SaveSessionResult> {
@@ -379,19 +505,26 @@ export async function saveSession(
     .maybeSingle() as { data: { id: string; session_result_snapshot: unknown } | null }
 
   if (existingSession) {
-    const storedResult = decodeSessionResultSnapshot(existingSession.session_result_snapshot)
-    const outcome = storedResult ?? await deriveSessionOutcome(
-      supabase,
-      user.id,
-      payload,
-      existingSession.id,
-    )
+    const storedResult = parseSessionResultSnapshot(existingSession.session_result_snapshot)
+    const recoveredResult = storedResult
+      ? { success: true as const, outcome: snapshotToSessionOutcome(storedResult) }
+      : await recoverLegacySessionOutcome(supabase, user.id, payload, existingSession.id)
+
+    if (!recoveredResult.success) {
+      return {
+        success: false,
+        progressLogId: null,
+        prs: [],
+        progressions: [],
+        error: recoveredResult.error,
+      }
+    }
 
     return {
       success: true,
       progressLogId: existingSession.id,
-      prs: outcome.prs,
-      progressions: outcome.progressions,
+      prs: recoveredResult.outcome.prs,
+      progressions: recoveredResult.outcome.progressions,
     }
   }
 
@@ -461,22 +594,29 @@ export async function saveSession(
     }
   }
 
-  const storedResult = decodeSessionResultSnapshot(persisted.result_snapshot)
-  const outcome = storedResult ?? await deriveSessionOutcome(
-    supabase,
-    user.id,
-    payload,
-    persisted.progress_log_id,
-  )
+  const storedResult = parseSessionResultSnapshot(persisted.result_snapshot)
+  const recoveredResult = storedResult
+    ? { success: true as const, outcome: snapshotToSessionOutcome(storedResult) }
+    : await recoverLegacySessionOutcome(supabase, user.id, payload, persisted.progress_log_id)
+
+  if (!recoveredResult.success) {
+    return {
+      success: false,
+      progressLogId: null,
+      prs: [],
+      progressions: [],
+      error: recoveredResult.error,
+    }
+  }
 
   if (persisted.inserted) {
-    await updateActivePlanTargets(supabase, user.id, payload.workoutId, outcome.progressions)
+    await updateActivePlanTargets(supabase, user.id, payload.workoutId, recoveredResult.outcome.progressions)
   }
 
   return {
     success: true,
     progressLogId: persisted.progress_log_id,
-    prs: outcome.prs,
-    progressions: outcome.progressions,
+    prs: recoveredResult.outcome.prs,
+    progressions: recoveredResult.outcome.progressions,
   }
 }
