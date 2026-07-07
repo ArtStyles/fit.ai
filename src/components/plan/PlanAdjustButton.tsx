@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, ChevronRight, Send, Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useToast } from '@/components/feedback/ToastProvider'
+import { useI18n } from '@/components/i18n/I18nProvider'
 import { applyPlanAdjustment, suggestPlanAdjustment } from '@/app/actions/adjustPlan'
 import type { PlanAdjustmentIntent } from '@/lib/training-engine'
 import { AssistantSuggestion } from './AssistantSuggestion'
@@ -24,6 +25,7 @@ const QUICK_REQUESTS = [
 export function PlanAdjustButton({ planId }: Props) {
   const router = useRouter()
   const { showToast } = useToast()
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [request, setRequest] = useState('')
   const [suggestion, setSuggestion] = useState<string | null>(null)
@@ -95,7 +97,7 @@ export function PlanAdjustButton({ planId }: Props) {
         className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-violet-500/30 bg-violet-500/5 px-4 text-sm font-semibold text-violet-200 transition-colors hover:bg-violet-500/10"
       >
         <Sparkles className="h-4 w-4" />
-        Ajustar plan semanal
+        {t('Pedir ajuste al coach')}
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -103,7 +105,7 @@ export function PlanAdjustButton({ planId }: Props) {
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-sm text-white">
               <Sparkles className="h-4 w-4 text-violet-400" />
-              Ajustar todo el plan semanal
+              {t('Pedir ajuste al coach para toda la semana')}
             </DialogTitle>
           </DialogHeader>
 

@@ -6,6 +6,7 @@ import { GripVertical, PencilLine, Repeat2, Trash2, TrendingUp } from 'lucide-re
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LongPressMenu, type LongPressAction } from '@/components/ui'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
+import { useI18n } from '@/components/i18n/I18nProvider'
 import {
   reorderWorkoutExercises,
   removeWorkoutExercise,
@@ -48,12 +49,12 @@ function getReplacementCandidates(current: PlanExerciseOption | null, options: P
     .slice(0, 4)
     .map(i => i.o)
 }
-function formatExerciseDetail(row: PlanWorkoutExerciseRow): string {
+function formatExerciseDetail(row: PlanWorkoutExerciseRow, t: (source: string) => string): string {
   return [
     row.sets && row.reps ? `${row.sets}x${row.reps}` : null,
     row.weight_kg !== null ? `${row.weight_kg} kg` : null,
     row.target_rpe ? `RPE ${row.target_rpe}` : null,
-    row.rest_seconds !== null ? `${row.rest_seconds}s descanso` : null,
+    row.rest_seconds !== null ? `${row.rest_seconds}s ${t('descanso')}` : null,
   ].filter(Boolean).join(' · ')
 }
 function formatMuscles(groups: string[] | null | undefined): string | null {
@@ -71,17 +72,19 @@ function HiddenFields({ planId, workoutExerciseId }: { planId: string; workoutEx
 }
 
 function PrescriptionFields({ row }: { row?: PlanWorkoutExerciseRow }) {
+  const { t } = useI18n()
+
   return (
     <div className="grid grid-cols-2 gap-3">
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Series</span>
+      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Series')}</span>
         <input name="sets" type="number" min={1} max={12} defaultValue={row?.sets ?? 3} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Reps</span>
+      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Reps')}</span>
         <input name="reps" type="number" min={1} max={100} defaultValue={row?.reps ?? 10} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Peso kg</span>
-        <input name="weightKg" type="number" min={0} step={0.25} defaultValue={row?.weight_kg ?? ''} placeholder="Opcional" className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Descanso seg.</span>
+      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Peso kg')}</span>
+        <input name="weightKg" type="number" min={0} step={0.25} defaultValue={row?.weight_kg ?? ''} placeholder={t('Opcional')} className={inputClass} /></label>
+      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Descanso seg.')}</span>
         <input name="restSeconds" type="number" min={0} max={600} defaultValue={row?.rest_seconds ?? 60} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">RPE objetivo</span>
+      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('RPE objetivo')}</span>
         <input name="targetRpe" type="number" min={1} max={10} defaultValue={row?.target_rpe ?? 8} className={inputClass} /></label>
     </div>
   )
@@ -95,6 +98,7 @@ export function WorkoutExerciseManager({
   exercises: PlanWorkoutExerciseRow[]
   exerciseOptions: PlanExerciseOption[]
 }) {
+  const { t } = useI18n()
   const [order, setOrder] = useState<PlanWorkoutExerciseRow[]>(
     [...exercises].sort((a, b) => a.order_index - b.order_index),
   )
@@ -121,7 +125,7 @@ export function WorkoutExerciseManager({
   if (order.length === 0) {
     return (
       <div className="mt-4 rounded-xl border border-dashed border-border/60 bg-background/40 p-4 text-sm text-muted-foreground">
-        Este entrenamiento todavía no tiene ejercicios. Agrega el primero desde el catálogo.
+        {t('Este entrenamiento todavía no tiene ejercicios. Agrega el primero desde el catálogo.')}
       </div>
     )
   }
@@ -145,18 +149,18 @@ export function WorkoutExerciseManager({
       <Dialog open={dialog?.kind === 'adjust'} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
-            <DialogTitle className="text-base text-white">Ajustar series y carga</DialogTitle>
+            <DialogTitle className="text-base text-white">{t('Editar detalles')}</DialogTitle>
           </DialogHeader>
           {dialog?.kind === 'adjust' && (
             <form action={updateWorkoutExercise} className="space-y-3 p-5">
               <HiddenFields planId={planId} workoutExerciseId={dialog.row.id} />
               <PrescriptionFields row={dialog.row} />
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Notas</span>
+                <span className="text-xs font-medium text-muted-foreground">{t('Notas')}</span>
                 <textarea name="notes" defaultValue={dialog.row.notes ?? ''} rows={2}
-                  placeholder="Ej. bajar rango si molesta el hombro" className={textareaClass} />
+                  placeholder={t('Ej. bajar rango si necesitas ajustar técnica o rango')} className={textareaClass} />
               </label>
-              <SubmitButton label="Guardar ajustes" pendingLabel="Guardando ajustes"
+              <SubmitButton label={t('Guardar detalles')} pendingLabel={t('Guardando detalles')}
                 className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600" />
             </form>
           )}
@@ -166,7 +170,7 @@ export function WorkoutExerciseManager({
       <Dialog open={dialog?.kind === 'replace'} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
-            <DialogTitle className="text-base text-white">Cambiar ejercicio</DialogTitle>
+            <DialogTitle className="text-base text-white">{t('Reemplazar ejercicio')}</DialogTitle>
           </DialogHeader>
           {dialog?.kind === 'replace' && (() => {
             const candidates = getReplacementCandidates(getExercise(dialog.row), exerciseOptions)
@@ -174,15 +178,15 @@ export function WorkoutExerciseManager({
               <div className="grid gap-2 p-5">
                 {candidates.length === 0 && (
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    No encontramos alternativas cercanas. Puedes agregar otro ejercicio y quitar este.
+                    {t('No encontramos alternativas cercanas. Puedes agregar otro ejercicio y quitar este.')}
                   </p>
                 )}
                 {candidates.map(c => (
                   <form key={c.id} action={replaceWorkoutExercise}>
                     <HiddenFields planId={planId} workoutExerciseId={dialog.row.id} />
                     <input type="hidden" name="exerciseId" value={c.id} />
-                    <SubmitButton label={c.name} pendingLabel="Cambiando" variant="outline"
-                      className="h-auto min-h-10 w-full justify-start whitespace-normal border-border/60 bg-muted/10 px-3 py-2 text-left text-xs text-foreground hover:bg-muted/20">
+                    <SubmitButton label={c.name} pendingLabel={t('Cambiando')} variant="outline"
+                      className="h-auto min-h-11 w-full justify-start whitespace-normal border-border/60 bg-muted/10 px-3 py-2 text-left text-xs text-foreground hover:bg-muted/20">
                       <Repeat2 className="mr-2 h-3.5 w-3.5 shrink-0 text-violet-300" />
                       <span>{c.name}
                         {formatMuscles(c.muscle_groups) && (
@@ -210,24 +214,25 @@ function ExerciseRow({
   onReplace: () => void
   onRemove: () => void
 }) {
+  const { t } = useI18n()
   const dragControls = useDragControls()
   const exercise = getExercise(row)
-  const detail = formatExerciseDetail(row)
+  const detail = formatExerciseDetail(row, t)
   const muscleLabel = formatMuscles(exercise?.muscle_groups)
 
   const actions: LongPressAction[] = [
-    { id: 'adjust', label: 'Ajustar series y carga', icon: PencilLine, onSelect: onAdjust },
-    { id: 'replace', label: 'Cambiar ejercicio', icon: Repeat2, onSelect: onReplace },
-    { id: 'remove', label: 'Quitar', icon: Trash2, variant: 'danger', onSelect: onRemove },
+    { id: 'adjust', label: t('Editar detalles'), icon: PencilLine, onSelect: onAdjust },
+    { id: 'replace', label: t('Reemplazar ejercicio'), icon: Repeat2, onSelect: onReplace },
+    { id: 'remove', label: t('Quitar'), icon: Trash2, variant: 'danger', onSelect: onRemove },
   ]
 
   return (
     <Reorder.Item value={row} dragListener={false} dragControls={dragControls}>
-      <LongPressMenu actions={actions} label={`${exercise?.name ?? 'Ejercicio'}`}>
+      <LongPressMenu actions={actions} label={`${exercise?.name ?? t('Ejercicio')}`}>
         <div className="flex items-start gap-2 rounded-xl border border-border/40 bg-background/50 p-3.5">
-          <button type="button" aria-label="Arrastrar para reordenar"
+          <button type="button" aria-label={t('Arrastrar para reordenar')}
             onPointerDown={(e) => { e.stopPropagation(); dragControls.start(e) }}
-            className="mt-0.5 shrink-0 cursor-grab touch-none text-muted-foreground/60 hover:text-foreground active:cursor-grabbing">
+            className="mt-0.5 flex h-11 w-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted-foreground/60 outline-none hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 active:cursor-grabbing">
             <GripVertical className="h-5 w-5" />
           </button>
           <div className="min-w-0 flex-1">
@@ -240,7 +245,7 @@ function ExerciseRow({
             </div>
             {row.weight_suggestion_basis === 'based_on_previous_logs' && (
               <div className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-200">
-                <TrendingUp className="h-3 w-3" />Ajustado por tu progreso
+                <TrendingUp className="h-3 w-3" />{t('Ajustado por tu progreso')}
               </div>
             )}
           </div>

@@ -8,11 +8,13 @@ type PlanTab = 'week' | 'info'
 export function PlanViewTabs({
   weekLabel,
   infoLabel,
+  ariaLabel = 'Plan',
   weekContent,
   infoContent,
 }: {
   weekLabel: string
   infoLabel: string
+  ariaLabel?: string
   weekContent: ReactNode
   infoContent: ReactNode
 }) {
@@ -47,7 +49,7 @@ export function PlanViewTabs({
     <div className="mt-6">
       <div
         role="tablist"
-        aria-label="Plan"
+        aria-label={ariaLabel}
         className="grid grid-cols-2 rounded-xl border border-border/60 bg-muted/20 p-1"
       >
         {tabs.map(tab => {
@@ -66,7 +68,7 @@ export function PlanViewTabs({
               onClick={() => setActiveTab(tab.id)}
               onKeyDown={event => handleKeyDown(event, tab.id)}
               className={cn(
-                'h-10 rounded-lg text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
+                'h-11 rounded-lg text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
                 isActive
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',

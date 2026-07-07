@@ -3,10 +3,17 @@ import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
+import { AppliedConstraints } from '@/components/plan/AppliedConstraints'
+import { PlanDayTimeline } from '@/components/plan/PlanDayTimeline'
 import { PlanAdjustButton } from '@/components/plan/PlanAdjustButton'
 import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
 import { PlanViewTabs } from '@/components/plan/PlanViewTabs'
 import { WorkoutAdjustButton } from '@/components/plan/WorkoutAdjustButton'
+import { WeeklyPlanSummary } from '@/components/plan/WeeklyPlanSummary'
+import {
+  appliedConstraintLabels,
+  buildPlanDaySummaries,
+} from '@/components/plan/planViewModel'
 import { ShareRoutineButton } from '@/components/social/ShareRoutineButton'
 import {
   WorkoutExerciseList,
@@ -82,6 +89,14 @@ type WorkoutRow = {
   day_of_week: number | null
   order_in_plan: number | null
   estimated_duration_minutes: number | null
+}
+
+type PlanConstraintProfile = {
+  gym_type: 'home_no_equipment' | 'home_basic' | 'full_gym' | null
+  available_equipment: string[] | null
+  session_duration_minutes: number | null
+  readiness_status: string | null
+  movement_limitations: unknown
 }
 
 function formatDate(value: string, language: AppLanguage): string {
@@ -303,7 +318,7 @@ export default async function PlanPage() {
     )
   }
 
-  const [workoutRowsResult, exerciseOptionsResult] = await Promise.all([
+  const [workoutRowsResult, exerciseOptionsResult, constraintProfileResult] = await Promise.all([
     supabase
       .from('workouts')
       .select('id, name, focus, day_of_week, order_in_plan, estimated_duration_minutes')
@@ -314,6 +329,11 @@ export default async function PlanPage() {
       .select('id, name, name_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound')
       .eq('is_public', true)
       .order('name') as unknown as Promise<{ data: PlanExerciseOption[] | null }>,
+    supabase
+      .from('profiles')
+      .select('gym_type, available_equipment, session_duration_minutes, readiness_status, movement_limitations')
+      .eq('id', user.id)
+      .single() as unknown as Promise<{ data: PlanConstraintProfile | null }>,
   ])
 
   const workouts = (workoutRowsResult.data ?? []).map(workout => ({
@@ -323,6 +343,7 @@ export default async function PlanPage() {
   const exerciseOptions = (exerciseOptionsResult.data ?? []).map(exercise =>
     localizeExercise(exercise, language)
   )
+  const constraintProfile = constraintProfileResult.data
 
   const workoutIds = workouts.map(workout => workout.id)
   let exerciseRows: PlanWorkoutExerciseRow[] = []
@@ -361,6 +382,28 @@ export default async function PlanPage() {
     acc[row.workout_id].push(row)
     return acc
   }, {})
+  const exerciseCounts = workouts.reduce<Record<string, number>>((acc, workout) => {
+    acc[workout.id] = exercisesByWorkout[workout.id]?.length ?? 0
+    return acc
+  }, {})
+  const planDaySummaries = buildPlanDaySummaries(
+    workouts.map(workout => ({
+      id: workout.id,
+      name: workout.displayName,
+      focus: workout.focus,
+      dayOfWeek: workout.day_of_week,
+      orderInPlan: workout.order_in_plan,
+      duration: workout.estimated_duration_minutes,
+    })),
+    exerciseCounts,
+  )
+  const constraintLabels = appliedConstraintLabels({
+    gymType: constraintProfile?.gym_type,
+    availableEquipment: constraintProfile?.available_equipment,
+    sessionDurationMinutes: constraintProfile?.session_duration_minutes,
+    readinessStatus: constraintProfile?.readiness_status,
+    movementLimitations: constraintProfile?.movement_limitations,
+  }, language)
   const todayIso = getIsoWeekday(new Date(), resolveUserTimeZone(profile.timezone))
   const todayWorkout = workouts.find(workout => workout.day_of_week === todayIso)
   const todayExercises = todayWorkout ? exercisesByWorkout[todayWorkout.id] ?? [] : []
@@ -401,13 +444,18 @@ export default async function PlanPage() {
         )}
       />
 
-      <main className="mx-auto max-w-lg px-4 py-8">
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <PlanSwitcher plans={plans} tier={tier} t={t} />
 
         <div className="mt-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
           <p className="text-sm text-muted-foreground">
             {planRaw.goal || t('Estructura semanal de entrenamiento')}
           </p>
+        </div>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-stretch">
+          <WeeklyPlanSummary days={planDaySummaries} t={t} />
+          <AppliedConstraints labels={constraintLabels} t={t} />
         </div>
 
         {todayWorkout ? (
@@ -448,6 +496,7 @@ export default async function PlanPage() {
         )}
 
         <PlanViewTabs
+          ariaLabel={t('Vista del plan')}
           weekLabel={t('Semana')}
           infoLabel={t('Información')}
           infoContent={(
@@ -488,7 +537,7 @@ export default async function PlanPage() {
 
               <details className="group overflow-hidden rounded-2xl border border-border/60 bg-muted/10">
                 <summary className="flex h-14 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold text-foreground outline-none hover:bg-muted/15 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
-                  {t('Editar información')}
+                  {t('Editar detalles')}
                   <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="border-t border-border/50 p-4">
@@ -535,7 +584,14 @@ export default async function PlanPage() {
             </div>
           )}
           weekContent={(
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 space-y-4">
+              <PlanDayTimeline days={planDaySummaries} todayIso={todayIso} />
+
+              <div className="pt-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('Editar sesiones')}
+                </p>
+              </div>
 
           {workouts.map((workout, index) => {
             const exercises = exercisesByWorkout[workout.id] ?? []
@@ -613,7 +669,7 @@ export default async function PlanPage() {
 
                   <details className="mt-4 rounded-xl border border-border/50 bg-background/40 p-3">
                     <summary className="cursor-pointer text-sm font-medium text-violet-300">
-                      {t('Editar entrenamiento')}
+                      {t('Editar detalles')}
                     </summary>
                     <form action={updateWorkoutSummary} className="mt-4 space-y-3">
                       <input type="hidden" name="planId" value={planRaw.id} />
@@ -651,8 +707,8 @@ export default async function PlanPage() {
                       </label>
 
                       <SubmitButton
-                        label={t('Guardar entrenamiento')}
-                        pendingLabel={t('Guardando entrenamiento')}
+                        label={t('Guardar detalles')}
+                        pendingLabel={t('Guardando detalles')}
                         className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
                       />
                     </form>
