@@ -374,6 +374,10 @@ export function ProgressHub({
     () => measurements.filter(measurement => measurement.recordedDate >= rangeStart && measurement.recordedDate <= todayStr),
     [measurements, rangeStart, todayStr],
   )
+  const sortedSelectedMeasurements = useMemo(
+    () => [...selectedMeasurements].sort((a, b) => a.recordedDate.localeCompare(b.recordedDate)),
+    [selectedMeasurements],
+  )
   const buckets = useMemo(
     () => buildWeekBuckets(days, rangeStart, todayStr, rangeWeeks),
     [days, rangeStart, rangeWeeks, todayStr],
@@ -384,9 +388,9 @@ export function ProgressHub({
   const priorVolume = sumVolume(priorSessions)
   const volumeDelta = percentChange(selectedVolume, priorVolume)
   const selectedDuration = selectedSessions.reduce((total, session) => total + session.durationMinutes, 0)
-  const weightPoints = selectedMeasurements
+  const weightPoints = sortedSelectedMeasurements
     .filter(measurement => measurement.weightKg !== null)
-    .sort((a, b) => a.recordedDate.localeCompare(b.recordedDate))
+  const latestMeasurement = sortedSelectedMeasurements[sortedSelectedMeasurements.length - 1] ?? null
   const firstWeight = weightPoints[0]?.weightKg ?? null
   const latestWeight = weightPoints[weightPoints.length - 1]?.weightKg ?? null
   const weightDelta = latestWeight !== null && firstWeight !== null
@@ -658,12 +662,12 @@ export function ProgressHub({
             />
             <MetricCard
               label={copy(resolvedLocale, 'Grasa', 'Fat')}
-              value={formatBodyValue(selectedMeasurements[selectedMeasurements.length - 1]?.bodyFatPercentage ?? null, '%', resolvedLocale)}
+              value={formatBodyValue(latestMeasurement?.bodyFatPercentage ?? null, '%', resolvedLocale)}
               detail={copy(resolvedLocale, 'última', 'latest')}
             />
             <MetricCard
               label={copy(resolvedLocale, 'Cintura', 'Waist')}
-              value={formatBodyValue(selectedMeasurements[selectedMeasurements.length - 1]?.waistCm ?? null, ' cm', resolvedLocale)}
+              value={formatBodyValue(latestMeasurement?.waistCm ?? null, ' cm', resolvedLocale)}
               detail={copy(resolvedLocale, 'última', 'latest')}
             />
           </div>

@@ -282,7 +282,7 @@ export function ExerciseProgressionSection({ exercises, rangeWeeks }: Props) {
           <button
             type="button"
             onClick={() => setOpen(v => !v)}
-            className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/60 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:border-violet-500/40"
+            className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/60 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:border-violet-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
           >
             <span className="truncate">{selected?.name ?? 'Seleccionar ejercicio'}</span>
             <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -295,7 +295,7 @@ export function ExerciseProgressionSection({ exercises, rangeWeeks }: Props) {
                   key={ex.id}
                   type="button"
                   onClick={() => { setSelectedId(ex.id); setOpen(false) }}
-                  className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors hover:bg-violet-500/10 ${
+                  className={`flex min-h-11 w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 ${
                     ex.id === selectedId ? 'bg-violet-500/10 text-violet-300' : 'text-foreground'
                   }`}
                 >
@@ -314,7 +314,7 @@ export function ExerciseProgressionSection({ exercises, rangeWeeks }: Props) {
               key={key}
               type="button"
               onClick={() => setTimeframe(key)}
-              className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              className={`min-h-11 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 ${
                 timeframe === key
                   ? 'bg-violet-600 text-white'
                   : 'text-muted-foreground hover:text-foreground'
