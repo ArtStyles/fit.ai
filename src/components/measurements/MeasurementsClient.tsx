@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   ArrowLeft, Plus, Scale, Trash2, ChevronDown, ChevronUp,
   TrendingDown, TrendingUp, Minus, Pencil,
+  BarChart3,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LongPressMenu, type LongPressAction } from '@/components/ui'
@@ -333,11 +334,21 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
             </PendingLink>
             <h1 className="text-base font-semibold text-white">Medidas corporales</h1>
           </div>
-          <button type="button" onClick={() => setFormState({ open: true })}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700">
-            <Plus className="h-4 w-4" />
-            Registrar
-          </button>
+          <div className="flex items-center gap-2">
+            <PendingLink
+              href="/progress"
+              aria-label="Ver progreso completo"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-violet-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+              showSpinner={false}
+            >
+              <BarChart3 className="h-5 w-5" />
+            </PendingLink>
+            <button type="button" onClick={() => setFormState({ open: true })}
+              className="flex min-h-11 items-center gap-1.5 rounded-lg bg-violet-600 px-3 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700">
+              <Plus className="h-4 w-4" />
+              Registrar
+            </button>
+          </div>
       </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4 pt-6">

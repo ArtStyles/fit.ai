@@ -4,21 +4,24 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { TrendingUp, ChevronDown } from 'lucide-react'
 import { getExerciseProgressionData, type ProgressionPoint } from '@/app/actions/progression'
 import type { TrackedExercise } from '@/app/actions/progression'
+import { MetricTextSummary } from '@/components/progress/MetricTextSummary'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
-type Timeframe = '30d' | '3m' | 'all'
+type Timeframe = '4w' | '12w' | '24w'
+type RangeWeeks = 4 | 12 | 24
 
 interface Props {
   exercises: TrackedExercise[]
+  rangeWeeks?: RangeWeeks
 }
 
 // ─── Helpers de datos ──────────────────────────────────────────────────────────
 
 function filterByTimeframe(data: ProgressionPoint[], tf: Timeframe): ProgressionPoint[] {
-  if (tf === 'all') return data
   const now = Date.now()
-  const ms  = tf === '30d' ? 30 * 86400_000 : 90 * 86400_000
+  const weeks = tf === '4w' ? 4 : tf === '12w' ? 12 : 24
+  const ms = weeks * 7 * 86400_000
   return data.filter(p => now - new Date(p.date).getTime() <= ms)
 }
 
@@ -165,7 +168,7 @@ function ProgressionChart({ data, timeframe }: { data: ProgressionPoint[]; timef
         {xIndices.map(i => (
           <text key={i} x={toX(i)} y={HEIGHT - 4} textAnchor="middle"
             fill="rgb(107,114,128)" fontSize={10}>
-            {formatDate(data[i]!.date, timeframe === 'all')}
+            {formatDate(data[i]!.date, timeframe === '24w')}
           </text>
         ))}
 
@@ -212,9 +215,15 @@ function ProgressionChart({ data, timeframe }: { data: ProgressionPoint[]; timef
 
 // ─── Sección principal ─────────────────────────────────────────────────────────
 
-export function ExerciseProgressionSection({ exercises }: Props) {
+function timeframeFromWeeks(value?: RangeWeeks): Timeframe {
+  if (value === 4) return '4w'
+  if (value === 24) return '24w'
+  return '12w'
+}
+
+export function ExerciseProgressionSection({ exercises, rangeWeeks }: Props) {
   const [selectedId, setSelectedId]   = useState<string>(exercises[0]?.id ?? '')
-  const [timeframe, setTimeframe]     = useState<Timeframe>('3m')
+  const [timeframe, setTimeframe]     = useState<Timeframe>(timeframeFromWeeks(rangeWeeks))
   const [allData, setAllData]         = useState<ProgressionPoint[]>([])
   const [loading, setLoading]         = useState(false)
   const [open, setOpen]               = useState(false)
@@ -233,12 +242,16 @@ export function ExerciseProgressionSection({ exercises }: Props) {
     if (selectedId) fetchData(selectedId)
   }, [selectedId, fetchData])
 
+  useEffect(() => {
+    setTimeframe(timeframeFromWeeks(rangeWeeks))
+  }, [rangeWeeks])
+
   const displayed = filterByTimeframe(allData, timeframe)
 
   const TIMEFRAMES: { key: Timeframe; label: string }[] = [
-    { key: '30d', label: '30d' },
-    { key: '3m',  label: '3m'  },
-    { key: 'all', label: 'Todo' },
+    { key: '4w', label: '4 sem' },
+    { key: '12w', label: '12 sem' },
+    { key: '24w', label: '24 sem' },
   ]
 
   if (exercises.length === 0) return null
@@ -338,6 +351,11 @@ export function ExerciseProgressionSection({ exercises }: Props) {
             )}
           </div>
         )}
+        <MetricTextSummary>
+          {displayed.length < 2
+            ? 'Completa este ejercicio en más sesiones para ver una progresión medible.'
+            : `Progresión calculada con ${displayed.length} sesiones registradas de ${selected?.name ?? 'este ejercicio'}.`}
+        </MetricTextSummary>
       </div>
     </section>
   )

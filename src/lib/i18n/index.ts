@@ -77,6 +77,8 @@ const ENGLISH: Record<string, string> = {
   'Esta semana': 'This week',
   'Duración': 'Duration',
   'Progreso': 'Progress',
+  'Constancia, volumen, marcas y medidas en un solo lugar': 'Consistency, volume, records, and measurements in one place',
+  'Ver progreso completo': 'View complete progress',
   'Peso': 'Weight',
   'Repeticiones': 'Reps',
   'Series': 'Sets',
