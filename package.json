@@ -79,11 +79,5 @@
     "typescript-eslint": "^7.18.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.7"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "sharp",
-      "esbuild"
-    ]
   }
 }

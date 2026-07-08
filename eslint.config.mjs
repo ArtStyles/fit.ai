@@ -13,7 +13,15 @@ const nextPlugin = require(require.resolve('@next/eslint-plugin-next', {
 }));
 
 export default tseslint.config(
-  { ignores: ['dist', '.next', 'node_modules'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/.next/**',
+      '**/node_modules/**',
+      '.worktrees/**',
+      'android/**/build/**',
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
