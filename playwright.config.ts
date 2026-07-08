@@ -5,7 +5,14 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   globalTeardown: './tests/e2e/global-teardown.ts',
   workers: 1,
-  webServer: { command: 'pnpm dev', url: 'http://127.0.0.1:3000', reuseExistingServer: true },
+  webServer: {
+    command: 'pnpm dev',
+    url: 'http://127.0.0.1:3000',
+    reuseExistingServer: true,
+    env: {
+      NEXT_PUBLIC_SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? 'support@vekira.test',
+    },
+  },
   use: {
     baseURL: 'http://127.0.0.1:3000',
     trace: 'retain-on-failure',

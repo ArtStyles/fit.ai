@@ -128,7 +128,7 @@ export function ExerciseImage({
             if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
           }}
           className={cn(
-            'group relative block cursor-zoom-in rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60',
+            'group relative block min-h-11 min-w-11 cursor-zoom-in rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60',
             className,
           )}
         >

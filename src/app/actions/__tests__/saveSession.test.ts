@@ -19,6 +19,7 @@ function query(result: { data: unknown; error?: unknown }) {
     single: vi.fn(() => Promise.resolve(result)),
     insert: vi.fn(() => builder),
     update: vi.fn(() => builder),
+    delete: vi.fn(() => builder),
     then: (
       resolve: (value: { data: unknown; error?: unknown }) => unknown,
       reject: (reason: unknown) => unknown,
@@ -527,5 +528,158 @@ describe('saveSession idempotency', () => {
       p_client_session_id: payload.clientSessionId,
     }))
     expect(retried.rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to direct idempotent inserts when the atomic RPC is not deployed', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        { data: null },
+        { data: [] },
+        { data: [] },
+        { data: { id: 'log-new', session_result_snapshot: storedSnapshot } },
+      ],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [
+        { data: workout },
+        { data: { plan_id: 'plan-1' } },
+        { data: [{ id: 'workout-1' }] },
+      ],
+      workout_plans: [
+        { data: { id: 'plan-1' } },
+        { data: { id: 'plan-1' } },
+      ],
+      exercise_logs: [
+        { data: [] },
+        { data: null, error: null },
+      ],
+      workout_exercises: [{ data: null, error: null }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-new',
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
+    })
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic', expect.objectContaining({
+      p_client_session_id: payload.clientSessionId,
+    }))
+    expect(supabase.from).toHaveBeenCalledWith('progress_logs')
+    expect(supabase.from).toHaveBeenCalledWith('exercise_logs')
+  })
+
+  it('falls back to a legacy progress log insert when idempotency columns are not deployed', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        { data: null },
+        { data: [] },
+        { data: [] },
+        {
+          data: null,
+          error: { message: "Could not find the 'client_session_id' column of 'progress_logs' in the schema cache" },
+        },
+        { data: { id: 'log-legacy' }, error: null },
+      ],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [{ data: workout }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-legacy',
+      prs: [],
+      progressions: [],
+    })
+
+    const progressQueries = supabase.from.mock.results
+      .map((result: { value: any }) => result.value)
+      .filter((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
+    const modernInsert = progressQueries.at(-2).insert.mock.calls[0][0]
+    const legacyInsert = progressQueries.at(-1).insert.mock.calls[0][0]
+
+    expect(modernInsert).toHaveProperty('client_session_id', payload.clientSessionId)
+    expect(modernInsert).toHaveProperty('session_result_snapshot')
+    expect(legacyInsert).not.toHaveProperty('client_session_id')
+    expect(legacyInsert).not.toHaveProperty('session_result_snapshot')
+  })
+
+  it('rolls back a direct fallback progress log when detail insert fails so retry can persist cleanly', async () => {
+    const failed: any = createSupabaseMock({
+      progress_logs: [
+        { data: null },
+        { data: [] },
+        { data: [] },
+        { data: { id: 'log-partial', session_result_snapshot: storedSnapshot }, error: null },
+        { data: null, error: null },
+      ],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [{ data: workout }],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      exercise_logs: [
+        { data: [] },
+        { data: null, error: { message: 'detail rejected' } },
+      ],
+    })
+    failed.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
+    }))
+
+    const retried: any = createSupabaseMock({
+      progress_logs: [
+        { data: null },
+        { data: [] },
+        { data: [] },
+        { data: { id: 'log-retry', session_result_snapshot: storedSnapshot }, error: null },
+      ],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [
+        { data: workout },
+        { data: { plan_id: 'plan-1' } },
+        { data: [{ id: 'workout-1' }] },
+      ],
+      workout_plans: [
+        { data: { id: 'plan-1' } },
+        { data: { id: 'plan-1' } },
+      ],
+      exercise_logs: [
+        { data: [] },
+        { data: null, error: null },
+      ],
+      workout_exercises: [{ data: null, error: null }],
+    })
+    retried.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
+    }))
+    createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
+
+    await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
+      success: false,
+      error: 'detail rejected',
+    })
+    const rollbackQuery = failed.from.mock.results
+      .map((result: { value: any }) => result.value)
+      .find((queryBuilder: any) => queryBuilder.delete.mock.calls.length > 0)
+    expect(rollbackQuery).toBeDefined()
+    expect(rollbackQuery.delete).toHaveBeenCalled()
+    expect(rollbackQuery.eq).toHaveBeenCalledWith('id', 'log-partial')
+    expect(rollbackQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
+
+    await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-retry',
+    })
   })
 })

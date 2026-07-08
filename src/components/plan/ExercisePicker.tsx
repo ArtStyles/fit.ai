@@ -64,7 +64,7 @@ export function ExercisePicker({
             setSelected(null)
           }}
           placeholder={placeholder}
-          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
         />
       </label>
 
@@ -83,7 +83,7 @@ export function ExercisePicker({
                 type="button"
                 disabled={disabled}
                 onClick={() => selectOption(option)}
-                className="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-11 rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="font-medium">{option.name}</span>
                 {meta && (

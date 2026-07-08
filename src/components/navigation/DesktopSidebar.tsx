@@ -21,7 +21,7 @@ export function DesktopSidebar() {
         href="/dashboard"
         showSpinner={false}
         aria-label={t('Inicio')}
-        className="mx-5 mt-6 inline-flex rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="mx-5 mt-6 inline-flex min-h-11 items-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <VekiraLogo markClassName="h-10 w-10" />
       </PendingLink>

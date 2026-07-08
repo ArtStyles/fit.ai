@@ -76,6 +76,7 @@ describe('resetE2EAccount', () => {
       createUser: vi.fn(),
       updateUser: vi.fn(),
       removePlanGenerationEvents: vi.fn().mockResolvedValue(undefined),
+      removeProgressLogs: vi.fn().mockResolvedValue(undefined),
       removeWorkouts: vi.fn().mockResolvedValue(undefined),
       removeWorkoutPlans: vi.fn().mockResolvedValue(undefined),
       resetProfile: vi.fn().mockResolvedValue(undefined),
@@ -85,10 +86,13 @@ describe('resetE2EAccount', () => {
     await resetE2EAccount(store, 'user-under-test')
 
     expect(store.removePlanGenerationEvents).toHaveBeenCalledWith('user-under-test')
+    expect(store.removeProgressLogs).toHaveBeenCalledWith('user-under-test')
     expect(store.removeWorkouts).toHaveBeenCalledWith('user-under-test')
     expect(store.removeWorkoutPlans).toHaveBeenCalledWith('user-under-test')
     expect(store.resetProfile).toHaveBeenCalledWith('user-under-test')
     expect(vi.mocked(store.removePlanGenerationEvents).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(store.removeProgressLogs).mock.invocationCallOrder[0])
+    expect(vi.mocked(store.removeProgressLogs).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(store.removeWorkoutPlans).mock.invocationCallOrder[0])
     expect(vi.mocked(store.removeWorkouts).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(store.removeWorkoutPlans).mock.invocationCallOrder[0])
@@ -112,6 +116,7 @@ describe('cleanupE2EAccount', () => {
       createUser: vi.fn(),
       updateUser: vi.fn(),
       removePlanGenerationEvents: vi.fn().mockResolvedValue(undefined),
+      removeProgressLogs: vi.fn().mockResolvedValue(undefined),
       removeWorkouts: vi.fn().mockResolvedValue(undefined),
       removeWorkoutPlans: vi.fn().mockResolvedValue(undefined),
       resetProfile: vi.fn().mockResolvedValue(undefined),

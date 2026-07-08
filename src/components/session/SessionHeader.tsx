@@ -100,7 +100,7 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
 
         {/* Nombre del workout + progreso */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{workoutName}</p>
+          <h1 className="text-sm font-semibold text-foreground truncate">{workoutName}</h1>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <p className={cn(
               'font-display text-base font-bold leading-none tabular-nums',

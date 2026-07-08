@@ -18,14 +18,14 @@ export function DashboardHeader({ greeting, firstName, avatarUrl, username }: Pr
     <FixedTopBar initialHeight={104} contentClassName="max-w-3xl sm:px-6">
       <AvatarUploader avatarUrl={avatarUrl} initials={initials} size="header" />
       <div className="min-w-0 flex-1">
-        <h1 className="text-balance font-display text-2xl font-bold leading-tight text-foreground">
+        <div className="text-balance font-display text-2xl font-bold leading-tight text-foreground">
           <span className="block text-base font-medium text-muted-foreground">{greeting},</span>
           {username ? (
-            <Link href={`/u/${username}`} className="inline-flex min-h-11 items-center rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+            <Link data-marketing-private href={`/u/${username}`} className="inline-flex min-h-11 items-center rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
               {firstName}
             </Link>
-          ) : firstName}
-        </h1>
+          ) : <span data-marketing-private>{firstName}</span>}
+        </div>
       </div>
     </FixedTopBar>
   )

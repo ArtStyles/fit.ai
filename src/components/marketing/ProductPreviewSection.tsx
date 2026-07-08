@@ -1,66 +1,42 @@
-import { BarChart3, Circle, Dumbbell, LayoutDashboard } from 'lucide-react'
+import Image from 'next/image'
+import type { PublicLocale } from '@/lib/i18n/routing'
 import type { HomeContent } from '@/lib/marketing/homeContent'
 
 type Preview = HomeContent['previews'][number]
 
 type ProductPreviewSectionProps = {
   previews: HomeContent['previews']
+  locale: PublicLocale
 }
 
-function PreviewFrame({ screen }: { screen: Preview['screen'] }) {
+function PreviewFallback({ screen }: { screen: Preview['screen'] }) {
   return (
     <div
-      aria-hidden
-      className="aspect-[4/3] w-full overflow-hidden rounded-card border border-border bg-background p-3 shadow-2xl shadow-black/30 sm:p-5"
+      aria-hidden="true"
+      className="absolute inset-0 bg-background p-4"
     >
-      <div className="flex h-full overflow-hidden rounded-control border border-border bg-surface-1">
-        <div className="hidden w-16 shrink-0 flex-col items-center gap-4 border-r border-border p-3 sm:flex">
-          <span className="h-7 w-7 rounded-lg bg-primary/20" />
-          <span className="mt-3 h-5 w-5 rounded-md bg-primary/50" />
-          <span className="h-5 w-5 rounded-md bg-surface-3" />
-          <span className="h-5 w-5 rounded-md bg-surface-3" />
+      <div className="flex h-full flex-col overflow-hidden rounded-[1.5rem] border border-border bg-card/80">
+        <div className="border-b border-border/70 p-4">
+          <span className="block h-3 w-28 rounded-full bg-foreground/15" />
+          <span className="mt-3 block h-8 w-40 rounded-xl bg-primary/25" />
         </div>
-        <div className="min-w-0 flex-1 p-4 sm:p-6">
-          <div className="flex items-center justify-between border-b border-border pb-4">
-            <span className="h-3 w-24 rounded-full bg-foreground/15" />
-            <span className="h-8 w-8 rounded-full border border-border bg-surface-2" />
-          </div>
+        <div className="grid flex-1 gap-3 p-4">
           {screen === 'dashboard' && (
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-control border border-primary/30 bg-primary/10 p-4 sm:col-span-2">
-                <LayoutDashboard className="h-5 w-5 text-primary" />
-                <span className="mt-7 block h-3 w-2/3 rounded-full bg-foreground/20" />
-                <span className="mt-3 block h-10 w-32 rounded-control bg-primary/70" />
-              </div>
-              <span className="h-20 rounded-control border border-border bg-surface-2" />
-              <span className="h-20 rounded-control border border-border bg-surface-2" />
-            </div>
+            <>
+              <span className="rounded-2xl bg-primary/20" />
+              <span className="rounded-2xl bg-muted/30" />
+              <span className="rounded-2xl bg-muted/20" />
+            </>
           )}
-          {screen === 'session' && (
-            <div className="mt-5 space-y-3">
-              {[0, 1, 2].map(row => (
-                <div key={row} className="flex items-center gap-3 rounded-control border border-border bg-surface-2 p-3">
-                  <Dumbbell className="h-5 w-5 shrink-0 text-primary" />
-                  <span className="h-3 flex-1 rounded-full bg-foreground/15" />
-                  <span className="h-9 w-12 rounded-md border border-border bg-background" />
-                  <Circle className="h-8 w-8 text-primary/70" />
-                </div>
-              ))}
-            </div>
-          )}
+          {screen === 'session' && [0, 1, 2, 3].map(row => (
+            <span key={row} className="rounded-2xl border border-border/60 bg-muted/20" />
+          ))}
           {screen === 'progress' && (
-            <div className="mt-5 grid gap-3 sm:grid-cols-[1.35fr_0.65fr]">
-              <div className="flex min-h-40 items-end gap-3 rounded-control border border-border bg-surface-2 p-4">
-                {[35, 55, 44, 72, 64, 86].map(height => (
-                  <span key={height} className="flex-1 rounded-t-sm bg-primary/60" style={{ height: `${height}%` }} />
-                ))}
-              </div>
-              <div className="rounded-control border border-border bg-surface-2 p-4">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                <span className="mt-8 block h-3 w-full rounded-full bg-foreground/15" />
-                <span className="mt-3 block h-3 w-3/4 rounded-full bg-foreground/10" />
-              </div>
-            </div>
+            <>
+              <span className="rounded-2xl bg-violet-500/20" />
+              <span className="rounded-2xl bg-muted/25" />
+              <span className="rounded-2xl bg-muted/25" />
+            </>
           )}
         </div>
       </div>
@@ -68,7 +44,7 @@ function PreviewFrame({ screen }: { screen: Preview['screen'] }) {
   )
 }
 
-export function ProductPreviewSection({ previews }: ProductPreviewSectionProps) {
+export function ProductPreviewSection({ previews, locale }: ProductPreviewSectionProps) {
   return (
     <div>
       {previews.map((preview, index) => (
@@ -86,7 +62,16 @@ export function ProductPreviewSection({ previews }: ProductPreviewSectionProps) 
               </p>
             </div>
             <div className={index % 2 === 1 ? 'lg:order-1' : undefined}>
-              <PreviewFrame screen={preview.screen} />
+              <div className="relative mx-auto aspect-[390/844] w-full max-w-[390px] overflow-hidden rounded-[2rem] border border-border bg-background shadow-2xl shadow-black/35">
+                {process.env.NODE_ENV !== 'production' ? <PreviewFallback screen={preview.screen} /> : null}
+                <Image
+                  src={`/marketing/${preview.screen}-${locale}.webp`}
+                  alt={preview.alt}
+                  fill
+                  sizes="(min-width: 1024px) 390px, min(100vw - 2.5rem, 390px)"
+                  className="relative z-10 object-cover"
+                />
+              </div>
             </div>
           </div>
         </section>

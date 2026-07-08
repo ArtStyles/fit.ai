@@ -562,7 +562,8 @@ export default async function DashboardPage() {
         username={profile?.username ?? null}
       />
 
-      <main className="mx-auto grid max-w-3xl gap-8 px-4 pt-6 sm:px-6 lg:gap-10">
+      <main data-marketing-capture="dashboard" className="mx-auto grid max-w-3xl gap-8 px-4 pt-6 sm:px-6 lg:gap-10">
+        <h1 className="sr-only">{t('Dashboard')}</h1>
         <DashboardNotice
           notice={dashboard.notice}
           aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}

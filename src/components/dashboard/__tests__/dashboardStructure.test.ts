@@ -35,9 +35,10 @@ describe('dashboard structure', () => {
     expect(page).not.toMatch(/fixed[^\n]+\/chat|\/chat[^\n]+fixed/)
   })
 
-  it('uses a single page H1 in the header', () => {
-    expect(header.match(/<h1\b/g)).toHaveLength(1)
-    expect(page).not.toMatch(/<h1\b/)
+  it('uses a single server-rendered page H1 in the dashboard main content', () => {
+    expect(header).not.toMatch(/<h1\b/)
+    expect(page.match(/<h1\b/g)).toHaveLength(1)
+    expect(page).toContain('sr-only')
   })
 
   it('removes the floating pricing promo and duplicate dashboard promos', () => {

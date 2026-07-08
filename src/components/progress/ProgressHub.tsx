@@ -459,16 +459,16 @@ export function ProgressHub({
     )
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+    <main data-marketing-capture="progress" className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <section className="rounded-3xl border border-violet-500/25 bg-violet-500/[0.08] p-5 shadow-lg shadow-violet-950/20">
         <div className="flex flex-col gap-4">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-violet-300">
               {copy(resolvedLocale, 'Destino unificado', 'Unified destination')}
             </p>
-            <h1 className="mt-2 font-display text-3xl font-bold leading-tight text-foreground">
+            <h2 className="mt-2 font-display text-3xl font-bold leading-tight text-foreground">
               {copy(resolvedLocale, 'Progreso real, en un solo lugar', 'Real progress, in one place')}
-            </h1>
+            </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{heroSummary}</p>
           </div>
 

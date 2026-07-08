@@ -17,7 +17,7 @@ export function SessionRoutineTools({ exerciseOptions }: SessionRoutineToolsProp
 
   return (
     <details className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
-      <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-violet-200">
+      <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-violet-200">
         <PlusCircle className="h-4 w-4" />
         {t('Agregar ejercicio solo por hoy')}
       </summary>

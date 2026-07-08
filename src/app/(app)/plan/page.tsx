@@ -200,7 +200,7 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
                       type="submit"
                       aria-label={`${t('Borrar')} ${plan.name}`}
                       title={`${t('Borrar')} ${plan.name}`}
-                      className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:ring-2 focus-visible:ring-red-400"
+                      className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:ring-2 focus-visible:ring-red-400"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -220,18 +220,18 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
               </PendingLink>
             </Button>
             <details className="mt-1">
-              <summary className="flex h-10 cursor-pointer list-none items-center justify-center text-xs font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center text-xs font-semibold text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 {t('Crear manualmente')}
               </summary>
               <form action={createManualPlan} className="mt-2 space-y-3 rounded-xl border border-border/50 bg-background/40 p-3">
-                <input name="name" required placeholder={t('Nombre del plan')} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
-                <input name="goal" placeholder={t('Objetivo visible')} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+                <input name="name" required placeholder={t('Nombre del plan')} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+                <input name="goal" placeholder={t('Objetivo visible')} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
                 <div className="grid grid-cols-2 gap-2">
-                  <select name="daysPerWeek" defaultValue="3" className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500">
+                  <select name="daysPerWeek" defaultValue="3" className="h-11 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500">
                     {[1, 2, 3, 4, 5, 6, 7].map(day => <option key={day} value={day}>{day} {t('días')}</option>)}
                   </select>
-                  <select name="difficulty" defaultValue="" className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500">
+                  <select name="difficulty" defaultValue="" className="h-11 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500">
                     <option value="">{t('Nivel')}</option>
                     <option value="beginner">{t('Principiante')}</option>
                     <option value="intermediate">{t('Intermedio')}</option>
@@ -239,10 +239,10 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
                   </select>
                 </div>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <input name="makeActive" type="checkbox" defaultChecked className="h-4 w-4 accent-violet-500" />
+                  <input name="makeActive" type="checkbox" defaultChecked className="h-11 w-11 shrink-0 accent-violet-500" />
                   {t('Activarlo ahora')}
                 </label>
-                <button className="h-10 w-full rounded-md bg-violet-500 text-sm font-semibold text-white hover:bg-violet-600">
+                <button className="h-11 w-full rounded-md bg-violet-500 text-sm font-semibold text-white hover:bg-violet-600">
                   {t('Crear plan manual')}
                 </button>
               </form>
@@ -420,7 +420,7 @@ export default async function PlanPage() {
           <details className="group relative">
             <summary
               aria-label={t('Acciones del plan')}
-              className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full border border-border/60 bg-muted/10 text-muted-foreground outline-none hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden"
+              className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-border/60 bg-muted/10 text-muted-foreground outline-none hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden"
             >
               <MoreHorizontal className="h-5 w-5" />
             </summary>
@@ -668,7 +668,7 @@ export default async function PlanPage() {
                   />
 
                   <details className="mt-4 rounded-xl border border-border/50 bg-background/40 p-3">
-                    <summary className="cursor-pointer text-sm font-medium text-violet-300">
+                    <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-violet-300 [&::-webkit-details-marker]:hidden">
                       {t('Editar detalles')}
                     </summary>
                     <form action={updateWorkoutSummary} className="mt-4 space-y-3">

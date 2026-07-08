@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/feedback/ToastProvider'
@@ -61,7 +60,6 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 }
 
 export function LoginForm() {
-  const router = useRouter()
   const { showToast } = useToast()
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({})
@@ -124,8 +122,7 @@ export function LoginForm() {
       variant: 'success',
     })
     window.dispatchEvent(new Event('fitai:navigation-start'))
-    router.push('/dashboard')
-    router.refresh()
+    window.location.assign('/dashboard')
   }
 
   if (verifyEmail) {

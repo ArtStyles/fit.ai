@@ -45,7 +45,7 @@ export default function LocalizedHome({ params }: LocalizedHomeProps) {
       <main id="app-main-content">
         <HeroSection content={content.hero} locale={locale} />
         <TrainingLoopSection problem={content.problem} loop={content.loop} />
-        <ProductPreviewSection previews={content.previews} />
+        <ProductPreviewSection previews={content.previews} locale={locale} />
         <SafetySection content={content.safety} />
         <MarketingFaq title={content.faqTitle} items={content.faq} />
       </main>

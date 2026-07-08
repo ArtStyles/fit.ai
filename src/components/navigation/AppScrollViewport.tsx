@@ -15,14 +15,14 @@ interface AppScrollViewportProps {
  */
 export function AppScrollViewport({ children }: AppScrollViewportProps) {
   const pathname = usePathname()
-  const viewportRef = useRef<HTMLElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [pathname])
 
   return (
-    <main
+    <div
       id="app-main-content"
       tabIndex={-1}
       ref={viewportRef}
@@ -30,6 +30,6 @@ export function AppScrollViewport({ children }: AppScrollViewportProps) {
       data-app-scroll-viewport
     >
       {children}
-    </main>
+    </div>
   )
 }

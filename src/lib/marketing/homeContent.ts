@@ -4,7 +4,7 @@ export type HomeContent = {
   hero: { eyebrow: string; title: string; body: string; cta: string; secondary: string }
   problem: { title: string; body: string }
   loop: Array<{ title: string; body: string }>
-  previews: Array<{ title: string; body: string; screen: 'dashboard' | 'session' | 'progress' }>
+  previews: Array<{ title: string; body: string; screen: 'dashboard' | 'session' | 'progress'; alt: string }>
   safety: { title: string; body: string }
   faqTitle: string
   faq: Array<{ question: string; answer: string }>
@@ -31,9 +31,9 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
       { title: 'Progresa con evidencia', body: 'Tu historial orienta la siguiente recomendación.' },
     ],
     previews: [
-      { title: 'Tu día, sin ruido', body: 'Ve la sesión de hoy y la acción siguiente.', screen: 'dashboard' },
-      { title: 'Registra mientras entrenas', body: 'Controles grandes, descanso y referencia anterior.', screen: 'session' },
-      { title: 'Entiende el avance', body: 'Constancia, volumen y marcas en contexto.', screen: 'progress' },
+      { title: 'Tu día, sin ruido', body: 'Ve la sesión de hoy y la acción siguiente.', screen: 'dashboard', alt: 'Vista móvil del dashboard de Vekira con el entrenamiento de hoy y el estado semanal.' },
+      { title: 'Registra mientras entrenas', body: 'Controles grandes, descanso y referencia anterior.', screen: 'session', alt: 'Vista móvil de una sesión activa en Vekira con campos para peso, repeticiones y sincronización.' },
+      { title: 'Entiende el avance', body: 'Constancia, volumen y marcas en contexto.', screen: 'progress', alt: 'Vista móvil del progreso en Vekira con constancia, volumen y marcas personales.' },
     ],
     safety: {
       title: 'Un plan debe respetar tu contexto.',
@@ -72,9 +72,9 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
       { title: 'Progress with evidence', body: 'Your history guides the next recommendation.' },
     ],
     previews: [
-      { title: 'Your day, without noise', body: 'See today’s session and the next action.', screen: 'dashboard' },
-      { title: 'Log while you train', body: 'Large controls, rest, and previous-session reference.', screen: 'session' },
-      { title: 'Understand progress', body: 'Consistency, volume, and records in context.', screen: 'progress' },
+      { title: 'Your day, without noise', body: 'See today’s session and the next action.', screen: 'dashboard', alt: 'Mobile Vekira dashboard showing today’s workout and weekly training status.' },
+      { title: 'Log while you train', body: 'Large controls, rest, and previous-session reference.', screen: 'session', alt: 'Mobile active workout in Vekira with weight, reps, and sync feedback controls.' },
+      { title: 'Understand progress', body: 'Consistency, volume, and records in context.', screen: 'progress', alt: 'Mobile Vekira progress hub showing consistency, volume, and personal records.' },
     ],
     safety: {
       title: 'A plan should respect your context.',

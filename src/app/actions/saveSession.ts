@@ -404,6 +404,12 @@ type AuthoritativeSessionRow = {
   session_result_snapshot: unknown
 }
 
+type PersistedSessionRow = {
+  progress_log_id: string
+  inserted: boolean
+  result_snapshot: unknown
+}
+
 type RecoveryResult =
   | { success: true; outcome: SessionOutcome }
   | { success: false; error: string }
@@ -469,6 +475,128 @@ async function recoverLegacySessionOutcome(
       prs: snapshot.prs,
       progressions: snapshot.progressions,
     },
+  }
+}
+
+function isMissingAtomicSaveRpc(error: { message: string } | null): boolean {
+  if (!error) return false
+  return /save_session_log_atomic|schema cache|could not find the function|pgrst202/i.test(error.message)
+}
+
+function isMissingProgressLogCompatibilityColumn(error: { message: string } | null): boolean {
+  if (!error) return false
+  return /client_session_id|session_result_snapshot|schema cache|could not find.*column|pgrst204/i.test(error.message)
+}
+
+async function existingPersistedSession(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  clientSessionId: string,
+): Promise<PersistedSessionRow | null> {
+  const { data } = await (supabase
+    .from('progress_logs') as any)
+    .select('id, session_result_snapshot')
+    .eq('user_id', userId)
+    .eq('client_session_id', clientSessionId)
+    .maybeSingle() as { data: { id: string; session_result_snapshot: unknown } | null }
+
+  if (!data) return null
+  return {
+    progress_log_id: data.id,
+    inserted: false,
+    result_snapshot: data.session_result_snapshot,
+  }
+}
+
+async function persistSessionWithoutAtomicRpc({
+  supabase,
+  userId,
+  payload,
+  completedAt,
+  durationMinutes,
+  candidateOutcome,
+  candidateSnapshot,
+}: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  userId: string
+  payload: SaveSessionPayload
+  completedAt: string
+  durationMinutes: number
+  candidateOutcome: SessionOutcome
+  candidateSnapshot: SessionResultSnapshot
+}): Promise<{ data: PersistedSessionRow[] | null; error: { message: string } | null }> {
+  const progressLogPayload = {
+    user_id: userId,
+    workout_id: payload.workoutId,
+    completed_at: completedAt,
+    duration_minutes: durationMinutes,
+    mood_rating: payload.moodRating,
+  }
+
+  let { data: progressLog, error: progressError } = await (supabase
+    .from('progress_logs') as any)
+    .insert({
+      ...progressLogPayload,
+      client_session_id: payload.clientSessionId,
+      session_result_snapshot: candidateSnapshot,
+    })
+    .select('id, session_result_snapshot')
+    .single() as { data: { id: string; session_result_snapshot: unknown } | null; error: { message: string } | null }
+
+  if (isMissingProgressLogCompatibilityColumn(progressError)) {
+    const legacyResult = await (supabase
+      .from('progress_logs') as any)
+      .insert(progressLogPayload)
+      .select('id')
+      .single() as { data: { id: string } | null; error: { message: string } | null }
+
+    progressLog = legacyResult.data
+      ? { id: legacyResult.data.id, session_result_snapshot: candidateSnapshot }
+      : null
+    progressError = legacyResult.error
+  }
+
+  if (progressError || !progressLog) {
+    const existing = await existingPersistedSession(supabase, userId, payload.clientSessionId)
+    if (existing) return { data: [existing], error: null }
+
+    return {
+      data: null,
+      error: progressError ?? { message: 'No se pudo guardar la sesiÃ³n' },
+    }
+  }
+
+  if (candidateOutcome.exerciseLogs.length > 0) {
+    const { error: detailError } = await (supabase
+      .from('exercise_logs') as any)
+      .insert(candidateOutcome.exerciseLogs.map(log => ({
+        progress_log_id: progressLog.id,
+        ...log,
+      }))) as { error: { message: string } | null }
+
+    if (detailError) {
+      console.error('[saveSession] legacy session detail save failed:', detailError)
+      const { error: rollbackError } = await (supabase
+        .from('progress_logs') as any)
+        .delete()
+        .eq('id', progressLog.id)
+        .eq('user_id', userId) as { error: { message: string } | null }
+
+      if (rollbackError) {
+        console.error('[saveSession] legacy session rollback failed:', rollbackError)
+      }
+
+      return { data: null, error: detailError }
+    }
+  }
+
+  return {
+    data: [{
+      progress_log_id: progressLog.id,
+      inserted: true,
+      result_snapshot: progressLog.session_result_snapshot ?? candidateSnapshot,
+    }],
+    error: null,
   }
 }
 
@@ -562,12 +690,13 @@ export async function saveSession(
     candidateOutcome.progressions,
   )
 
-  const { data: persistedRows, error: persistenceError } = await (supabase as any).rpc(
+  const completedAt = new Date(payload.finishedAt).toISOString()
+  let { data: persistedRows, error: persistenceError } = await (supabase as any).rpc(
     'save_session_log_atomic',
     {
       p_client_session_id: payload.clientSessionId,
       p_workout_id: payload.workoutId,
-      p_completed_at: new Date(payload.finishedAt).toISOString(),
+      p_completed_at: completedAt,
       p_duration_minutes: durationMinutes,
       p_mood_rating: payload.moodRating,
       p_exercise_logs: candidateOutcome.exerciseLogs,
@@ -580,6 +709,20 @@ export async function saveSession(
       result_snapshot: unknown
     }> | null
     error: { message: string } | null
+  }
+
+  if (isMissingAtomicSaveRpc(persistenceError)) {
+    const fallback = await persistSessionWithoutAtomicRpc({
+      supabase,
+      userId: user.id,
+      payload,
+      completedAt,
+      durationMinutes,
+      candidateOutcome,
+      candidateSnapshot,
+    })
+    persistedRows = fallback.data
+    persistenceError = fallback.error
   }
 
   const persisted = persistedRows?.[0]

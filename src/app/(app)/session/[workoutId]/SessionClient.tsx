@@ -164,7 +164,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
+    <div data-marketing-capture="session" className="flex h-full flex-col overflow-hidden bg-background">
       {/* Header sticky */}
       <div data-session-sync-state={syncState}>
         <SessionHeader

@@ -17,6 +17,7 @@ export interface E2EAccountAdmin {
   createUser(config: E2ESeedConfig): Promise<{ id: string }>
   updateUser(userId: string, config: E2ESeedConfig): Promise<void>
   removePlanGenerationEvents(userId: string): Promise<void>
+  removeProgressLogs(userId: string): Promise<void>
   removeWorkouts(userId: string): Promise<void>
   removeWorkoutPlans(userId: string): Promise<void>
   resetProfile(userId: string): Promise<void>
@@ -107,11 +108,51 @@ function assertQuery(error: { message: string } | null, operation: string): void
   if (error) throw new Error(`${operation} failed: ${error.message}`)
 }
 
+const TRANSIENT_RETRY_ATTEMPTS = 3
+
+function transientDelay(attempt: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, attempt * 500))
+}
+
+function isTransientSupabaseError(error: unknown): boolean {
+  const cause = error instanceof Error && 'cause' in error
+    ? (error as Error & { cause?: unknown }).cause
+    : null
+  const message = [
+    error instanceof Error ? error.message : String(error),
+    cause instanceof Error ? cause.message : '',
+    typeof cause === 'object' && cause && 'code' in cause
+      ? String((cause as { code?: unknown }).code)
+      : '',
+  ].join(' ')
+
+  return /fetch failed|connect timeout|und_err_connect_timeout|econnreset|etimedout|network/i.test(message)
+}
+
+async function retryTransientSupabase<T>(operation: string, action: () => Promise<T>): Promise<T> {
+  let lastError: unknown
+
+  for (let attempt = 1; attempt <= TRANSIENT_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await action()
+    } catch (error) {
+      lastError = error
+      if (!isTransientSupabaseError(error) || attempt === TRANSIENT_RETRY_ATTEMPTS) throw error
+      await transientDelay(attempt)
+    }
+  }
+
+  throw lastError ?? new Error(`${operation} failed`)
+}
+
 async function findUserByEmail(supabase: SupabaseClient, email: string): Promise<{ id: string } | null> {
   const perPage = 200
   for (let page = 1; ; page += 1) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
-    assertQuery(error, 'Listing E2E auth users')
+    const data = await retryTransientSupabase('Listing E2E auth users', async () => {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
+      assertQuery(error, 'Listing E2E auth users')
+      return data
+    })
     const match = data.users.find(user => user.email?.toLowerCase() === email)
     if (match) return { id: match.id }
     if (data.users.length < perPage) return null
@@ -126,56 +167,80 @@ export function createE2EAccountAdmin(config: E2ESeedConfig): E2EAccountAdmin {
   return {
     findUserByEmail: email => findUserByEmail(supabase, email),
     async createUser(seedConfig) {
-      const { data, error } = await supabase.auth.admin.createUser({
-        email: seedConfig.email,
-        password: seedConfig.password,
-        email_confirm: true,
-        user_metadata: { preferred_language: 'es', e2e_run_id: seedConfig.runId },
+      const data = await retryTransientSupabase('Creating E2E auth user', async () => {
+        const { data, error } = await supabase.auth.admin.createUser({
+          email: seedConfig.email,
+          password: seedConfig.password,
+          email_confirm: true,
+          user_metadata: { preferred_language: 'es', e2e_run_id: seedConfig.runId },
+        })
+        assertQuery(error, 'Creating E2E auth user')
+        return data
       })
-      assertQuery(error, 'Creating E2E auth user')
       if (!data.user) throw new Error('Supabase did not return the E2E auth user')
       return { id: data.user.id }
     },
     async updateUser(userId, seedConfig) {
-      const { error } = await supabase.auth.admin.updateUserById(userId, {
-        password: seedConfig.password,
-        email_confirm: true,
-        user_metadata: { preferred_language: 'es', e2e_run_id: seedConfig.runId },
+      await retryTransientSupabase('Updating E2E auth user', async () => {
+        const { error } = await supabase.auth.admin.updateUserById(userId, {
+          password: seedConfig.password,
+          email_confirm: true,
+          user_metadata: { preferred_language: 'es', e2e_run_id: seedConfig.runId },
+        })
+        assertQuery(error, 'Updating E2E auth user')
       })
-      assertQuery(error, 'Updating E2E auth user')
     },
     async removePlanGenerationEvents(userId) {
-      const { error } = await supabase.from('plan_generation_events').delete().eq('user_id', userId)
-      assertQuery(error, 'Resetting plan generation events')
+      await retryTransientSupabase('Resetting plan generation events', async () => {
+        const { error } = await supabase.from('plan_generation_events').delete().eq('user_id', userId)
+        assertQuery(error, 'Resetting plan generation events')
+      })
+    },
+    async removeProgressLogs(userId) {
+      await retryTransientSupabase('Resetting progress logs', async () => {
+        const { error } = await supabase.from('progress_logs').delete().eq('user_id', userId)
+        assertQuery(error, 'Resetting progress logs')
+      })
     },
     async removeWorkouts(userId) {
       // workout_exercises are removed through the workout ON DELETE CASCADE FK.
-      const { error } = await supabase.from('workouts').delete().eq('user_id', userId)
-      assertQuery(error, 'Resetting workouts')
+      await retryTransientSupabase('Resetting workouts', async () => {
+        const { error } = await supabase.from('workouts').delete().eq('user_id', userId)
+        assertQuery(error, 'Resetting workouts')
+      })
     },
     async removeWorkoutPlans(userId) {
-      const { error } = await supabase.from('workout_plans').delete().eq('user_id', userId)
-      assertQuery(error, 'Resetting workout plans')
+      await retryTransientSupabase('Resetting workout plans', async () => {
+        const { error } = await supabase.from('workout_plans').delete().eq('user_id', userId)
+        assertQuery(error, 'Resetting workout plans')
+      })
     },
     async resetProfile(userId) {
-      const { error } = await supabase.from('profiles').upsert({ id: userId, ...PROFILE_RESET })
-      assertQuery(error, 'Resetting onboarding profile')
+      await retryTransientSupabase('Resetting onboarding profile', async () => {
+        const { error } = await supabase.from('profiles').upsert({ id: userId, ...PROFILE_RESET })
+        assertQuery(error, 'Resetting onboarding profile')
+      })
     },
     async deleteAuthUser(userId) {
-      const { error } = await supabase.auth.admin.deleteUser(userId)
-      assertQuery(error, 'Deleting E2E auth user')
+      await retryTransientSupabase('Deleting E2E auth user', async () => {
+        const { error } = await supabase.auth.admin.deleteUser(userId)
+        assertQuery(error, 'Deleting E2E auth user')
+      })
     },
   }
 }
 
 type ResetStore = Pick<E2EAccountAdmin,
-  'removePlanGenerationEvents' | 'removeWorkouts' | 'removeWorkoutPlans' | 'resetProfile'>
+  'removePlanGenerationEvents' | 'removeProgressLogs' | 'removeWorkouts' | 'removeWorkoutPlans' | 'resetProfile'>
 
 export async function resetE2EAccount(store: ResetStore, userId: string): Promise<void> {
   // Events reference plans with ON DELETE SET NULL, so remove the account-scoped
-  // event rows first. Workouts are removed before their parent plans so no
-  // account-owned orphan workouts remain.
+  // event rows first. Progress logs are removed before workouts so no
+  // workout_id fields are nulled into stale same-day sessions. Workouts are
+  // removed before their parent plans so no account-owned orphan workouts
+  // remain.
   await store.removePlanGenerationEvents(userId)
+  await store.removeProgressLogs(userId)
   await store.removeWorkouts(userId)
   await store.removeWorkoutPlans(userId)
   await store.resetProfile(userId)

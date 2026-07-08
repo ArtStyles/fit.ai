@@ -269,7 +269,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
           {/* Botón Saltar ejercicio */}
           {canReplace && (
             <details className="rounded-lg border border-border/40 bg-muted/10 p-3">
-              <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-violet-200">
+              <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-semibold text-violet-200">
                 <Repeat2 className="h-3.5 w-3.5" />
                 Cambiar ejercicio solo por hoy
               </summary>
@@ -287,7 +287,7 @@ export function ExerciseCard({ exercise, exerciseOptions }: Props) {
             <button
               type="button"
               onClick={() => removeExercise(weId)}
-              className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-xs text-red-300 hover:bg-red-500/10 transition-colors"
+              className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-xs text-red-300 transition-colors hover:bg-red-500/10"
             >
               <Trash2 className="h-3.5 w-3.5" />
               Quitar ejercicio agregado
