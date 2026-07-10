@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { Lock, UserRound } from 'lucide-react'
+import { Lock, Settings, UserRound } from 'lucide-react'
 import { getProfile } from '@/app/actions/feed'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { FollowButton } from '@/components/social/FollowButton'
@@ -24,6 +24,15 @@ export default async function PublicProfilePage({ params }: { params: { username
         backHref="/feed"
         backLabel="Comunidad"
         icon={<UserRound className="h-5 w-5" />}
+        right={isMe ? (
+          <Link
+            href="/settings"
+            aria-label="Abrir ajustes del perfil"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-muted/10 text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <Settings className="h-5 w-5" />
+          </Link>
+        ) : undefined}
       />
 
       <header className="border-b border-border/40 px-4 py-6">

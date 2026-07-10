@@ -146,26 +146,22 @@ export function DashboardLoading() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <FixedTopBar initialHeight={104}>
-        <Shimmer className="h-20 w-20 shrink-0 rounded-full bg-violet-500/15" />
-
-        <div className="min-w-0 flex-1">
-          <Shimmer className="h-3 w-16 rounded bg-muted/40" />
-          <Shimmer className="mt-2 h-5 w-24 rounded" />
-          <Shimmer className="mt-2 h-5 w-20 rounded-full bg-violet-500/15" />
+      <FixedTopBar initialHeight={104} contentClassName="max-w-3xl sm:px-6">
+        <div className="relative h-20 w-20 shrink-0 rounded-full">
+          <Shimmer className="h-20 w-20 rounded-full bg-violet-500/15" />
+          <Shimmer
+            data-loading-slot="dashboard-avatar-badge"
+            className="absolute bottom-0 right-0 h-6 w-6 rounded-full border-2 border-background bg-violet-500/30"
+          />
         </div>
 
-        <div className="flex h-11 w-[8.5rem] shrink-0 items-center gap-2 rounded-full border border-border/60 bg-card/50 p-1.5 pr-3 shadow-sm">
-          <Shimmer className="h-8 w-8 shrink-0 rounded-full bg-violet-500/20" />
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Shimmer className="h-3 w-6 shrink-0 rounded bg-muted/40" />
-            <span aria-hidden className="h-3.5 w-px shrink-0 bg-border/80" />
-            <Shimmer className="h-3 min-w-0 flex-1 rounded" />
-          </div>
+        <div className="min-w-0 flex-1">
+          <Shimmer className="h-4 w-24 rounded bg-muted/40" />
+          <Shimmer className="mt-2 h-8 w-36 rounded" />
         </div>
       </FixedTopBar>
 
-      <main className="mx-auto max-w-lg px-4">
+      <main className="mx-auto max-w-3xl px-4 sm:px-6">
         <section className="mt-6 rounded-2xl border border-violet-500/20 bg-violet-500/[0.06] p-5">
           <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
             Hoy
@@ -401,7 +397,12 @@ export function PostDetailLoading() {
 export function ProfileLoading() {
   return (
     <div className="mx-auto max-w-lg pb-24">
-      <BackHeader backLabel="Comunidad" title="Perfil" icon={UserRound} />
+      <BackHeader
+        backLabel="Comunidad"
+        title="Perfil"
+        icon={UserRound}
+        right={<Shimmer data-loading-slot="profile-action" className="h-11 w-11 rounded-xl bg-muted/40" />}
+      />
       <header className="border-b border-border/40 px-4 py-6">
         <div className="flex items-center gap-5">
           <Shimmer className="h-20 w-20 shrink-0 rounded-full bg-violet-500/15" />
@@ -424,6 +425,139 @@ export function ProfileLoading() {
         ))}
       </div>
     </div>
+  )
+}
+
+function SettingsFieldSkeleton({ label, className }: { label: string; className?: string }) {
+  return (
+    <div className={cn('space-y-1.5', className)}>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <Shimmer className="h-10 rounded-md bg-muted/40" />
+    </div>
+  )
+}
+
+function SettingsSaveSkeleton() {
+  return <Shimmer className="h-11 w-full rounded-md bg-violet-500/20" />
+}
+
+function SettingsDetailShell({
+  title,
+  icon,
+  view,
+  children,
+}: {
+  title: string
+  icon: IconComponent
+  view: string
+  children: React.ReactNode
+}) {
+  return (
+    <AppLoadingShell className="pb-16">
+      <BackHeader backLabel="Ajustes" title={title} icon={icon} />
+      <section data-loading-view={view} className="mt-8 space-y-6" aria-label={`Cargando ${title}`}>
+        {children}
+      </section>
+    </AppLoadingShell>
+  )
+}
+
+export function ProfileSettingsLoading() {
+  return (
+    <SettingsDetailShell title="Perfil" icon={UserRound} view="settings-profile">
+      <div className="flex flex-col items-center rounded-2xl border border-border/60 bg-muted/10 p-6">
+        <p className="sr-only">Avatar</p>
+        <Shimmer className="h-24 w-24 rounded-full bg-violet-500/15" />
+        <Shimmer className="mt-4 h-9 w-36 rounded-md bg-muted/40" />
+      </div>
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <SettingsFieldSkeleton label="Usuario" />
+      </div>
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <SettingsFieldSkeleton label="Privacidad" />
+      </div>
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <SettingsFieldSkeleton label="Nombre" />
+      </div>
+      <SettingsSaveSkeleton />
+    </SettingsDetailShell>
+  )
+}
+
+export function PersonalDataSettingsLoading() {
+  return (
+    <SettingsDetailShell title="Datos personales" icon={UserRound} view="settings-personal-data">
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <div className="grid grid-cols-2 gap-3">
+          <SettingsFieldSkeleton label="Altura cm" />
+          <SettingsFieldSkeleton label="Peso kg" />
+          <SettingsFieldSkeleton label="Nacimiento" />
+          <SettingsFieldSkeleton label="Género" />
+        </div>
+      </div>
+      <SettingsSaveSkeleton />
+    </SettingsDetailShell>
+  )
+}
+
+export function TrainingSettingsLoading() {
+  return (
+    <SettingsDetailShell title="Entrenamiento" icon={Dumbbell} view="settings-training">
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <SettingsFieldSkeleton label="Objetivo" />
+            <SettingsFieldSkeleton label="Nivel" />
+            <SettingsFieldSkeleton label="Gimnasio" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <SettingsFieldSkeleton label="Días por semana" />
+            <SettingsFieldSkeleton label="Minutos por sesión" />
+          </div>
+          <SettingsFieldSkeleton label="Equipamiento disponible" />
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Lesiones o limitaciones</p>
+            <Shimmer className="h-24 rounded-md bg-muted/40" />
+          </div>
+        </div>
+      </div>
+      <SettingsSaveSkeleton />
+    </SettingsDetailShell>
+  )
+}
+
+export function NotificationsSettingsLoading() {
+  return (
+    <SettingsDetailShell title="Notificaciones" icon={Bell} view="settings-notifications">
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <p className="text-sm font-semibold text-foreground">Recordatorios</p>
+        <div className="mt-4 space-y-3">
+          <SettingsFieldSkeleton label="Hora preferida" />
+          <SettingsFieldSkeleton label="Días activos" />
+        </div>
+      </div>
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <p className="text-sm font-semibold text-foreground">Actividad social</p>
+        <div className="mt-4 space-y-3">
+          <Shimmer className="h-12 rounded-xl bg-muted/40" />
+          <Shimmer className="h-12 rounded-xl bg-muted/40" />
+        </div>
+      </div>
+    </SettingsDetailShell>
+  )
+}
+
+export function AccountSettingsLoading() {
+  return (
+    <SettingsDetailShell title="Cuenta" icon={UserRound} view="settings-account">
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <SettingsFieldSkeleton label="Correo electrónico" />
+      </div>
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
+        <p className="text-sm font-semibold text-red-200">Eliminar cuenta</p>
+        <Shimmer className="mt-4 h-10 rounded-md bg-red-500/15" />
+      </div>
+    </SettingsDetailShell>
   )
 }
 
