@@ -10,6 +10,7 @@ describe('account settings legal links', () => {
   it('links directly to the user locale privacy route instead of the legacy redirect', () => {
     expect(accountSettingsPage).toContain("import { localizedPath } from '@/lib/i18n/routing'")
     expect(accountSettingsPage).toContain("localizedPath(language, 'privacy')")
+    expect(accountSettingsPage).toContain('from=settings-account')
     expect(accountSettingsPage).toContain('href={privacyHref}')
     expect(accountSettingsPage).not.toContain('href="/privacy"')
   })

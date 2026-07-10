@@ -1,25 +1,29 @@
 import { Scale, ShieldCheck } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
-import { localizedPath, type PublicLocale } from '@/lib/i18n/routing'
+import type { PublicLocale } from '@/lib/i18n/routing'
 import { LEGAL_COPY, type LegalDocumentKind } from './legalContent'
+import { legalBackTarget } from './legalBackTarget'
 import { requiredSupportEmail } from './supportEmail'
 
 type LegalDocumentPageProps = {
   paramsLocale: string
   expectedLocale: PublicLocale
   document: LegalDocumentKind
+  returnTo?: string | null
 }
 
 export function LegalDocumentPage({
   paramsLocale,
   expectedLocale,
   document,
+  returnTo,
 }: LegalDocumentPageProps) {
   if (paramsLocale !== expectedLocale) notFound()
 
   const content = LEGAL_COPY[expectedLocale][document]
   const supportEmail = requiredSupportEmail()
+  const backTarget = legalBackTarget(expectedLocale, content.backLabel, returnTo)
   const Icon = document === 'privacy' ? ShieldCheck : Scale
 
   return (
@@ -27,8 +31,8 @@ export function LegalDocumentPage({
       <PageTopBar
         title={content.title}
         subtitle={`${expectedLocale === 'es' ? 'Última actualización' : 'Last updated'}: ${content.lastUpdated}`}
-        backHref={localizedPath(expectedLocale, 'home')}
-        backLabel={content.backLabel}
+        backHref={backTarget.href}
+        backLabel={backTarget.label}
         icon={<Icon aria-hidden="true" className="h-5 w-5" />}
       />
 

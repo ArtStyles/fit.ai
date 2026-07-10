@@ -14,7 +14,7 @@ export default async function AccountSettingsPage() {
   const { user, profile } = await requireAppUserContext()
   const language = normalizeLanguage(profile.language)
   const t = createTranslator(language)
-  const privacyHref = localizedPath(language, 'privacy')
+  const privacyHref = `${localizedPath(language, 'privacy')}?from=settings-account`
 
   return (
     <SettingsScreen
