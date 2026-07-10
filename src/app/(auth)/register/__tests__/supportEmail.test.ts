@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { requiredSupportEmail } from '../../../[locale]/_legal/supportEmail'
 
 describe('required support email', () => {
-  it('fails clearly when NEXT_PUBLIC_SUPPORT_EMAIL is missing', () => {
-    expect(() => requiredSupportEmail({})).toThrow('NEXT_PUBLIC_SUPPORT_EMAIL is required')
+  it('uses a safe Vekira fallback when NEXT_PUBLIC_SUPPORT_EMAIL is missing', () => {
+    expect(requiredSupportEmail({})).toBe('soporte@vekira.app')
   })
 
   it('returns a normalized configured address', () => {

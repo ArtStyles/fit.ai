@@ -6,12 +6,15 @@ import { DeleteAccountSection } from '@/components/settings/DeleteAccountSection
 import { requireAppUserContext } from '@/lib/auth/server'
 import { signOut } from '@/app/(auth)/actions'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
+import { localizedPath } from '@/lib/i18n/routing'
 
 export const metadata = { title: 'Cuenta · Vekira' }
 
 export default async function AccountSettingsPage() {
   const { user, profile } = await requireAppUserContext()
-  const t = createTranslator(normalizeLanguage(profile.language))
+  const language = normalizeLanguage(profile.language)
+  const t = createTranslator(language)
+  const privacyHref = localizedPath(language, 'privacy')
 
   return (
     <SettingsScreen
@@ -37,7 +40,7 @@ export default async function AccountSettingsPage() {
       </div>
 
       <p className="mt-8 text-center text-xs text-muted-foreground">
-        <Link href="/privacy" className="underline transition-colors hover:text-foreground">
+        <Link href={privacyHref} className="underline transition-colors hover:text-foreground">
           {t('Política de privacidad')}
         </Link>
       </p>
