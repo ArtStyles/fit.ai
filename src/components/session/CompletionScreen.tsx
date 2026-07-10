@@ -9,6 +9,8 @@ import { useSessionStore } from '@/store/sessionStore'
 import { hapticSuccess } from '@/lib/native/haptics'
 import { saveSession, type PRRecord } from '@/app/actions/saveSession'
 import type { ProgressionSuggestion } from '@/lib/progression'
+import { trackEvent } from '@/lib/analytics/events'
+import { recordSessionCompletionMilestone } from '@/lib/analytics/sessionMilestones'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
@@ -35,6 +37,13 @@ const itemMotion = {
 function formatDuration(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000))
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`
+}
+
+function durationBucket(ms: number): 'short' | 'medium' | 'long' {
+  const minutes = Math.max(0, Math.round(ms / 60_000))
+  if (minutes < 30) return 'short'
+  if (minutes <= 75) return 'medium'
+  return 'long'
 }
 
 function prDetail(pr: PRRecord): string {
@@ -159,11 +168,22 @@ export function CompletionScreen({
         return
       }
 
+      const savedProgressLogId = result.progressLogId
+
       requestGateRef.current.commit(requestToken, () => {
-        serverSavedRef.current = result.progressLogId
+        serverSavedRef.current = savedProgressLogId
         setPrs(result.prs)
         setProgressions(result.progressions)
-        setProgressLogId(result.progressLogId)
+        setProgressLogId(savedProgressLogId)
+
+        const milestoneEvent = recordSessionCompletionMilestone(savedProgressLogId)
+        if (milestoneEvent) {
+          void trackEvent(milestoneEvent, {
+            screen: 'session',
+            authenticated: true,
+            duration_bucket: durationBucket((finishedAt || Date.now()) - startedAt),
+          })
+        }
 
         const cleanupResult = onClearBackup()
         const cleanupEvent = syncEventForStorageResult('delete', cleanupResult)

@@ -12,13 +12,17 @@ CREATE TABLE public.product_events (
     'plan_generated',
     'first_session_started',
     'first_session_completed',
+    'second_session_completed',
     'plan_adjustment_used',
-    'organic_page_cta_clicked'
+    'organic_page_cta_clicked',
+    'paywall_viewed',
+    'checkout_started',
+    'pro_interest_submitted'
   )),
   anonymous_id UUID NOT NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   locale TEXT CHECK (locale IN ('es', 'en')),
-  path TEXT CHECK (path IS NULL OR path IN ('/', '/es', '/en', '/register', '/onboarding')),
+  path TEXT CHECK (path IS NULL OR path IN ('/', '/es', '/en', '/register', '/onboarding', '/pricing', '/session')),
   properties JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 

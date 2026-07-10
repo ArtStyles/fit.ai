@@ -1,7 +1,7 @@
 import { Info } from 'lucide-react'
-import { PendingLink } from '@/components/navigation/PendingLink'
-import { Button } from '@/components/ui/button'
 import { PLAN_COMPARISON } from '@/lib/marketing/planComparison'
+import { PricingAnalytics } from './PricingAnalytics'
+import { ProInterestCta } from './ProInterestCta'
 
 type EarlyAccessPlansProps = {
   isAuthenticated: boolean
@@ -10,6 +10,8 @@ type EarlyAccessPlansProps = {
 export function EarlyAccessPlans({ isAuthenticated }: EarlyAccessPlansProps) {
   return (
     <section aria-labelledby="plan-comparison-title">
+      <PricingAnalytics isAuthenticated={isAuthenticated} />
+
       <div className="mx-auto max-w-2xl text-center">
         <p className="text-sm font-semibold text-violet-300">Free y Pro</p>
         <h2
@@ -30,9 +32,9 @@ export function EarlyAccessPlans({ isAuthenticated }: EarlyAccessPlansProps) {
       >
         <Info className="mt-0.5 h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
         <div>
-          <p className="font-bold text-foreground">Pro está en preparación</p>
+          <p className="font-bold text-foreground">Pro está en beta</p>
           <p className="mt-1 text-sm leading-relaxed text-foreground/80">
-            La activación de Pro y los pagos todavía no están disponibles.
+            Pro está en beta, sin cobros todavía: puedes registrar tu interés sin pagos activos.
           </p>
         </div>
       </div>
@@ -75,23 +77,7 @@ export function EarlyAccessPlans({ isAuthenticated }: EarlyAccessPlansProps) {
       </div>
 
       <div className="mt-7 flex justify-center">
-        {isAuthenticated ? (
-          <Button
-            type="button"
-            disabled
-            aria-describedby="pro-availability"
-            className="h-12 min-w-52 bg-violet-600 px-6 font-bold text-white disabled:opacity-60"
-          >
-            Pro próximamente
-          </Button>
-        ) : (
-          <PendingLink
-            href="/register"
-            className="inline-flex h-12 min-w-52 items-center justify-center rounded-md bg-violet-600 px-6 text-sm font-bold text-white ring-offset-background transition-colors hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Crear mi plan gratis
-          </PendingLink>
-        )}
+        <ProInterestCta isAuthenticated={isAuthenticated} />
       </div>
     </section>
   )

@@ -12,8 +12,12 @@ const EVENT_NAMES: AnalyticsEventName[] = [
   'plan_generated',
   'first_session_started',
   'first_session_completed',
+  'second_session_completed',
   'plan_adjustment_used',
   'organic_page_cta_clicked',
+  'paywall_viewed',
+  'checkout_started',
+  'pro_interest_submitted',
 ]
 
 const originalWindow = globalThis.window
@@ -50,11 +54,11 @@ describe('sanitizeEvent', () => {
 
   it.each([
     ['locale', 'es'], ['locale', 'en'],
-    ['path', '/'], ['path', '/es'], ['path', '/en'], ['path', '/register'], ['path', '/onboarding'],
+    ['path', '/'], ['path', '/es'], ['path', '/en'], ['path', '/register'], ['path', '/onboarding'], ['path', '/pricing'], ['path', '/session'],
     ['stage', 'profile'], ['stage', 'availability'], ['stage', 'equipment'],
     ['stage', 'safety'], ['stage', 'confirmation'], ['stage', 'generating'],
-    ['source', 'landing'], ['source', 'guide'],
-    ['screen', 'landing'], ['screen', 'register'], ['screen', 'onboarding'],
+    ['source', 'landing'], ['source', 'guide'], ['source', 'pricing'],
+    ['screen', 'landing'], ['screen', 'register'], ['screen', 'onboarding'], ['screen', 'pricing'], ['screen', 'session'],
     ['authenticated', true], ['authenticated', false],
     ['duration_bucket', 'short'], ['duration_bucket', 'medium'], ['duration_bucket', 'long'],
   ])('accepts documented %s value %j', (key, value) => {
@@ -166,6 +170,21 @@ describe('trackEvent', () => {
       properties: { locale: 'en', path: '/en' },
     }))
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('normalizes session detail paths before sending product events', async () => {
+    setBrowser('/session/workout-123')
+    const sendBeacon = vi.fn((_url: string, _data?: BodyInit | null) => true)
+    setNavigator({ sendBeacon })
+    globalThis.fetch = vi.fn()
+
+    await trackEvent('second_session_completed', { screen: 'session', authenticated: true })
+
+    const [, body] = sendBeacon.mock.calls[0]!
+    await expect((body as Blob).text()).resolves.toBe(JSON.stringify({
+      name: 'second_session_completed',
+      properties: { screen: 'session', authenticated: true, path: '/session' },
+    }))
   })
 
   it.each([

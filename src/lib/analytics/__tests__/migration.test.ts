@@ -5,6 +5,10 @@ const migration = readFileSync(
   new URL('../../../../supabase/migrations/034_product_events.sql', import.meta.url),
   'utf8',
 )
+const incrementalMigration = readFileSync(
+  new URL('../../../../supabase/migrations/036_product_events_conversion_funnel.sql', import.meta.url),
+  'utf8',
+)
 
 const eventNames = [
   'landing_view',
@@ -17,8 +21,12 @@ const eventNames = [
   'plan_generated',
   'first_session_started',
   'first_session_completed',
+  'second_session_completed',
   'plan_adjustment_used',
   'organic_page_cta_clicked',
+  'paywall_viewed',
+  'checkout_started',
+  'pro_interest_submitted',
 ]
 
 describe('product events migration', () => {
@@ -37,8 +45,16 @@ describe('product events migration', () => {
 
   it('constrains locale and pathname and creates funnel query indexes', () => {
     expect(migration).toContain("locale TEXT CHECK (locale IN ('es', 'en'))")
-    expect(migration).toContain("path IN ('/', '/es', '/en', '/register', '/onboarding')")
+    expect(migration).toContain("path IN ('/', '/es', '/en', '/register', '/onboarding', '/pricing', '/session')")
     expect(migration).toContain('product_events_occurred_at_idx')
     expect(migration).toContain('product_events_name_idx')
+  })
+
+  it('ships an incremental constraint migration for existing product_events tables', () => {
+    expect(incrementalMigration).toContain('DROP CONSTRAINT IF EXISTS product_events_event_name_check')
+    expect(incrementalMigration).toContain('ADD CONSTRAINT product_events_event_name_check')
+    for (const eventName of eventNames) expect(incrementalMigration).toContain(`'${eventName}'`)
+    expect(incrementalMigration).toContain('DROP CONSTRAINT IF EXISTS product_events_path_check')
+    expect(incrementalMigration).toContain("path IN ('/', '/es', '/en', '/register', '/onboarding', '/pricing', '/session')")
   })
 })

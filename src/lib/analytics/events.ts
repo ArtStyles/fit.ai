@@ -9,16 +9,20 @@ export type AnalyticsEventName =
   | 'plan_generated'
   | 'first_session_started'
   | 'first_session_completed'
+  | 'second_session_completed'
   | 'plan_adjustment_used'
   | 'organic_page_cta_clicked'
+  | 'paywall_viewed'
+  | 'checkout_started'
+  | 'pro_interest_submitted'
 
 export const ANALYTICS_LOCALES = ['es', 'en'] as const
-export const ANALYTICS_PATHS = ['/', '/es', '/en', '/register', '/onboarding'] as const
+export const ANALYTICS_PATHS = ['/', '/es', '/en', '/register', '/onboarding', '/pricing', '/session'] as const
 export const ANALYTICS_STAGES = [
   'profile', 'availability', 'equipment', 'safety', 'confirmation', 'generating',
 ] as const
-export const ANALYTICS_SOURCES = ['landing', 'guide'] as const
-export const ANALYTICS_SCREENS = ['landing', 'register', 'onboarding'] as const
+export const ANALYTICS_SOURCES = ['landing', 'guide', 'pricing'] as const
+export const ANALYTICS_SCREENS = ['landing', 'register', 'onboarding', 'pricing', 'session'] as const
 export const ANALYTICS_DURATION_BUCKETS = ['short', 'medium', 'long'] as const
 
 export type AnalyticsProperties = {
@@ -47,8 +51,12 @@ const EVENT_NAMES = new Set<AnalyticsEventName>([
   'plan_generated',
   'first_session_started',
   'first_session_completed',
+  'second_session_completed',
   'plan_adjustment_used',
   'organic_page_cta_clicked',
+  'paywall_viewed',
+  'checkout_started',
+  'pro_interest_submitted',
 ])
 
 const PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
@@ -87,6 +95,16 @@ function serializedByteLength(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength
 }
 
+export function normalizeAnalyticsPath(pathname: string): (typeof ANALYTICS_PATHS)[number] | null {
+  if ((ANALYTICS_PATHS as readonly string[]).includes(pathname)) {
+    return pathname as (typeof ANALYTICS_PATHS)[number]
+  }
+
+  if (pathname === '/session' || pathname.startsWith('/session/')) return '/session'
+
+  return null
+}
+
 export function sanitizeEvent(input: unknown): SanitizedAnalyticsEvent | null {
   try {
     if (!isPlainRecord(input)) return null
@@ -116,9 +134,10 @@ export async function trackEvent(
 ): Promise<void> {
   if (typeof window === 'undefined') return
 
+  const path = normalizeAnalyticsPath(window.location.pathname)
   const event = sanitizeEvent({
     name,
-    properties: { ...properties, path: window.location.pathname },
+    properties: { ...properties, path: path ?? window.location.pathname },
   })
   if (!event) return
 

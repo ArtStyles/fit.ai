@@ -52,6 +52,13 @@ describe('registration experience', () => {
     }
   })
 
+  it('accepts the Pro beta interest plan from pricing', () => {
+    const page = source('../page.tsx')
+
+    expect(page).toContain("'pro-early-access'")
+    expect(page).toContain('EARLY_ACCESS_PLANS.has(searchParams.plan)')
+  })
+
   it('renders keyboard-accessible locale-aware legal links', () => {
     const form = source('../RegisterForm.tsx')
 
