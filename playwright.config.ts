@@ -19,7 +19,14 @@ export default defineConfig({
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH },
   },
   projects: [
-    { name: 'mobile-375', use: { viewport: { width: 375, height: 812 } } },
+    {
+      name: 'mobile-375',
+      use: {
+        viewport: { width: 375, height: 812 },
+        hasTouch: true,
+        isMobile: true,
+      },
+    },
     { name: 'tablet-768', use: { viewport: { width: 768, height: 1024 } } },
     { name: 'desktop-1024', use: { viewport: { width: 1024, height: 768 } } },
     { name: 'desktop-1440', use: { viewport: { width: 1440, height: 900 } } },
