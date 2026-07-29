@@ -18,6 +18,15 @@ export interface PlanAdjustmentOptions {
   exercises: Array<{ id: string; name: string }>
 }
 
+export interface PlanAdjustmentPreviewSummary {
+  daysBefore: number
+  daysAfter: number
+  exercisesAddedCount: number
+  exercisesRemovedCount: number
+  changedPrescriptionCount: number
+  warnings: string[]
+}
+
 function uniqueStrings(values: unknown[]): string[] {
   return Array.from(new Set(values.filter((value): value is string => typeof value === 'string')))
 }

@@ -13,6 +13,7 @@ import type { CardioModality, PlanAdjustmentIntent } from '@/lib/training-engine
 import {
   validatePlanAdjustmentIntent,
   type PlanAdjustmentOptions,
+  type PlanAdjustmentPreviewSummary,
 } from '@/lib/plans/adjustmentIntent'
 
 export interface SuggestAdjustmentResult {
@@ -32,12 +33,9 @@ export interface ApplyAdjustmentResult {
 
 export interface SuggestPlanAdjustmentResult {
   success: boolean
-  suggestion?: string
   intent?: PlanAdjustmentIntent
-  changesSummary?: string[]
-  isMock?: boolean
+  preview?: PlanAdjustmentPreviewSummary
   error?: string
-  requiresReadinessReview?: boolean
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -190,22 +188,21 @@ export async function previewStructuredPlanAdjustment(
       return {
         success: false,
         error: preview.error ?? 'El motor rechazó el ajuste propuesto.',
-        requiresReadinessReview: preview.requiresReadinessReview,
       }
     }
     const diff = preview.previewDiff
-    const summary = diff ? [
-      diff.daysBefore !== diff.daysAfter ? `Días semanales: ${diff.daysBefore} → ${diff.daysAfter}` : null,
-      diff.exercisesAdded.length > 0 ? `${diff.exercisesAdded.length} ejercicios añadidos` : null,
-      diff.exercisesRemoved.length > 0 ? `${diff.exercisesRemoved.length} ejercicios sustituidos o retirados` : null,
-      diff.changedPrescriptionCount > 0 ? `${diff.changedPrescriptionCount} prescripciones ajustadas` : null,
-      ...(preview.warnings ?? []),
-    ].filter((value): value is string => Boolean(value)) : []
 
     return {
       success: true,
       intent,
-      changesSummary: summary.length > 0 ? summary : ['El plan fue recalculado y validado sin cambios estructurales importantes.'],
+      preview: {
+        daysBefore: diff?.daysBefore ?? 0,
+        daysAfter: diff?.daysAfter ?? 0,
+        exercisesAddedCount: diff?.exercisesAdded.length ?? 0,
+        exercisesRemovedCount: diff?.exercisesRemoved.length ?? 0,
+        changedPrescriptionCount: diff?.changedPrescriptionCount ?? 0,
+        warnings: preview.warnings ?? [],
+      },
     }
   } catch (error) {
     console.error('[adjustPlan] previewStructuredPlanAdjustment falló:', error)

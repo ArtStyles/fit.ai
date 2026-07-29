@@ -26,6 +26,7 @@ import {
 import type { CardioModality, PlanAdjustmentIntent } from '@/lib/training-engine'
 import {
   buildPlanAdjustmentIntent,
+  buildPlanAdjustmentSummary,
   type PlanAdjustmentCategory,
   type PlanAdjustmentDraft,
 } from './planAdjustmentForm'
@@ -63,7 +64,7 @@ const CATEGORIES = [
 export function PlanAdjustButton({ planId, options }: Props) {
   const router = useRouter()
   const { showToast } = useToast()
-  const { t } = useI18n()
+  const { language, t } = useI18n()
   const [open, setOpen] = useState(false)
   const defaultDays = Math.min(6, Math.max(2, Math.round(options.currentDaysPerWeek)))
   const [draft, setDraft] = useState<PlanAdjustmentDraft>({
@@ -129,12 +130,12 @@ export function PlanAdjustButton({ planId, options }: Props) {
     const result = await previewStructuredPlanAdjustment(planId, intent)
     setLoading(false)
 
-    if (!result.success || !result.intent) {
+    if (!result.success || !result.intent || !result.preview) {
       setError(t(result.error ?? 'No se pudo validar la vista previa del ajuste.'))
       return
     }
     setPreviewIntent(result.intent)
-    setChangesSummary(result.changesSummary ?? [])
+    setChangesSummary(buildPlanAdjustmentSummary(result.preview, language))
   }
 
   async function handleApply() {

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { buildPlanAdjustmentIntent } from '../planAdjustmentForm'
+import {
+  buildPlanAdjustmentIntent,
+  buildPlanAdjustmentSummary,
+} from '../planAdjustmentForm'
 
 describe('buildPlanAdjustmentIntent', () => {
   it.each([
@@ -50,5 +53,37 @@ describe('buildPlanAdjustmentIntent', () => {
       category: 'exercise',
       exerciseId: '',
     })).toBeNull()
+  })
+})
+
+describe('buildPlanAdjustmentSummary', () => {
+  it('formats deterministic preview counts in the active language', () => {
+    expect(buildPlanAdjustmentSummary({
+      daysBefore: 4,
+      daysAfter: 3,
+      exercisesAddedCount: 2,
+      exercisesRemovedCount: 1,
+      changedPrescriptionCount: 5,
+      warnings: ['Engine warning'],
+    }, 'en')).toEqual([
+      'Weekly days: 4 → 3',
+      '2 exercises added',
+      '1 exercise replaced or removed',
+      '5 prescriptions adjusted',
+      'Engine warning',
+    ])
+  })
+
+  it('returns a localized no-structural-change message', () => {
+    expect(buildPlanAdjustmentSummary({
+      daysBefore: 4,
+      daysAfter: 4,
+      exercisesAddedCount: 0,
+      exercisesRemovedCount: 0,
+      changedPrescriptionCount: 0,
+      warnings: [],
+    }, 'en')).toEqual([
+      'The plan was recalculated and validated without major structural changes.',
+    ])
   })
 })
