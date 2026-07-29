@@ -7,9 +7,14 @@ import { summarizeChanges, validateAdjustmentChanges } from '@/lib/ai/adjustment
 import { loadCoachContextText } from '@/lib/ai/coachContextLoader'
 import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
 import type { AdjustmentChange, AdjustmentContext } from '@/lib/ai/adjustments'
-import { generatePlanAdjustmentIntent, isHealthChangeRequest } from '@/lib/ai/planAdjustmentIntent'
+import { isHealthChangeRequest } from '@/lib/ai/healthRequest'
 import { generatePlan } from './generatePlan'
 import type { CardioModality, PlanAdjustmentIntent } from '@/lib/training-engine'
+import {
+  validatePlanAdjustmentIntent,
+  type PlanAdjustmentOptions,
+  type PlanAdjustmentPreviewSummary,
+} from '@/lib/plans/adjustmentIntent'
 
 export interface SuggestAdjustmentResult {
   success: boolean
@@ -28,12 +33,9 @@ export interface ApplyAdjustmentResult {
 
 export interface SuggestPlanAdjustmentResult {
   success: boolean
-  suggestion?: string
   intent?: PlanAdjustmentIntent
-  changesSummary?: string[]
-  isMock?: boolean
+  preview?: PlanAdjustmentPreviewSummary
   error?: string
-  requiresReadinessReview?: boolean
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
@@ -60,6 +62,54 @@ async function getOwnedActivePlan(
     .maybeSingle() as { data: { id: string } | null }
 
   return plan
+}
+
+async function loadPlanAdjustmentOptions(
+  supabase: SupabaseServerClient,
+  userId: string,
+  planId: string,
+): Promise<PlanAdjustmentOptions> {
+  const [profileResult, workoutsResult] = await Promise.all([
+    (supabase.from('profiles') as any)
+      .select('days_per_week, session_duration_minutes, available_equipment, cardio_preferences')
+      .eq('id', userId)
+      .single(),
+    (supabase.from('workouts') as any)
+      .select('id')
+      .eq('plan_id', planId)
+      .eq('user_id', userId),
+  ])
+
+  const profile = profileResult.data as {
+    days_per_week: number | null
+    session_duration_minutes: number | null
+    available_equipment: string[] | null
+    cardio_preferences: CardioModality[] | null
+  } | null
+  const workoutIds = ((workoutsResult.data ?? []) as Array<{ id: string }>).map(
+    workout => workout.id,
+  )
+  const exerciseResult = workoutIds.length > 0
+    ? await (supabase.from('workout_exercises') as any)
+        .select('exercise:exercises(id, name)')
+        .in('workout_id', workoutIds)
+    : { data: [] }
+  const relationRows = (exerciseResult.data ?? []) as Array<{
+    exercise: { id: string; name: string } | Array<{ id: string; name: string }> | null
+  }>
+  const planExercises = new Map<string, { id: string; name: string }>()
+  relationRows.forEach(row => {
+    const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
+    if (exercise) planExercises.set(exercise.id, exercise)
+  })
+
+  return {
+    currentDaysPerWeek: profile?.days_per_week ?? 3,
+    currentSessionDurationMinutes: profile?.session_duration_minutes ?? 60,
+    availableEquipment: profile?.available_equipment ?? [],
+    cardioPreferences: profile?.cardio_preferences ?? ['walking'],
+    exercises: Array.from(planExercises.values()),
+  }
 }
 
 function getExerciseName(row: WorkoutExerciseRow): string {
@@ -114,109 +164,64 @@ async function loadAdjustmentContext(
   }
 }
 
-export async function suggestPlanAdjustment(
+export async function previewStructuredPlanAdjustment(
   planId: string,
-  request: string,
+  rawIntent: unknown,
 ): Promise<SuggestPlanAdjustmentResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
   const plan = await getOwnedActivePlan(supabase, user.id, planId)
   if (!plan) return { success: false, error: 'Plan activo no encontrado' }
-  if (!request.trim()) return { success: false, error: 'Describe qué quieres cambiar' }
 
-  const [userLimit, globalBudget, profileResult, workoutsResult] = await Promise.all([
-    checkUserRateLimit(user.id, 'plan_adjustment'),
-    checkGlobalDailyBudget(),
-    (supabase.from('profiles') as any)
-      .select('days_per_week, session_duration_minutes, available_equipment, cardio_preferences')
-      .eq('id', user.id)
-      .single(),
-    (supabase.from('workouts') as any)
-      .select('id')
-      .eq('plan_id', plan.id)
-      .eq('user_id', user.id),
-  ])
-  if (!userLimit.allowed) return { success: false, error: userLimit.reason }
-  if (!globalBudget.allowed) return { success: false, error: globalBudget.reason }
-
-  const profile = profileResult.data as {
-    days_per_week: number | null
-    session_duration_minutes: number | null
-    available_equipment: string[]
-    cardio_preferences: CardioModality[]
-  } | null
-  const workoutIds = ((workoutsResult.data ?? []) as Array<{ id: string }>).map(workout => workout.id)
-  const exerciseResult = workoutIds.length > 0
-    ? await (supabase.from('workout_exercises') as any)
-        .select('exercise:exercises(id, name)')
-        .in('workout_id', workoutIds)
-    : { data: [] }
-  const relationRows = (exerciseResult.data ?? []) as Array<{
-    exercise: { id: string; name: string } | Array<{ id: string; name: string }> | null
-  }>
-  const planExerciseMap = new Map<string, { id: string; name: string }>()
-  relationRows.forEach(row => {
-    const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
-    if (exercise) planExerciseMap.set(exercise.id, exercise)
-  })
-  const planExercises = Array.from(planExerciseMap.values())
+  const options = await loadPlanAdjustmentOptions(supabase, user.id, plan.id)
+  const intent = validatePlanAdjustmentIntent(rawIntent, options)
+  if (!intent) return { success: false, error: 'El ajuste seleccionado no es válido.' }
 
   try {
-    const interpreted = await generatePlanAdjustmentIntent({
-      userId: user.id,
-      request: request.trim(),
-      context: {
-        daysPerWeek: profile?.days_per_week ?? 3,
-        sessionDurationMinutes: profile?.session_duration_minutes ?? 60,
-        availableEquipment: profile?.available_equipment ?? [],
-        cardioPreferences: profile?.cardio_preferences ?? ['walking'],
-        exercises: planExercises,
-      },
-    })
     const preview = await generatePlan({
       mode: 'plan_adjustment',
-      adjustmentIntent: interpreted.intent,
+      adjustmentIntent: intent,
       previewOnly: true,
     })
     if (!preview.success) {
       return {
         success: false,
         error: preview.error ?? 'El motor rechazó el ajuste propuesto.',
-        requiresReadinessReview: preview.requiresReadinessReview,
       }
     }
     const diff = preview.previewDiff
-    const summary = diff ? [
-      diff.daysBefore !== diff.daysAfter ? `Días semanales: ${diff.daysBefore} → ${diff.daysAfter}` : null,
-      diff.exercisesAdded.length > 0 ? `${diff.exercisesAdded.length} ejercicios añadidos` : null,
-      diff.exercisesRemoved.length > 0 ? `${diff.exercisesRemoved.length} ejercicios sustituidos o retirados` : null,
-      diff.changedPrescriptionCount > 0 ? `${diff.changedPrescriptionCount} prescripciones ajustadas` : null,
-      ...(preview.warnings ?? []),
-    ].filter((value): value is string => Boolean(value)) : []
 
     return {
       success: true,
-      suggestion: interpreted.suggestion,
-      intent: interpreted.intent,
-      changesSummary: summary.length > 0 ? summary : ['El plan fue recalculado y validado sin cambios estructurales importantes.'],
-      isMock: interpreted.isMock,
+      intent,
+      preview: {
+        daysBefore: diff?.daysBefore ?? 0,
+        daysAfter: diff?.daysAfter ?? 0,
+        exercisesAddedCount: diff?.exercisesAdded.length ?? 0,
+        exercisesRemovedCount: diff?.exercisesRemoved.length ?? 0,
+        changedPrescriptionCount: diff?.changedPrescriptionCount ?? 0,
+        warnings: preview.warnings ?? [],
+      },
     }
   } catch (error) {
-    console.error('[adjustPlan] suggestPlanAdjustment falló:', error)
-    return { success: false, error: 'No se pudo interpretar o validar el ajuste.' }
+    console.error('[adjustPlan] previewStructuredPlanAdjustment falló:', error)
+    return { success: false, error: 'No se pudo validar la vista previa del ajuste.' }
   }
 }
 
 export async function applyPlanAdjustment(
   planId: string,
-  intent: PlanAdjustmentIntent,
+  rawIntent: unknown,
 ): Promise<ApplyAdjustmentResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
   const plan = await getOwnedActivePlan(supabase, user.id, planId)
   if (!plan) return { success: false, error: 'El plan activo cambió. Vuelve a generar la vista previa.' }
+  const options = await loadPlanAdjustmentOptions(supabase, user.id, plan.id)
+  const intent = validatePlanAdjustmentIntent(rawIntent, options)
+  if (!intent) return { success: false, error: 'El ajuste seleccionado ya no es válido.' }
 
   const result = await generatePlan({
     mode: 'plan_adjustment',
