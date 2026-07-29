@@ -60,7 +60,8 @@ async function openDashboard(page: Page) {
   await expect(page.locator('h1')).toHaveCount(1, { timeout: 30_000 })
 }
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, workerInfo) => {
+  if (workerInfo.project.name !== 'mobile-375') return
   test.setTimeout(120_000)
   await seedCoreProductFixture()
 })
