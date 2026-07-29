@@ -83,7 +83,7 @@ async function mountNestedScroller(viewport: Locator): Promise<Locator> {
   return nestedScroller
 }
 
-test.beforeAll(async (_fixtures, workerInfo) => {
+test.beforeAll(async ({ browserName: _browserName }, workerInfo) => {
   if (workerInfo.project.name !== 'mobile-375') return
   test.setTimeout(120_000)
   await seedCoreProductFixture()
@@ -405,7 +405,7 @@ test('the completed heartbeat remains mounted through its full settle animation'
     const url = new URL(route.request().url())
     if (url.searchParams.has('_rsc')) {
       interceptedRequests += 1
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await new Promise(resolve => setTimeout(resolve, 1_500))
     }
     await route.continue()
   })
@@ -450,6 +450,7 @@ test('the completed heartbeat remains mounted through its full settle animation'
       __vekiraCompletionHeartbeatEndedWhileConnected?: boolean | null
     }).__vekiraCompletionHeartbeatEndedWhileConnected
   )), { timeout: 1_000 }).toBe(true)
+  expect(interceptedRequests).toBe(1)
   await expect(settling).toHaveCount(0, { timeout: 500 })
 })
 
