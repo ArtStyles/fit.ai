@@ -394,6 +394,7 @@
   }
 }
 
+.vekira-ptr-indicator[data-reduced-motion="true"],
 .vekira-ptr-indicator[data-reduced-motion="true"] .vekira-ptr-mark,
 .vekira-ptr-indicator[data-reduced-motion="true"] .vekira-ptr-wave {
   animation: none !important;

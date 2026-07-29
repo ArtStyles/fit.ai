@@ -18,4 +18,11 @@ describe('global design system contract', () => {
     expect(layout).not.toContain('maximumScale: 1')
     expect(layout).toContain('<SkipLink')
   })
+
+  it('disables every refresh indicator animation for explicit reduced motion', () => {
+    expect(css).toMatch(
+      /\.vekira-ptr-indicator\[data-reduced-motion="true"\],\s*\.vekira-ptr-indicator\[data-reduced-motion="true"\] \.vekira-ptr-mark,\s*\.vekira-ptr-indicator\[data-reduced-motion="true"\] \.vekira-ptr-wave \{\s*animation: none !important;\s*\}/,
+    )
+    expect(css).toContain('transition-duration: 120ms !important;')
+  })
 })
