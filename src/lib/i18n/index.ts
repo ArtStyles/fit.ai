@@ -71,6 +71,7 @@ const ENGLISH: Record<string, string> = {
   'Volver': 'Back',
   'Cargando vista': 'Loading view',
   'Cargando…': 'Loading…',
+  'Actualizando contenido': 'Updating content',
   'Sesión': 'Session',
   'Ejercicio': 'Exercise',
   'Rutina': 'Workout',

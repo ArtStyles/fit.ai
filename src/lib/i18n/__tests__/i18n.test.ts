@@ -12,6 +12,7 @@ describe('UI translations', () => {
     expect(translate('en', 'Ajustes')).toBe('Settings')
     expect(translate('es', 'Ajustes')).toBe('Ajustes')
     expect(translate('en', 'Vekira')).toBe('Vekira')
+    expect(translate('en', 'Actualizando contenido')).toBe('Updating content')
   })
 
   it('interpolates translated values', () => {

@@ -3,6 +3,11 @@ import tsconfigPaths   from 'vite-tsconfig-paths'
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
+  oxc: {
+    jsx: {
+      runtime: 'automatic',
+    },
+  },
   test: {
     environment: 'node',
     setupFiles:  ['./src/lib/ai/__tests__/setup.ts'],
