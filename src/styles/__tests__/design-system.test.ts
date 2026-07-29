@@ -21,7 +21,7 @@ describe('global design system contract', () => {
 
   it('disables every refresh indicator animation for explicit reduced motion', () => {
     expect(css).toMatch(
-      /\.vekira-ptr-indicator\[data-reduced-motion="true"\],\s*\.vekira-ptr-indicator\[data-reduced-motion="true"\] \.vekira-ptr-mark,\s*\.vekira-ptr-indicator\[data-reduced-motion="true"\] \.vekira-ptr-wave \{\s*animation: none !important;\s*\}/,
+      /\.vekira-ptr-indicator\[data-reduced-motion="true"\],\s*\.vekira-ptr-indicator\[data-reduced-motion="true"\] \.vekira-ptr-energy,\s*\.vekira-ptr-indicator\[data-reduced-motion="true"\] \.vekira-ptr-mark,\s*\.vekira-ptr-indicator\[data-reduced-motion="true"\] \.vekira-ptr-wave \{\s*animation: none !important;\s*\}/,
     )
     expect(css).toContain('transition-duration: 120ms !important;')
   })

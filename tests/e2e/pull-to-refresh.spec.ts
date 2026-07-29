@@ -14,8 +14,8 @@ async function fireTouchEvent(
   type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel',
   touches: TestTouch[],
   changedTouches: TestTouch[] = touches,
-) {
-  await target.evaluate((element, event) => {
+): Promise<boolean> {
+  return target.evaluate((element, event) => {
     const createTouch = (point: TestTouch) => new Touch({
       identifier: point.identifier,
       target: element,
@@ -28,13 +28,15 @@ async function fireTouchEvent(
       force: 0.5,
     })
     const active = event.touches.map(createTouch)
-    element.dispatchEvent(new TouchEvent(event.type, {
+    const touchEvent = new TouchEvent(event.type, {
       bubbles: true,
       cancelable: true,
       touches: active,
       targetTouches: active,
       changedTouches: event.changedTouches.map(createTouch),
-    }))
+    })
+    element.dispatchEvent(touchEvent)
+    return touchEvent.defaultPrevented
   }, { type, touches, changedTouches })
 }
 
@@ -60,7 +62,28 @@ async function openDashboard(page: Page) {
   await expect(page.locator('h1')).toHaveCount(1, { timeout: 30_000 })
 }
 
-test.beforeAll(async ({}, workerInfo) => {
+async function mountNestedScroller(viewport: Locator): Promise<Locator> {
+  await viewport.evaluate(element => {
+    const scroller = document.createElement('div')
+    scroller.id = 'ptr-nested-scroller'
+    scroller.style.height = '120px'
+    scroller.style.width = '100%'
+    scroller.style.flex = '0 0 120px'
+    scroller.style.overflowY = 'auto'
+
+    const content = document.createElement('div')
+    content.style.height = '720px'
+    content.textContent = 'Nested scrolling content'
+    scroller.append(content)
+    element.prepend(scroller)
+  })
+
+  const nestedScroller = viewport.locator('#ptr-nested-scroller')
+  await expect(nestedScroller).toBeVisible()
+  return nestedScroller
+}
+
+test.beforeAll(async (_fixtures, workerInfo) => {
   if (workerInfo.project.name !== 'mobile-375') return
   test.setTimeout(120_000)
   await seedCoreProductFixture()
@@ -191,6 +214,243 @@ test('adding a second touch cancels an armed pull without refreshing', async ({
   await expect(page.locator('[data-pull-refresh-phase]')).toHaveCount(0)
   await page.waitForTimeout(750)
   expect(refreshRequests).toHaveLength(0)
+})
+
+test('a nested scroller away from its top keeps normal downward scrolling uncaptured', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-375')
+  test.setTimeout(120_000)
+
+  await openDashboard(page)
+  const viewport = page.locator('[data-app-scroll-viewport]')
+  await viewport.evaluate(element => { element.scrollTop = 0 })
+  const nestedScroller = await mountNestedScroller(viewport)
+  await nestedScroller.evaluate(element => { element.scrollTop = 80 })
+
+  const start = { identifier: 1, x: 180, y: 80 }
+  const moved = { ...start, y: 176 }
+  await fireTouchEvent(nestedScroller, 'touchstart', [start])
+  const defaultPrevented = await fireTouchEvent(
+    nestedScroller,
+    'touchmove',
+    [moved],
+  )
+
+  expect(defaultPrevented).toBe(false)
+  await expect(page.locator('[data-pull-refresh-phase]')).toHaveCount(0)
+  await fireTouchEvent(nestedScroller, 'touchend', [], [moved])
+})
+
+test('a nested scroller leaving the top cancels before preventing the next move', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-375')
+  test.setTimeout(120_000)
+
+  await openDashboard(page)
+  const viewport = page.locator('[data-app-scroll-viewport]')
+  await viewport.evaluate(element => { element.scrollTop = 0 })
+  const nestedScroller = await mountNestedScroller(viewport)
+  await nestedScroller.evaluate(element => { element.scrollTop = 0 })
+
+  const start = { identifier: 1, x: 180, y: 80 }
+  const moved = { ...start, y: 176 }
+  await fireTouchEvent(nestedScroller, 'touchstart', [start])
+  await expect(page.locator('[data-pull-refresh-phase="pulling"]')).toBeVisible()
+  await nestedScroller.evaluate(element => { element.scrollTop = 24 })
+  const defaultPrevented = await fireTouchEvent(
+    nestedScroller,
+    'touchmove',
+    [moved],
+  )
+
+  expect(defaultPrevented).toBe(false)
+  await expect(page.locator('[data-pull-refresh-phase="settling"]')).toBeVisible()
+  await fireTouchEvent(nestedScroller, 'touchend', [], [moved])
+  await expect(page.locator('[data-pull-refresh-phase]')).toHaveCount(0)
+})
+
+test('the threshold heartbeat and both waves survive immediate release without replaying on recross', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-375')
+  test.setTimeout(120_000)
+
+  await openDashboard(page)
+  await page.route('**/dashboard?*', async route => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.has('_rsc')) {
+      await new Promise(resolve => setTimeout(resolve, 1_500))
+    }
+    await route.continue()
+  })
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      __vekiraPtrAnimationStarts?: string[]
+    }
+    testWindow.__vekiraPtrAnimationStarts = []
+    document.addEventListener('animationstart', event => {
+      testWindow.__vekiraPtrAnimationStarts?.push(event.animationName)
+    })
+  })
+
+  const viewport = page.locator('[data-app-scroll-viewport]')
+  await viewport.evaluate(element => { element.scrollTop = 0 })
+  const start = { identifier: 1, x: 180, y: 80 }
+  const armed = { ...start, y: 176 }
+  const backedOff = { ...start, y: 120 }
+  const recrossed = { ...start, y: 180 }
+
+  await fireTouchEvent(viewport, 'touchstart', [start])
+  await fireTouchEvent(viewport, 'touchmove', [armed])
+  const indicator = page.locator('[data-pull-refresh-phase]')
+  await expect(indicator).toHaveAttribute('data-threshold-pulse', 'true')
+  await page.waitForTimeout(50)
+  await fireTouchEvent(viewport, 'touchmove', [backedOff])
+  await fireTouchEvent(viewport, 'touchmove', [recrossed])
+  await fireTouchEvent(viewport, 'touchend', [], [recrossed])
+
+  await expect(indicator).toHaveAttribute('data-pull-refresh-phase', 'refreshing')
+  await expect(indicator).toHaveAttribute('data-threshold-pulse', 'true')
+  const activeAnimations = await indicator.evaluate(element => {
+    const energy = element.querySelector('.vekira-ptr-energy')
+    const mark = element.querySelector('.vekira-ptr-mark')
+    const waves = Array.from(element.querySelectorAll('.vekira-ptr-wave'))
+    if (!energy || !mark || waves.length !== 2) {
+      throw new Error('Threshold animation elements are unavailable')
+    }
+    return {
+      indicator: getComputedStyle(element).animationName,
+      energy: getComputedStyle(energy).animationName,
+      mark: getComputedStyle(mark).animationName,
+      waves: waves.map(wave => getComputedStyle(wave).animationName),
+      secondWaveDelay: getComputedStyle(waves[1]).animationDelay,
+    }
+  })
+  expect(activeAnimations).toEqual({
+    indicator: 'vekira-ptr-catch',
+    energy: 'vekira-ptr-heartbeat',
+    mark: 'none',
+    waves: ['vekira-ptr-wave', 'vekira-ptr-wave'],
+    secondWaveDelay: '0.16s',
+  })
+
+  await page.waitForTimeout(220)
+  const animationStarts = await page.evaluate(() => (
+    (window as typeof window & {
+      __vekiraPtrAnimationStarts?: string[]
+    }).__vekiraPtrAnimationStarts ?? []
+  ))
+  expect(animationStarts.filter(name => name === 'vekira-ptr-catch')).toHaveLength(1)
+  expect(animationStarts.filter(name => name === 'vekira-ptr-heartbeat')).toHaveLength(1)
+  expect(animationStarts.filter(name => name === 'vekira-ptr-wave')).toHaveLength(2)
+
+  await expect(indicator).toHaveAttribute('data-threshold-pulse', 'false', {
+    timeout: 1_500,
+  })
+  await expect(indicator).toHaveAttribute('data-pull-refresh-phase', 'refreshing')
+  await expect(indicator.locator('.vekira-ptr-mark')).toHaveCSS(
+    'animation-name',
+    'vekira-ptr-loading-pulse',
+  )
+})
+
+test('a second touch outside the app viewport cancels an armed pull', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-375')
+  test.setTimeout(120_000)
+
+  await openDashboard(page)
+  await page.waitForLoadState('networkidle')
+  const refreshRequests: string[] = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (
+      url.pathname === '/dashboard'
+      && url.searchParams.has('_rsc')
+      && request.headers()['next-router-prefetch'] !== '1'
+    ) refreshRequests.push(request.url())
+  })
+
+  const viewport = page.locator('[data-app-scroll-viewport]')
+  const header = page.locator('header').first()
+  await expect(header).toBeVisible()
+  await viewport.evaluate(element => { element.scrollTop = 0 })
+  const primary = { identifier: 1, x: 180, y: 176 }
+  const secondary = { identifier: 2, x: 220, y: 176 }
+
+  await fireTouchEvent(viewport, 'touchstart', [{ ...primary, y: 80 }])
+  await fireTouchEvent(viewport, 'touchmove', [primary])
+  await expect(page.locator('[data-pull-refresh-phase="armed"]')).toBeVisible()
+
+  await fireTouchEvent(header, 'touchstart', [primary, secondary], [secondary])
+  await expect(page.locator('[data-pull-refresh-phase="settling"]')).toBeVisible()
+  await fireTouchEvent(viewport, 'touchend', [], [primary])
+  await expect(page.locator('[data-pull-refresh-phase]')).toHaveCount(0)
+  await page.waitForTimeout(750)
+  expect(refreshRequests).toHaveLength(0)
+})
+
+test('the completed heartbeat remains mounted through its full settle animation', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-375')
+  test.setTimeout(120_000)
+
+  await openDashboard(page)
+  let interceptedRequests = 0
+  await page.route('**/dashboard?*', async route => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.has('_rsc')) {
+      interceptedRequests += 1
+      await new Promise(resolve => setTimeout(resolve, 300))
+    }
+    await route.continue()
+  })
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      __vekiraCompletionHeartbeatEndedWhileConnected?: boolean | null
+    }
+    testWindow.__vekiraCompletionHeartbeatEndedWhileConnected = null
+    document.addEventListener('animationend', event => {
+      if (
+        event.animationName !== 'vekira-ptr-heartbeat'
+        || !(event.target instanceof Element)
+        || !event.target.matches('.vekira-ptr-mark')
+      ) return
+      const indicator = event.target.closest(
+        '[data-completion-pulse="true"]',
+      )
+      if (indicator) {
+        testWindow.__vekiraCompletionHeartbeatEndedWhileConnected =
+          indicator.isConnected
+      }
+    })
+  })
+  const viewport = page.locator('[data-app-scroll-viewport]')
+  await viewport.evaluate(element => { element.scrollTop = 0 })
+  await dragDown(page, viewport, 96)
+
+  await expect(page.locator('[data-pull-refresh-phase="refreshing"]')).toBeVisible()
+  await expect.poll(() => interceptedRequests).toBe(1)
+  const settling = page.locator(
+    '[data-pull-refresh-phase="settling"][data-completion-pulse="true"]',
+  )
+  await expect(settling).toBeVisible({ timeout: 9_000 })
+  await expect(settling.locator('.vekira-ptr-mark')).toHaveCSS(
+    'animation-duration',
+    '0.3s',
+  )
+  await expect(settling).toHaveCSS('transition-duration', '0.32s, 0.32s')
+
+  await expect.poll(() => page.evaluate(() => (
+    (window as typeof window & {
+      __vekiraCompletionHeartbeatEndedWhileConnected?: boolean | null
+    }).__vekiraCompletionHeartbeatEndedWhileConnected
+  )), { timeout: 1_000 }).toBe(true)
+  await expect(settling).toHaveCount(0, { timeout: 500 })
 })
 
 test('non-passive touchmove handling exists only during a valid active pull', async ({

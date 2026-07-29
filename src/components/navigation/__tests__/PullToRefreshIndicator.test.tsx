@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import { PullToRefreshIndicatorContent } from '../PullToRefreshIndicator'
 
-function renderIndicator(reducedMotion = false, completionPulse = false) {
+function renderIndicator(
+  reducedMotion = false,
+  completionPulse = false,
+  thresholdPulse = false,
+) {
   return renderToStaticMarkup(
     <I18nProvider language="en" syncDocumentLanguage={false}>
       <PullToRefreshIndicatorContent
@@ -13,6 +17,7 @@ function renderIndicator(reducedMotion = false, completionPulse = false) {
         visualDistance={45.76}
         reducedMotion={reducedMotion}
         completionPulse={completionPulse}
+        thresholdPulse={thresholdPulse}
       />
     </I18nProvider>,
   )
@@ -38,5 +43,11 @@ describe('PullToRefreshIndicatorContent', () => {
 
   it('marks a completed refresh for the final visual heartbeat', () => {
     expect(renderIndicator(false, true)).toContain('data-completion-pulse="true"')
+  })
+
+  it('keeps the one-shot threshold pulse independent from the refresh phase', () => {
+    expect(renderIndicator(false, false, true)).toContain(
+      'data-threshold-pulse="true"',
+    )
   })
 })

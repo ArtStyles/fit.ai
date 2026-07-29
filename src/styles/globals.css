@@ -323,19 +323,19 @@
     opacity: 0;
   }
 
-  .vekira-ptr-indicator[data-pull-refresh-phase="armed"] {
+  .vekira-ptr-indicator[data-threshold-pulse="true"] {
     animation: vekira-ptr-catch 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  .vekira-ptr-indicator[data-pull-refresh-phase="armed"] .vekira-ptr-mark {
+  .vekira-ptr-indicator[data-threshold-pulse="true"] .vekira-ptr-energy {
     animation: vekira-ptr-heartbeat 420ms ease-out both;
   }
 
-  .vekira-ptr-indicator[data-pull-refresh-phase="armed"] .vekira-ptr-wave {
+  .vekira-ptr-indicator[data-threshold-pulse="true"] .vekira-ptr-wave {
     animation: vekira-ptr-wave 620ms ease-out both;
   }
 
-  .vekira-ptr-indicator[data-pull-refresh-phase="armed"] .vekira-ptr-wave-delay {
+  .vekira-ptr-indicator[data-threshold-pulse="true"] .vekira-ptr-wave-delay {
     animation-delay: 160ms;
   }
 
@@ -343,13 +343,13 @@
     opacity: 1;
   }
 
-  .vekira-ptr-indicator[data-pull-refresh-phase="refreshing"] .vekira-ptr-mark {
+  .vekira-ptr-indicator[data-pull-refresh-phase="refreshing"][data-threshold-pulse="false"] .vekira-ptr-mark {
     animation: vekira-ptr-loading-pulse 900ms ease-in-out infinite;
   }
 
   .vekira-ptr-indicator[data-pull-refresh-phase="settling"] {
     opacity: 0;
-    transition: opacity 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 320ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .vekira-ptr-indicator[data-pull-refresh-phase="settling"][data-completion-pulse="true"] .vekira-ptr-mark {
@@ -383,6 +383,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .vekira-ptr-indicator,
+  .vekira-ptr-energy,
   .vekira-ptr-mark,
   .vekira-ptr-wave {
     animation: none !important;
@@ -395,6 +396,7 @@
 }
 
 .vekira-ptr-indicator[data-reduced-motion="true"],
+.vekira-ptr-indicator[data-reduced-motion="true"] .vekira-ptr-energy,
 .vekira-ptr-indicator[data-reduced-motion="true"] .vekira-ptr-mark,
 .vekira-ptr-indicator[data-reduced-motion="true"] .vekira-ptr-wave {
   animation: none !important;

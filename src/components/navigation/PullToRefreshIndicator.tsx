@@ -15,6 +15,7 @@ export type PullToRefreshIndicatorProps = {
   visualDistance: number
   reducedMotion: boolean
   completionPulse: boolean
+  thresholdPulse: boolean
 }
 
 type IndicatorStyle = CSSProperties & {
@@ -29,6 +30,7 @@ export function PullToRefreshIndicatorContent({
   visualDistance,
   reducedMotion,
   completionPulse,
+  thresholdPulse,
 }: PullToRefreshIndicatorProps) {
   const { t } = useI18n()
 
@@ -47,6 +49,7 @@ export function PullToRefreshIndicatorContent({
       data-pull-refresh-phase={phase}
       data-reduced-motion={reducedMotion ? 'true' : 'false'}
       data-completion-pulse={completionPulse ? 'true' : 'false'}
+      data-threshold-pulse={thresholdPulse ? 'true' : 'false'}
       className="vekira-ptr-indicator"
       style={style}
     >
