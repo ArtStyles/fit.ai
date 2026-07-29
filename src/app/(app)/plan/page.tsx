@@ -46,7 +46,9 @@ import {
 import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale, type AppLanguage } from '@/lib/i18n'
+import type { PlanAdjustmentOptions } from '@/lib/plans/adjustmentIntent'
 import { FREE_PLAN_LIMIT } from '@/lib/plans/entitlements'
+import type { CardioModality } from '@/lib/training-engine'
 
 export const metadata = { title: 'Plan completo · Vekira' }
 
@@ -94,6 +96,7 @@ type WorkoutRow = {
 type PlanConstraintProfile = {
   gym_type: 'home_no_equipment' | 'home_basic' | 'full_gym' | null
   available_equipment: string[] | null
+  cardio_preferences: CardioModality[] | null
   session_duration_minutes: number | null
   readiness_status: string | null
   movement_limitations: unknown
@@ -331,7 +334,7 @@ export default async function PlanPage() {
       .order('name') as unknown as Promise<{ data: PlanExerciseOption[] | null }>,
     supabase
       .from('profiles')
-      .select('gym_type, available_equipment, session_duration_minutes, readiness_status, movement_limitations')
+      .select('gym_type, available_equipment, cardio_preferences, session_duration_minutes, readiness_status, movement_limitations')
       .eq('id', user.id)
       .single() as unknown as Promise<{ data: PlanConstraintProfile | null }>,
   ])
@@ -407,6 +410,21 @@ export default async function PlanPage() {
   const todayIso = getIsoWeekday(new Date(), resolveUserTimeZone(profile.timezone))
   const todayWorkout = workouts.find(workout => workout.day_of_week === todayIso)
   const todayExercises = todayWorkout ? exercisesByWorkout[todayWorkout.id] ?? [] : []
+  const uniqueAdjustmentExercises = new Map<string, { id: string; name: string }>()
+  exerciseRows.forEach(row => {
+    const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
+    if (exercise) uniqueAdjustmentExercises.set(exercise.id, {
+      id: exercise.id,
+      name: exercise.name,
+    })
+  })
+  const adjustmentOptions: PlanAdjustmentOptions = {
+    currentDaysPerWeek: planRaw.days_per_week ?? workouts.length,
+    currentSessionDurationMinutes: constraintProfile?.session_duration_minutes ?? 60,
+    availableEquipment: constraintProfile?.available_equipment ?? [],
+    cardioPreferences: constraintProfile?.cardio_preferences ?? ['walking'],
+    exercises: Array.from(uniqueAdjustmentExercises.values()),
+  }
 
   return (
     <div className="min-h-screen bg-background pb-16">
@@ -428,7 +446,7 @@ export default async function PlanPage() {
               <p className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t('Acciones del plan')}
               </p>
-              <PlanAdjustButton planId={planRaw.id} />
+              <PlanAdjustButton planId={planRaw.id} options={adjustmentOptions} />
               <PlanRegenerateButton />
               <Button asChild variant="outline" className="h-11 w-full border-border/60 bg-muted/10">
                 <PendingLink href="/history">
