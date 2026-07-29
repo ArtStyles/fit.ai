@@ -25,7 +25,7 @@ const MIN_REFRESH_MS = 600
 const REFRESH_FAIL_SAFE_MS = 10_000
 const SETTLE_MS = 220
 const DISABLED_TARGETS =
-  'input, textarea, select, [contenteditable="true"], [data-pull-refresh-disabled]'
+  'input, textarea, select, [contenteditable]:not([contenteditable="false" i]), [data-pull-refresh-disabled]'
 
 function isDisabledTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(DISABLED_TARGETS))
@@ -46,6 +46,8 @@ export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
   const completionTimerRef = useRef<number | null>(null)
   const failSafeTimerRef = useRef<number | null>(null)
   const settleTimerRef = useRef<number | null>(null)
+  const activeTouchIdentifierRef = useRef<number | null>(null)
+  const removeTouchMoveListenerRef = useRef<(() => void) | null>(null)
 
   const commit = useCallback((next: PullGestureState) => {
     gestureRef.current = next
@@ -67,14 +69,23 @@ export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
     }
   }, [])
 
+  const detachTouchMove = useCallback(() => {
+    removeTouchMoveListenerRef.current?.()
+    removeTouchMoveListenerRef.current = null
+  }, [])
+
   const reset = useCallback(() => {
     clearTimers()
+    detachTouchMove()
+    activeTouchIdentifierRef.current = null
     sawPendingRef.current = false
     setCompletionPulse(false)
     commit(resetPull())
-  }, [clearTimers, commit])
+  }, [clearTimers, commit, detachTouchMove])
 
   const settle = useCallback((completed = false) => {
+    detachTouchMove()
+    activeTouchIdentifierRef.current = null
     if (completionTimerRef.current !== null) {
       window.clearTimeout(completionTimerRef.current)
       completionTimerRef.current = null
@@ -93,7 +104,7 @@ export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
       commit(resetPull())
       settleTimerRef.current = null
     }, SETTLE_MS)
-  }, [commit])
+  }, [commit, detachTouchMove])
 
   const triggerRefresh = useCallback(() => {
     refreshStartedAtRef.current = performance.now()
@@ -149,10 +160,16 @@ export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
   }, [pathname, reset])
 
   useEffect(() => {
+    if (!enabled) reset()
+  }, [enabled, reset])
+
+  useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
 
     const scheduleIdle = () => {
+      detachTouchMove()
+      activeTouchIdentifierRef.current = null
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current)
       }
@@ -162,35 +179,25 @@ export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
       }, SETTLE_MS)
     }
 
-    const handleTouchStart = (event: TouchEvent) => {
-      const phase = gestureRef.current.phase
-      if (phase === 'refreshing' || phase === 'settling') return
-      if (!shouldStartPull({
-        enabled,
-        scrollTop: viewport.scrollTop,
-        touchCount: event.touches.length,
-        disabledTarget: isDisabledTarget(event.target),
-      })) return
-
-      if (settleTimerRef.current !== null) {
-        window.clearTimeout(settleTimerRef.current)
-        settleTimerRef.current = null
-      }
-      setCompletionPulse(false)
-      const touch = event.touches[0]
-      commit(beginPull({ x: touch.clientX, y: touch.clientY }))
+    const cancelActiveGesture = () => {
+      const current = gestureRef.current
+      if (current.phase !== 'pulling' && current.phase !== 'armed') return
+      commit(cancelPull(current))
+      scheduleIdle()
     }
 
     const handleTouchMove = (event: TouchEvent) => {
       const current = gestureRef.current
       if (current.phase !== 'pulling' && current.phase !== 'armed') return
-      if (event.touches.length !== 1) {
-        commit(cancelPull(current))
-        scheduleIdle()
+      const activeIdentifier = activeTouchIdentifierRef.current
+      const touch = Array.from(event.touches).find(
+        candidate => candidate.identifier === activeIdentifier,
+      )
+      if (event.touches.length !== 1 || !touch) {
+        cancelActiveGesture()
         return
       }
 
-      const touch = event.touches[0]
       const next = updatePull(current, { x: touch.clientX, y: touch.clientY })
 
       if (next.phase === 'settling') {
@@ -205,10 +212,59 @@ export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
       commit(next)
     }
 
-    const handleTouchEnd = () => {
+    const attachTouchMove = () => {
+      if (removeTouchMoveListenerRef.current) return
+      viewport.addEventListener('touchmove', handleTouchMove, { passive: false })
+      removeTouchMoveListenerRef.current = () => {
+        viewport.removeEventListener('touchmove', handleTouchMove)
+      }
+    }
+
+    const handleTouchStart = (event: TouchEvent) => {
+      const current = gestureRef.current
+      if (current.phase === 'pulling' || current.phase === 'armed') {
+        const activeIdentifier = activeTouchIdentifierRef.current
+        const activeTouchRemains = Array.from(event.touches).some(
+          touch => touch.identifier === activeIdentifier,
+        )
+        if (event.touches.length !== 1 || !activeTouchRemains) {
+          cancelActiveGesture()
+        }
+        return
+      }
+      if (current.phase === 'refreshing' || current.phase === 'settling') return
+      if (!shouldStartPull({
+        enabled,
+        scrollTop: viewport.scrollTop,
+        touchCount: event.touches.length,
+        disabledTarget: isDisabledTarget(event.target),
+      })) return
+
+      if (settleTimerRef.current !== null) {
+        window.clearTimeout(settleTimerRef.current)
+        settleTimerRef.current = null
+      }
+      setCompletionPulse(false)
+      const touch = event.touches[0]
+      activeTouchIdentifierRef.current = touch.identifier
+      attachTouchMove()
+      commit(beginPull({ x: touch.clientX, y: touch.clientY }))
+    }
+
+    const handleTouchEnd = (event: TouchEvent) => {
       const current = gestureRef.current
       if (current.phase !== 'pulling' && current.phase !== 'armed') return
+      const activeIdentifier = activeTouchIdentifierRef.current
+      const activeTouchEnded = Array.from(event.changedTouches).some(
+        touch => touch.identifier === activeIdentifier,
+      )
+      if (event.touches.length > 0 || !activeTouchEnded) {
+        cancelActiveGesture()
+        return
+      }
 
+      detachTouchMove()
+      activeTouchIdentifierRef.current = null
       const released = releasePull(current)
       commit(released.state)
       if (released.shouldRefresh) triggerRefresh()
@@ -216,23 +272,20 @@ export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
     }
 
     const handleTouchCancel = () => {
-      const current = gestureRef.current
-      if (current.phase !== 'pulling' && current.phase !== 'armed') return
-      commit(cancelPull(current))
-      scheduleIdle()
+      cancelActiveGesture()
     }
 
     viewport.addEventListener('touchstart', handleTouchStart, { passive: true })
-    viewport.addEventListener('touchmove', handleTouchMove, { passive: false })
     viewport.addEventListener('touchend', handleTouchEnd, { passive: true })
     viewport.addEventListener('touchcancel', handleTouchCancel, { passive: true })
     return () => {
+      detachTouchMove()
+      activeTouchIdentifierRef.current = null
       viewport.removeEventListener('touchstart', handleTouchStart)
-      viewport.removeEventListener('touchmove', handleTouchMove)
       viewport.removeEventListener('touchend', handleTouchEnd)
       viewport.removeEventListener('touchcancel', handleTouchCancel)
     }
-  }, [commit, enabled, triggerRefresh, viewportRef])
+  }, [commit, detachTouchMove, enabled, triggerRefresh, viewportRef])
 
   useEffect(() => clearTimers, [clearTimers])
 
