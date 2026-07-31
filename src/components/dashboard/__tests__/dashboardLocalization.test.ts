@@ -44,6 +44,12 @@ const dashboardEnglish: [string, string][] = [
   ['Volumen semanal', 'Weekly volume'],
   ['Tendencia de volumen', 'Volume trend'],
   ['Ver calendario', 'View calendar'],
+  ['Semana en curso', 'Week in progress'],
+  ['Pasado', 'Past'],
+  ['Próximo', 'Upcoming'],
+  ['Pendiente', 'Pending'],
+  ['Abrir avisos', 'Open notices'],
+  ['Cerrar avisos', 'Close notices'],
 ]
 
 describe('dashboard English catalog', () => {
@@ -63,8 +69,7 @@ describe('dashboard English catalog', () => {
 
 describe('dashboard component localization boundaries', () => {
   const sources = [
-    '../TodayActionCard.tsx',
-    '../WeeklyStatus.tsx',
+    '../DashboardWeekJourney.tsx',
     '../NextRecommendation.tsx',
     '../AINotesBanner.tsx',
   ].map(path => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n')

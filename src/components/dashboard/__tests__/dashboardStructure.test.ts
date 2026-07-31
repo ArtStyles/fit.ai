@@ -5,23 +5,27 @@ const page = readFileSync(new URL('../../../app/(app)/dashboard/page.tsx', impor
 const header = readFileSync(new URL('../DashboardHeader.tsx', import.meta.url), 'utf8')
 const recommendation = readFileSync(new URL('../NextRecommendation.tsx', import.meta.url), 'utf8')
 const viewModel = readFileSync(new URL('../dashboardViewModel.ts', import.meta.url), 'utf8')
-const weekly = readFileSync(new URL('../WeeklyStatus.tsx', import.meta.url), 'utf8')
+const journey = readFileSync(new URL('../DashboardWeekJourney.tsx', import.meta.url), 'utf8')
 const secondary = readFileSync(new URL('../SecondaryMetrics.tsx', import.meta.url), 'utf8')
 
 describe('dashboard structure', () => {
-  it('renders the action-first sections in the required order', () => {
+  it('renders one chronological journey as the dashboard composition', () => {
     const orderedSections = [
       '<DashboardHeader',
       '<DashboardNotice',
-      '<TodayActionCard',
-      '<WeeklyStatus',
-      '<NextRecommendation',
-      '<SecondaryMetrics',
+      '<DashboardWeekJourney',
     ]
     const positions = orderedSections.map(section => page.indexOf(section))
 
     expect(positions.every(position => position >= 0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    expect(page.match(/<DashboardWeekJourney\b/g)).toHaveLength(1)
+  })
+
+  it('uses a real desktop grid without duplicating the current workout', () => {
+    expect(journey).toContain('lg:grid-cols-[minmax(0,1fr)_22rem]')
+    expect(page).not.toContain('<TodayActionCard')
+    expect(page).not.toContain('<WeeklyStatus')
   })
 
   it('dispatches at most one notice instead of rendering parallel banners', () => {
@@ -54,8 +58,8 @@ describe('dashboard structure', () => {
   })
 
   it('preserves mobile explanations for unavailable schedule days', () => {
-    expect(weekly).toContain('aria-live="polite"')
-    expect(weekly).toContain('onClick={() => setActiveMessage')
+    expect(journey).toContain('aria-live="polite"')
+    expect(journey).toContain('onClick={() => setActiveMessage')
   })
 
   it('keeps the existing volume trend when enough series data exists', () => {

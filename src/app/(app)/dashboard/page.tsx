@@ -1,9 +1,6 @@
-import { DashboardHeader }    from '@/components/dashboard/DashboardHeader'
-import { DashboardNotice } from '@/components/dashboard/DashboardNotice'
-import { TodayActionCard } from '@/components/dashboard/TodayActionCard'
-import { WeeklyStatus } from '@/components/dashboard/WeeklyStatus'
-import { NextRecommendation } from '@/components/dashboard/NextRecommendation'
-import { SecondaryMetrics } from '@/components/dashboard/SecondaryMetrics'
+import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
+import { DashboardMainNotice, DashboardNotice } from '@/components/dashboard/DashboardNotice'
+import { DashboardWeekJourney } from '@/components/dashboard/DashboardWeekJourney'
 import { buildDashboardViewModel } from '@/components/dashboard/dashboardViewModel'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
@@ -385,6 +382,12 @@ export default async function DashboardPage() {
   const todayIso  = getIsoWeekday(referenceNow, tz)
   const weekStart = getCurrentWeekMonday(referenceNow, tz)
   const todayStr  = getLocalDateString(referenceNow, tz)
+  const dateLabel = new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: tz,
+  }).format(referenceNow)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
   const [dashboardPayload, { data: bannerRaw }] = await Promise.all([
@@ -558,23 +561,35 @@ export default async function DashboardPage() {
       <DashboardHeader
         greeting={getGreeting(language)}
         firstName={firstName}
+        dateLabel={dateLabel}
         avatarUrl={profile?.avatar_url ?? null}
         username={profile?.username ?? null}
+        noticeLabel={t('Notificaciones')}
+        noticeContent={dashboard.noticePlacement === 'hub' ? (
+          <DashboardNotice
+            notice={dashboard.notice}
+            aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}
+            planName={planRaw?.name ?? null}
+            bannerContext={bannerContext}
+            promo={dashboardBanner}
+            placement="hub"
+          />
+        ) : null}
       />
 
-      <main data-marketing-capture="dashboard" className="mx-auto grid max-w-3xl gap-8 px-4 pt-6 sm:px-6 lg:gap-10">
+      <main aria-label={t('Dashboard')} data-marketing-capture="dashboard" className="mx-auto max-w-6xl space-y-6 px-4 pt-5 sm:px-6">
         <h1 className="sr-only">{t('Dashboard')}</h1>
-        <DashboardNotice
-          notice={dashboard.notice}
-          aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}
-          planName={planRaw?.name ?? null}
-          bannerContext={bannerContext}
-          promo={dashboardBanner}
-        />
-        <TodayActionCard today={dashboard.today} />
-        <WeeklyStatus weekly={dashboard.weekly} />
-        <NextRecommendation recommendation={dashboard.recommendation} />
-        <SecondaryMetrics metrics={dashboard.secondaryMetrics} />
+        {dashboard.noticePlacement !== 'hub' && (
+          <DashboardMainNotice
+            notice={dashboard.notice}
+            aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}
+            planName={planRaw?.name ?? null}
+            bannerContext={bannerContext}
+            promo={dashboardBanner}
+            placement={dashboard.noticePlacement ?? 'inline'}
+          />
+        )}
+        <DashboardWeekJourney dashboard={dashboard} />
       </main>
     </div>
   )
