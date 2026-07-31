@@ -155,7 +155,7 @@ export function buildPlanDistribution(
     }
   }
 
-  const largestGroup = Math.max(0, ...prescribedSets.values())
+  const largestGroup = Math.max(0, ...Array.from(prescribedSets.values()))
 
   return Array.from(prescribedSets.entries())
     .map(([key, sets]) => ({

@@ -36,6 +36,9 @@ type WorkoutExerciseListProps = {
   workoutId: string
   exercises: PlanWorkoutExerciseRow[]
   exerciseOptions: PlanExerciseOption[]
+  editing?: boolean
+  onDirtyChange?: (dirty: boolean) => void
+  onFormSubmit?: () => void
 }
 
 const textareaClass =
@@ -62,13 +65,24 @@ function PrescriptionFields() {
 }
 
 export function WorkoutExerciseList({
-  planId, workoutId, exercises, exerciseOptions,
+  planId,
+  workoutId,
+  exercises,
+  exerciseOptions,
+  editing = true,
+  onDirtyChange,
+  onFormSubmit,
 }: WorkoutExerciseListProps) {
   const hasExerciseOptions = exerciseOptions.length > 0
   const { t } = useI18n()
+  if (!editing) return null
 
   return (
-    <div className="mt-4">
+    <div
+      className="mt-4"
+      onChangeCapture={() => onDirtyChange?.(true)}
+      onSubmitCapture={() => onFormSubmit?.()}
+    >
       <WorkoutExerciseManager planId={planId} workoutId={workoutId} exercises={exercises} exerciseOptions={exerciseOptions} />
 
       <details className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">

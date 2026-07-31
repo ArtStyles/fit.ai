@@ -1,22 +1,20 @@
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
-import { AppliedConstraints } from '@/components/plan/AppliedConstraints'
-import { PlanDayTimeline } from '@/components/plan/PlanDayTimeline'
 import { PlanAdjustButton } from '@/components/plan/PlanAdjustButton'
+import { PlanDistribution } from '@/components/plan/PlanDistribution'
+import { PlanOverview } from '@/components/plan/PlanOverview'
 import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
-import { PlanViewTabs } from '@/components/plan/PlanViewTabs'
-import { WorkoutAdjustButton } from '@/components/plan/WorkoutAdjustButton'
-import { WeeklyPlanSummary } from '@/components/plan/WeeklyPlanSummary'
+import { PlanWorkoutWorkspace } from '@/components/plan/PlanWorkoutWorkspace'
 import {
   appliedConstraintLabels,
   buildPlanDaySummaries,
+  buildPlanDistribution,
+  buildPlanWeekEntries,
 } from '@/components/plan/planViewModel'
 import { ShareRoutineButton } from '@/components/social/ShareRoutineButton'
 import {
-  WorkoutExerciseList,
   type PlanExerciseOption,
   type PlanWorkoutExerciseRow,
 } from '@/components/plan/WorkoutExerciseList'
@@ -27,7 +25,6 @@ import {
   createManualPlan,
   deletePlan,
   updatePlanSummary,
-  updateWorkoutSummary,
 } from '@/app/actions/plan'
 import {
   CalendarDays,
@@ -39,28 +36,16 @@ import {
   MoreHorizontal,
   Plus,
   Sparkles,
-  Target,
-  Timer,
   Trash2,
 } from 'lucide-react'
 import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
-import { createTranslator, dateLocale, type AppLanguage } from '@/lib/i18n'
+import { createTranslator } from '@/lib/i18n'
 import type { PlanAdjustmentOptions } from '@/lib/plans/adjustmentIntent'
 import { FREE_PLAN_LIMIT } from '@/lib/plans/entitlements'
 import type { CardioModality } from '@/lib/training-engine'
 
 export const metadata = { title: 'Plan completo · Vekira' }
-
-const DAY_NAMES: Record<number, string> = {
-  1: 'Lunes',
-  2: 'Martes',
-  3: 'Miércoles',
-  4: 'Jueves',
-  5: 'Viernes',
-  6: 'Sábado',
-  7: 'Domingo',
-}
 
 const DIFFICULTY_LABELS: Record<string, string> = {
   beginner: 'Principiante',
@@ -102,22 +87,9 @@ type PlanConstraintProfile = {
   movement_limitations: unknown
 }
 
-function formatDate(value: string, language: AppLanguage): string {
-  return new Intl.DateTimeFormat(dateLocale(language), {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(value))
-}
-
 function formatDifficulty(value: string | null, t: (source: string) => string): string | null {
   if (!value) return null
   return t(DIFFICULTY_LABELS[value] ?? value)
-}
-
-function formatDuration(minutes: number | null, t: (source: string) => string): string {
-  if (!minutes) return t('Duración pendiente')
-  return `${minutes} min`
 }
 
 function formatSource(value: PlanRow['source_type'], t: (source: string) => string): string {
@@ -134,7 +106,7 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
   const planCount = tier === 'free' ? `${plans.length}/${FREE_PLAN_LIMIT}` : String(plans.length)
 
   return (
-    <details className="group mt-5 overflow-hidden rounded-2xl border border-border/60 bg-muted/10">
+    <details className="group overflow-hidden rounded-2xl border border-border/60 bg-muted/10">
       <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 px-4 py-3 outline-none transition-colors hover:bg-muted/15 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
           <CalendarDays className="h-5 w-5" />
@@ -408,8 +380,6 @@ export default async function PlanPage() {
     movementLimitations: constraintProfile?.movement_limitations,
   }, language)
   const todayIso = getIsoWeekday(new Date(), resolveUserTimeZone(profile.timezone))
-  const todayWorkout = workouts.find(workout => workout.day_of_week === todayIso)
-  const todayExercises = todayWorkout ? exercisesByWorkout[todayWorkout.id] ?? [] : []
   const uniqueAdjustmentExercises = new Map<string, { id: string; name: string }>()
   exerciseRows.forEach(row => {
     const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
@@ -426,8 +396,28 @@ export default async function PlanPage() {
     exercises: Array.from(uniqueAdjustmentExercises.values()),
   }
 
+  const weekEntries = buildPlanWeekEntries(planDaySummaries, todayIso)
+  const distribution = buildPlanDistribution(exerciseRows.map(row => {
+    const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
+    return {
+      sets: row.sets,
+      muscleGroups: exercise?.muscle_groups ?? null,
+    }
+  }))
+  const workspaceWorkouts = planDaySummaries.map(summary => ({
+    summary,
+    exercises: exercisesByWorkout[summary.id] ?? [],
+  }))
+  const workoutDurations = planDaySummaries
+    .map(summary => summary.durationMinutes)
+    .filter((minutes): minutes is number => typeof minutes === 'number' && minutes > 0)
+  const overviewDuration = constraintProfile?.session_duration_minutes
+    ?? (workoutDurations.length > 0
+      ? Math.round(workoutDurations.reduce((sum, minutes) => sum + minutes, 0) / workoutDurations.length)
+      : null)
+
   return (
-    <div className="min-h-screen bg-background pb-16">
+    <div className="min-h-screen bg-background pb-20">
       <PageTopBar
         title={t('Plan')}
         subtitle={planRaw.name}
@@ -438,11 +428,11 @@ export default async function PlanPage() {
           <details className="group relative">
             <summary
               aria-label={t('Acciones del plan')}
-              className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-border/60 bg-muted/10 text-muted-foreground outline-none hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden"
+              className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-border/60 bg-muted/10 text-muted-foreground outline-none transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden"
             >
               <MoreHorizontal className="h-5 w-5" />
             </summary>
-            <div className="absolute right-0 z-20 mt-2 w-64 space-y-2 rounded-2xl border border-border/70 bg-background p-3 shadow-2xl shadow-black/30">
+            <div className="absolute right-0 z-20 mt-2 w-72 space-y-2 rounded-2xl border border-border/70 bg-background p-3 shadow-2xl shadow-black/30">
               <p className="px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t('Acciones del plan')}
               </p>
@@ -457,287 +447,60 @@ export default async function PlanPage() {
               <div className="[&>button]:w-full [&>button]:justify-center">
                 <ShareRoutineButton planId={planRaw.id} />
               </div>
+              <details className="group/summary border-t border-border/60 pt-2">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl px-3 text-sm font-semibold text-foreground hover:bg-muted/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
+                  {t('Editar detalles')}
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open/summary:rotate-180" />
+                </summary>
+                <form action={updatePlanSummary} className="mt-2 space-y-3 rounded-xl bg-muted/10 p-3">
+                  <input type="hidden" name="planId" value={planRaw.id} />
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">{t('Nombre del plan')}</span>
+                    <input name="name" defaultValue={planRaw.name} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">{t('Objetivo visible')}</span>
+                    <input name="goal" defaultValue={planRaw.goal ?? ''} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">{t('Descripción')}</span>
+                    <textarea name="description" defaultValue={planRaw.description ?? ''} rows={3} className="w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+                  </label>
+                  <SubmitButton label={t('Guardar resumen')} pendingLabel={t('Guardando resumen')} className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600" />
+                </form>
+              </details>
             </div>
           </details>
         )}
       />
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        <PlanSwitcher plans={plans} tier={tier} t={t} />
+      <main aria-label={t('Plan')} className="mx-auto max-w-6xl space-y-7 px-4 py-6 sm:px-6 lg:px-8">
+        <PlanOverview
+          name={planRaw.name}
+          sourceLabel={formatSource(planRaw.source_type, t)}
+          daysPerWeek={planRaw.days_per_week ?? planDaySummaries.filter(day => day.isScheduled).length}
+          durationMinutes={overviewDuration}
+          difficultyLabel={formatDifficulty(planRaw.difficulty, t)}
+          constraintLabels={constraintLabels}
+          switcher={<PlanSwitcher plans={plans} tier={tier} t={t} />}
+        />
 
-        <div className="mt-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
-          <p className="text-sm text-muted-foreground">
-            {planRaw.goal || t('Estructura semanal de entrenamiento')}
-          </p>
-        </div>
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-stretch">
-          <WeeklyPlanSummary days={planDaySummaries} t={t} />
-          <AppliedConstraints labels={constraintLabels} t={t} />
-        </div>
-
-        {todayWorkout ? (
-          <section className="relative mt-6 overflow-hidden rounded-2xl border border-violet-500/35 bg-gradient-to-br from-violet-500/20 via-violet-500/10 to-transparent p-5 shadow-lg shadow-violet-950/20">
-            <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-violet-500/10 blur-2xl" />
-            <div className="relative">
-              <p className="text-xs font-semibold uppercase tracking-widest text-violet-200">{t('Entrenamiento de hoy')}</p>
-              <h2 className="mt-2 font-display text-xl font-bold text-foreground">{todayWorkout.displayName}</h2>
-              <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="inline-flex items-center">
-                  <Dumbbell className="mr-1.5 h-3.5 w-3.5" />
-                  {todayExercises.length} {t('ejercicios')}
-                </span>
-                <span className="inline-flex items-center">
-                  <Timer className="mr-1.5 h-3.5 w-3.5" />
-                  {formatDuration(todayWorkout.estimated_duration_minutes, t)}
-                </span>
-              </div>
-              <PendingLink
-                href={`/session/${todayWorkout.id}`}
-                className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-xl bg-violet-500 px-4 text-sm font-bold text-white shadow-md shadow-violet-950/30 transition-colors hover:bg-violet-600"
-              >
-                {t('Empezar entrenamiento')}
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </PendingLink>
-            </div>
-          </section>
-        ) : (
-          <section className="mt-6 flex items-center gap-4 rounded-2xl border border-border/60 bg-muted/10 p-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-muted/30 text-muted-foreground">
-              <CalendarDays className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">{t('Hoy es día de descanso')}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t('Consulta la semana para ver tu próximo entrenamiento.')}</p>
-            </div>
+        {(planRaw.goal || planRaw.description) && (
+          <section className="rounded-2xl border border-border/60 bg-[hsl(var(--surface-1))] px-5 py-4">
+            {planRaw.goal && <p className="font-semibold text-foreground">{planRaw.goal}</p>}
+            {planRaw.description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{planRaw.description}</p>}
           </section>
         )}
 
-        <PlanViewTabs
-          ariaLabel={t('Vista del plan')}
-          weekLabel={t('Semana')}
-          infoLabel={t('Información')}
-          infoContent={(
-            <div className="mt-4 space-y-3">
-              <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('Detalles del plan')}</p>
-                <p className="mt-3 text-sm leading-relaxed text-foreground/90">
-                  {planRaw.description || t('Estructura semanal, entrenamientos y ejercicios del plan activo.')}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {planRaw.goal && (
-                    <Badge variant="ghost" className="border border-violet-500/20 text-violet-100">
-                      <Target className="mr-1 h-3 w-3 text-violet-300" />
-                      {planRaw.goal}
-                    </Badge>
-                  )}
-                  {formatDifficulty(planRaw.difficulty, t) && (
-                    <Badge variant="ghost" className="border border-border/50">
-                      <Dumbbell className="mr-1 h-3 w-3 text-muted-foreground" />
-                      {formatDifficulty(planRaw.difficulty, t)}
-                    </Badge>
-                  )}
-                  <Badge variant="ghost" className="border border-border/50">
-                    <CalendarDays className="mr-1 h-3 w-3 text-muted-foreground" />
-                    {planRaw.days_per_week ?? workouts.length} {t('días/sem')}
-                  </Badge>
-                  {planRaw.duration_weeks && (
-                    <Badge variant="ghost" className="border border-border/50">
-                      {planRaw.duration_weeks} {t('semanas')}
-                    </Badge>
-                  )}
-                </div>
-                <div className="mt-4 flex items-center justify-between border-t border-border/50 pt-4 text-xs text-muted-foreground">
-                  <span>{formatSource(planRaw.source_type, t)}</span>
-                  <span>{t('Creado el')} {formatDate(planRaw.created_at, language)}</span>
-                </div>
-              </section>
-
-              <details className="group overflow-hidden rounded-2xl border border-border/60 bg-muted/10">
-                <summary className="flex h-14 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold text-foreground outline-none hover:bg-muted/15 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
-                  {t('Editar detalles')}
-                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
-                </summary>
-                <div className="border-t border-border/50 p-4">
-          <form action={updatePlanSummary} className="mt-4 space-y-3">
-            <input type="hidden" name="planId" value={planRaw.id} />
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('Nombre del plan')}</span>
-              <input
-                name="name"
-                defaultValue={planRaw.name}
-                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('Objetivo visible')}</span>
-              <input
-                name="goal"
-                defaultValue={planRaw.goal ?? ''}
-                placeholder={t('Ej. Hipertrofia, fuerza, recomposición')}
-                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('Descripción')}</span>
-              <textarea
-                name="description"
-                defaultValue={planRaw.description ?? ''}
-                rows={3}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-              />
-            </label>
-
-            <SubmitButton
-              label={t('Guardar resumen')}
-              pendingLabel={t('Guardando resumen')}
-              className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
-            />
-          </form>
-                </div>
-              </details>
-            </div>
-          )}
-          weekContent={(
-            <div className="mt-4 space-y-4">
-              <PlanDayTimeline days={planDaySummaries} todayIso={todayIso} />
-
-              <div className="pt-1">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('Editar sesiones')}
-                </p>
-              </div>
-
-          {workouts.map((workout, index) => {
-            const exercises = exercisesByWorkout[workout.id] ?? []
-            const isToday = workout.day_of_week === todayIso
-            const dayLabel = workout.day_of_week ? t(DAY_NAMES[workout.day_of_week]) : `${t('Sesión')} ${index + 1}`
-
-            return (
-              <details
-                key={workout.id}
-                className={`group overflow-hidden rounded-2xl border transition-colors ${
-                  isToday
-                    ? 'border-violet-500/50 bg-violet-500/[0.06] open:bg-violet-500/[0.08]'
-                    : 'border-border/60 bg-muted/10 open:bg-muted/15'
-                }`}
-              >
-                <summary className="flex min-h-20 cursor-pointer list-none items-center gap-3 px-4 py-3 outline-none transition-colors hover:bg-muted/10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
-                  <div className={`flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl border text-center ${
-                    isToday
-                      ? 'border-violet-500/30 bg-violet-500/15 text-violet-200'
-                      : 'border-border/50 bg-background/40 text-muted-foreground'
-                  }`}>
-                    <span className="text-[10px] font-semibold uppercase leading-none">{dayLabel.slice(0, 3)}</span>
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h2 className="truncate text-sm font-semibold text-foreground">{workout.displayName}</h2>
-                      {isToday && (
-                        <Badge variant="ghost" className="border border-violet-500/30 bg-violet-500/10 px-2 py-0 text-[10px] text-violet-100">
-                          {t('Hoy')}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>{exercises.length} {t('ejercicios')}</span>
-                      <span className="inline-flex items-center">
-                        <Timer className="mr-1 h-3.5 w-3.5" />
-                        {formatDuration(workout.estimated_duration_minutes, t)}
-                      </span>
-                    </div>
-                  </div>
-                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                </summary>
-
-                <div className="border-t border-border/50 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {isToday ? (
-                      <PendingLink
-                        href={`/session/${workout.id}`}
-                        className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg bg-violet-500 px-4 text-sm font-semibold text-white shadow-sm shadow-violet-900/30 hover:bg-violet-600"
-                        spinnerClassName="h-3.5 w-3.5"
-                      >
-                        {t('Abrir rutina de hoy')}
-                        <ChevronRight className="h-4 w-4" />
-                      </PendingLink>
-                    ) : (
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {t('Disponible el {day}.', { day: dayLabel.toLowerCase() })}
-                      </p>
-                    )}
-                    {exercises.length > 0 ? (
-                      <WorkoutAdjustButton
-                        workoutId={workout.id}
-                        workoutName={workout.displayName}
-                      />
-                    ) : null}
-                  </div>
-
-                  <WorkoutExerciseList
-                    planId={planRaw.id}
-                    workoutId={workout.id}
-                    exercises={exercises}
-                    exerciseOptions={exerciseOptions}
-                  />
-
-                  <details className="mt-4 rounded-xl border border-border/50 bg-background/40 p-3">
-                    <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-violet-300 [&::-webkit-details-marker]:hidden">
-                      {t('Editar detalles')}
-                    </summary>
-                    <form action={updateWorkoutSummary} className="mt-4 space-y-3">
-                      <input type="hidden" name="planId" value={planRaw.id} />
-                      <input type="hidden" name="workoutId" value={workout.id} />
-
-                      <label className="block space-y-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">{t('Nombre')}</span>
-                        <input
-                          name="name"
-                          defaultValue={workout.displayName}
-                          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                        />
-                      </label>
-
-                      <label className="block space-y-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">{t('Foco muscular')}</span>
-                        <input
-                          name="focus"
-                          defaultValue={workout.focus ?? ''}
-                          placeholder={t('Pecho · Hombros · Tríceps')}
-                          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                        />
-                      </label>
-
-                      <label className="block space-y-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">{t('Duración estimada')}</span>
-                        <input
-                          name="estimatedDurationMinutes"
-                          type="number"
-                          min={10}
-                          max={180}
-                          defaultValue={workout.estimated_duration_minutes ?? ''}
-                          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                        />
-                      </label>
-
-                      <SubmitButton
-                        label={t('Guardar detalles')}
-                        pendingLabel={t('Guardando detalles')}
-                        className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
-                      />
-                    </form>
-                  </details>
-                </div>
-              </details>
-            )
-          })}
-            </div>
-          )}
+        <PlanWorkoutWorkspace
+          planId={planRaw.id}
+          entries={weekEntries}
+          workouts={workspaceWorkouts}
+          exerciseOptions={exerciseOptions}
+          todayIso={todayIso}
         />
+
+        <PlanDistribution items={distribution} />
       </main>
     </div>
   )
