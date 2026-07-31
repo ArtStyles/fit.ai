@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildDashboardViewModel,
+  dashboardNoticePlacement,
   selectDashboardNotice,
   type DashboardViewModelInput,
 } from '../dashboardViewModel'
@@ -93,6 +94,32 @@ describe('dashboard notice priority', () => {
 })
 
 describe('dashboard view model', () => {
+  it('builds a chronological week without inventing readiness data', () => {
+    const viewModel = buildDashboardViewModel(input({
+      weekDays: [
+        { ...weekDay(1, workout, true), isToday: false },
+        weekDay(2, null),
+        { ...weekDay(3, nextWorkout, false), isToday: true },
+      ],
+    }))
+
+    expect(viewModel.weekly.timeline.map(item => item.tone)).toEqual([
+      'completed',
+      'rest',
+      'active',
+    ])
+    expect(viewModel).not.toHaveProperty('readinessScore')
+  })
+
+  it.each([
+    ['needs-plan', 'primary'],
+    ['check-in', 'inline'],
+    ['ai-notes', 'hub'],
+    ['promo', 'hub'],
+  ] as const)('places %s notices in %s', (kind, placement) => {
+    expect(dashboardNoticePlacement(kind)).toBe(placement)
+  })
+
   it('makes an available workout today\'s primary action', () => {
     expect(buildDashboardViewModel(input()).today).toMatchObject({
       state: 'available',
@@ -175,6 +202,7 @@ describe('dashboard view model', () => {
     }]
     expect(buildDashboardViewModel(input({ weekDays })).weekly).toEqual({
       days: weekDays,
+      timeline: [{ ...weekDays[0], tone: 'completed', position: 'today' }],
       completed: 1,
       scheduled: 1,
     })

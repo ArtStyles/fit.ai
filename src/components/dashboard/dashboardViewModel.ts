@@ -48,6 +48,16 @@ export type DashboardNoticeInput = {
   promo: { title: string } | null
 }
 
+export type DashboardNoticePlacement = 'primary' | 'inline' | 'hub'
+
+export function dashboardNoticePlacement(
+  kind: DashboardNotice['kind'],
+): DashboardNoticePlacement {
+  if (kind === 'needs-plan') return 'primary'
+  if (kind === 'check-in') return 'inline'
+  return 'hub'
+}
+
 export function selectDashboardNotice(input: DashboardNoticeInput): DashboardNotice | null {
   if (input.needsPlan) return { kind: 'needs-plan' }
   if (input.checkInDue) return { kind: 'check-in' }
@@ -87,6 +97,13 @@ export type DashboardToday = {
   nextWorkoutIsoDay: number | null
 }
 
+export type DashboardTimelineTone = 'completed' | 'active' | 'rest' | 'upcoming' | 'missed'
+
+export type DashboardTimelineItem = DashboardWeekDay & {
+  tone: DashboardTimelineTone
+  position: 'past' | 'today' | 'future'
+}
+
 export type DashboardRecommendation =
   | {
       kind: 'recover-session'
@@ -117,9 +134,11 @@ export type DashboardRecommendation =
 
 export type DashboardViewModel = {
   notice: DashboardNotice | null
+  noticePlacement: DashboardNoticePlacement | null
   today: DashboardToday
   weekly: {
     days: DashboardWeekDay[]
+    timeline: DashboardTimelineItem[]
     completed: number
     scheduled: number
   }
@@ -135,6 +154,31 @@ export type DashboardViewModel = {
     timeZone: string
     referenceInstant: string
   }
+}
+
+function buildDashboardTimeline(days: DashboardWeekDay[]): DashboardTimelineItem[] {
+  const todayIndex = days.findIndex(day => day.isToday)
+
+  return days.map((day, index) => {
+    const position = todayIndex < 0
+      ? 'future'
+      : index < todayIndex
+        ? 'past'
+        : index === todayIndex
+          ? 'today'
+          : 'future'
+    const tone: DashboardTimelineTone = day.isCompleted
+      ? 'completed'
+      : position === 'today' && day.workout
+        ? 'active'
+        : !day.workout
+          ? 'rest'
+          : position === 'past'
+            ? 'missed'
+            : 'upcoming'
+
+    return { ...day, position, tone }
+  })
 }
 
 function deriveToday(input: DashboardViewModelInput): DashboardToday {
@@ -232,12 +276,15 @@ export function buildDashboardViewModel(input: DashboardViewModelInput): Dashboa
     daysByIso.set(day.isoDay, day)
   }
   const normalizedDays = Array.from(daysByIso.values()).sort((a, b) => a.isoDay - b.isoDay)
+  const notice = selectDashboardNotice(input)
 
   return {
-    notice: selectDashboardNotice(input),
+    notice,
+    noticePlacement: notice ? dashboardNoticePlacement(notice.kind) : null,
     today: deriveToday(input),
     weekly: {
       days: normalizedDays,
+      timeline: buildDashboardTimeline(normalizedDays),
       completed: normalizedDays.filter(day => day.workout && day.isCompleted).length,
       scheduled: normalizedDays.filter(day => day.workout).length,
     },
