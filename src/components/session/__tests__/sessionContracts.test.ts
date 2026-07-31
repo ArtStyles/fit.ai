@@ -10,6 +10,10 @@ const restTimer = readFileSync(new URL('../RestTimer.tsx', import.meta.url), 'ut
 const completion = readFileSync(new URL('../CompletionScreen.tsx', import.meta.url), 'utf8')
 const syncStatus = readFileSync(new URL('../SessionSyncStatus.tsx', import.meta.url), 'utf8')
 const sessionHeader = readFileSync(new URL('../SessionHeader.tsx', import.meta.url), 'utf8')
+const activeSet = readFileSync(new URL('../ActiveSetFocus.tsx', import.meta.url), 'utf8')
+const dock = readFileSync(new URL('../CompleteSetDock.tsx', import.meta.url), 'utf8')
+const exerciseHeader = readFileSync(new URL('../SessionExerciseHeader.tsx', import.meta.url), 'utf8')
+const compactSet = readFileSync(new URL('../CompactSetSummary.tsx', import.meta.url), 'utf8')
 const rpeSelector = readFileSync(new URL('../RPESelector.tsx', import.meta.url), 'utf8')
 const store = readFileSync(new URL('../../../store/sessionStore.ts', import.meta.url), 'utf8')
 const persistence = readFileSync(new URL('../../../lib/session/persistSession.ts', import.meta.url), 'utf8')
@@ -40,10 +44,10 @@ describe('active session wiring contracts', () => {
   })
 
   it('renders previous performance immediately before set controls', () => {
-    const previous = exerciseCard.indexOf('<PreviousPerformance')
-    const header = exerciseCard.indexOf('Cabecera de la tabla')
+    const previous = exerciseHeader.indexOf('<PreviousPerformance')
+    const header = exerciseCard.indexOf('<ActiveSetFocus')
     expect(previous).toBeGreaterThan(0)
-    expect(header).toBeGreaterThan(previous)
+    expect(header).toBeGreaterThan(0)
   })
 
   it('preserves previous set indices at the server-to-store boundary', () => {
@@ -52,9 +56,31 @@ describe('active session wiring contracts', () => {
   })
 
   it('keeps the current set visually identified in the active exercise hierarchy', () => {
-    expect(exerciseCard).toContain('isCurrent={isCurrentSet(status, i, sets)}')
+    expect(exerciseCard).toContain('<ActiveSetFocus')
+    expect(activeSet).toContain("role=\"group\"")
+    expect(activeSet).toContain("t('Serie actual')")
     expect(setRow).toContain("aria-current={isCurrent ? 'step' : undefined}")
     expect(setRow).toContain('Serie actual')
+  })
+
+  it('keeps the one-handed completion action accessible', () => {
+    expect(activeSet).toContain("ariaLabel={t('Peso en kilogramos')}")
+    expect(activeSet).toContain("ariaLabel={t('Repeticiones')}")
+    expect(dock).toContain("t('Completar serie {number}'")
+    expect(dock).toContain('min-h-14')
+  })
+
+  it('turns the completion dock into the existing rest controls', () => {
+    expect(dock).toContain('<RestTimer')
+    expect(restTimer).toContain('extendRestTimer')
+    expect(restTimer).toContain('clearRestTimer')
+  })
+
+  it('keeps previous and next sets compact while completed sets remain editable', () => {
+    expect(exerciseCard).toContain('<CompactSetSummary')
+    expect(compactSet).toContain("relation: 'previous' | 'next'")
+    expect(compactSet).toContain('onEdit')
+    expect(exerciseCard).toContain('<Dialog')
   })
 
   it('uses explicit labels, visible units, numeric input modes, and 44px controls', () => {

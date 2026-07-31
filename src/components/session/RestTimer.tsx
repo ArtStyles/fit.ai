@@ -17,7 +17,7 @@ function fmt(seconds: number): string {
 
 // ─── RestTimer ────────────────────────────────────────────────────────────────
 
-export function RestTimer() {
+export function RestTimer({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n()
   const restTimer    = useSessionStore(s => s.restTimer)
   const extendTimer  = useSessionStore(s => s.extendRestTimer)
@@ -56,7 +56,11 @@ export function RestTimer() {
   const dashOffset = circ * (1 - progress)
 
   return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 flex justify-center">
+    <div className={cn(
+      embedded
+        ? 'w-full'
+        : 'pointer-events-none fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-30 flex justify-center',
+    )}>
       <div
         className={cn(
           'pointer-events-auto',
@@ -64,6 +68,7 @@ export function RestTimer() {
           'border border-border/60 bg-background/95 backdrop-blur-md',
           'animate-in fade-in slide-in-from-bottom-4 duration-300 motion-reduce:animate-none',
           'transition-colors',
+          embedded && 'w-full border-0 bg-transparent p-0 shadow-none backdrop-blur-none',
           isLow && 'border-red-500/50 bg-red-500/10 shadow-[0_0_28px_rgba(239,68,68,0.4)]',
         )}
       >

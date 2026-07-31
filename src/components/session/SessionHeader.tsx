@@ -86,7 +86,7 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
 
   return (
     <>
-      <FixedTopBar className="bg-background/95" contentClassName="block p-0" initialHeight={69}>
+      <FixedTopBar className="bg-background/95" contentClassName="block max-w-lg p-0" initialHeight={73}>
         <div className="flex items-center gap-3 px-4 py-3">
         {/* Botón atrás */}
         <button
@@ -113,7 +113,7 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
                 · {completedSets}/{totalSets} {t('series')}
               </span>
             )}
-            <SessionSyncStatus state={syncState} onRetry={onSyncRetry} className="basis-full" />
+            <SessionSyncStatus state={syncState} onRetry={onSyncRetry} className="mt-1 basis-full" />
           </div>
         </div>
 
@@ -139,7 +139,7 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
         {totalSets > 0 && (
           <div className="h-1 bg-muted/20">
             <div
-              className="h-full rounded-r-full bg-gradient-to-r from-violet-500 to-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.6)] transition-all duration-500 ease-out"
+              className="h-full rounded-r-full bg-[hsl(var(--training-active))] shadow-[0_0_8px_hsl(var(--training-active)/0.45)] transition-[width] duration-[var(--motion-progress)] ease-out motion-reduce:transition-none"
               style={{ width: `${Math.round((completedSets / totalSets) * 100)}%` }}
             />
           </div>

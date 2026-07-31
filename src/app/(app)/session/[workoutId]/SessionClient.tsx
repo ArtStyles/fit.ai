@@ -6,17 +6,18 @@ import { useRestTimer }       from '@/hooks/useRestTimer'
 import { useWakeLock }        from '@/hooks/useWakeLock'
 import { SessionHeader }      from '@/components/session/SessionHeader'
 import { ExerciseCard }       from '@/components/session/ExerciseCard'
-import { RestTimer }          from '@/components/session/RestTimer'
 import { CompletionScreen }   from '@/components/session/CompletionScreen'
 import { SessionRoutineTools } from '@/components/session/SessionRoutineTools'
 import { PreSessionScreen }   from '@/components/session/PreSessionScreen'
 import {
+  buildSessionFocusWindow,
   nextSessionSyncState,
   syncEventForStorageResult,
   type SessionSyncErrorSource,
   type SessionSyncEvent,
   type SessionSyncState,
 } from '@/components/session/sessionViewModel'
+import { useI18n } from '@/components/i18n/I18nProvider'
 import type { ProgressionItem } from '@/components/session/PreSessionScreen'
 import { saveBackup, loadBackup, clearBackup } from '@/lib/session/persistSession'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
@@ -53,6 +54,7 @@ function extractProgressions(exercises: ExerciseSession[]): ProgressionItem[] {
 }
 
 export function SessionClient({ workoutId, workoutName, exercises, exerciseOptions }: Props) {
+  const { t } = useI18n()
   const initSession       = useSessionStore(s => s.initSession)
   const restoreSession    = useSessionStore(s => s.restoreSession)
   const applyProgressions = useSessionStore(s => s.applyProgressions)
@@ -65,6 +67,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
   const clientSessionId   = useSessionStore(s => s.clientSessionId)
   const [syncState, setSyncState] = useState<SessionSyncState>('syncing')
   const [syncErrorSource, setSyncErrorSource] = useState<SessionSyncErrorSource>(null)
+  const focusWindow = buildSessionFocusWindow(storeExercises)
   const latestBackupRef = useRef<SessionSnapshot | null>(null)
   const onSyncEvent = useCallback((event: SessionSyncEvent, source: SessionSyncErrorSource = null) => {
     setSyncState(current => nextSessionSyncState(current, event))
@@ -175,13 +178,11 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
       </div>
 
       {/* Lista de ejercicios con scroll */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-lg mx-auto px-4 pt-4 pb-40 space-y-3">
-          <SessionRoutineTools exerciseOptions={exerciseOptions} />
-
+      <main aria-label={t('Sesión activa')} className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-lg space-y-3 px-4 pb-48 pt-4">
           {storeExercises.length === 0 && (
             <div className="text-center py-16 text-muted-foreground text-sm">
-              Este workout no tiene ejercicios configurados.
+              {t('Este entrenamiento no tiene ejercicios configurados.')}
             </div>
           )}
 
@@ -190,15 +191,15 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
               key={exercise.workoutExerciseId}
               exercise={exercise}
               exerciseOptions={exerciseOptions}
+              focusWindow={exercise.status === 'active' ? focusWindow : undefined}
             />
           ))}
+
+          <SessionRoutineTools exerciseOptions={exerciseOptions} />
 
           <div className="h-4" />
         </div>
       </main>
-
-      {/* Rest timer flotante */}
-      <RestTimer />
     </div>
   )
 }

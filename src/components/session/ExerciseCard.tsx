@@ -1,327 +1,174 @@
 'use client'
 
-import { CheckCircle2, ChevronDown, ChevronUp, Repeat2, SkipForward, Trash2, TrendingUp } from 'lucide-react'
-import { cn }    from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
-import { ExerciseImage } from '@/components/exercises/ExerciseImage'
-import { SetRow } from './SetRow'
-import { TimedSetRow } from './TimedSetRow'
-import { SessionExercisePicker } from '@/components/session/SessionExercisePicker'
-import { PreviousPerformance } from './PreviousPerformance'
-import { isCurrentSet } from './sessionViewModel'
-import { useSessionStore } from '@/store/sessionStore'
-import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
+import { useState } from 'react'
+import { CheckCircle2, Clock3, SkipForward } from 'lucide-react'
+
+import { useI18n } from '@/components/i18n/I18nProvider'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
+import {
+  useSessionStore,
+  type ExerciseSession,
+  type SessionExerciseDraft,
+  type SetData,
+} from '@/store/sessionStore'
+import { ActiveSetFocus } from './ActiveSetFocus'
+import { CompactSetSummary } from './CompactSetSummary'
+import { CompleteSetDock } from './CompleteSetDock'
+import { RPESelector } from './RPESelector'
+import { SessionExerciseHeader } from './SessionExerciseHeader'
+import { currentSetIndex, type SessionFocusWindow } from './sessionViewModel'
 
 interface Props {
   exercise: ExerciseSession
   exerciseOptions: SessionExerciseDraft[]
+  focusWindow?: SessionFocusWindow
 }
 
-const SKIP_REASONS = ['Sin equipo', 'Fatiga', 'Dolor', 'Tiempo']
-
-// ─── Status badge ─────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: ExerciseSession['status'] }) {
-  if (status === 'completed') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-400">
-        <CheckCircle2 className="h-3.5 w-3.5" />
-        Completado
-      </span>
-    )
-  }
-  if (status === 'skipped') {
-    return (
-      <span className="text-[11px] font-semibold text-muted-foreground line-through">
-        Saltado
-      </span>
-    )
-  }
-  if (status === 'active') {
-    return (
-      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-violet-400 motion-reduce:animate-none" />
-    )
-  }
-  return null
+type EditDraft = {
+  weightKg: string
+  reps: string
+  durationSeconds: number
+  rpe: number | null
 }
 
-// ─── ExerciseCard ─────────────────────────────────────────────────────────────
-
-export function ExerciseCard({ exercise, exerciseOptions }: Props) {
-  const {
-    workoutExerciseId: weId,
-    status,
-    expanded,
-    sets,
-    name,
-    imageUrl,
-    muscleGroups,
-    notes,
-    targetReps,
-    targetDuration,
-    isCompound,
-    suggestedWeight,
-    weightSuggestionBasis,
-    source,
-    originalName,
-    skipReason,
-  } = exercise
-
-  const toggleExpanded  = useSessionStore(s => s.toggleExpanded)
-  const updateSetField  = useSessionStore(s => s.updateSetField)
-  const updateSetDuration = useSessionStore(s => s.updateSetDuration)
-  const selectRpe       = useSessionStore(s => s.selectRpe)
-  const completeSet     = useSessionStore(s => s.completeSet)
-  const skipExercise    = useSessionStore(s => s.skipExercise)
-  const replaceExercise = useSessionStore(s => s.replaceSessionExercise)
-  const removeExercise  = useSessionStore(s => s.removeSessionExercise)
-
-  const isActive    = status === 'active'
-  const isCompleted = status === 'completed'
-  const isSkipped   = status === 'skipped'
-  const canExpand   = status !== 'skipped'
-  const hasCompletedSets = sets.some(set => set.completed)
-  const canReplace = !hasCompletedSets && !isSkipped
-  const canRemove = source === 'ad_hoc' && !hasCompletedSets
-
-  // Número de series completadas
-  const completedSets = sets.filter(s => s.completed).length
+function CompactExercise({ exercise }: { exercise: ExerciseSession }) {
+  const { t } = useI18n()
+  const completedSets = exercise.sets.filter(set => set.completed).length
+  const isCompleted = exercise.status === 'completed'
+  const isSkipped = exercise.status === 'skipped'
 
   return (
-    <div className={cn(
-      'rounded-xl border transition-all overflow-hidden',
-      isActive    && 'border-violet-500/70 bg-violet-500/[0.07] shadow-[0_0_0_1px_rgba(139,92,246,0.25),0_10px_30px_-12px_rgba(109,40,217,0.5)]',
-      isCompleted && 'border-green-500/20 bg-green-500/5',
-      isSkipped   && 'border-border/30 bg-transparent opacity-50',
-      !isActive && !isCompleted && !isSkipped && 'border-border/40 bg-muted/5',
+    <article className={cn(
+      'flex min-h-16 items-center gap-3 rounded-2xl border px-4 py-3',
+      isCompleted && 'border-[hsl(var(--training-complete)/0.25)] bg-[hsl(var(--training-complete)/0.06)]',
+      isSkipped && 'border-border/40 bg-muted/5 opacity-65',
+      !isCompleted && !isSkipped && 'border-border/50 bg-[hsl(var(--surface-1))]',
     )}>
-      {/* ── Cabecera del card ─────────────────────────────────────────────── */}
-      <div className="flex w-full items-center gap-3 px-4 py-3.5">
-        {/* Indicador de estado lateral */}
-        <div className={cn(
-          'shrink-0 w-1 h-8 rounded-full',
-          isActive    && 'bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.8)]',
-          isCompleted && 'bg-green-500',
-          isSkipped   && 'bg-muted-foreground/20',
-          !isActive && !isCompleted && !isSkipped && 'bg-border/40',
-        )} />
+      <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', isCompleted ? 'bg-[hsl(var(--training-complete)/0.12)] text-[hsl(var(--training-complete))]' : 'bg-muted/30 text-muted-foreground')}>
+        {isCompleted ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : isSkipped ? <SkipForward className="h-4 w-4" aria-hidden="true" /> : <Clock3 className="h-4 w-4" aria-hidden="true" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn('block truncate text-sm font-semibold', isSkipped ? 'text-muted-foreground line-through' : 'text-foreground')}>{exercise.name}</span>
+        <span className="mt-1 block text-xs text-muted-foreground">
+          {isSkipped
+            ? `${t('Saltado')}${exercise.skipReason ? ` · ${exercise.skipReason}` : ''}`
+            : t('{completed} de {total} series', { completed: completedSets, total: exercise.sets.length })}
+        </span>
+      </span>
+    </article>
+  )
+}
 
-        {/* Miniatura del ejercicio (ampliable) */}
-        <ExerciseImage
-          src={imageUrl}
-          alt={name}
-          variant="thumb"
-          zoomable
-          className={cn('shrink-0', isActive ? 'h-16 w-16' : 'h-10 w-10')}
+export function ExerciseCard({ exercise, exerciseOptions, focusWindow }: Props) {
+  const { t } = useI18n()
+  const updateSetField = useSessionStore(state => state.updateSetField)
+  const updateSetDuration = useSessionStore(state => state.updateSetDuration)
+  const selectRpe = useSessionStore(state => state.selectRpe)
+  const completeSet = useSessionStore(state => state.completeSet)
+  const [editSetIndex, setEditSetIndex] = useState<number | null>(null)
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
+
+  if (exercise.status !== 'active') return <CompactExercise exercise={exercise} />
+
+  const fallbackIndex = currentSetIndex(exercise.sets)
+  const currentIndex = focusWindow?.currentSetIndex ?? (fallbackIndex >= 0 ? fallbackIndex : null)
+  const previousIndex = focusWindow?.previousSetIndex
+    ?? (currentIndex !== null && currentIndex > 0 ? currentIndex - 1 : null)
+  const nextIndex = focusWindow?.nextSetIndex
+    ?? (currentIndex !== null && currentIndex + 1 < exercise.sets.length ? currentIndex + 1 : null)
+  const currentSet = currentIndex !== null ? exercise.sets[currentIndex] : null
+
+  function openEdit(index: number, data: SetData) {
+    setEditSetIndex(index)
+    setEditDraft({
+      weightKg: data.weightKg,
+      reps: data.reps,
+      durationSeconds: data.durationSeconds ?? 0,
+      rpe: data.rpe,
+    })
+  }
+
+  function saveCorrection() {
+    if (editSetIndex === null || !editDraft) return
+    updateSetField(exercise.workoutExerciseId, editSetIndex, 'weightKg', editDraft.weightKg)
+    updateSetField(exercise.workoutExerciseId, editSetIndex, 'reps', editDraft.reps)
+    updateSetDuration(exercise.workoutExerciseId, editSetIndex, editDraft.durationSeconds)
+    if (editDraft.rpe !== null) selectRpe(exercise.workoutExerciseId, editSetIndex, editDraft.rpe)
+    setEditSetIndex(null)
+    setEditDraft(null)
+  }
+
+  return (
+    <article className="space-y-3" aria-label={exercise.name}>
+      <SessionExerciseHeader exercise={exercise} exerciseOptions={exerciseOptions} />
+
+      {previousIndex !== null && exercise.sets[previousIndex] && (
+        <CompactSetSummary
+          setNumber={previousIndex + 1}
+          data={exercise.sets[previousIndex]}
+          relation="previous"
+          onEdit={() => openEdit(previousIndex, exercise.sets[previousIndex])}
         />
-
-        {/* Zona de expandir/colapsar */}
-        <button
-          type="button"
-          aria-label={name}
-          aria-expanded={canExpand ? expanded : undefined}
-          onClick={() => canExpand && toggleExpanded(weId)}
-          disabled={!canExpand}
-          className={cn(
-            'flex flex-1 items-center gap-3 rounded-lg text-left',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60',
-            canExpand && 'cursor-pointer',
-          )}
-        >
-          {/* Info principal */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className={cn(
-                'font-semibold truncate',
-                isActive ? 'text-lg' : 'text-sm',
-                isActive    && 'text-violet-200',
-                isCompleted && 'text-green-300',
-                isSkipped   && 'text-muted-foreground line-through',
-                !isActive && !isCompleted && !isSkipped && 'text-foreground/80',
-              )}>
-                {name}
-              </span>
-              {isCompound && (
-                <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-4 border-0 bg-muted/30 text-muted-foreground">
-                  compuesto
-                </Badge>
-              )}
-              {source !== 'planned' && (
-                <Badge variant="ghost" className="shrink-0 border border-violet-500/20 bg-violet-500/10 px-1.5 py-0 text-[10px] text-violet-200">
-                  solo hoy
-                </Badge>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {muscleGroups.slice(0, 2).map(g => (
-                <span key={g} className="text-[11px] text-muted-foreground capitalize">
-                  {g}
-                </span>
-              ))}
-              {muscleGroups.length > 2 && (
-                <span className="text-[11px] text-muted-foreground">
-                  +{muscleGroups.length - 2}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Estado + progreso */}
-          <div className="flex items-center gap-2 shrink-0">
-            <StatusBadge status={status} />
-            {!isSkipped && (
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {completedSets}/{sets.length}
-              </span>
-            )}
-            {canExpand && (
-              expanded
-                ? <ChevronUp  className="h-4 w-4 text-muted-foreground" />
-                : <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-          </div>
-        </button>
-      </div>
-
-      {/* ── Contenido expandido ───────────────────────────────────────────── */}
-      {expanded && !isSkipped && (
-        <div className="px-3 pb-3 space-y-2">
-          {originalName && (
-            <p className="text-xs text-violet-200 bg-violet-500/10 rounded-lg px-3 py-2">
-              Reemplaza solo por hoy a {originalName}.
-            </p>
-          )}
-
-          {/* Nota del ejercicio */}
-          {notes && (
-            <p className="text-xs text-muted-foreground bg-muted/20 rounded-lg px-3 py-2">
-              {notes}
-            </p>
-          )}
-
-          {/* Target reps */}
-          {targetReps && (
-            <p className="px-1 text-xs text-violet-300">
-              Objetivo: {targetReps} reps · RPE {exercise.targetRpe}
-            </p>
-          )}
-          {targetDuration && (
-            <p className="px-1 text-xs text-violet-300">
-              Objetivo: {Math.floor(targetDuration / 60)}:{String(targetDuration % 60).padStart(2, '0')} · RPE {exercise.targetRpe}
-            </p>
-          )}
-
-          {weightSuggestionBasis === 'based_on_previous_logs' && suggestedWeight !== null && (
-            <div className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-200">
-              <TrendingUp className="h-3 w-3" />
-              Ajustado por tu progreso
-            </div>
-          )}
-
-          <PreviousPerformance performance={exercise.previousPerformance} />
-
-          {/* Cabecera de la tabla */}
-          <div className={cn('hidden gap-1.5 px-1 sm:grid', targetDuration ? 'grid-cols-[28px_1fr_112px_44px]' : 'grid-cols-[28px_1fr_1fr_112px_44px]')}>
-            <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">#</span>
-            {targetDuration ? (
-              <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Tiempo</span>
-            ) : (
-              <>
-                <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Peso</span>
-                <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">Reps</span>
-              </>
-            )}
-            <span className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60">RPE</span>
-            <span />
-          </div>
-
-          {/* Filas de series */}
-          {sets.map((set, i) => targetDuration ? (
-            <TimedSetRow
-              key={i}
-              setNumber={i + 1}
-              data={set}
-              targetSeconds={targetDuration}
-              isActive={isActive}
-               isCurrent={isCurrentSet(status, i, sets)}
-              onDurationChange={seconds => updateSetDuration(weId, i, seconds)}
-              onRpeChange={rpe => selectRpe(weId, i, rpe)}
-              onComplete={() => completeSet(weId, i)}
-            />
-          ) : (
-            <SetRow
-              key={i}
-              setNumber={i + 1}
-              data={set}
-              isActive={isActive}
-               isCurrent={isCurrentSet(status, i, sets)}
-              onWeightChange={v => updateSetField(weId, i, 'weightKg', v)}
-              onRepsChange={v   => updateSetField(weId, i, 'reps', v)}
-              onRpeChange={rpe  => selectRpe(weId, i, rpe)}
-              onComplete={() => {
-                completeSet(weId, i)
-                if ('vibrate' in navigator) navigator.vibrate(50)
-              }}
-            />
-          ))}
-
-          {/* Botón Saltar ejercicio */}
-          {canReplace && (
-            <details className="rounded-lg border border-border/40 bg-muted/10 p-3">
-              <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-semibold text-violet-200">
-                <Repeat2 className="h-3.5 w-3.5" />
-                Cambiar ejercicio solo por hoy
-              </summary>
-              <div className="mt-3">
-                <SessionExercisePicker
-                  options={exerciseOptions.filter(option => option.exerciseId !== exercise.exerciseId)}
-                  placeholder="Buscar reemplazo"
-                  onSelect={nextExercise => replaceExercise(weId, nextExercise)}
-                />
-              </div>
-            </details>
-          )}
-
-          {canRemove && (
-            <button
-              type="button"
-              onClick={() => removeExercise(weId)}
-              className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-xs text-red-300 transition-colors hover:bg-red-500/10"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Quitar ejercicio agregado
-            </button>
-          )}
-
-          {isActive && (
-            <div className="mt-1 rounded-lg border border-border/40 bg-background/40 p-2">
-              <p className="px-1 text-[11px] font-medium text-muted-foreground">
-                Saltar por:
-              </p>
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
-                {SKIP_REASONS.map(reason => (
-                  <button
-                    key={reason}
-                    type="button"
-                    onClick={() => skipExercise(weId, reason)}
-                    className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-border/50 bg-muted/10 px-2 py-2.5 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-                  >
-                    <SkipForward className="h-3.5 w-3.5" />
-                    {reason}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
       )}
 
-      {isSkipped && skipReason && (
-        <div className="px-4 pb-3 text-xs text-muted-foreground">
-          Motivo: {skipReason}
-        </div>
+      {currentSet && currentIndex !== null && (
+        <ActiveSetFocus
+          exerciseId={exercise.workoutExerciseId}
+          setIndex={currentIndex}
+          data={currentSet}
+          targetDuration={exercise.targetDuration}
+        />
       )}
-    </div>
+
+      {nextIndex !== null && exercise.sets[nextIndex] && (
+        <CompactSetSummary setNumber={nextIndex + 1} data={exercise.sets[nextIndex]} relation="next" />
+      )}
+
+      {currentSet && currentIndex !== null && (
+        <CompleteSetDock
+          exerciseId={exercise.workoutExerciseId}
+          setIndex={currentIndex}
+          onComplete={() => completeSet(exercise.workoutExerciseId, currentIndex)}
+        />
+      )}
+
+      <Dialog
+        open={editSetIndex !== null}
+        onOpenChange={open => {
+          if (!open) {
+            setEditSetIndex(null)
+            setEditDraft(null)
+          }
+        }}
+      >
+        <DialogContent className="mx-4 max-w-sm rounded-2xl border-border/70">
+          <DialogHeader><DialogTitle>{t('Corregir serie {number}', { number: (editSetIndex ?? 0) + 1 })}</DialogTitle></DialogHeader>
+          {editDraft && (
+            <div className="space-y-4">
+              {exercise.targetDuration ? (
+                <label className="block space-y-2"><span className="text-sm font-semibold text-muted-foreground">{t('Tiempo en segundos')}</span><input type="number" min={0} value={editDraft.durationSeconds} onChange={event => setEditDraft(draft => draft ? { ...draft, durationSeconds: Number(event.target.value) || 0 } : draft)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-lg text-foreground outline-none focus:ring-2 focus:ring-violet-400" /></label>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block space-y-2"><span className="text-sm font-semibold text-muted-foreground">{t('Peso kg')}</span><input type="number" min={0} step={0.5} value={editDraft.weightKg} onChange={event => setEditDraft(draft => draft ? { ...draft, weightKg: event.target.value } : draft)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-lg text-foreground outline-none focus:ring-2 focus:ring-violet-400" /></label>
+                  <label className="block space-y-2"><span className="text-sm font-semibold text-muted-foreground">{t('Repeticiones')}</span><input type="number" min={0} value={editDraft.reps} onChange={event => setEditDraft(draft => draft ? { ...draft, reps: event.target.value } : draft)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-lg text-foreground outline-none focus:ring-2 focus:ring-violet-400" /></label>
+                </div>
+              )}
+              <div><p className="mb-2 text-sm font-semibold text-muted-foreground">RPE</p><RPESelector value={editDraft.rpe} onChange={rpe => setEditDraft(draft => draft ? { ...draft, rpe } : draft)} /></div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:space-x-0">
+            <button type="button" onClick={() => setEditSetIndex(null)} className="min-h-11 rounded-xl border border-border px-4 text-sm font-semibold text-foreground">{t('Cancelar')}</button>
+            <button type="button" onClick={saveCorrection} className="min-h-11 rounded-xl bg-violet-500 px-4 text-sm font-bold text-white">{t('Guardar corrección')}</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </article>
   )
 }
