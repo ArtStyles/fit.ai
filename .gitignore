@@ -42,4 +42,6 @@ android/app/google-services.json
 .worktrees/
 .chrome-*/
 artifacts/
+test-results/
+playwright-report/
 dashboard-*.png
