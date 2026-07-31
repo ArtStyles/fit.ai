@@ -12,14 +12,24 @@ test('user starts, logs, completes, and syncs today workout', async ({ page }) =
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/dashboard$/)
   await expect(page.locator('h1')).toHaveCount(1, { timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: /semana en curso|week in progress/i })).toBeVisible()
+
+  await page.getByRole('link', { name: /^plan$/i }).click()
+  await expect(page.getByRole('heading', { name: /tu semana|your week/i })).toBeVisible()
+  await page.getByRole('button', { name: /e2e full body/i }).first().click()
+  await expect(page.getByRole('button', { name: /editar estructura|edit structure/i })).toBeVisible()
+
+  await page.goto('/dashboard')
   await page.getByRole('link', { name: /empezar entrenamiento|start workout/i }).click()
 
   await expect(page).toHaveURL(/\/session\/[0-9a-f-]+$/i, { timeout: 90_000 })
   await expect(page.getByRole('button', { name: /finalizar|finish/i })).toBeDisabled({ timeout: 120_000 })
 
-  await page.getByLabel(/peso en kilogramos|weight in kilograms/i).first().fill('40')
-  await page.getByLabel(/repeticiones|reps/i).first().fill('10')
-  await page.getByRole('button', { name: /completar serie|complete set/i }).first().click()
+  const currentSet = page.getByRole('group', { name: /serie actual|current set/i })
+  await currentSet.getByLabel(/peso en kilogramos|weight in kilograms/i).fill('40')
+  await currentSet.getByLabel(/repeticiones|reps/i).fill('10')
+  await page.getByRole('button', { name: /completar serie 1|complete set 1/i }).click()
+  await expect(page.getByText(/descanso activo|active rest/i)).toBeVisible()
 
   await expect(page.locator('[data-session-sync-state="saved-local"]')).toBeVisible()
   await expect(page.getByText(/guardado en este dispositivo|saved on this device/i).first()).toBeVisible()

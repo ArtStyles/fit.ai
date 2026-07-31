@@ -14,6 +14,12 @@ async function auditCurrentPage(page: Page) {
   await expectNoHorizontalOverflow(page)
 }
 
+async function expectNamedMain(page: Page) {
+  const main = page.locator('main')
+  await expect(main).toHaveCount(1)
+  await expect(main).toHaveAttribute('aria-label', /\S+/)
+}
+
 async function expectOneH1(page: Page) {
   await expect(page.locator('h1')).toHaveCount(1, { timeout: 30_000 })
 }
@@ -150,17 +156,44 @@ test('authenticated core routes meet route-level accessibility acceptance', asyn
   await signInAsE2EUser(page)
 
   const routes = [
-    { path: '/dashboard', primary: /empezar entrenamiento|start workout/i },
-    { path: `/session/${fixture.workoutId}`, primary: /completar serie|complete set/i },
-    { path: '/plan', primary: /empezar entrenamiento|abrir rutina de hoy|start workout|open today/i },
-    { path: '/progress', primary: /historial|history/i },
+    { path: '/dashboard', primary: /empezar entrenamiento|start workout/i, namedMain: true },
+    { path: `/session/${fixture.workoutId}`, primary: /completar serie 1|complete set 1/i, namedMain: true },
+    { path: '/plan', primary: /editar estructura|edit structure/i, namedMain: true, openWorkout: true },
+    { path: '/progress', primary: /historial|history/i, namedMain: false },
   ] as const
 
   for (const route of routes) {
     await gotoAuthenticatedRoute(page, route.path)
     await expectOneH1(page)
+    if ('openWorkout' in route && route.openWorkout) {
+      await page.getByRole('button', { name: /e2e full body/i }).first().click()
+    }
     await expectVisiblePrimaryAction(page, route.primary)
+    if (route.namedMain) await expectNamedMain(page)
     await expectTouchTargetsAtLeast44(page)
     await auditCurrentPage(page)
   }
+})
+
+test('core training disclosures are keyboard reachable', async ({ page }) => {
+  test.setTimeout(180_000)
+  const fixture = await seedCoreProductFixture('es')
+  await signInAsE2EUser(page)
+
+  await page.goto('/dashboard')
+  const noticeControl = page.getByRole('button', { name: /abrir avisos|open notices/i })
+  if (await noticeControl.count()) {
+    await noticeControl.focus()
+    await expect(noticeControl).toBeFocused()
+  }
+
+  await page.goto('/plan')
+  const workout = page.getByRole('button', { name: /e2e full body/i }).first()
+  await workout.focus()
+  await expect(workout).toBeFocused()
+
+  await page.goto(`/session/${fixture.workoutId}`)
+  const exerciseMenu = page.getByRole('button', { name: /menú del ejercicio|exercise menu/i })
+  await exerciseMenu.focus()
+  await expect(exerciseMenu).toBeFocused()
 })
