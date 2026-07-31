@@ -10,6 +10,8 @@ describe('global design system contract', () => {
     for (const token of [
       '--surface-1', '--surface-2', '--status-success', '--status-warning',
       '--space-1', '--space-6', '--radius-control', '--motion-fast',
+      '--training-action', '--training-complete', '--training-warning',
+      '--training-active', '--motion-press', '--motion-expand', '--motion-progress',
     ]) expect(css).toContain(token)
   })
 

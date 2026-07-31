@@ -50,6 +50,13 @@
     --radius-card: 1rem;
     --motion-fast: 150ms;
     --motion-normal: 240ms;
+    --training-action: 82 85% 67%;
+    --training-complete: 142 69% 58%;
+    --training-warning: 27 96% 61%;
+    --training-active: 258 90% 66%;
+    --motion-press: 140ms;
+    --motion-expand: 220ms;
+    --motion-progress: 280ms;
 
     /* Capacitor 8 injects --safe-area-inset-* on Android WebViews that need
        a fallback; modern WebViews and iOS provide the env() values directly. */
@@ -104,6 +111,13 @@
     --radius-card: 1rem;
     --motion-fast: 150ms;
     --motion-normal: 240ms;
+    --training-action: 82 85% 67%;
+    --training-complete: 142 69% 58%;
+    --training-warning: 27 96% 61%;
+    --training-active: 258 90% 66%;
+    --motion-press: 140ms;
+    --motion-expand: 220ms;
+    --motion-progress: 280ms;
 
     /* fitness tokens */
     --energy: 24 95% 55%;
