@@ -15,6 +15,19 @@ export interface PreviousPerformanceRow {
   reps: Array<number | null> | null
 }
 
+export type SessionFocusWindow = {
+  exerciseIndex: number
+  previousSetIndex: number | null
+  currentSetIndex: number | null
+  nextSetIndex: number | null
+  nextExerciseIndex: number | null
+}
+
+type SessionFocusExercise = {
+  status: 'pending' | 'active' | 'completed' | 'skipped'
+  sets: Array<{ completed: boolean }>
+}
+
 export const COMPLETION_SECTION_ORDER = [
   'session-complete',
   'records',
@@ -112,6 +125,54 @@ export function zipPreviousPerformanceRows(rows: PreviousPerformanceRow[]): Prev
 export function currentSetIndex(sets: Array<{ completed: boolean }>): number {
   if (sets.length === 0) return -1
   return sets.findIndex(set => !set.completed)
+}
+
+export function buildSessionFocusWindow(
+  exercises: SessionFocusExercise[],
+): SessionFocusWindow {
+  const exerciseIndex = exercises.findIndex(exercise => exercise.status === 'active')
+  if (exerciseIndex < 0) {
+    return {
+      exerciseIndex: -1,
+      previousSetIndex: null,
+      currentSetIndex: null,
+      nextSetIndex: null,
+      nextExerciseIndex: null,
+    }
+  }
+
+  const sets = exercises[exerciseIndex].sets
+  const currentIndex = currentSetIndex(sets)
+  const nextExerciseOffset = exercises
+    .slice(exerciseIndex + 1)
+    .findIndex(exercise => exercise.status === 'pending')
+
+  return {
+    exerciseIndex,
+    previousSetIndex: currentIndex > 0
+      ? currentIndex - 1
+      : currentIndex < 0 && sets.length > 0
+        ? sets.length - 1
+        : null,
+    currentSetIndex: currentIndex >= 0 ? currentIndex : null,
+    nextSetIndex: currentIndex >= 0 && currentIndex + 1 < sets.length
+      ? currentIndex + 1
+      : null,
+    nextExerciseIndex: nextExerciseOffset >= 0
+      ? exerciseIndex + 1 + nextExerciseOffset
+      : null,
+  }
+}
+
+export function stepSessionValue(value: string, delta: number, precision: number): string {
+  const safePrecision = Math.min(6, Math.max(0, Math.trunc(precision)))
+  const scale = 10 ** safePrecision
+  const parsed = Number(value)
+  const current = Number.isFinite(parsed) ? parsed : 0
+  const stepped = Math.max(0, Math.round((current + delta) * scale) / scale)
+  const fixed = stepped.toFixed(safePrecision)
+
+  return fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed
 }
 
 export function isCurrentSet(

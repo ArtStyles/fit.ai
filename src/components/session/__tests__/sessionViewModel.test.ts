@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   COMPLETION_SECTION_ORDER,
+  buildSessionFocusWindow,
   currentSetIndex,
   formatPreviousPerformance,
   isCurrentSet,
@@ -9,9 +10,51 @@ import {
   syncEventForStorageResult,
   zipPreviousPerformanceRows,
   setInputMode,
+  stepSessionValue,
 } from '../sessionViewModel'
 
 describe('session presentation', () => {
+  it('returns the previous, current, and next set around the active set', () => {
+    const result = buildSessionFocusWindow([{ status: 'active', sets: [
+      { completed: true },
+      { completed: false },
+      { completed: false },
+    ] }])
+
+    expect(result).toMatchObject({
+      exerciseIndex: 0,
+      previousSetIndex: 0,
+      currentSetIndex: 1,
+      nextSetIndex: 2,
+      nextExerciseIndex: null,
+    })
+  })
+
+  it('identifies the next pending exercise after the active one', () => {
+    expect(buildSessionFocusWindow([
+      { status: 'completed', sets: [{ completed: true }] },
+      { status: 'active', sets: [{ completed: false }] },
+      { status: 'skipped', sets: [{ completed: false }] },
+      { status: 'pending', sets: [{ completed: false }] },
+    ])).toMatchObject({ exerciseIndex: 1, nextExerciseIndex: 3 })
+  })
+
+  it('returns an empty focus window without an active exercise', () => {
+    expect(buildSessionFocusWindow([{ status: 'completed', sets: [{ completed: true }] }])).toEqual({
+      exerciseIndex: -1,
+      previousSetIndex: null,
+      currentSetIndex: null,
+      nextSetIndex: null,
+      nextExerciseIndex: null,
+    })
+  })
+
+  it('steps numeric strings without floating-point artifacts', () => {
+    expect(stepSessionValue('35', 0.5, 1)).toBe('35.5')
+    expect(stepSessionValue('0', -1, 0)).toBe('0')
+    expect(stepSessionValue('0.2', 0.1, 1)).toBe('0.3')
+  })
+
   it('uses numeric keyboards for workout values', () => {
     expect(setInputMode('weight')).toBe('decimal')
     expect(setInputMode('reps')).toBe('numeric')
