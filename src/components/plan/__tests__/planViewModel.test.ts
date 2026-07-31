@@ -1,10 +1,63 @@
 import { describe, expect, it } from 'vitest'
 import {
   appliedConstraintLabels,
+  buildPlanDistribution,
   buildPlanDaySummaries,
+  buildPlanWeekEntries,
 } from '../planViewModel'
 
 describe('weekly plan summary', () => {
+  it('fills the seven-day map with explicit rest days', () => {
+    const entries = buildPlanWeekEntries([{
+      id: 'pull',
+      name: 'Pull',
+      focus: 'Espalda',
+      dayOfWeek: 3,
+      orderInPlan: 1,
+      durationMinutes: 50,
+      exerciseCount: 5,
+      isScheduled: true,
+    }], 3)
+
+    expect(entries).toHaveLength(7)
+    expect(entries[1]).toMatchObject({ isoDay: 2, kind: 'rest', isToday: false })
+    expect(entries[2]).toMatchObject({ isoDay: 3, kind: 'workout', isToday: true })
+  })
+
+  it('appends unscheduled sessions after the seven-day map', () => {
+    const entries = buildPlanWeekEntries([{
+      id: 'optional',
+      name: 'Optional',
+      focus: null,
+      dayOfWeek: null,
+      orderInPlan: 4,
+      durationMinutes: 30,
+      exerciseCount: 3,
+      isScheduled: false,
+    }], 1)
+
+    expect(entries).toHaveLength(8)
+    expect(entries.at(-1)).toMatchObject({ isoDay: null, kind: 'unscheduled', isToday: false })
+  })
+
+  it('calculates relative muscle coverage from prescribed sets', () => {
+    expect(buildPlanDistribution([
+      { sets: 3, muscleGroups: ['espalda', 'bíceps'] },
+      { sets: 2, muscleGroups: ['espalda'] },
+    ])).toEqual([
+      { muscleGroup: 'espalda', prescribedSets: 5, relativePercent: 100 },
+      { muscleGroup: 'bíceps', prescribedSets: 3, relativePercent: 60 },
+    ])
+  })
+
+  it('deduplicates repeated muscle tags within one exercise', () => {
+    expect(buildPlanDistribution([
+      { sets: 4, muscleGroups: [' Cuádriceps ', 'cuádriceps', ''] },
+    ])).toEqual([
+      { muscleGroup: 'Cuádriceps', prescribedSets: 4, relativePercent: 100 },
+    ])
+  })
+
   it('sorts scheduled workouts and preserves unscheduled sessions last', () => {
     const result = buildPlanDaySummaries([
       { id: 'b', dayOfWeek: 5, name: 'Lower', duration: 50 },
