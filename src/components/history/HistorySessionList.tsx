@@ -1,200 +1,119 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import {
-  CalendarDays,
-  ChevronRight,
-  Clock,
-  Dumbbell,
-  Search,
-  SlidersHorizontal,
-  X,
-} from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { PendingLink } from '@/components/navigation/PendingLink'
-import { getWorkoutDisplayName } from '@/lib/workouts/display'
-import { cn } from '@/lib/utils'
+import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { SessionSummaryRow, type SessionSummarySignal } from '@/components/evidence/SessionSummaryRow'
 import { useI18n } from '@/components/i18n/I18nProvider'
-import { dateLocale, type AppLanguage } from '@/lib/i18n'
-
-type WorkoutSummary = {
-  name: string
-  focus: string | null
-}
-
-type ExerciseSummary = {
-  name: string
-}
-
-export type HistoryProgressLogRow = {
-  id: string
-  workout_id: string | null
-  completed_at: string
-  duration_minutes: number | null
-  mood_rating: number | null
-  workout: WorkoutSummary | WorkoutSummary[] | null
-}
-
-export type HistoryExerciseLogRow = {
-  progress_log_id: string
-  exercise_id: string | null
-  weights_kg: number[] | null
-  reps_completed: number[] | null
-  exercise?: ExerciseSummary | ExerciseSummary[] | null
-}
+import { dateLocale } from '@/lib/i18n'
+import { shiftDateStr } from '@/lib/calendar/aggregate'
+import { groupEvidenceSessions } from '@/lib/training-evidence/timeline'
+import { cn } from '@/lib/utils'
+import type { HistoryEvidenceRow, HistorySignal } from './historyViewModel'
 
 type HistoryMode = 'all' | 'week' | 'volume'
 
-interface HistorySessionListProps {
-  sessionLogs: HistoryProgressLogRow[]
-  exerciseLogs: HistoryExerciseLogRow[]
-}
-
-function formatDate(value: string, language: AppLanguage): string {
+function formatDate(value: string, language: 'es' | 'en'): string {
   return new Intl.DateTimeFormat(dateLocale(language), {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
-  }).format(new Date(value))
-}
-
-function formatTime(value: string, language: AppLanguage): string {
-  return new Intl.DateTimeFormat(dateLocale(language), {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
 }
 
-function getWorkout(row: HistoryProgressLogRow): WorkoutSummary | null {
-  if (Array.isArray(row.workout)) return row.workout[0] ?? null
-  return row.workout
+function monthLabel(key: string, language: 'es' | 'en'): string {
+  const [year, month] = key.split('-').map(Number)
+  const label = new Intl.DateTimeFormat(dateLocale(language), { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(year, month - 1, 1)))
+  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
-function getExerciseName(row: HistoryExerciseLogRow): string | null {
-  if (Array.isArray(row.exercise)) return row.exercise[0]?.name ?? null
-  return row.exercise?.name ?? null
+function signalPresentation(signal: HistorySignal, language: 'es' | 'en'): SessionSummarySignal | null {
+  if (!signal) return null
+  if (signal.kind === 'record') {
+    return { label: signal.count === 1 ? 'PR' : `${signal.count} PR`, tone: 'record' }
+  }
+  if (signal.kind === 'volume') {
+    return {
+      label: `${signal.changePercent > 0 ? '+' : ''}${signal.changePercent}% ${language === 'en' ? 'volume' : 'volumen'}`,
+      tone: signal.changePercent >= 0 ? 'success' : 'warning',
+    }
+  }
+  return { label: `RPE ${signal.value}`, tone: signal.value >= 9 ? 'warning' : 'neutral' }
 }
 
-function volumeFor(logId: string, rows: HistoryExerciseLogRow[]): number {
-  return rows
-    .filter(row => row.progress_log_id === logId)
-    .reduce((total, row) => {
-      const weights = row.weights_kg ?? []
-      const reps = row.reps_completed ?? []
-      return total + weights.reduce((sum, weight, index) => {
-        return sum + (Number(weight) || 0) * (Number(reps[index]) || 0)
-      }, 0)
-    }, 0)
+function currentWeekStart(todayStr: string): string {
+  const [year, month, day] = todayStr.split('-').map(Number)
+  const weekday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7
+  return shiftDateStr(todayStr, -weekday)
 }
 
-function getWeekStart(): Date {
-  const now = new Date()
-  const mondayOffset = (now.getDay() + 6) % 7
-  const start = new Date(now)
-  start.setHours(0, 0, 0, 0)
-  start.setDate(start.getDate() - mondayOffset)
-  return start
-}
-
-function normalize(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-}
-
-export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySessionListProps) {
+export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRow[]; todayStr: string }) {
   const { language, t } = useI18n()
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<HistoryMode>('all')
 
-  const filteredLogs = useMemo(() => {
-    const normalizedQuery = normalize(query.trim())
-    const weekStart = getWeekStart().getTime()
+  const filteredRows = useMemo(() => {
+    const normalizedQuery = query.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    const weekStart = currentWeekStart(todayStr)
+    const filtered = rows.filter(row => {
+      if (mode === 'week' && row.date < weekStart) return false
+      return !normalizedQuery || row.searchText.includes(normalizedQuery)
+    })
+    return mode === 'volume'
+      ? [...filtered].sort((a, b) => b.volumeKg - a.volumeKg || b.completedAt.localeCompare(a.completedAt))
+      : filtered
+  }, [mode, query, rows, todayStr])
 
-    const rows = sessionLogs
-      .map(log => {
-        const workout = getWorkout(log)
-        const workoutName = workout
-          ? getWorkoutDisplayName(workout.name, workout.focus)
-          : t('Entrenamiento')
-        const exerciseNames = exerciseLogs
-          .filter(row => row.progress_log_id === log.id)
-          .map(getExerciseName)
-          .filter(Boolean)
-          .join(' ')
-        const volume = Math.round(volumeFor(log.id, exerciseLogs))
-        const dateLabel = `${formatDate(log.completed_at, language)} ${formatTime(log.completed_at, language)}`
-        const haystack = normalize([
-          workoutName,
-          exerciseNames,
-          workout?.focus ?? '',
-          dateLabel,
-          `${log.duration_minutes ?? 0} min`,
-          `${volume} kg`,
-        ].join(' '))
-
-        return { log, workout, workoutName, volume, dateLabel, haystack }
-      })
-      .filter(row => {
-        if (mode === 'week' && new Date(row.log.completed_at).getTime() < weekStart) {
-          return false
-        }
-
-        if (!normalizedQuery) return true
-        return row.haystack.includes(normalizedQuery)
-      })
-
-    if (mode === 'volume') {
-      return [...rows].sort((a, b) =>
-        b.volume - a.volume ||
-        new Date(b.log.completed_at).getTime() - new Date(a.log.completed_at).getTime(),
-      )
-    }
-
-    return rows
-  }, [exerciseLogs, language, mode, query, sessionLogs, t])
-
+  const groups = useMemo(
+    () => mode === 'volume'
+      ? [{ key: 'volume', sessions: filteredRows }]
+      : groupEvidenceSessions(filteredRows, todayStr),
+    [filteredRows, mode, todayStr],
+  )
   const modes: { value: HistoryMode; label: string }[] = [
     { value: 'all', label: t('Todas') },
     { value: 'week', label: t('Esta semana') },
     { value: 'volume', label: t('Mayor volumen') },
   ]
+  const clearFilters = () => {
+    setMode('all')
+    setQuery('')
+  }
 
   return (
-    <section className="mt-8">
-      <div className="animate-in fade-in slide-in-from-bottom-2 rounded-2xl border border-border/60 bg-muted/10 p-3 duration-500">
+    <section aria-labelledby="history-timeline-title">
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{t('Registro cronológico')}</p>
+        <h2 id="history-timeline-title" className="mt-1 font-display text-2xl font-bold text-foreground">{t('Últimas sesiones completadas')}</h2>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-border/60 bg-muted/[0.05] p-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
             placeholder={t('Buscar rutina, foco o fecha')}
-            className="h-11 w-full rounded-xl border border-border/60 bg-background/70 pl-9 pr-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
+            className="h-11 w-full rounded-xl border border-border/60 bg-background/70 pl-9 pr-11 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
           />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-              aria-label={t('Limpiar búsqueda')}
-            >
-              <X className="h-3.5 w-3.5" />
+          {query ? (
+            <button type="button" onClick={() => setQuery('')} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/40 hover:text-foreground" aria-label={t('Limpiar búsqueda')}>
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
-          )}
+          ) : null}
         </div>
-
         <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
-            <SlidersHorizontal className="h-4 w-4" />
-          </div>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300"><SlidersHorizontal className="h-4 w-4" aria-hidden="true" /></span>
           {modes.map(item => (
             <button
               key={item.value}
               type="button"
+              aria-pressed={mode === item.value}
               onClick={() => setMode(item.value)}
               className={cn(
-                'h-10 shrink-0 rounded-lg border px-3 text-xs font-medium transition-colors',
+                'min-h-10 shrink-0 rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400',
                 mode === item.value
                   ? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
                   : 'border-border/50 bg-background/50 text-muted-foreground hover:border-violet-500/30 hover:text-foreground',
@@ -207,80 +126,51 @@ export function HistorySessionList({ sessionLogs, exerciseLogs }: HistorySession
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {filteredLogs.length === sessionLogs.length
-            ? `${sessionLogs.length} ${t('sesiones')}`
-            : `${filteredLogs.length} / ${sessionLogs.length} ${t('sesiones')}`}
-        </p>
+        <p className="text-xs text-muted-foreground">{filteredRows.length} / {rows.length} {t('sesiones')}</p>
         {mode !== 'all' || query ? (
-          <button
-            type="button"
-            onClick={() => {
-              setMode('all')
-              setQuery('')
-            }}
-            className="text-xs font-medium text-violet-300 hover:text-violet-200"
-          >
+          <button type="button" onClick={clearFilters} className="min-h-9 text-xs font-semibold text-violet-300 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
             {t('Limpiar filtros')}
           </button>
         ) : null}
       </div>
 
-      {filteredLogs.length === 0 ? (
+      {filteredRows.length === 0 ? (
         <div className="mt-3 rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">
-          <Search className="mx-auto h-6 w-6 text-muted-foreground" />
+          <Search className="mx-auto h-6 w-6 text-muted-foreground" aria-hidden="true" />
           <p className="mt-3 text-sm font-semibold text-foreground">{t('Sin resultados')}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('Prueba con otro nombre, foco o rango.')}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{t('Prueba con otro nombre, foco o rango.')}</p>
+          <button type="button" onClick={clearFilters} className="mt-4 min-h-11 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 text-sm font-semibold text-violet-100 hover:bg-violet-500/20">
+            {t('Limpiar filtros')}
+          </button>
         </div>
       ) : (
-        <div className="mt-3 space-y-3">
-          {filteredLogs.map(({ log, workout, workoutName, volume }, index) => (
-            <PendingLink
-              key={log.id}
-              href={`/history/${log.id}`}
-              className="animate-in fade-in slide-in-from-bottom-2 block rounded-2xl border border-border/60 bg-muted/10 p-4 transition-colors hover:border-violet-500/30 hover:bg-violet-500/5"
-              spinnerClassName="h-3.5 w-3.5"
-              style={{ animationDelay: `${Math.min(index, 6) * 35}ms` }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium capitalize text-muted-foreground">
-                    {formatDate(log.completed_at, language)} · {formatTime(log.completed_at, language)}
-                  </p>
-                  <h2 className="mt-1 font-display text-lg font-semibold text-foreground">
-                    {workoutName}
-                  </h2>
-                  {workout?.focus && (
-                    <p className="mt-1 text-sm text-muted-foreground">{workout.focus}</p>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {log.mood_rating && (
-                    <Badge variant="ghost" className="border border-border/50">
-                      {t('ánimo')} {log.mood_rating}/5
-                    </Badge>
-                  )}
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </div>
+        <div className="mt-5 space-y-7">
+          {groups.map(group => (
+            <section key={group.key} aria-label={group.key === 'current-week' ? t('Esta semana') : group.key === 'volume' ? t('Mayor volumen') : monthLabel(group.key, language)}>
+              <div className="flex items-center gap-3">
+                <h3 className="shrink-0 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                  {group.key === 'current-week' ? t('Esta semana') : group.key === 'volume' ? t('Mayor volumen') : monthLabel(group.key, language)}
+                </h3>
+                <span className="h-px flex-1 bg-border/60" />
               </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                  <Clock className="mr-1 h-3.5 w-3.5" />
-                  {log.duration_minutes ?? 0} min
-                </span>
-                <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                  <Dumbbell className="mr-1 h-3.5 w-3.5" />
-                  {volume} kg
-                </span>
-                <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                  <CalendarDays className="mr-1 h-3.5 w-3.5" />
-                  completado
-                </span>
+              <div className="mt-2">
+                {group.sessions.map(row => (
+                  <SessionSummaryRow
+                    key={row.id}
+                    href={`/history/${row.id}`}
+                    dateLabel={formatDate(row.completedAt, language)}
+                    title={row.workoutName}
+                    context={row.focus}
+                    signal={signalPresentation(row.signal, language)}
+                    metrics={[
+                      { label: t('Duración'), value: `${row.durationMinutes} min` },
+                      { label: t('Series'), value: String(row.sets) },
+                      { label: t('Volumen'), value: `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 0 }).format(row.volumeKg)} kg` },
+                    ]}
+                  />
+                ))}
               </div>
-            </PendingLink>
+            </section>
           ))}
         </div>
       )}

@@ -257,17 +257,33 @@ export function PlanLoading() {
 
 export function HistoryLoading() {
   return (
-    <AppLoadingShell className="pb-16">
+    <div className="min-h-screen bg-background pb-20">
       <BackHeader
         title="Historial"
         subtitle="Ultimas sesiones completadas"
         icon={History}
         right={<p className="text-sm font-medium text-violet-400">Calendario</p>}
       />
-      <MetricStripSkeleton labels={['Sesiones', 'Tiempo', 'Volumen']} />
-      <CardSkeletons count={1} className="mt-8" />
-      <RowSkeletons count={4} />
-    </AppLoadingShell>
+      <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
+        <section className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.06] p-5 sm:p-6">
+          <Shimmer className="h-3 w-36 rounded bg-violet-500/15" />
+          <Shimmer className="mt-4 h-10 w-64 rounded-lg" />
+          <Shimmer className="mt-3 h-4 w-full max-w-xl rounded bg-muted/40" />
+          <MetricStripSkeleton labels={['Sesiones', 'Volumen', 'Records personales']} />
+        </section>
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+          <section>
+            <Shimmer className="h-8 w-56 rounded" />
+            <Shimmer className="mt-5 h-28 rounded-2xl bg-muted/30" />
+            <RowSkeletons count={4} avatar={false} className="mt-5" />
+          </section>
+          <section className="rounded-3xl border border-amber-500/15 bg-amber-500/[0.035] p-5">
+            <Shimmer className="h-8 w-40 rounded" />
+            <RowSkeletons count={3} avatar={false} className="mt-4" />
+          </section>
+        </div>
+      </main>
+    </div>
   )
 }
 
