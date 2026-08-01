@@ -30,4 +30,30 @@ describe('UI translations', () => {
   ])('translates structured plan adjustment copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })
+
+  it.each([
+    ['Ritmo de entrenamiento', 'Training rhythm'],
+    ['Días este mes', 'Days this month'],
+    ['Racha actual', 'Current streak'],
+    ['Actividad del mes', 'Monthly activity'],
+    ['Día seleccionado', 'Selected day'],
+    ['Resumen anual', 'Year overview'],
+    ['Evidencia acumulada', 'Accumulated evidence'],
+    ['Tu progreso tiene dirección', 'Your progress has direction'],
+    ['Sin comparación', 'No comparison'],
+    ['Ejercicios destacados', 'Highlighted exercises'],
+    ['Registro cronológico', 'Chronological log'],
+    ['Hitos recientes', 'Recent milestones'],
+    ['Debrief de entrenamiento', 'Workout debrief'],
+    ['Secuencia de la sesión', 'Session sequence'],
+    ['Series completadas', 'Completed sets'],
+    ['Mostrar series', 'Show sets'],
+    ['Pasaporte del movimiento', 'Movement passport'],
+    ['Evolución de fuerza', 'Strength progression'],
+    ['Último estímulo', 'Latest stimulus'],
+    ['Mostrar instrucciones', 'Show instructions'],
+    ['Reintentar', 'Try again'],
+  ])('translates training evidence copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
 })
