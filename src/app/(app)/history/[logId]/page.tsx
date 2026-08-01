@@ -1,21 +1,22 @@
 import { notFound } from 'next/navigation'
+import { Dumbbell, Info, Sparkles, Trophy } from 'lucide-react'
+import { EvidenceHero } from '@/components/evidence/EvidenceHero'
+import { EvidenceInsight } from '@/components/evidence/EvidenceInsight'
+import { MetricStrip } from '@/components/evidence/MetricStrip'
+import { SessionExerciseDisclosure } from '@/components/history/SessionExerciseDisclosure'
 import {
-  Clock,
-  Dumbbell,
-  Flame,
-  Info,
-  Repeat2,
-  Target,
-  Trophy,
-  Weight,
-} from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { PendingLink } from '@/components/navigation/PendingLink'
+  buildSessionDebrief,
+  type PreviousExercisePerformance,
+  type PriorBest,
+  type SessionExerciseInput,
+} from '@/components/history/sessionDebrief'
+import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
-import { PageTopBar } from '@/components/navigation/PageTopBar'
+import { createTranslator, dateLocale } from '@/lib/i18n'
+import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
+import { getWorkoutDisplayName } from '@/lib/workouts/display'
 
 export const metadata = { title: 'Detalle de sesión · Vekira' }
 
@@ -58,6 +59,9 @@ type ExerciseLogRow = {
 type PreviousExerciseLogRow = {
   exercise_id: string
   weights_kg: number[] | null
+  reps_completed: number[] | null
+  rpe_values: (number | null)[] | null
+  progress_logs: { completed_at: string } | { completed_at: string }[] | null
 }
 
 interface PageProps {
@@ -65,17 +69,21 @@ interface PageProps {
 }
 
 function getWorkout(row: ProgressLogRow): WorkoutSummary | null {
-  if (Array.isArray(row.workout)) return row.workout[0] ?? null
-  return row.workout
+  return Array.isArray(row.workout) ? row.workout[0] ?? null : row.workout
 }
 
 function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
-  if (Array.isArray(row.exercise)) return row.exercise[0] ?? null
-  return row.exercise
+  return Array.isArray(row.exercise) ? row.exercise[0] ?? null : row.exercise
 }
 
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('es', {
+function previousCompletedAt(row: PreviousExerciseLogRow): string {
+  return Array.isArray(row.progress_logs)
+    ? row.progress_logs[0]?.completed_at ?? ''
+    : row.progress_logs?.completed_at ?? ''
+}
+
+function formatDateTime(value: string, language: 'es' | 'en'): string {
+  return new Intl.DateTimeFormat(dateLocale(language), {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -84,67 +92,23 @@ function formatDateTime(value: string): string {
   }).format(new Date(value))
 }
 
-function formatDuration(minutes: number | null): string {
-  if (!minutes) return '0 min'
+function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   const rest = minutes % 60
   return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`
 }
 
-function formatWeight(value: number): string {
-  return Number.isInteger(value) ? `${value} kg` : `${value.toFixed(1)} kg`
-}
-
-function volumeFor(row: ExerciseLogRow): number {
-  const weights = row.weights_kg ?? []
-  const reps = row.reps_completed ?? []
-
-  return weights.reduce((sum, weight, index) => {
-    return sum + (Number(weight) || 0) * (Number(reps[index]) || 0)
-  }, 0)
-}
-
-function maxWeight(row: ExerciseLogRow | PreviousExerciseLogRow): number {
-  return Math.max(...(row.weights_kg ?? []).map(weight => Number(weight) || 0), 0)
-}
-
-function averageRpe(row: ExerciseLogRow): number | null {
-  const values = (row.rpe_values ?? []).filter((value): value is number => typeof value === 'number')
-  if (values.length === 0) return null
-  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10
-}
-
-function isSkipped(row: ExerciseLogRow): boolean {
-  return (row.sets_completed ?? 0) === 0 && Boolean(row.notes?.toLowerCase().startsWith('saltado:'))
-}
-
-function noteKind(note: string | null): 'skip' | 'added' | 'replacement' | null {
-  const normalized = note?.toLowerCase() ?? ''
-  if (normalized.startsWith('saltado:')) return 'skip'
-  if (normalized.includes('agregado solo por hoy')) return 'added'
-  if (normalized.includes('cambio solo por hoy')) return 'replacement'
-  return null
-}
-
-function setRows(row: ExerciseLogRow) {
-  const weights = row.weights_kg ?? []
-  const reps = row.reps_completed ?? []
-  const rpes = row.rpe_values ?? []
-  const length = Math.max(weights.length, reps.length, rpes.length)
-
-  return Array.from({ length }, (_, index) => ({
-    weight: Number(weights[index]) || 0,
-    reps: Number(reps[index]) || 0,
-    rpe: rpes[index] ?? null,
-  }))
+function formatVolume(value: number, language: 'es' | 'en'): string {
+  return `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 0 }).format(value)} kg`
 }
 
 export default async function HistoryDetailPage({ params }: PageProps) {
   const { supabase, user, profile } = await requireAppUserContext()
   const language = exerciseLanguage(profile.language)
+  const t = createTranslator(language)
 
-  const { data: log } = await supabase
+  const { data: log, error: logError } = await supabase
     .from('progress_logs')
     .select(`
       id,
@@ -158,11 +122,12 @@ export default async function HistoryDetailPage({ params }: PageProps) {
     `)
     .eq('id', params.logId)
     .eq('user_id', user.id)
-    .maybeSingle() as unknown as { data: ProgressLogRow | null }
+    .maybeSingle() as unknown as { data: ProgressLogRow | null; error: { message?: string } | null }
 
+  if (logError) throw new Error(logError.message ?? 'Could not load completed session')
   if (!log) notFound()
 
-  const { data: exerciseLogRows } = await supabase
+  const { data: exerciseLogRows, error: exerciseLogError } = await supabase
     .from('exercise_logs')
     .select(`
       id,
@@ -175,7 +140,9 @@ export default async function HistoryDetailPage({ params }: PageProps) {
       notes,
       exercise:exercises(name, name_es, muscle_groups, muscle_groups_es, is_compound)
     `)
-    .eq('progress_log_id', log.id) as unknown as { data: ExerciseLogRow[] | null }
+    .eq('progress_log_id', log.id) as unknown as { data: ExerciseLogRow[] | null; error: { message?: string } | null }
+
+  if (exerciseLogError) throw new Error(exerciseLogError.message ?? 'Could not load completed exercises')
 
   const exerciseLogs = (exerciseLogRows ?? []).map(row => ({
     ...row,
@@ -189,225 +156,141 @@ export default async function HistoryDetailPage({ params }: PageProps) {
   let previousLogs: PreviousExerciseLogRow[] = []
 
   if (exerciseIds.length > 0) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('exercise_logs')
-      .select('exercise_id, weights_kg, progress_logs!inner(user_id, completed_at)')
+      .select('exercise_id, weights_kg, reps_completed, rpe_values, progress_logs!inner(user_id, completed_at)')
       .in('exercise_id', exerciseIds)
       .eq('progress_logs.user_id', user.id)
-      .lt('progress_logs.completed_at', log.completed_at) as unknown as { data: PreviousExerciseLogRow[] | null }
+      .lt('progress_logs.completed_at', log.completed_at)
+      .order('completed_at', { referencedTable: 'progress_logs', ascending: false }) as unknown as {
+        data: PreviousExerciseLogRow[] | null
+        error: { message?: string } | null
+      }
 
-    previousLogs = data ?? []
+    if (error) throw new Error(error.message ?? 'Could not load previous exercise evidence')
+    previousLogs = [...(data ?? [])].sort((a, b) => previousCompletedAt(b).localeCompare(previousCompletedAt(a)))
   }
 
-  const previousMaxByExercise = previousLogs.reduce<Record<string, number>>((acc, row) => {
-    acc[row.exercise_id] = Math.max(acc[row.exercise_id] ?? 0, maxWeight(row))
-    return acc
-  }, {})
+  const previousByExercise = new Map<string, PreviousExercisePerformance>()
+  const priorBestByExercise = new Map<string, PriorBest>()
+  for (const previous of previousLogs) {
+    if (!previousByExercise.has(previous.exercise_id)) {
+      previousByExercise.set(previous.exercise_id, {
+        weightsKg: previous.weights_kg,
+        repsCompleted: previous.reps_completed,
+        rpeValues: previous.rpe_values,
+      })
+    }
+    const bestSet = summarizeExercisePerformance(previous.weights_kg, previous.reps_completed, previous.rpe_values).bestSet
+    const currentBest = priorBestByExercise.get(previous.exercise_id)
+    if (bestSet && (!currentBest || bestSet.weightKg > currentBest.weightKg || (bestSet.weightKg === currentBest.weightKg && bestSet.reps > currentBest.reps))) {
+      priorBestByExercise.set(previous.exercise_id, { weightKg: bestSet.weightKg, reps: bestSet.reps })
+    }
+  }
 
+  const exercises: SessionExerciseInput[] = exerciseLogs.map(row => {
+    const exercise = getExercise(row)
+    return {
+      id: row.id,
+      exerciseId: row.exercise_id,
+      exerciseName: exercise?.name ?? t('Ejercicio'),
+      muscleGroups: exercise?.muscle_groups ?? [],
+      setsCompleted: row.sets_completed,
+      weightsKg: row.weights_kg,
+      repsCompleted: row.reps_completed,
+      rpeValues: row.rpe_values,
+      notes: row.notes,
+    }
+  })
+  const debrief = buildSessionDebrief({
+    durationMinutes: Number(log.duration_minutes) || 0,
+    exercises,
+    previousByExercise,
+    priorBestByExercise,
+  })
   const workout = getWorkout(log)
-  const workoutName = workout ? getWorkoutDisplayName(workout.name, workout.focus) : 'Entrenamiento'
-  const completedExerciseLogs = exerciseLogs.filter(row => !isSkipped(row))
-  const skippedCount = exerciseLogs.length - completedExerciseLogs.length
-  const totalSets = completedExerciseLogs.reduce((sum, row) => sum + (row.sets_completed ?? 0), 0)
-  const totalVolume = Math.round(completedExerciseLogs.reduce((sum, row) => sum + volumeFor(row), 0))
-  const prCount = completedExerciseLogs.filter(row => maxWeight(row) > (previousMaxByExercise[row.exercise_id] ?? 0)).length
+  const workoutName = workout ? getWorkoutDisplayName(workout.name, workout.focus) : t('Entrenamiento')
 
   return (
-    <div className="min-h-screen bg-background pb-16">
+    <div className="min-h-screen bg-background pb-20">
       <PageTopBar
         title={workoutName}
-        subtitle={formatDateTime(log.completed_at)}
+        subtitle={formatDateTime(log.completed_at, language)}
         backHref="/history"
-        backLabel="Historial"
+        backLabel={t('Historial')}
         icon={<Dumbbell className="h-5 w-5" />}
       />
 
-      <main className="mx-auto max-w-lg px-4 py-8">
-        <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
-          {workout?.focus && (
-            <p className="mt-2 text-sm text-muted-foreground">{workout.focus}</p>
-          )}
+      <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
+        <EvidenceHero
+          eyebrow={t('Debrief de entrenamiento')}
+          title={workoutName}
+          description={[formatDateTime(log.completed_at, language), workout?.focus].filter(Boolean).join(' · ')}
+        >
+          <MetricStrip
+            items={[
+              { label: t('Duración'), value: formatDuration(debrief.durationMinutes) },
+              { label: t('Series completadas'), value: debrief.totalSets },
+              { label: t('Volumen'), value: formatVolume(debrief.totalVolumeKg, language) },
+            ]}
+          />
+        </EvidenceHero>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-              <Clock className="h-4 w-4 text-violet-300" />
-              <p className="mt-2 font-display text-2xl font-bold tabular-nums text-foreground">{formatDuration(log.duration_minutes)}</p>
-              <p className="text-xs text-muted-foreground">Duración</p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-              <Dumbbell className="h-4 w-4 text-violet-300" />
-              <p className="mt-2 font-display text-2xl font-bold tabular-nums text-foreground">{totalSets}</p>
-              <p className="text-xs text-muted-foreground">Series</p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-              <Weight className="h-4 w-4 text-violet-300" />
-              <p className="mt-2 font-display text-2xl font-bold tabular-nums text-foreground">{totalVolume}kg</p>
-              <p className="text-xs text-muted-foreground">Volumen</p>
-            </div>
-          </div>
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+          <section aria-labelledby="session-sequence-title">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{t('Secuencia de la sesión')}</p>
+            <h2 id="session-sequence-title" className="mt-1 font-display text-2xl font-bold text-foreground">
+              {debrief.exercises.length} {t('Ejercicios')}
+            </h2>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {log.mood_rating && (
-              <Badge variant="ghost" className="border border-border/50">
-                Ánimo {log.mood_rating}/5
-              </Badge>
+            {debrief.exercises.length === 0 ? (
+              <div className="mt-5 rounded-3xl border border-dashed border-border bg-muted/20 p-7 text-center">
+                <Info className="mx-auto h-7 w-7 text-muted-foreground" aria-hidden="true" />
+                <p className="mt-3 text-sm font-semibold text-foreground">{t('Sin detalle de ejercicios')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('Esta sesión no tiene logs por ejercicio.')}</p>
+              </div>
+            ) : (
+              <div className="mt-4">
+                {debrief.exercises.map((exercise, index) => (
+                  <SessionExerciseDisclosure key={exercise.id} index={index} exercise={exercise} />
+                ))}
+              </div>
             )}
-            {prCount > 0 && (
-              <Badge variant="ghost" className="border border-yellow-500/30 bg-yellow-500/10 text-yellow-200">
-                <Trophy className="mr-1 h-3 w-3" />
-                {prCount} PR{prCount === 1 ? '' : 's'}
-              </Badge>
-            )}
-            {skippedCount > 0 && (
-              <Badge variant="ghost" className="border border-amber-500/30 bg-amber-500/10 text-amber-200">
-                {skippedCount} saltado{skippedCount === 1 ? '' : 's'}
-              </Badge>
-            )}
-          </div>
+          </section>
 
-          <div className="mt-4">
-            <ShareSessionButton progressLogId={params.logId} />
-          </div>
+          <aside className="space-y-4 lg:sticky lg:top-24">
+            {(log.mood_rating || log.energy_rating || debrief.averageRpe !== null) ? (
+              <section className="rounded-3xl border border-border/60 bg-muted/[0.05] p-5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{t('Resultado')}</p>
+                <dl className="mt-4 space-y-3 text-sm">
+                  {log.mood_rating ? <div className="flex justify-between gap-3 border-t border-border/50 pt-3"><dt className="text-muted-foreground">{t('Ánimo')}</dt><dd className="font-semibold text-foreground">{log.mood_rating}/5</dd></div> : null}
+                  {log.energy_rating ? <div className="flex justify-between gap-3 border-t border-border/50 pt-3"><dt className="text-muted-foreground">{t('Energía')}</dt><dd className="font-semibold text-foreground">{log.energy_rating}/5</dd></div> : null}
+                  {debrief.averageRpe !== null ? <div className="flex justify-between gap-3 border-t border-border/50 pt-3"><dt className="text-muted-foreground">RPE</dt><dd className="font-semibold text-foreground">{debrief.averageRpe}</dd></div> : null}
+                </dl>
+              </section>
+            ) : null}
 
+            {debrief.recordCount > 0 ? (
+              <EvidenceInsight title={`${debrief.recordCount} PR${debrief.recordCount === 1 ? '' : 's'}`} tone="success">
+                {t('Nuevas marcas frente al historial anterior.')}
+              </EvidenceInsight>
+            ) : null}
+            {debrief.skippedCount > 0 ? (
+              <EvidenceInsight title={`${debrief.skippedCount} ${t('Saltado').toLowerCase()}${debrief.skippedCount === 1 ? '' : 's'}`} tone="warning">
+                {t('Revisa las notas dentro de la secuencia.')}
+              </EvidenceInsight>
+            ) : null}
+            {log.notes ? <EvidenceInsight title={t('Notas')} tone="neutral">{log.notes}</EvidenceInsight> : null}
+
+            <section className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
+              <div className="flex items-center gap-2 text-violet-200">
+                {debrief.recordCount > 0 ? <Trophy className="h-4 w-4" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
+                <p className="text-sm font-semibold">{t('Compartir resultado')}</p>
+              </div>
+              <div className="mt-4"><ShareSessionButton progressLogId={params.logId} /></div>
+            </section>
+          </aside>
         </div>
-
-        {exerciseLogs.length === 0 ? (
-          <section className="mt-8 rounded-2xl border border-dashed border-border bg-muted/20 p-6 text-center">
-            <Info className="mx-auto h-7 w-7 text-muted-foreground" />
-            <h2 className="mt-3 font-display text-xl font-bold text-foreground">Sin detalle de ejercicios</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Esta sesión no tiene logs por ejercicio.
-            </p>
-          </section>
-        ) : (
-          <section className="mt-8 space-y-3">
-            {exerciseLogs.map((row, index) => {
-              const exercise = getExercise(row)
-              const rows = setRows(row)
-              const volume = Math.round(volumeFor(row))
-              const currentMax = maxWeight(row)
-              const previousMax = previousMaxByExercise[row.exercise_id] ?? 0
-              const isPr = currentMax > previousMax && currentMax > 0
-              const kind = noteKind(row.notes)
-              const avgRpe = averageRpe(row)
-              const skipped = isSkipped(row)
-
-              return (
-                <article
-                  key={row.id}
-                  className="animate-in fade-in slide-in-from-bottom-3 rounded-2xl border border-border/60 bg-muted/10 p-4 duration-500"
-                  style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="font-display text-lg font-semibold text-foreground">
-                          {exercise?.name ?? 'Ejercicio'}
-                        </h2>
-                        {exercise?.is_compound && (
-                          <Badge variant="secondary" className="border-0 bg-muted/30 text-[10px] text-muted-foreground">
-                            compuesto
-                          </Badge>
-                        )}
-                        {kind === 'added' && (
-                          <Badge variant="ghost" className="border border-violet-500/20 bg-violet-500/10 text-[10px] text-violet-200">
-                            solo hoy
-                          </Badge>
-                        )}
-                        {kind === 'replacement' && (
-                          <Badge variant="ghost" className="border border-violet-500/20 bg-violet-500/10 text-[10px] text-violet-200">
-                            <Repeat2 className="mr-1 h-3 w-3" />
-                            cambio
-                          </Badge>
-                        )}
-                        {isPr && (
-                          <Badge variant="ghost" className="border border-yellow-500/30 bg-yellow-500/10 text-[10px] text-yellow-200">
-                            PR
-                          </Badge>
-                        )}
-                      </div>
-                      {exercise?.muscle_groups && exercise.muscle_groups.length > 0 && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {exercise.muscle_groups.slice(0, 3).join(' · ')}
-                        </p>
-                      )}
-                      <PendingLink
-                        href={`/exercises/${row.exercise_id}`}
-                        className="mt-2 inline-flex text-xs font-medium text-violet-300 underline-offset-4 hover:underline"
-                        spinnerClassName="h-3 w-3"
-                      >
-                        Ver progreso del ejercicio
-                      </PendingLink>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-foreground">
-                        {skipped ? 'Saltado' : `${row.sets_completed ?? rows.length} sets`}
-                      </p>
-                      {!skipped && (
-                        <p className="text-xs text-muted-foreground">{volume} kg</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {row.notes && (
-                    <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${
-                      kind === 'skip'
-                        ? 'border-amber-500/20 bg-amber-500/10 text-amber-200'
-                        : 'border-violet-500/20 bg-violet-500/10 text-violet-200'
-                    }`}>
-                      {row.notes}
-                    </div>
-                  )}
-
-                  {!skipped && rows.length > 0 && (
-                    <div className="mt-4 overflow-hidden rounded-xl border border-border/50">
-                      <div className="grid grid-cols-4 bg-background/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        <span>Set</span>
-                        <span className="text-center">Peso</span>
-                        <span className="text-center">Reps</span>
-                        <span className="text-right">RPE</span>
-                      </div>
-                      {rows.map((set, setIndex) => (
-                        <div
-                          key={setIndex}
-                          className="grid grid-cols-4 border-t border-border/40 px-3 py-2 text-xs text-foreground"
-                        >
-                          <span>{setIndex + 1}</span>
-                          <span className="text-center tabular-nums">{formatWeight(set.weight)}</span>
-                          <span className="text-center tabular-nums">{set.reps}</span>
-                          <span className="text-right tabular-nums">{set.rpe ?? '—'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {!skipped && (
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      {currentMax > 0 && (
-                        <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                          <Target className="mr-1 h-3.5 w-3.5" />
-                          mejor {formatWeight(currentMax)}
-                        </span>
-                      )}
-                      {avgRpe !== null && (
-                        <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                          <Flame className="mr-1 h-3.5 w-3.5" />
-                          RPE prom. {avgRpe}
-                        </span>
-                      )}
-                      {previousMax > 0 && (
-                        <span className="inline-flex items-center rounded-md bg-background/60 px-2 py-1">
-                          anterior {formatWeight(previousMax)}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </article>
-              )
-            })}
-          </section>
-        )}
       </main>
     </div>
   )
