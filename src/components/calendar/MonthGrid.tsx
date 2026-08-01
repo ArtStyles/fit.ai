@@ -1,98 +1,137 @@
 'use client'
 
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { PendingLink } from '@/components/navigation/PendingLink'
+import { useI18n } from '@/components/i18n/I18nProvider'
 import { cn } from '@/lib/utils'
 import { buildMonthGrid, type DayAggregate, type IntensityThresholds } from '@/lib/calendar/aggregate'
 import { intensityClass, levelFor } from './intensity'
 
-const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
-
-interface Props {
-  year:       number
-  month:      number // 1-12
-  todayStr:   string
-  byDate:     Map<string, DayAggregate>
-  thresholds: IntensityThresholds
-  onPrev:     () => void
-  onNext:     () => void
-  onToday:    () => void
+const WEEKDAYS = {
+  es: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
+  en: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
 }
 
-function monthLabel(year: number, month: number): string {
-  const label = new Intl.DateTimeFormat('es', { month: 'long', year: 'numeric' })
-    .format(new Date(Date.UTC(year, month - 1, 1)))
+interface Props {
+  year: number
+  month: number
+  todayStr: string
+  selectedDate: string
+  byDate: Map<string, DayAggregate>
+  thresholds: IntensityThresholds
+  onSelectDate: (date: string) => void
+  onPrev: () => void
+  onNext: () => void
+  onToday: () => void
+}
+
+function monthLabel(year: number, month: number, language: 'es' | 'en'): string {
+  const label = new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, 1)))
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
-export function MonthGrid({ year, month, todayStr, byDate, thresholds, onPrev, onNext, onToday }: Props) {
+export function MonthGrid({
+  year,
+  month,
+  todayStr,
+  selectedDate,
+  byDate,
+  thresholds,
+  onSelectDate,
+  onPrev,
+  onNext,
+  onToday,
+}: Props) {
+  const { language, t } = useI18n()
   const cells = buildMonthGrid(year, month, todayStr)
   const isCurrentMonth = todayStr.startsWith(`${year}-${String(month).padStart(2, '0')}`)
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-5 flex items-center justify-between gap-3">
         <button
-          type="button" onClick={onPrev} aria-label="Mes anterior"
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
+          type="button"
+          onClick={onPrev}
+          aria-label={t('Mes anterior')}
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
         >
-          <ChevronLeft className="h-5 w-5" />
+          <ChevronLeft className="h-5 w-5" aria-hidden="true" />
         </button>
 
         <div className="text-center">
-          <p className="font-display text-lg font-bold text-foreground" aria-live="polite">
-            {monthLabel(year, month)}
+          <p className="font-display text-xl font-bold text-foreground" aria-live="polite">
+            {monthLabel(year, month, language)}
           </p>
-          {!isCurrentMonth && (
-            <button type="button" onClick={onToday} className="text-xs font-medium text-violet-400 hover:underline">
-              Hoy
+          {!isCurrentMonth ? (
+            <button type="button" onClick={onToday} className="min-h-8 text-xs font-semibold text-violet-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+              {t('Hoy')}
             </button>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t('Actividad del mes')}</p>
           )}
         </div>
 
         <button
-          type="button" onClick={onNext} aria-label="Mes siguiente"
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
+          type="button"
+          onClick={onNext}
+          aria-label={t('Mes siguiente')}
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
         >
-          <ChevronRight className="h-5 w-5" />
+          <ChevronRight className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
 
       <div className="grid grid-cols-7 gap-1.5 text-center">
-        {WEEKDAYS.map((d, i) => (
-          <span key={`wd-${i}`} className="pb-1 text-[10px] font-semibold uppercase text-muted-foreground/70">{d}</span>
+        {WEEKDAYS[language].map((day, index) => (
+          <span key={`weekday-${index}`} className="pb-1 text-[11px] font-semibold uppercase text-muted-foreground">
+            {day}
+          </span>
         ))}
 
-        {cells.map((cell, i) => {
-          if (!cell.date) return <span key={`pad-${i}`} />
+        {cells.map((cell, index) => {
+          if (!cell.date) return <span key={`pad-${index}`} />
 
-          const agg = byDate.get(cell.date)
-          const level = cell.isFuture ? 0 : levelFor(agg ? agg.volumeKg : null, thresholds)
-          const label = agg
-            ? `${cell.date}: ${Math.round(agg.volumeKg)} kg · ${agg.durationMin} min`
-            : `${cell.date}: sin registro`
-
-          const inner = (
-            <div className={cn(
-              'flex aspect-square items-center justify-center rounded-lg text-xs font-semibold transition-colors',
-              intensityClass(level),
-              cell.isFuture && 'opacity-30',
-              cell.isToday && 'ring-2 ring-violet-500',
-              level >= 3 ? 'text-white' : 'text-foreground',
-            )}>
-              {cell.dayNum}
-            </div>
+          const aggregate = byDate.get(cell.date)
+          const level = cell.isFuture ? 0 : levelFor(aggregate ? aggregate.volumeKg : null, thresholds)
+          const isSelected = cell.date === selectedDate
+          const label = aggregate
+            ? `${cell.date}: ${aggregate.sessions} ${t('Sesiones').toLowerCase()}, ${Math.round(aggregate.volumeKg)} kg, ${aggregate.durationMin} min${cell.isToday ? `, ${t('Hoy').toLowerCase()}` : ''}`
+            : `${cell.date}: ${t('Sin sesiones todavía').toLowerCase()}${cell.isToday ? `, ${t('Hoy').toLowerCase()}` : ''}`
+          const classes = cn(
+            'relative flex aspect-square min-h-11 w-full items-center justify-center rounded-xl text-sm font-semibold transition-[background-color,color,box-shadow,transform] duration-200 motion-reduce:transition-none',
+            intensityClass(level),
+            cell.isFuture && 'cursor-default opacity-25',
+            cell.isToday && 'ring-2 ring-violet-400 ring-offset-2 ring-offset-background',
+            isSelected && 'bg-violet-500 text-white shadow-lg shadow-violet-950/30 ring-2 ring-violet-300 ring-offset-2 ring-offset-background',
+            !cell.isFuture && 'hover:-translate-y-0.5 hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 motion-reduce:hover:translate-y-0',
+            isSelected || level >= 3 ? 'text-white' : 'text-foreground',
           )
 
-          if (agg && !cell.isFuture) {
+          if (!cell.isFuture) {
             return (
-              <PendingLink key={cell.date} href={`/history/${agg.logIds[0]}`} aria-label={label} title={label} showSpinner={false}>
-                {inner}
-              </PendingLink>
+              <button
+                key={cell.date}
+                type="button"
+                onClick={() => onSelectDate(cell.date!)}
+                aria-label={label}
+                aria-selected={isSelected}
+                title={label}
+                className={classes}
+              >
+                {cell.dayNum}
+                {aggregate && aggregate.sessions > 1 ? (
+                  <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-background/80 px-1 text-[9px] font-bold text-foreground">
+                    {aggregate.sessions}
+                  </span>
+                ) : null}
+              </button>
             )
           }
 
-          return <div key={cell.date} aria-label={label} title={label}>{inner}</div>
+          return <div key={cell.date} aria-label={label} title={label} className={classes}>{cell.dayNum}</div>
         })}
       </div>
     </div>

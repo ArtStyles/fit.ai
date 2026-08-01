@@ -9,6 +9,7 @@ import {
   computeCalendarStats,
   buildMonthGrid,
   buildHeatmapWeeks,
+  buildCalendarSessionPayload,
 } from '../aggregate'
 
 describe('shiftDateStr', () => {
@@ -55,6 +56,43 @@ describe('aggregateLogsToDays', () => {
     const result = aggregateLogsToDays(logs, [{ progress_log_id: 'x', weights_kg: null, reps_completed: null }], TZ)
     expect(result.map(d => d.date)).toEqual(['2026-01-05', '2026-02-05'])
     expect(result[1]).toMatchObject({ volumeKg: 0, durationMin: 0 })
+  })
+})
+
+describe('buildCalendarSessionPayload', () => {
+  it('derives daily aggregates and one complete summary per session', () => {
+    const result = buildCalendarSessionPayload(
+      [{
+        id: 'session-1',
+        workout_id: 'workout-1',
+        completed_at: '2026-08-12T18:00:00Z',
+        duration_minutes: 45,
+        workout: { name: 'Push', focus: 'Pecho' },
+      }],
+      [
+        { progress_log_id: 'session-1', sets_completed: 3, weights_kg: [50, 50, 50], reps_completed: [10, 8, 6] },
+        { progress_log_id: 'session-1', sets_completed: 2, weights_kg: [20, 20], reps_completed: [12, 12] },
+      ],
+      'America/Havana',
+    )
+
+    expect(result.days).toEqual([{
+      date: '2026-08-12',
+      sessions: 1,
+      durationMin: 45,
+      volumeKg: 1680,
+      logIds: ['session-1'],
+    }])
+    expect(result.sessions).toEqual([{
+      id: 'session-1',
+      date: '2026-08-12',
+      completedAt: '2026-08-12T18:00:00Z',
+      workoutName: 'Push',
+      focus: 'Pecho',
+      durationMin: 45,
+      sets: 5,
+      volumeKg: 1680,
+    }])
   })
 })
 

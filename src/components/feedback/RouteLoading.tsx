@@ -273,28 +273,44 @@ export function HistoryLoading() {
 
 export function CalendarLoading() {
   return (
-    <AppLoadingShell>
+    <div className="min-h-screen bg-background pb-24">
       <BackHeader
         title="Calendario"
         subtitle="Tu historial de entrenamiento mes a mes"
         icon={CalendarRange}
       />
-      <section className="mt-8 rounded-2xl border border-border/60 bg-muted/10 p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Actividad mensual</p>
-          <Shimmer className="h-7 w-24 rounded-full bg-muted/40" />
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
+        <section className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.06] p-5 sm:p-6">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-violet-300">Ritmo de entrenamiento</p>
+          <Shimmer className="mt-3 h-10 w-52 rounded-lg" />
+          <Shimmer className="mt-3 h-4 w-72 max-w-full rounded bg-muted/40" />
+          <MetricStripSkeleton labels={['Días este mes', 'Racha actual', 'Sesiones por semana']} />
+        </section>
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,.8fr)] lg:items-start">
+          <section className="rounded-3xl border border-border/60 bg-muted/[0.06] p-4 sm:p-6">
+            <div className="flex items-center justify-between">
+              <Shimmer className="h-11 w-11 rounded-xl bg-muted/40" />
+              <Shimmer className="h-7 w-40 rounded-lg" />
+              <Shimmer className="h-11 w-11 rounded-xl bg-muted/40" />
+            </div>
+            <div className="mt-5 grid grid-cols-7 gap-1.5">
+              {Array.from({ length: 35 }).map((_, index) => (
+                <Shimmer
+                  key={index}
+                  className="aspect-square min-h-11 rounded-xl bg-muted/40"
+                  style={{ animationDelay: `${(index % 7) * 45}ms` } as React.CSSProperties}
+                />
+              ))}
+            </div>
+          </section>
+          <section className="rounded-3xl border border-border/60 bg-muted/[0.06] p-5">
+            <Shimmer className="h-3 w-28 rounded bg-violet-500/15" />
+            <Shimmer className="mt-3 h-8 w-48 rounded" />
+            <RowSkeletons count={2} avatar={false} className="mt-5" />
+          </section>
         </div>
-        <div className="mt-5 grid grid-cols-7 gap-1.5">
-          {Array.from({ length: 35 }).map((_, index) => (
-            <Shimmer
-              key={index}
-              className="aspect-square rounded-md bg-muted/40"
-              style={{ animationDelay: `${(index % 7) * 45}ms` } as React.CSSProperties}
-            />
-          ))}
-        </div>
-      </section>
-    </AppLoadingShell>
+      </main>
+    </div>
   )
 }
 

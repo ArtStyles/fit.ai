@@ -13,6 +13,31 @@ export interface RawExerciseLog {
   reps_completed: number[] | null
 }
 
+export interface CalendarWorkoutSummary {
+  name: string
+  focus: string | null
+}
+
+export interface RawCalendarProgressLog extends RawProgressLog {
+  workout_id: string | null
+  workout: CalendarWorkoutSummary | CalendarWorkoutSummary[] | null
+}
+
+export interface RawCalendarExerciseLog extends RawExerciseLog {
+  sets_completed: number | null
+}
+
+export interface CalendarSessionSummary {
+  id: string
+  date: string
+  completedAt: string
+  workoutName: string
+  focus: string | null
+  durationMin: number
+  sets: number
+  volumeKg: number
+}
+
 export interface DayAggregate {
   date:        string   // 'YYYY-MM-DD' en zona horaria de la app
   sessions:    number
@@ -73,6 +98,54 @@ export function aggregateLogsToDays(
   }
 
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date))
+}
+
+export function buildCalendarSessionPayload(
+  logs: RawCalendarProgressLog[],
+  exerciseLogs: RawCalendarExerciseLog[],
+  timeZone: string,
+): { days: DayAggregate[]; sessions: CalendarSessionSummary[] } {
+  const exerciseLogsBySession = new Map<string, RawCalendarExerciseLog[]>()
+  for (const exerciseLog of exerciseLogs) {
+    const rows = exerciseLogsBySession.get(exerciseLog.progress_log_id) ?? []
+    rows.push(exerciseLog)
+    exerciseLogsBySession.set(exerciseLog.progress_log_id, rows)
+  }
+
+  const sessions = [...logs]
+    .sort((a, b) => b.completed_at.localeCompare(a.completed_at))
+    .map(log => {
+      const sessionExerciseLogs = exerciseLogsBySession.get(log.id) ?? []
+      const workout = Array.isArray(log.workout) ? log.workout[0] ?? null : log.workout
+      const sets = sessionExerciseLogs.reduce((sum, row) => {
+        const fallback = Math.max(row.weights_kg?.length ?? 0, row.reps_completed?.length ?? 0)
+        return sum + (row.sets_completed ?? fallback)
+      }, 0)
+      const volumeKg = sessionExerciseLogs.reduce((sessionVolume, row) => {
+        const weights = row.weights_kg ?? []
+        const reps = row.reps_completed ?? []
+        return sessionVolume + weights.reduce(
+          (exerciseVolume, weight, index) => exerciseVolume + (Number(weight) || 0) * (Number(reps[index]) || 0),
+          0,
+        )
+      }, 0)
+
+      return {
+        id: log.id,
+        date: getLocalDateString(new Date(log.completed_at), timeZone),
+        completedAt: log.completed_at,
+        workoutName: workout?.name?.trim() || 'Entrenamiento',
+        focus: workout?.focus ?? null,
+        durationMin: Number(log.duration_minutes) || 0,
+        sets,
+        volumeKg,
+      }
+    })
+
+  return {
+    days: aggregateLogsToDays(logs, exerciseLogs, timeZone),
+    sessions,
+  }
 }
 
 // ─── Intensidad (cuantiles del propio usuario) ────────────────────────────────
