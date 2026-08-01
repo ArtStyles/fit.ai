@@ -1,12 +1,12 @@
 import { BarChart3 } from 'lucide-react'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
-import {
-  ProgressHub,
-  type ProgressMeasurement,
-  type ProgressRecord,
-  type ProgressSession,
-} from '@/components/progress/ProgressHub'
-import type { TrackedExercise } from '@/app/actions/progression'
+import { ProgressHub } from '@/components/progress/ProgressHub'
+import type {
+  ProgressExercisePoint,
+  ProgressMeasurement,
+  ProgressRecord,
+  ProgressSession,
+} from '@/components/progress/progressViewModel'
 import { requireAppUserContext } from '@/lib/auth/server'
 import {
   aggregateLogsToDays,
@@ -17,6 +17,7 @@ import {
 import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
+import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 
 export const metadata = { title: 'Progreso · Vekira' }
 
@@ -78,15 +79,11 @@ function buildProgressRecords(
     const log = logById.get(row.progress_log_id)
     if (!exercise || !log) continue
 
-    const weights = row.weights_kg ?? []
-    const reps = row.reps_completed ?? []
-    const maxWeightKg = weights.reduce((max, weight) => Math.max(max, Number(weight) || 0), 0)
-    const maxWeightIndex = weights.findIndex(weight => (Number(weight) || 0) === maxWeightKg)
-    const repsAtMaxWeight = Number(reps[maxWeightIndex] ?? 0) || 0
-    const maxReps = reps.reduce((max, value) => Math.max(max, Number(value) || 0), 0)
-    const totalVolumeKg = weights.reduce((sum, weight, index) => {
-      return sum + (Number(weight) || 0) * (Number(reps[index]) || 0)
-    }, 0)
+    const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed)
+    const maxWeightKg = performance.bestSet?.weightKg ?? 0
+    const repsAtMaxWeight = performance.bestSet?.reps ?? 0
+    const maxReps = performance.sets.reduce((max, set) => Math.max(max, set.reps), 0)
+    const totalVolumeKg = performance.volumeKg
     const current = records.get(row.exercise_id)
     const isBetter =
       !current ||
@@ -124,26 +121,29 @@ function buildProgressRecords(
     )
 }
 
-function buildTrackedExercises(rows: ExerciseLogRow[]): TrackedExercise[] {
-  const exerciseCountById = new Map<string, number>()
-  const exerciseMetaById = new Map<string, { name: string; muscleGroups: string[] }>()
+function buildProgressExercisePoints(
+  rows: ExerciseLogRow[],
+  logs: ProgressLogRow[],
+  timeZone: string,
+): ProgressExercisePoint[] {
+  const logById = new Map(logs.map(log => [log.id, log]))
 
-  for (const row of rows) {
-    if (!row.exercise_id) continue
+  return rows.flatMap(row => {
     const exercise = getExercise(row)
-    if (!exercise) continue
-    exerciseCountById.set(row.exercise_id, (exerciseCountById.get(row.exercise_id) ?? 0) + 1)
-    if (!exerciseMetaById.has(row.exercise_id)) {
-      exerciseMetaById.set(row.exercise_id, {
-        name: exercise.name,
-        muscleGroups: exercise.muscle_groups ?? [],
-      })
-    }
-  }
+    const log = logById.get(row.progress_log_id)
+    if (!row.exercise_id || !exercise || !log) return []
+    const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed)
+    if (!performance.bestSet) return []
 
-  return Array.from(exerciseCountById.entries())
-    .map(([id, sessionCount]) => ({ id, sessionCount, ...exerciseMetaById.get(id)! }))
-    .sort((a, b) => b.sessionCount - a.sessionCount)
+    return [{
+      exerciseId: row.exercise_id,
+      exerciseName: exercise.name,
+      date: getLocalDateString(new Date(log.completed_at), timeZone),
+      maxWeightKg: performance.bestSet.weightKg,
+      repsAtMaxWeight: performance.bestSet.reps,
+      volumeKg: performance.volumeKg,
+    }]
+  })
 }
 
 async function loadProgressData(
@@ -156,11 +156,11 @@ async function loadProgressData(
   days: DayAggregate[]
   records: ProgressRecord[]
   measurements: ProgressMeasurement[]
-  trackedExercises: TrackedExercise[]
+  exercisePoints: ProgressExercisePoint[]
 }> {
   const from = addDays(new Date(), -365).toISOString()
 
-  const [{ data: logs }, { data: measurements }] = await Promise.all([
+  const [logsResult, measurementsResult] = await Promise.all([
     supabase
       .from('progress_logs')
       .select('id, workout_id, completed_at, duration_minutes')
@@ -168,21 +168,24 @@ async function loadProgressData(
       .not('workout_id', 'is', null)
       .gte('completed_at', from)
       .order('completed_at', { ascending: false })
-      .limit(300) as unknown as Promise<{ data: ProgressLogRow[] | null }>,
+      .limit(300) as unknown as Promise<{ data: ProgressLogRow[] | null; error: { message?: string } | null }>,
     supabase
       .from('measurements')
       .select('id, recorded_at, weight_kg, body_fat_percentage, waist_cm')
       .eq('user_id', userId)
       .order('recorded_at', { ascending: false })
-      .limit(100) as unknown as Promise<{ data: MeasurementRow[] | null }>,
+      .limit(100) as unknown as Promise<{ data: MeasurementRow[] | null; error: { message?: string } | null }>,
   ])
 
-  const sessionLogs = logs ?? []
+  if (logsResult.error) throw new Error(logsResult.error.message ?? 'Could not load progress sessions')
+  if (measurementsResult.error) throw new Error(measurementsResult.error.message ?? 'Could not load measurements')
+
+  const sessionLogs = logsResult.data ?? []
   const logIds = sessionLogs.map(log => log.id)
   let exerciseLogs: ExerciseLogRow[] = []
 
   if (logIds.length > 0) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('exercise_logs')
       .select(`
         progress_log_id,
@@ -191,7 +194,12 @@ async function loadProgressData(
         reps_completed,
         exercise:exercises(name, name_es, muscle_groups, muscle_groups_es, is_compound)
       `)
-      .in('progress_log_id', logIds) as unknown as { data: ExerciseLogRow[] | null }
+      .in('progress_log_id', logIds) as unknown as {
+        data: ExerciseLogRow[] | null
+        error: { message?: string } | null
+      }
+
+    if (error) throw new Error(error.message ?? 'Could not load exercise progress')
 
     exerciseLogs = (data ?? []).map(row => ({
       ...row,
@@ -213,7 +221,7 @@ async function loadProgressData(
     })),
     days: aggregateLogsToDays(sessionLogs, exerciseLogs, timeZone),
     records: buildProgressRecords(exerciseLogs, sessionLogs, timeZone),
-    measurements: (measurements ?? []).map(row => ({
+    measurements: (measurementsResult.data ?? []).map(row => ({
       id: row.id,
       recordedAt: row.recorded_at,
       recordedDate: getLocalDateString(new Date(row.recorded_at), timeZone),
@@ -221,7 +229,7 @@ async function loadProgressData(
       bodyFatPercentage: row.body_fat_percentage,
       waistCm: row.waist_cm,
     })),
-    trackedExercises: buildTrackedExercises(exerciseLogs),
+    exercisePoints: buildProgressExercisePoints(exerciseLogs, sessionLogs, timeZone),
   }
 }
 
