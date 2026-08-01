@@ -230,12 +230,12 @@ export async function seedCoreProductFixture(language: CoreLanguage = 'es'): Pro
   return { userId, planId, workoutId, exerciseId: exercise.id }
 }
 
-export async function seedCoreProgressHistory(fixture: CoreProductFixture): Promise<void> {
-  const config = requireE2EConfig(process.env)
-  const supabase = adminClient(config)
-  const progressLogId = randomUUID()
-  const completedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
+async function createProgressLogFixture(
+  supabase: SupabaseClient,
+  fixture: CoreProductFixture,
+  progressLogId: string,
+  completedAt: string,
+): Promise<void> {
   await retryTransientSupabase('Creating E2E progress log', async () => {
     const { error } = await supabase.from('progress_logs').insert({
       id: progressLogId,
@@ -247,7 +247,13 @@ export async function seedCoreProgressHistory(fixture: CoreProductFixture): Prom
     })
     assertNoError(error, 'Creating E2E progress log')
   })
+}
 
+async function createExerciseLogFixture(
+  supabase: SupabaseClient,
+  fixture: CoreProductFixture,
+  progressLogId: string,
+): Promise<void> {
   await retryTransientSupabase('Creating E2E exercise log', async () => {
     const { error } = await supabase.from('exercise_logs').insert({
       id: randomUUID(),
@@ -260,4 +266,18 @@ export async function seedCoreProgressHistory(fixture: CoreProductFixture): Prom
     })
     assertNoError(error, 'Creating E2E exercise log')
   })
+}
+
+export async function seedCoreProgressHistory(
+  fixture: CoreProductFixture,
+): Promise<{ progressLogId: string }> {
+  const config = requireE2EConfig(process.env)
+  const supabase = adminClient(config)
+  const progressLogId = randomUUID()
+  const completedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  await createProgressLogFixture(supabase, fixture, progressLogId, completedAt)
+  await createExerciseLogFixture(supabase, fixture, progressLogId)
+
+  return { progressLogId }
 }

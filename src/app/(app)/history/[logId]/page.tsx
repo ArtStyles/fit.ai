@@ -238,10 +238,8 @@ export default async function HistoryDetailPage({ params }: PageProps) {
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
           <section aria-labelledby="session-sequence-title">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{t('Secuencia de la sesión')}</p>
-            <h2 id="session-sequence-title" className="mt-1 font-display text-2xl font-bold text-foreground">
-              {debrief.exercises.length} {t('Ejercicios')}
-            </h2>
+            <h2 id="session-sequence-title" className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{t('Secuencia de la sesión')}</h2>
+            <p className="mt-1 font-display text-2xl font-bold text-foreground">{debrief.exercises.length} {t('Ejercicios')}</p>
 
             {debrief.exercises.length === 0 ? (
               <div className="mt-5 rounded-3xl border border-dashed border-border bg-muted/20 p-7 text-center">

@@ -92,7 +92,7 @@ export function CalendarView({
       </EvidenceHero>
 
       <section aria-label={t('Actividad del mes')} className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,.8fr)] lg:items-start">
-        <div className="rounded-3xl border border-border/60 bg-muted/[0.06] p-4 sm:p-6">
+        <div className="rounded-3xl border border-border/60 bg-muted/[0.06] p-1 sm:p-6">
           <MonthGrid
             year={visibleMonth.year}
             month={visibleMonth.month}

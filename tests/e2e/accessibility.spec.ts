@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { expectNoHorizontalOverflow } from './helpers/acceptance'
 import { resetAndSignInAsE2EUser, signInAsE2EUser } from './helpers/auth'
-import { seedCoreProductFixture } from './helpers/core-product'
+import { seedCoreProductFixture, seedCoreProgressHistory } from './helpers/core-product'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -153,13 +153,18 @@ test('every rendered onboarding stage has no serious accessibility violations or
 test('authenticated core routes meet route-level accessibility acceptance', async ({ page }) => {
   test.setTimeout(240_000)
   const fixture = await seedCoreProductFixture('es')
+  const { progressLogId } = await seedCoreProgressHistory(fixture)
   await signInAsE2EUser(page)
 
   const routes = [
     { path: '/dashboard', primary: /empezar entrenamiento|start workout/i, namedMain: true },
     { path: `/session/${fixture.workoutId}`, primary: /completar serie 1|complete set 1/i, namedMain: true },
     { path: '/plan', primary: /editar estructura|edit structure/i, namedMain: true, openWorkout: true },
-    { path: '/progress', primary: /historial|history/i, namedMain: false },
+    { path: '/calendario', primary: /hoy|today/i, namedMain: false },
+    { path: '/progress', primary: /12 semanas|12 weeks/i, namedMain: false },
+    { path: '/history', primary: /todas|all/i, namedMain: false },
+    { path: `/history/${progressLogId}`, primary: /mostrar series|show sets/i, namedMain: false },
+    { path: `/exercises/${fixture.exerciseId}`, primary: /12 semanas|12 weeks/i, namedMain: false },
   ] as const
 
   for (const route of routes) {

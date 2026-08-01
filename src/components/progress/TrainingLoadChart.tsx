@@ -28,7 +28,12 @@ export function TrainingLoadChart({ buckets, locale }: { buckets: ProgressWeekBu
   return (
     <div>
       <div className="overflow-x-auto pb-2">
-        <div className="flex min-w-[38rem] items-end gap-2" role="group" aria-label={locale === 'en' ? 'Weekly training load' : 'Carga semanal de entrenamiento'}>
+        <div
+          className="flex items-end gap-2"
+          style={{ minWidth: `${Math.max(608, buckets.length * 44 + Math.max(0, buckets.length - 1) * 8)}px` }}
+          role="group"
+          aria-label={locale === 'en' ? 'Weekly training load' : 'Carga semanal de entrenamiento'}
+        >
           {buckets.map((bucket, index) => {
             const label = dateLabel(bucket.startDate, bucket.endDate, locale)
             const height = bucket.volumeKg > 0 ? Math.max(8, Math.round((bucket.volumeKg / maxVolume) * 100)) : 3

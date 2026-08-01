@@ -51,7 +51,7 @@ export function MonthGrid({
 
   return (
     <div>
-      <div className="mb-5 flex items-center justify-between gap-3">
+      <div className="mb-5 flex items-center justify-between gap-3 px-3 pt-3 sm:px-0 sm:pt-0">
         <button
           type="button"
           onClick={onPrev}
@@ -65,13 +65,13 @@ export function MonthGrid({
           <p className="font-display text-xl font-bold text-foreground" aria-live="polite">
             {monthLabel(year, month, language)}
           </p>
-          {!isCurrentMonth ? (
-            <button type="button" onClick={onToday} className="min-h-8 text-xs font-semibold text-violet-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+          <div className="flex items-center justify-center gap-2">
+            <h2 className="text-xs font-medium text-muted-foreground">{t('Actividad del mes')}</h2>
+            <span className="text-xs text-muted-foreground" aria-hidden="true">·</span>
+            <button type="button" onClick={onToday} className="min-h-11 min-w-11 px-2 text-xs font-semibold text-violet-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400" aria-current={isCurrentMonth ? 'date' : undefined}>
               {t('Hoy')}
             </button>
-          ) : (
-            <p className="text-xs text-muted-foreground">{t('Actividad del mes')}</p>
-          )}
+          </div>
         </div>
 
         <button
@@ -84,7 +84,7 @@ export function MonthGrid({
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5 text-center">
+      <div className="grid grid-cols-7 gap-px text-center sm:gap-1.5">
         {WEEKDAYS[language].map((day, index) => (
           <span key={`weekday-${index}`} className="pb-1 text-[11px] font-semibold uppercase text-muted-foreground">
             {day}
@@ -117,7 +117,7 @@ export function MonthGrid({
                 type="button"
                 onClick={() => onSelectDate(cell.date!)}
                 aria-label={label}
-                aria-selected={isSelected}
+                aria-pressed={isSelected}
                 title={label}
                 className={classes}
               >

@@ -93,7 +93,7 @@ export function SessionExerciseDisclosure({
             </>
           ) : null}
 
-          <PendingLink href={`/exercises/${exercise.exerciseId}`} className="mt-3 inline-flex min-h-10 items-center gap-1.5 text-xs font-semibold text-violet-300 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400" spinnerClassName="h-3 w-3">
+          <PendingLink href={`/exercises/${exercise.exerciseId}`} className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-violet-300 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400" spinnerClassName="h-3 w-3">
             {language === 'en' ? 'Open movement profile' : 'Abrir ficha del movimiento'}
             <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
           </PendingLink>

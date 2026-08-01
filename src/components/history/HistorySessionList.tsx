@@ -85,8 +85,8 @@ export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRo
   return (
     <section aria-labelledby="history-timeline-title">
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{t('Registro cronológico')}</p>
-        <h2 id="history-timeline-title" className="mt-1 font-display text-2xl font-bold text-foreground">{t('Últimas sesiones completadas')}</h2>
+        <h2 id="history-timeline-title" className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{t('Registro cronológico')}</h2>
+        <p className="mt-1 font-display text-2xl font-bold text-foreground">{t('Últimas sesiones completadas')}</p>
       </div>
 
       <div className="mt-5 rounded-2xl border border-border/60 bg-muted/[0.05] p-3">
@@ -99,7 +99,7 @@ export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRo
             className="h-11 w-full rounded-xl border border-border/60 bg-background/70 pl-9 pr-11 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"
           />
           {query ? (
-            <button type="button" onClick={() => setQuery('')} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/40 hover:text-foreground" aria-label={t('Limpiar búsqueda')}>
+            <button type="button" onClick={() => setQuery('')} className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/40 hover:text-foreground" aria-label={t('Limpiar búsqueda')}>
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           ) : null}
@@ -113,7 +113,7 @@ export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRo
               aria-pressed={mode === item.value}
               onClick={() => setMode(item.value)}
               className={cn(
-                'min-h-10 shrink-0 rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400',
+                'min-h-11 shrink-0 rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400',
                 mode === item.value
                   ? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
                   : 'border-border/50 bg-background/50 text-muted-foreground hover:border-violet-500/30 hover:text-foreground',
@@ -128,7 +128,7 @@ export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRo
       <div className="mt-4 flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">{filteredRows.length} / {rows.length} {t('sesiones')}</p>
         {mode !== 'all' || query ? (
-          <button type="button" onClick={clearFilters} className="min-h-9 text-xs font-semibold text-violet-300 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+          <button type="button" onClick={clearFilters} className="min-h-11 text-xs font-semibold text-violet-300 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
             {t('Limpiar filtros')}
           </button>
         ) : null}

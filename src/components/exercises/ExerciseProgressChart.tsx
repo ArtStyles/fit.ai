@@ -58,7 +58,12 @@ export function ExerciseProgressChart({
       ) : (
         <>
           <div className="mt-6 overflow-x-auto pb-2">
-            <div className="flex h-52 min-w-[34rem] items-end gap-2" role="group" aria-label={locale === 'en' ? 'Maximum weight by appearance' : 'Peso máximo por aparición'}>
+            <div
+              className="flex h-52 items-end gap-2"
+              style={{ minWidth: `${Math.max(544, visiblePoints.length * 44 + Math.max(0, visiblePoints.length - 1) * 8)}px` }}
+              role="group"
+              aria-label={locale === 'en' ? 'Maximum weight by appearance' : 'Peso máximo por aparición'}
+            >
               {visiblePoints.map(point => {
                 const height = point.maxWeightKg > 0 ? Math.max(8, Math.round((point.maxWeightKg / maxWeight) * 100)) : 3
                 const label = `${point.dateLabel ?? point.date}: ${number(point.maxWeightKg, locale)} kg · ${point.repsAtMaxWeight} reps`
@@ -92,7 +97,7 @@ export function ExerciseProgressChart({
                 {' · '}{number(selected.volumeKg, locale)} kg {locale === 'en' ? 'volume' : 'de volumen'}
                 {selected.averageRpe !== null ? ` · RPE ${selected.averageRpe}` : ''}
               </p>
-              <PendingLink href={`/history/${selected.logId}`} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 text-sm font-semibold text-violet-300 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400" spinnerClassName="h-3.5 w-3.5">
+              <PendingLink href={`/history/${selected.logId}`} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 text-sm font-semibold text-violet-300 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400" spinnerClassName="h-3.5 w-3.5">
                 {locale === 'en' ? 'Open session' : 'Abrir sesión'}
                 <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
               </PendingLink>
