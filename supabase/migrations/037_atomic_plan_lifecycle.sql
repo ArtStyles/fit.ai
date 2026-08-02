@@ -2,6 +2,38 @@
 -- PostgreSQL functions are transaction-scoped, so every failure below rolls back
 -- plan rows, workouts, profile changes, active-state changes and success events.
 
+-- Hold writes while auditing legacy state and installing both invariants. This
+-- prevents a concurrent insert or tier downgrade from slipping between the
+-- preexisting-data check and trigger creation.
+LOCK TABLE public.workout_plans IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.profiles IN SHARE ROW EXCLUSIVE MODE;
+
+DO $plan_family_preexisting_check$
+DECLARE
+  v_user_id UUID;
+  v_family_count INTEGER;
+BEGIN
+  SELECT profile.id, COUNT(DISTINCT wp.family_id)::INTEGER
+  INTO v_user_id, v_family_count
+  FROM public.profiles AS profile
+  JOIN public.workout_plans AS wp ON wp.user_id = profile.id
+  WHERE profile.subscription_tier = 'free'
+    AND wp.retired_at IS NULL
+    AND wp.superseded_at IS NULL
+  GROUP BY profile.id
+  HAVING COUNT(DISTINCT wp.family_id) > 2
+  ORDER BY profile.id
+  LIMIT 1;
+
+  IF v_user_id IS NOT NULL THEN
+    RAISE EXCEPTION
+      'PLAN_PREEXISTING_FREE_FAMILY_LIMIT: user % has % current families',
+      v_user_id,
+      v_family_count;
+  END IF;
+END;
+$plan_family_preexisting_check$;
+
 -- RLS proves row ownership, but it cannot serialize a cross-row family count.
 -- This trigger is the final invariant for every write path, including direct
 -- authenticated inserts and future RPCs that might otherwise omit the check.
@@ -81,6 +113,120 @@ CREATE TRIGGER trg_enforce_plan_family_limit
   BEFORE INSERT OR UPDATE OF user_id, family_id, retired_at, superseded_at, is_active
   ON public.workout_plans
   FOR EACH ROW EXECUTE FUNCTION public.enforce_plan_family_limit();
+
+CREATE OR REPLACE FUNCTION public.enforce_subscription_tier_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_role TEXT := COALESCE(auth.role(), '');
+  v_family_count INTEGER;
+BEGIN
+  IF NEW.subscription_tier IS NOT DISTINCT FROM OLD.subscription_tier THEN
+    RETURN NEW;
+  END IF;
+
+  IF v_actor_role <> 'service_role'
+    AND session_user NOT IN ('postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PLAN_SUBSCRIPTION_TIER_CHANGE_FORBIDDEN';
+  END IF;
+
+  IF NOT pg_try_advisory_xact_lock(hashtextextended(NEW.id::TEXT, 0)) THEN
+    RAISE EXCEPTION 'PLAN_TIER_LOCK_BUSY_RETRY';
+  END IF;
+
+  IF OLD.subscription_tier = 'pro' AND NEW.subscription_tier = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans
+    WHERE user_id = NEW.id
+      AND retired_at IS NULL
+      AND superseded_at IS NULL;
+
+    IF v_family_count > 2 THEN
+      RAISE EXCEPTION
+        'PLAN_DOWNGRADE_FAMILY_LIMIT: archive plans until at most two current families remain';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.enforce_subscription_tier_change() FROM PUBLIC;
+
+-- The first trigger rejects an explicit tier SET before the legacy protected-
+-- fields trigger can silently restore OLD. The last trigger validates any tier
+-- mutation produced by another BEFORE trigger while leaving normal profile
+-- updates untouched when the tier did not change.
+DROP TRIGGER IF EXISTS trg_00_guard_subscription_tier_request ON public.profiles;
+CREATE TRIGGER trg_00_guard_subscription_tier_request
+  BEFORE UPDATE OF subscription_tier ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_subscription_tier_change();
+
+DROP TRIGGER IF EXISTS trg_zz_guard_subscription_tier_result ON public.profiles;
+CREATE TRIGGER trg_zz_guard_subscription_tier_result
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_subscription_tier_change();
+
+CREATE OR REPLACE FUNCTION public.set_subscription_tier_atomic(
+  p_user_id UUID,
+  p_subscription_tier TEXT
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_role TEXT := COALESCE(auth.role(), '');
+  v_current_tier TEXT;
+  v_family_count INTEGER;
+BEGIN
+  IF v_actor_role <> 'service_role'
+    AND session_user NOT IN ('postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PLAN_SUBSCRIPTION_TIER_CHANGE_FORBIDDEN';
+  END IF;
+
+  IF p_subscription_tier NOT IN ('free', 'pro') THEN
+    RAISE EXCEPTION 'Invalid subscription tier';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::TEXT, 0));
+
+  SELECT subscription_tier INTO v_current_tier
+  FROM profiles
+  WHERE id = p_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Profile not found';
+  END IF;
+
+  IF v_current_tier = 'pro' AND p_subscription_tier = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans
+    WHERE user_id = p_user_id
+      AND retired_at IS NULL
+      AND superseded_at IS NULL;
+
+    IF v_family_count > 2 THEN
+      RAISE EXCEPTION
+        'PLAN_DOWNGRADE_FAMILY_LIMIT: archive plans until at most two current families remain';
+    END IF;
+  END IF;
+
+  UPDATE profiles
+  SET subscription_tier = p_subscription_tier
+  WHERE id = p_user_id;
+
+  RETURN p_user_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.set_subscription_tier_atomic(UUID, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_subscription_tier_atomic(UUID, TEXT) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.create_engine_plan_v2(
   p_plan JSONB,

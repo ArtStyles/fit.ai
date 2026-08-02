@@ -11,6 +11,8 @@ const generatePlanAction = readFileSync(new URL('../../../app/actions/generatePl
 const planActions = readFileSync(new URL('../../../app/actions/plan.ts', import.meta.url), 'utf8')
 const adjustPlanAction = readFileSync(new URL('../../../app/actions/adjustPlan.ts', import.meta.url), 'utf8')
 const postActions = readFileSync(new URL('../../../app/actions/posts.ts', import.meta.url), 'utf8')
+const adminActions = readFileSync(new URL('../../../app/actions/admin.ts', import.meta.url), 'utf8')
+const actionNotice = readFileSync(new URL('../../../components/feedback/ActionNotice.tsx', import.meta.url), 'utf8')
 const generateClient = readFileSync(
   new URL('../../../app/(app)/plans/generate/GeneratePlanClient.tsx', import.meta.url),
   'utf8',
@@ -194,6 +196,75 @@ describe('atomic plan lifecycle migration', () => {
     )
   })
 
+  it('allows only trusted tier changes and serializes Pro to Free downgrades', () => {
+    const fn = sqlFunction('enforce_subscription_tier_change')
+    const unchangedTier = fn.indexOf('NEW.subscription_tier IS NOT DISTINCT FROM OLD.subscription_tier')
+    const trustedContext = fn.indexOf("v_actor_role <> 'service_role'")
+    const lock = fn.indexOf('pg_try_advisory_xact_lock')
+    const downgrade = fn.indexOf("OLD.subscription_tier = 'pro'")
+    const familyCount = fn.indexOf('COUNT(DISTINCT family_id)')
+
+    expect(fn).toMatch(/RETURNS\s+TRIGGER/i)
+    expect(fn).toMatch(/SECURITY\s+DEFINER/i)
+    expect(fn).toMatch(/PLAN_SUBSCRIPTION_TIER_CHANGE_FORBIDDEN/i)
+    expect(fn).toMatch(/PLAN_TIER_LOCK_BUSY_RETRY/i)
+    expect(fn).toMatch(/session_user[\s\S]+postgres[\s\S]+supabase_admin/i)
+    expect(fn).toMatch(/NEW\.subscription_tier\s*=\s*'free'/i)
+    expect(fn).toMatch(/retired_at\s+IS\s+NULL[\s\S]+superseded_at\s+IS\s+NULL/i)
+    expect(fn).toMatch(/PLAN_DOWNGRADE_FAMILY_LIMIT/i)
+    expect(unchangedTier).toBeGreaterThan(0)
+    expect(unchangedTier).toBeLessThan(trustedContext)
+    expect(trustedContext).toBeGreaterThan(0)
+    expect(trustedContext).toBeLessThan(lock)
+    expect(lock).toBeLessThan(downgrade)
+    expect(downgrade).toBeLessThan(familyCount)
+    expect(migration).toMatch(
+      /CREATE TRIGGER trg_00_guard_subscription_tier_request\s+BEFORE UPDATE OF subscription_tier ON (?:public\.)?profiles/i,
+    )
+    expect(migration).toMatch(
+      /CREATE TRIGGER trg_zz_guard_subscription_tier_result\s+BEFORE UPDATE ON (?:public\.)?profiles/i,
+    )
+  })
+
+  it('changes subscription tier through a trusted RPC that locks before the profile row', () => {
+    const fn = sqlFunction('set_subscription_tier_atomic')
+    const trustedContext = fn.indexOf("v_actor_role <> 'service_role'")
+    const lock = fn.indexOf('pg_advisory_xact_lock')
+    const profileUpdate = fn.indexOf('UPDATE profiles')
+
+    expect(fn).toMatch(/p_user_id\s+UUID/i)
+    expect(fn).toMatch(/p_subscription_tier\s+TEXT/i)
+    expect(fn).toMatch(/PLAN_SUBSCRIPTION_TIER_CHANGE_FORBIDDEN/i)
+    expect(fn).toMatch(/PLAN_DOWNGRADE_FAMILY_LIMIT/i)
+    expect(fn).toMatch(/COUNT\(DISTINCT family_id\)/i)
+    expect(fn).toMatch(/retired_at\s+IS\s+NULL[\s\S]+superseded_at\s+IS\s+NULL/i)
+    expect(trustedContext).toBeGreaterThan(0)
+    expect(trustedContext).toBeLessThan(lock)
+    expect(lock).toBeLessThan(profileUpdate)
+    expect(migration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.set_subscription_tier_atomic\(UUID, TEXT\) TO service_role/i,
+    )
+    expect(databaseTypes).toContain('set_subscription_tier_atomic:')
+  })
+
+  it('fails migration explicitly when preexisting free accounts exceed two families', () => {
+    const workoutPlansLock = migration.indexOf('LOCK TABLE public.workout_plans IN SHARE ROW EXCLUSIVE MODE')
+    const profilesLock = migration.indexOf('LOCK TABLE public.profiles IN SHARE ROW EXCLUSIVE MODE')
+    const auditStart = migration.indexOf('DO $plan_family_preexisting_check$')
+    const auditEnd = migration.indexOf('$plan_family_preexisting_check$;', auditStart + 3)
+    const audit = migration.slice(auditStart, auditEnd)
+
+    expect(workoutPlansLock).toBeGreaterThan(0)
+    expect(profilesLock).toBeGreaterThan(workoutPlansLock)
+    expect(auditStart).toBeGreaterThan(profilesLock)
+    expect(audit).toMatch(/subscription_tier\s*=\s*'free'/i)
+    expect(audit).toMatch(/COUNT\(DISTINCT\s+wp\.family_id\)/i)
+    expect(audit).toMatch(/wp\.retired_at\s+IS\s+NULL/i)
+    expect(audit).toMatch(/wp\.superseded_at\s+IS\s+NULL/i)
+    expect(audit).toMatch(/HAVING\s+COUNT\(DISTINCT\s+wp\.family_id\)\s*>\s*2/i)
+    expect(audit).toMatch(/PLAN_PREEXISTING_FREE_FAMILY_LIMIT/i)
+  })
+
   it('publishes exact generated RPC types', () => {
     for (const name of [
       'create_engine_plan_v2',
@@ -308,6 +379,17 @@ describe('plan lifecycle application boundary', () => {
     expect(clone).not.toContain('getPlanCreatePolicy')
     expect(clone).not.toContain('.insert(')
     expect(clone).not.toContain('.delete()')
+  })
+
+  it('surfaces a blocked admin downgrade without hiding the database reason', () => {
+    expect(adminActions).toContain("'set_subscription_tier_atomic'")
+    expect(adminActions).not.toContain("from('profiles').update({ subscription_tier: tier })")
+    expect(adminActions).toContain("error?.message?.includes('PLAN_DOWNGRADE_FAMILY_LIMIT')")
+    expect(adminActions).toContain("redirect('/admin?error=admin_plan_downgrade_family_limit')")
+    expect(adminActions).toContain("error?.message?.includes('PLAN_TIER_LOCK_BUSY_RETRY')")
+    expect(adminActions).toContain("redirect('/admin?error=admin_plan_tier_busy')")
+    expect(actionNotice).toContain('admin_plan_downgrade_family_limit:')
+    expect(actionNotice).toContain('admin_plan_tier_busy:')
   })
 
   it('creates one operation id at every persistence UI boundary', () => {

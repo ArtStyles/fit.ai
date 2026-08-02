@@ -868,6 +868,13 @@ export interface Database {
         }
         Returns: string
       }
+      set_subscription_tier_atomic: {
+        Args: {
+          p_user_id: string
+          p_subscription_tier: 'free' | 'pro'
+        }
+        Returns: string
+      }
       save_session_log_atomic: {
         Args: {
           p_client_session_id: string

@@ -23,6 +23,10 @@ describe('UI translations', () => {
   it.each([
     ['Archivar', 'Archive'],
     ['El plan se archivará, pero tu historial permanecerá intacto.', 'The plan will be archived, but your history will remain intact.'],
+    ['No se puede cambiar a Free', 'Cannot switch to Free'],
+    ['Archiva planes hasta dejar como máximo dos familias vigentes e intenta nuevamente.', 'Archive plans until no more than two current families remain, then try again.'],
+    ['Cambio de plan en curso', 'Plan change in progress'],
+    ['Hay otra operación actualizando esta cuenta. Intenta nuevamente en unos segundos.', 'Another operation is updating this account. Try again in a few seconds.'],
   ])('translates plan retirement copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })
