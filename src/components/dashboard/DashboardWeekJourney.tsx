@@ -50,7 +50,12 @@ function JourneySegment({
         {items.map(item => {
           const dayName = t(DASHBOARD_DAY_KEYS[item.isoDay])
           const dateNumber = Number(item.dateStr.slice(-2))
-          const unavailableMessage = !item.workout
+          const completedWithPreviousPlan = Boolean(
+            item.completedEvidence &&
+            item.scheduledWorkout &&
+            !item.isScheduledWorkoutCompleted,
+          )
+          const unavailableMessage = !item.scheduledWorkout
             ? t('Día de descanso, aprovecha para recuperar')
             : item.position === 'past'
               ? t('Esta rutina quedó fuera de la ventana de recuperación.')
@@ -67,8 +72,25 @@ function JourneySegment({
                     {dayName} · {dateNumber}
                   </p>
                   <p className="mt-1 truncate text-base font-semibold text-foreground">
-                    {item.workout?.name ?? t('Día de descanso')}
+                    {item.completedEvidence?.workoutName ?? item.scheduledWorkout?.name ?? t('Día de descanso')}
                   </p>
+                  {item.completedEvidence && (
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {t('{minutes} min', { minutes: item.completedEvidence.durationMinutes })}
+                    </p>
+                  )}
+                  {completedWithPreviousPlan && (
+                    <div className="mt-2 space-y-1 text-sm leading-snug">
+                      <p className="font-medium text-[hsl(var(--training-complete))]">
+                        {t('Realizado con el plan anterior')}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {t('Programado en tu plan actual: {workout}', {
+                          workout: item.scheduledWorkout!.name,
+                        })}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <span className="shrink-0 text-xs font-semibold text-muted-foreground">
                   {toneLabel(item.tone, t)}
@@ -79,18 +101,18 @@ function JourneySegment({
 
           return (
             <TimelineNode key={item.isoDay} tone={item.tone} label={toneLabel(item.tone, t)}>
-              {item.isCompleted && item.completedLogId ? (
+              {item.completedEvidence ? (
                 <PendingLink
-                  href={`/history/${item.completedLogId}`}
-                  aria-label={`${t('Ver sesión completada')}: ${item.workout?.name ?? dayName}`}
+                  href={`/history/${item.completedEvidence.logId}`}
+                  aria-label={`${t('Ver sesión completada')}: ${item.completedEvidence.workoutName}`}
                   className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
                 >
                   {body}
                 </PendingLink>
-              ) : item.workout && item.isRecoverable ? (
+              ) : item.scheduledWorkout && item.isRecoverable && item.canStartScheduledWorkout ? (
                 <PendingLink
-                  href={`/session/${item.workout.id}`}
-                  aria-label={item.workout.name}
+                  href={`/session/${item.scheduledWorkout.id}`}
+                  aria-label={item.scheduledWorkout.name}
                   className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
                 >
                   {body}
@@ -146,13 +168,31 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
   }
 
   if (today.state === 'completed-for-today') {
+    const completedWithPreviousPlan = Boolean(today.completedEvidence && today.workout)
     return (
       <section aria-labelledby="today-title" className="rounded-3xl border border-[hsl(var(--training-complete)/0.35)] bg-[hsl(var(--training-complete)/0.08)] p-5">
         <div className="flex items-center gap-2 text-[hsl(var(--training-complete))]">
           <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
           <p className="text-xs font-bold uppercase tracking-[0.16em]">{t('Completado hoy')}</p>
         </div>
-        <h2 id="today-title" className="mt-4 font-display text-2xl font-bold text-foreground">{t('Ya completaste una sesión hoy.')}</h2>
+        <h2 id="today-title" className="mt-4 font-display text-2xl font-bold text-foreground">
+          {today.completedEvidence?.workoutName ?? t('Ya completaste una sesión hoy.')}
+        </h2>
+        {today.completedEvidence && (
+          <p className="mt-2 text-base leading-relaxed text-muted-foreground">
+            {t('{minutes} min', { minutes: today.completedEvidence.durationMinutes })}
+          </p>
+        )}
+        {completedWithPreviousPlan && (
+          <div className="mt-3 space-y-1 text-sm leading-snug">
+            <p className="font-medium text-[hsl(var(--training-complete))]">
+              {t('Realizado con el plan anterior')}
+            </p>
+            <p className="text-muted-foreground">
+              {t('Programado en tu plan actual: {workout}', { workout: today.workout!.name })}
+            </p>
+          </div>
+        )}
         <p className="mt-2 text-base leading-relaxed text-muted-foreground">
           {today.nextWorkout && today.nextWorkoutIsoDay
             ? t('Tu próxima sesión es {workout} el {day}.', {
@@ -175,7 +215,14 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
           <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
           <p className="text-xs font-bold uppercase tracking-[0.16em]">{t('Completado hoy')}</p>
         </div>
-        <h2 id="today-title" className="mt-4 font-display text-2xl font-bold text-foreground">{workout.name}</h2>
+        <h2 id="today-title" className="mt-4 font-display text-2xl font-bold text-foreground">
+          {today.completedEvidence?.workoutName ?? workout.name}
+        </h2>
+        {today.completedEvidence && (
+          <p className="mt-2 text-base leading-relaxed text-muted-foreground">
+            {t('{minutes} min', { minutes: today.completedEvidence.durationMinutes })}
+          </p>
+        )}
         <p className="mt-2 text-base leading-relaxed text-muted-foreground">
           {t('La sesión de hoy ya está hecha. Prioriza tu recuperación.')}
         </p>

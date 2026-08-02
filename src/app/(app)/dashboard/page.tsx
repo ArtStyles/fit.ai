@@ -19,6 +19,7 @@ import type { Database } from '@/types/database'
 import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
 import { buildDashboardFallbackHistory } from '@/lib/dashboard/historyEvidence'
+import { buildWeekContinuity } from '@/lib/dashboard/weekContinuity'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import {
   DASHBOARD_BANNER_SLOT,
@@ -63,19 +64,23 @@ export interface WorkoutSummary {
   progression_suggestion_count: number
 }
 
-type WorkoutPayloadSummary = Omit<WorkoutSummary, 'progression_suggestion_count'> & {
-  progression_suggestion_count?: number | null
+/**
+ * Legacy calendar contract retained while the dashboard journey uses the
+ * continuity projection in `weekContinuity.ts`.
+ */
+export interface DayData {
+  isoDay: number
+  dateStr: string
+  workout: WorkoutSummary | null
+  isCompleted: boolean
+  isToday: boolean
+  isRecoverable: boolean
+  completedDurationMinutes: number | null
+  completedLogId: string | null
 }
 
-export interface DayData {
-  isoDay:                   number        // 1=Lun … 7=Dom
-  dateStr:                  string        // YYYY-MM-DD
-  workout:                  WorkoutSummary | null
-  isCompleted:              boolean
-  isToday:                  boolean
-  isRecoverable:            boolean       // perdida pero dentro de la ventana de recuperación
-  completedDurationMinutes: number | null
-  completedLogId:           string | null // ID del log para navegar al historial
+type WorkoutPayloadSummary = Omit<WorkoutSummary, 'progression_suggestion_count'> & {
+  progression_suggestion_count?: number | null
 }
 
 type SupabaseServerClient = Awaited<ReturnType<typeof requireAppUserContext>>['supabase']
@@ -95,6 +100,7 @@ type WeekLogRow = {
   completed_at: string
   duration_minutes: number | null
   session_context_snapshot?: unknown
+  workout?: CompletedSessionWorkoutRelation | CompletedSessionWorkoutRelation[] | null
 }
 
 type ExerciseProgressRow = {
@@ -431,8 +437,8 @@ export default async function DashboardPage() {
         ...latestCompletedSession,
         session_context_snapshot: latestCompletedSession.session_context_snapshot ?? null,
         workout: latestCompletedSession.workout_id
-          ? workoutById.get(latestCompletedSession.workout_id) ?? null
-          : null,
+          ? latestCompletedSession.workout ?? workoutById.get(latestCompletedSession.workout_id) ?? null
+          : latestCompletedSession.workout ?? null,
       }, t('Entrenamiento'))
     : null
   const latestSession = latestCompletedSession
@@ -468,10 +474,26 @@ export default async function DashboardPage() {
   // ── Workout de hoy + si ya está completado ─────────────────────────────────
   const todayWorkout = workouts.find(w => w.day_of_week === todayIso) ?? null
 
-  const todayLog = weekLogs.find(l =>
-    l.workout_id === todayWorkout?.id &&
-    getLocalDateString(new Date(l.completed_at), tz) === todayStr,
-  )
+  const weekDates = Array.from({ length: 7 }, (_, index) => {
+    const date = addCalendarDays(weekStart, index, tz)
+    return {
+      isoDay: index + 1,
+      dateStr: getLocalDateString(date, tz),
+    }
+  })
+  const continuityDays = buildWeekContinuity({
+    activeWorkouts: workouts,
+    weekLogs: weekLogs.map(log => ({
+      ...log,
+      session_context_snapshot: log.session_context_snapshot ?? null,
+      workout: log.workout ?? null,
+    })),
+    dates: weekDates,
+    today: todayStr,
+    timeZone: tz,
+    fallbackWorkoutName: t('Entrenamiento'),
+  })
+  const todayContinuity = continuityDays.find(day => day.isToday) ?? null
 
   // ── Siguiente workout (para día de descanso) ───────────────────────────────
   const nextWorkoutDay = Array.from({ length: 7 }, (_, i) => {
@@ -480,35 +502,18 @@ export default async function DashboardPage() {
   }).find(d => d.iso !== todayIso && d.workout)
 
   // ── Datos del calendario semanal ──────────────────────────────────────────
-  const hasSessionToday = weekLogs.some(l =>
-    getLocalDateString(new Date(l.completed_at), tz) === todayStr,
-  )
+  const hasSessionToday = Boolean(todayContinuity?.hasTrainingEvidence)
 
-  const weekDays: DayData[] = Array.from({ length: 7 }, (_, i) => {
-    const date    = addCalendarDays(weekStart, i, tz)
-    const dateStr = getLocalDateString(date, tz)
-    const iso     = i + 1
-    const workout = workouts.find(w => w.day_of_week === iso) ?? null
-    // Una sesión recuperada cuenta para el día programado de la rutina,
-    // aunque se haya registrado uno o dos días más tarde.
-    const log     = workout
-      ? weekLogs.find(l => l.workout_id === workout.id)
-      : undefined
-    const daysLate = todayIso - iso
+  const weekDays = continuityDays.map(day => {
+    const daysLate = todayIso - day.isoDay
     return {
-      isoDay: iso,
-      dateStr,
-      workout,
-      isCompleted: !!log,
-      isToday: iso === todayIso,
-      isRecoverable: !!workout && !log && !hasSessionToday &&
+      ...day,
+      isRecoverable: Boolean(day.scheduledWorkout) && day.canStartScheduledWorkout && !hasSessionToday &&
         daysLate >= 1 && daysLate <= WORKOUT_ACCESS_POLICY.missedWorkoutRecoveryDays,
-      completedDurationMinutes: log?.duration_minutes ?? null,
-      completedLogId: log?.id ?? null,
     }
   })
 
-  const recoverableDay = weekDays.find(d => d.isRecoverable) ?? null
+  const recoverableDay = weekDays.find(day => day.isRecoverable) ?? null
 
   // ── Quick stats ────────────────────────────────────────────────────────────
   const sessionsThisWeek   = weekLogs.length
@@ -549,11 +554,11 @@ export default async function DashboardPage() {
     aiNotes: showAiBanner ? planRaw?.ai_notes ?? null : null,
     promo: dashboardBanner ? { title: dashboardBanner.title } : null,
     todayWorkout,
-    isCompletedToday: Boolean(todayLog),
+    isCompletedToday: Boolean(todayContinuity?.isScheduledWorkoutCompleted),
     hasSessionToday,
     nextWorkout: nextWorkoutDay?.workout ?? null,
     nextWorkoutIsoDay: nextWorkoutDay?.iso ?? null,
-    recoverableWorkout: recoverableDay?.workout ?? null,
+    recoverableWorkout: recoverableDay?.scheduledWorkout ?? null,
     recoverableIsoDay: recoverableDay?.isoDay ?? null,
     weekDays,
     sessionsThisWeek,

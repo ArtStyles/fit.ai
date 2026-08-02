@@ -168,6 +168,8 @@ const ENGLISH: Record<string, string> = {
   'Volumen': 'Volume',
   'Descanso': 'Rest',
   'Completado': 'Completed',
+  'Realizado con el plan anterior': 'Completed with the previous plan',
+  'Programado en tu plan actual: {workout}': 'Scheduled in your current plan: {workout}',
   'Recuperable': 'Recoverable',
   'Día de descanso, aprovecha para recuperar': 'Rest day, use it to recover',
   'Ver detalle de rutina completada': 'View completed workout details',
