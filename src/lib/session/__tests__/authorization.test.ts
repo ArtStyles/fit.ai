@@ -11,6 +11,10 @@ const migration = readFileSync(
   'utf8',
 )
 const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
+const sessionClient = readFileSync(
+  new URL('../../../app/(app)/session/[workoutId]/SessionClient.tsx', import.meta.url),
+  'utf8',
+)
 
 describe('session authorization validity', () => {
   const now = new Date('2026-08-02T12:00:00.000Z')
@@ -115,6 +119,13 @@ describe('session authorization migration', () => {
     expect(saveV2).not.toMatch(/workout_plans|is_active\s*=\s*TRUE/i)
   })
 
+  it('anchors the daily policy window to the server-issued authorization day', () => {
+    const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
+    expect(saveV2).toMatch(/v_policy_at\s+TIMESTAMPTZ/i)
+    expect(saveV2).toMatch(/v_policy_at\s*:=\s*v_authorization\.created_at/i)
+    expect(saveV2).toMatch(/v_policy_at AT TIME ZONE v_time_zone/i)
+  })
+
   it('reconciles an exact preexisting progress row without replaying details', () => {
     const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
     expect(saveV2).toMatch(/IF NOT v_inserted THEN[\s\S]+session_context_snapshot = COALESCE\([\s\S]+v_authorization\.session_context_snapshot/i)
@@ -126,5 +137,9 @@ describe('session authorization migration', () => {
     expect(databaseTypes).toContain('session_authorizations:')
     expect(databaseTypes).toContain('authorize_session_start:')
     expect(databaseTypes).toContain('save_session_log_atomic_v2:')
+  })
+
+  it('translates safe authorization errors at the client boundary', () => {
+    expect(sessionClient).toContain('setAuthorizationError(t(result.error))')
   })
 })

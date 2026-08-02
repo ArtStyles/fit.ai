@@ -257,6 +257,7 @@ AS $$
 DECLARE
   v_user_id UUID := auth.uid();
   v_save_at TIMESTAMPTZ := NOW();
+  v_policy_at TIMESTAMPTZ;
   v_authorization public.session_authorizations%ROWTYPE;
   v_progress_log_id UUID;
   v_progress_workout_id UUID;
@@ -294,6 +295,10 @@ BEGIN
     OR v_authorization.workout_id IS DISTINCT FROM p_workout_id THEN
     RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH';
   END IF;
+
+  -- A session consumes the calendar slot of the server-authorized start day,
+  -- even when an offline save arrives after midnight within the 12-hour lease.
+  v_policy_at := v_authorization.created_at;
 
   IF v_authorization.consumed_at IS NOT NULL THEN
     SELECT id, workout_id, session_result_snapshot
@@ -370,15 +375,15 @@ BEGIN
 
   v_time_zone := COALESCE(v_time_zone, 'America/Havana');
   v_days_late := (
-    EXTRACT(ISODOW FROM (v_save_at AT TIME ZONE v_time_zone))::INTEGER
+    EXTRACT(ISODOW FROM (v_policy_at AT TIME ZONE v_time_zone))::INTEGER
     - v_workout_day + 7
   ) % 7;
-  v_today_start := date_trunc('day', v_save_at AT TIME ZONE v_time_zone)
+  v_today_start := date_trunc('day', v_policy_at AT TIME ZONE v_time_zone)
     AT TIME ZONE v_time_zone;
-  v_today_end := (date_trunc('day', v_save_at AT TIME ZONE v_time_zone) + INTERVAL '1 day')
+  v_today_end := (date_trunc('day', v_policy_at AT TIME ZONE v_time_zone) + INTERVAL '1 day')
     AT TIME ZONE v_time_zone;
   v_window_start := (
-    date_trunc('day', v_save_at AT TIME ZONE v_time_zone)
+    date_trunc('day', v_policy_at AT TIME ZONE v_time_zone)
     - make_interval(days => v_days_late)
   ) AT TIME ZONE v_time_zone;
 

@@ -74,6 +74,10 @@ describe('UI translations', () => {
     ['Preparando sesión…', 'Preparing session…'],
     ['No se pudo preparar la sesión.', 'The session could not be prepared.'],
     ['Reintentar autorización', 'Retry authorization'],
+    ['Esta rutina ya no está disponible en tu plan activo.', 'This workout is no longer available in your active plan.'],
+    ['Esta rutina ya fue completada.', 'This workout has already been completed.'],
+    ['Ya registraste una sesión hoy. Máximo una sesión por día.', 'You already logged a session today. Maximum one session per day.'],
+    ['La autorización de esta sesión expiró. Inicia una nueva sesión.', 'This session authorization expired. Start a new session.'],
   ])('translates durable session authorization copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })

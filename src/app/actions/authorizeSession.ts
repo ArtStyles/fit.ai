@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { parseSessionContextSnapshot, type SessionContextSnapshotV1 } from '@/lib/session/contextSnapshot'
+import { authorizationErrorMessage } from '@/lib/session/authorization'
 
 export type AuthorizeSessionStartResult =
   | { success: true; contextSnapshot: SessionContextSnapshotV1 }
@@ -16,24 +17,24 @@ export async function authorizeSessionStart(
   workoutId: string,
 ): Promise<AuthorizeSessionStartResult> {
   if (!isUuid(clientSessionId) || !isUuid(workoutId)) {
-    return { success: false, error: 'Identificador de sesión inválido' }
+    return { success: false, error: 'No se pudo preparar la sesión. Inténtalo nuevamente.' }
   }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) return { success: false, error: 'No autenticado' }
+  if (!user) return { success: false, error: 'Tu sesión expiró. Inicia sesión nuevamente.' }
 
   const { data, error } = await (supabase as any).rpc('authorize_session_start', {
     p_client_session_id: clientSessionId,
     p_workout_id: workoutId,
   }) as { data: unknown; error: { message: string } | null }
 
-  if (error) return { success: false, error: error.message }
+  if (error) return { success: false, error: authorizationErrorMessage(error.message) }
 
   const contextSnapshot = parseSessionContextSnapshot(data)
   if (!contextSnapshot) {
-    return { success: false, error: 'No se pudo autorizar la sesión' }
+    return { success: false, error: 'No se pudo preparar la sesión. Inténtalo nuevamente.' }
   }
 
   return { success: true, contextSnapshot }

@@ -127,7 +127,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
 
     if (!result.success) {
       setAuthorizationState(current => nextSessionAuthorizationState(current, 'failed'))
-      setAuthorizationError(result.error)
+      setAuthorizationError(t(result.error))
       return
     }
 
