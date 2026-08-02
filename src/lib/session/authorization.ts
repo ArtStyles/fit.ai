@@ -25,6 +25,31 @@ export function authorizationErrorMessage(message: string): string {
     : 'No se pudo preparar la sesión. Inténtalo nuevamente.'
 }
 
+const SAVE_ERROR_MESSAGES: Record<string, string> = {
+  SESSION_DAILY_LIMIT_REACHED: 'Ya registraste una sesión hoy. Máximo una sesión por día.',
+  SESSION_WORKOUT_ALREADY_COMPLETED: 'Esta rutina ya fue completada.',
+  SESSION_WORKOUT_UNAVAILABLE: 'Esta rutina ya no está disponible en tu plan activo.',
+  SESSION_WORKOUT_NOT_FOUND: 'Esta rutina ya no está disponible en tu plan activo.',
+  SESSION_PLAN_INACTIVE: 'Esta rutina ya no está disponible en tu plan activo.',
+  SESSION_AUTHORIZATION_EXPIRED: 'La autorización de esta sesión expiró. Inicia una nueva sesión.',
+  SESSION_COMPLETED_AT_INVALID: 'La fecha de finalización de esta sesión no es válida.',
+  SESSION_AUTHENTICATION_REQUIRED: 'Tu sesión expiró. Inicia sesión nuevamente.',
+  SESSION_AUTHORIZATION_REQUIRED: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
+  SESSION_AUTHORIZATION_MISMATCH: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
+  SESSION_AUTHORIZATION_CONSUMED: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
+  SESSION_AUTHORIZATION_CONSUME_FAILED: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
+  SESSION_AUTHORIZATION_INVALID_ID: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
+  SESSION_IDEMPOTENCY_MISMATCH: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
+}
+
+export function saveSessionErrorMessage(message: string | null | undefined): string {
+  if (message) {
+    const code = Object.keys(SAVE_ERROR_MESSAGES).find(candidate => message.includes(candidate))
+    if (code) return SAVE_ERROR_MESSAGES[code]
+  }
+  return 'No se pudo guardar la sesión. Inténtalo nuevamente.'
+}
+
 export function canMountSessionClient<
   T extends { allowed: boolean; workout?: unknown },
 >(access: T): access is T & { workout: NonNullable<T['workout']> } {

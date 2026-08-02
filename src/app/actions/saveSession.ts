@@ -18,6 +18,7 @@ import {
   parseSessionContextSnapshot,
   type SessionContextSnapshotV1,
 } from '@/lib/session/contextSnapshot'
+import { saveSessionErrorMessage } from '@/lib/session/authorization'
 
 export type { PRRecord } from '@/lib/progression/records'
 
@@ -893,7 +894,7 @@ export async function saveSession(
       progressLogId: null,
       prs: [],
       progressions: [],
-      error: persistenceError?.message ?? 'No se pudo guardar la sesión',
+      error: saveSessionErrorMessage(persistenceError?.message),
     }
   }
 

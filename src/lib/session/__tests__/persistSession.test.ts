@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useSessionStore } from '@/store/sessionStore'
 import { clearBackup, loadBackup, saveBackup, type SessionSnapshot } from '../persistSession'
 
 const snapshot = {
@@ -9,6 +10,14 @@ const snapshot = {
   exercises: [],
 } as SessionSnapshot
 
+const legacyExercise = {
+  workoutExerciseId: 'we-1',
+  exerciseId: 'ex-1',
+  name: 'Squat',
+  status: 'active',
+  sets: [{ weightKg: '10', reps: '8', rpe: null, completed: false }],
+}
+
 describe('session backup persistence results', () => {
   const setItem = vi.fn()
   const getItem = vi.fn()
@@ -18,6 +27,7 @@ describe('session backup persistence results', () => {
     setItem.mockReset()
     getItem.mockReset()
     removeItem.mockReset()
+    useSessionStore.getState().clearSession()
     vi.stubGlobal('localStorage', { setItem, getItem, removeItem })
   })
 
@@ -63,15 +73,84 @@ describe('session backup persistence results', () => {
       workoutId: snapshot.workoutId,
       workoutName: snapshot.workoutName,
       startedAt: snapshot.startedAt,
+      exercises: [legacyExercise],
+    }))
+
+    const restored = loadBackup(snapshot.workoutId)
+    expect(restored).not.toBeNull()
+    expect(restored?.exercises[0]).toEqual({
+      ...legacyExercise,
+      originalExerciseId: null,
+      originalName: null,
+      imageUrl: null,
+      instructions: null,
+      muscleGroups: [],
+      isCompound: false,
+      targetSets: 1,
+      targetReps: null,
+      targetDuration: null,
+      restSeconds: 60,
+      targetRpe: 7,
+      suggestedWeight: null,
+      weightSuggestionBasis: null,
+      notes: null,
+      source: 'planned',
+      skipReason: null,
+      expanded: true,
+      hasLastSessionData: false,
+      previousPerformance: null,
+    })
+
+    useSessionStore.getState().restoreSession(restored!)
+    expect(() => {
+      useSessionStore.getState().updateSetField('we-1', 0, 'reps', '9')
+      useSessionStore.getState().finishSession()
+    }).not.toThrow()
+    expect(useSessionStore.getState().exercises[0].muscleGroups).toEqual([])
+  })
+
+  it.each([
+    ['originalExerciseId', 42],
+    ['originalName', []],
+    ['imageUrl', 42],
+    ['instructions', []],
+    ['muscleGroups', 'legs'],
+    ['isCompound', 'false'],
+    ['targetSets', '3'],
+    ['targetReps', '8'],
+    ['targetDuration', '30'],
+    ['restSeconds', '60'],
+    ['targetRpe', '7'],
+    ['suggestedWeight', '10'],
+    ['weightSuggestionBasis', 'guessed'],
+    ['notes', 42],
+    ['source', 'imported'],
+    ['skipReason', 42],
+    ['expanded', 'yes'],
+    ['hasLastSessionData', 'no'],
+    ['previousPerformance', 'bad'],
+  ])('rejects corrupt optional exercise field %s', (field, corruptValue) => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{ ...legacyExercise, [field]: corruptValue }],
+    }))
+
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it.each([
+    ['rpe', '7'],
+    ['completed', 'false'],
+    ['durationSeconds', '30'],
+  ])('rejects corrupt optional set field %s', (field, corruptValue) => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
       exercises: [{
-        workoutExerciseId: 'we-1',
-        exerciseId: 'ex-1',
-        name: 'Squat',
-        status: 'active',
-        sets: [{ weightKg: '10', reps: '8', rpe: null, completed: false }],
+        ...legacyExercise,
+        sets: [{ ...legacyExercise.sets[0], [field]: corruptValue }],
       }],
     }))
 
-    expect(loadBackup(snapshot.workoutId)).toMatchObject({ workoutId: snapshot.workoutId })
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
   })
 })

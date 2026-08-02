@@ -378,7 +378,7 @@ describe('saveSession idempotency', () => {
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: false,
       progressLogId: null,
-      error: 'SESSION_AUTHORIZATION_REQUIRED',
+      error: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
     })
     expect(supabase.rpc).toHaveBeenCalledTimes(1)
     expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
@@ -463,6 +463,41 @@ describe('saveSession idempotency', () => {
     await expect(saveSession(payload)).resolves.toMatchObject({ success: false })
     expect(supabase.rpc).toHaveBeenCalledTimes(1)
     expect(supabase.from).not.toHaveBeenCalledWith('profiles')
+  })
+
+  it.each([
+    ['SESSION_DAILY_LIMIT_REACHED', 'Ya registraste una sesión hoy. Máximo una sesión por día.'],
+    ['SESSION_WORKOUT_ALREADY_COMPLETED', 'Esta rutina ya fue completada.'],
+    ['SESSION_WORKOUT_UNAVAILABLE', 'Esta rutina ya no está disponible en tu plan activo.'],
+    ['SESSION_PLAN_INACTIVE', 'Esta rutina ya no está disponible en tu plan activo.'],
+    ['SESSION_AUTHORIZATION_EXPIRED', 'La autorización de esta sesión expiró. Inicia una nueva sesión.'],
+    ['SESSION_AUTHORIZATION_REQUIRED', 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.'],
+    ['SESSION_AUTHORIZATION_MISMATCH', 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.'],
+    ['SESSION_COMPLETED_AT_INVALID', 'La fecha de finalización de esta sesión no es válida.'],
+  ])('maps safe v2 error %s without exposing PostgreSQL text', async (rpcCode, expected) => {
+    const supabase = successfulSaveMock({
+      rpcData: null,
+      rpcError: { code: 'P0001', message: `PostgreSQL exception: ${rpcCode} CONTEXT private` },
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: expected,
+    })
+  })
+
+  it('uses a generic safe fallback for an unknown database save error', async () => {
+    const supabase = successfulSaveMock({
+      rpcData: null,
+      rpcError: { code: 'XX000', message: 'relation private_table leaked internal detail' },
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
+    })
   })
 
   it('applies progression side effects only for the original winner', async () => {
@@ -658,7 +693,10 @@ describe('saveSession idempotency', () => {
     const retried = successfulSaveMock()
     createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
 
-    await expect(saveSession(payload)).resolves.toMatchObject({ success: false, error: 'detail rejected' })
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
+    })
     await expect(saveSession(payload)).resolves.toMatchObject({ success: true, progressLogId: 'log-new' })
     expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
       p_client_session_id: payload.clientSessionId,
@@ -908,7 +946,7 @@ describe('saveSession idempotency', () => {
 
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
       success: false,
-      error: 'detail rejected',
+      error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
     })
     const rollbackQuery = failed.from.mock.results
       .map((result: { value: any }) => result.value)

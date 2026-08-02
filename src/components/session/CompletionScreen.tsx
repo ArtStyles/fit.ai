@@ -150,7 +150,7 @@ export function CompletionScreen({
       })
 
       if (!result.success || !result.progressLogId) {
-        const message = result.error ?? t('No se pudo guardar la sesión')
+        const message = t(result.error ?? 'No se pudo guardar la sesión')
         requestGateRef.current.commit(requestToken, () => {
           setSaveError(message)
           onSyncEvent('server-error', 'server')
@@ -180,8 +180,8 @@ export function CompletionScreen({
           showToast({ title: t('Limpieza local pendiente'), description: cleanupMessage, variant: 'error' })
         }
       })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t('Error de red')
+    } catch {
+      const message = t('Error de red')
       requestGateRef.current.commit(requestToken, () => {
         setSaveError(message)
         onSyncEvent('server-error', 'server')

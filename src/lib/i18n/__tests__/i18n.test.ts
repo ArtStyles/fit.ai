@@ -78,6 +78,10 @@ describe('UI translations', () => {
     ['Esta rutina ya fue completada.', 'This workout has already been completed.'],
     ['Ya registraste una sesión hoy. Máximo una sesión por día.', 'You already logged a session today. Maximum one session per day.'],
     ['La autorización de esta sesión expiró. Inicia una nueva sesión.', 'This session authorization expired. Start a new session.'],
+    ['No se pudo guardar la sesión. Inténtalo nuevamente.', 'The session could not be saved. Try again.'],
+    ['No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.', 'This session authorization could not be validated. Start a new session.'],
+    ['La fecha de finalización de esta sesión no es válida.', 'This session completion date is invalid.'],
+    ['Tu sesión expiró. Inicia sesión nuevamente.', 'Your session expired. Sign in again.'],
   ])('translates durable session authorization copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })
