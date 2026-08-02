@@ -30,6 +30,30 @@ function persistenceError(error: unknown): string {
   return error instanceof Error ? error.message : 'Local storage unavailable'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isStoredSet(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return typeof value.weightKg === 'string' &&
+    typeof value.reps === 'string' &&
+    (value.rpe === null || (typeof value.rpe === 'number' && Number.isFinite(value.rpe))) &&
+    typeof value.completed === 'boolean' &&
+    (value.durationSeconds === undefined ||
+      (typeof value.durationSeconds === 'number' && Number.isFinite(value.durationSeconds)))
+}
+
+function isStoredExercise(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return typeof value.workoutExerciseId === 'string' && value.workoutExerciseId.length > 0 &&
+    typeof value.exerciseId === 'string' && value.exerciseId.length > 0 &&
+    typeof value.name === 'string' && value.name.length > 0 &&
+    (value.status === 'pending' || value.status === 'active' ||
+      value.status === 'completed' || value.status === 'skipped') &&
+    Array.isArray(value.sets) && value.sets.every(isStoredSet)
+}
+
 function isSessionSnapshot(value: unknown, workoutId: string): value is RestorableSessionSnapshot {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const snapshot = value as Partial<RestorableSessionSnapshot>
@@ -39,7 +63,8 @@ function isSessionSnapshot(value: unknown, workoutId: string): value is Restorab
     typeof snapshot.workoutName === 'string' &&
     typeof snapshot.startedAt === 'number' &&
     Number.isFinite(snapshot.startedAt) &&
-    Array.isArray(snapshot.exercises)
+    Array.isArray(snapshot.exercises) &&
+    snapshot.exercises.every(isStoredExercise)
 }
 
 export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {

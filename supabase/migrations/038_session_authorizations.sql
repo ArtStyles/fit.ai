@@ -1,6 +1,12 @@
 -- Durable, server-issued permission for a workout that was valid when its
 -- client session started. Plan retirement/version switches never delete this
 -- immutable context and never need to keep the source plan active afterward.
+--
+-- DEPLOYMENT ORDER (DB-FIRST): apply this migration before deploying the app.
+-- The previous app remains compatible because save_session_log_atomic v1 stays
+-- available. The app's v1/direct-insert fallback is only a rollout bridge for
+-- already-running legacy clients/sessions; authorization issuance deliberately
+-- has no missing-RPC bypass.
 
 CREATE TABLE public.session_authorizations (
   client_session_id UUID PRIMARY KEY,
@@ -70,7 +76,8 @@ BEGIN
   FOR UPDATE;
 
   IF FOUND THEN
-    IF v_existing.user_id <> v_user_id OR v_existing.workout_id <> p_workout_id THEN
+    IF v_existing.user_id IS DISTINCT FROM v_user_id
+      OR v_existing.workout_id IS DISTINCT FROM p_workout_id THEN
       RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH';
     END IF;
     IF v_existing.consumed_at IS NOT NULL THEN
@@ -249,15 +256,30 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_user_id UUID := auth.uid();
+  v_save_at TIMESTAMPTZ := NOW();
   v_authorization public.session_authorizations%ROWTYPE;
   v_progress_log_id UUID;
   v_progress_workout_id UUID;
   v_inserted BOOLEAN := FALSE;
   v_result_snapshot JSONB;
+  v_time_zone TEXT;
+  v_today_start TIMESTAMPTZ;
+  v_today_end TIMESTAMPTZ;
+  v_window_start TIMESTAMPTZ;
+  v_days_late INTEGER;
+  v_workout_day INTEGER;
 BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'SESSION_AUTHENTICATION_REQUIRED';
   END IF;
+
+  IF p_client_session_id IS NULL OR p_workout_id IS NULL THEN
+    RAISE EXCEPTION 'SESSION_AUTHORIZATION_INVALID_ID';
+  END IF;
+
+  -- Keep the lock order aligned with authorize_session_start and plan lifecycle
+  -- RPCs: per-user advisory lock first, authorization row lock second.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
 
   SELECT * INTO v_authorization
   FROM public.session_authorizations
@@ -268,8 +290,8 @@ BEGIN
     RAISE EXCEPTION 'SESSION_AUTHORIZATION_REQUIRED';
   END IF;
 
-  IF v_authorization.user_id <> v_user_id
-    OR v_authorization.workout_id <> p_workout_id THEN
+  IF v_authorization.user_id IS DISTINCT FROM v_user_id
+    OR v_authorization.workout_id IS DISTINCT FROM p_workout_id THEN
     RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH';
   END IF;
 
@@ -288,8 +310,100 @@ BEGIN
     RETURN;
   END IF;
 
-  IF v_authorization.expires_at <= NOW() THEN
+  IF v_authorization.expires_at <= v_save_at THEN
     RAISE EXCEPTION 'SESSION_AUTHORIZATION_EXPIRED';
+  END IF;
+
+  -- Recover a save that committed through a legacy client before this v2 call
+  -- acquired the per-user lock. Exact owner/workout binding is mandatory.
+  SELECT id, workout_id, session_result_snapshot
+  INTO v_progress_log_id, v_progress_workout_id, v_result_snapshot
+  FROM public.progress_logs
+  WHERE user_id = v_user_id
+    AND client_session_id = p_client_session_id;
+
+  IF FOUND THEN
+    IF v_progress_workout_id IS DISTINCT FROM p_workout_id THEN
+      RAISE EXCEPTION 'SESSION_IDEMPOTENCY_MISMATCH';
+    END IF;
+
+    UPDATE public.progress_logs
+    SET session_context_snapshot = COALESCE(
+      session_context_snapshot,
+      v_authorization.session_context_snapshot
+    )
+    WHERE id = v_progress_log_id
+      AND user_id = v_user_id;
+
+    UPDATE public.session_authorizations
+    SET consumed_at = COALESCE(consumed_at, NOW())
+    WHERE client_session_id = p_client_session_id
+      AND user_id = v_user_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'SESSION_AUTHORIZATION_CONSUME_FAILED';
+    END IF;
+
+    RETURN QUERY SELECT v_progress_log_id, FALSE, v_result_snapshot;
+    RETURN;
+  END IF;
+
+  SELECT workout.day_of_week
+  INTO v_workout_day
+  FROM public.workouts AS workout
+  WHERE workout.id = p_workout_id
+    AND workout.user_id = v_user_id;
+
+  IF NOT FOUND OR v_workout_day IS NULL THEN
+    RAISE EXCEPTION 'SESSION_WORKOUT_UNAVAILABLE';
+  END IF;
+
+  SELECT CASE
+    WHEN profile.timezone IS NOT NULL
+      AND EXISTS (SELECT 1 FROM pg_timezone_names zone WHERE zone.name = profile.timezone)
+      THEN profile.timezone
+    ELSE 'America/Havana'
+  END
+  INTO v_time_zone
+  FROM public.profiles AS profile
+  WHERE profile.id = v_user_id;
+
+  v_time_zone := COALESCE(v_time_zone, 'America/Havana');
+  v_days_late := (
+    EXTRACT(ISODOW FROM (v_save_at AT TIME ZONE v_time_zone))::INTEGER
+    - v_workout_day + 7
+  ) % 7;
+  v_today_start := date_trunc('day', v_save_at AT TIME ZONE v_time_zone)
+    AT TIME ZONE v_time_zone;
+  v_today_end := (date_trunc('day', v_save_at AT TIME ZONE v_time_zone) + INTERVAL '1 day')
+    AT TIME ZONE v_time_zone;
+  v_window_start := (
+    date_trunc('day', v_save_at AT TIME ZONE v_time_zone)
+    - make_interval(days => v_days_late)
+  ) AT TIME ZONE v_time_zone;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.progress_logs
+    WHERE user_id = v_user_id
+      AND workout_id = p_workout_id
+      AND client_session_id IS DISTINCT FROM p_client_session_id
+      AND completed_at >= v_window_start
+      AND completed_at < v_today_end
+  ) THEN
+    RAISE EXCEPTION 'SESSION_WORKOUT_ALREADY_COMPLETED';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.progress_logs
+    WHERE user_id = v_user_id
+      AND workout_id IS NOT NULL
+      AND client_session_id IS DISTINCT FROM p_client_session_id
+      AND completed_at >= v_today_start
+      AND completed_at < v_today_end
+  ) THEN
+    RAISE EXCEPTION 'SESSION_DAILY_LIMIT_REACHED';
   END IF;
 
   INSERT INTO public.progress_logs (
@@ -328,6 +442,23 @@ BEGIN
 
     IF NOT FOUND OR v_progress_workout_id IS DISTINCT FROM p_workout_id THEN
       RAISE EXCEPTION 'SESSION_IDEMPOTENCY_MISMATCH';
+    END IF;
+
+    UPDATE public.progress_logs
+    SET session_context_snapshot = COALESCE(
+      session_context_snapshot,
+      v_authorization.session_context_snapshot
+    )
+    WHERE id = v_progress_log_id
+      AND user_id = v_user_id;
+
+    UPDATE public.session_authorizations
+    SET consumed_at = COALESCE(consumed_at, NOW())
+    WHERE client_session_id = p_client_session_id
+      AND user_id = v_user_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'SESSION_AUTHORIZATION_CONSUME_FAILED';
     END IF;
   END IF;
 

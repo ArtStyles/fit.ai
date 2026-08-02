@@ -45,4 +45,33 @@ describe('session backup persistence results', () => {
 
     expect(loadBackup(snapshot.workoutId)).toBeNull()
   })
+
+  it.each([
+    [[null]],
+    [[{ workoutExerciseId: 'we-1', exerciseId: 'ex-1', name: 'Squat', status: 'active', sets: 'bad' }]],
+    [[{
+      workoutExerciseId: 'we-1', exerciseId: 'ex-1', name: 'Squat', status: 'active',
+      sets: [{ weightKg: 10, reps: '8', rpe: null, completed: false }],
+    }]],
+  ])('rejects corrupt exercise/set elements: %j', exercises => {
+    getItem.mockReturnValue(JSON.stringify({ ...snapshot, exercises }))
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it('accepts a valid legacy backup without a client id or newer exercise metadata', () => {
+    getItem.mockReturnValue(JSON.stringify({
+      workoutId: snapshot.workoutId,
+      workoutName: snapshot.workoutName,
+      startedAt: snapshot.startedAt,
+      exercises: [{
+        workoutExerciseId: 'we-1',
+        exerciseId: 'ex-1',
+        name: 'Squat',
+        status: 'active',
+        sets: [{ weightKg: '10', reps: '8', rpe: null, completed: false }],
+      }],
+    }))
+
+    expect(loadBackup(snapshot.workoutId)).toMatchObject({ workoutId: snapshot.workoutId })
+  })
 })

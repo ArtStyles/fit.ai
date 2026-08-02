@@ -93,6 +93,35 @@ describe('session authorization migration', () => {
     expect(migration).toContain('RETURN QUERY SELECT v_progress_log_id, v_inserted, v_result_snapshot')
   })
 
+  it('rejects null IDs and uses null-safe exact workout binding', () => {
+    expect(migration).toMatch(/save_session_log_atomic_v2[\s\S]+p_client_session_id IS NULL[\s\S]+p_workout_id IS NULL/i)
+    expect(migration).toMatch(/v_authorization\.workout_id IS DISTINCT FROM p_workout_id/i)
+    expect(migration).not.toMatch(/v_authorization\.workout_id\s*<>\s*p_workout_id/i)
+    expect(migration).toMatch(/v_progress_workout_id IS DISTINCT FROM p_workout_id/i)
+  })
+
+  it('serializes daily saves before the authorization row and rechecks evidence without plan state', () => {
+    const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
+    const advisory = saveV2.indexOf('pg_advisory_xact_lock')
+    const authorizationLock = saveV2.indexOf('FROM public.session_authorizations')
+    const progressInsert = saveV2.indexOf('INSERT INTO public.progress_logs')
+
+    expect(advisory).toBeGreaterThan(0)
+    expect(authorizationLock).toBeGreaterThan(advisory)
+    expect(saveV2.indexOf('SESSION_DAILY_LIMIT_REACHED')).toBeGreaterThan(authorizationLock)
+    expect(saveV2.indexOf('SESSION_WORKOUT_ALREADY_COMPLETED')).toBeGreaterThan(authorizationLock)
+    expect(progressInsert).toBeGreaterThan(saveV2.indexOf('SESSION_DAILY_LIMIT_REACHED'))
+    expect(saveV2).toContain('client_session_id IS DISTINCT FROM p_client_session_id')
+    expect(saveV2).not.toMatch(/workout_plans|is_active\s*=\s*TRUE/i)
+  })
+
+  it('reconciles an exact preexisting progress row without replaying details', () => {
+    const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
+    expect(saveV2).toMatch(/IF NOT v_inserted THEN[\s\S]+session_context_snapshot = COALESCE\([\s\S]+v_authorization\.session_context_snapshot/i)
+    expect(saveV2).toMatch(/UPDATE public\.session_authorizations[\s\S]+consumed_at = COALESCE\(consumed_at, NOW\(\)\)/i)
+    expect(saveV2).toMatch(/IF v_inserted THEN[\s\S]+INSERT INTO public\.exercise_logs/i)
+  })
+
   it('publishes the authorization table and both RPC contracts in database types', () => {
     expect(databaseTypes).toContain('session_authorizations:')
     expect(databaseTypes).toContain('authorize_session_start:')

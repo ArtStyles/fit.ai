@@ -67,4 +67,14 @@ describe('UI translations', () => {
   ])('translates training evidence copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })
+
+  it.each([
+    ['No se pudo preparar la sesión. Inténtalo nuevamente.', 'The session could not be prepared. Try again.'],
+    ['No se pudo respaldar la sesión. Libera espacio y vuelve a intentar.', 'The session could not be backed up. Free some space and try again.'],
+    ['Preparando sesión…', 'Preparing session…'],
+    ['No se pudo preparar la sesión.', 'The session could not be prepared.'],
+    ['Reintentar autorización', 'Retry authorization'],
+  ])('translates durable session authorization copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
 })

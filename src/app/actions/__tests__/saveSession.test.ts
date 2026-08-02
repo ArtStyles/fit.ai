@@ -44,7 +44,10 @@ function createSupabaseMock(results: Record<string, { data: unknown; error?: unk
     from: vi.fn((table: string) => query(queues[table]?.shift() ?? { data: null })),
     rpc: vi.fn(() => Promise.resolve({
       data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic_v2 in the schema cache' },
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.save_session_log_atomic_v2 in the schema cache',
+      },
     })),
   }
 }
@@ -52,13 +55,16 @@ function createSupabaseMock(results: Record<string, { data: unknown; error?: unk
 function missingAtomicRpcs() {
   return vi.fn((rpcName: string) => Promise.resolve({
     data: null,
-    error: { message: `Could not find the function public.${rpcName} in the schema cache` },
+    error: {
+      code: 'PGRST202',
+      message: `Could not find the function public.${rpcName} in the schema cache`,
+    },
   }))
 }
 
 const payload: SaveSessionPayload = {
   clientSessionId: '11111111-1111-4111-8111-111111111111',
-  workoutId: 'workout-1',
+  workoutId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   startedAt: Date.parse('2026-05-27T15:30:00.000Z'),
   finishedAt: Date.parse('2026-05-27T16:00:00.000Z'),
   moodRating: null,
@@ -126,11 +132,15 @@ function successfulSaveMock({
 }: {
   existingId?: string | null
   rpcData?: Array<{ progress_log_id: string; inserted: boolean; result_snapshot: unknown }> | null
-  rpcError?: { message: string } | null
+  rpcError?: { code?: string | null; message: string } | null
 } = {}) {
   const supabase: any = createSupabaseMock({
     progress_logs: existingId
-      ? [{ data: { id: existingId, session_result_snapshot: storedSnapshot } }]
+      ? [{ data: {
+          id: existingId,
+          workout_id: payload.workoutId,
+          session_result_snapshot: storedSnapshot,
+        } }]
       : [{ data: null }, { data: [] }, { data: [] }],
     profiles: [{ data: { timezone: 'UTC' } }],
     workouts: [{ data: workout }],
@@ -141,7 +151,7 @@ function successfulSaveMock({
 }
 
 const workout = {
-  id: 'workout-1',
+  id: payload.workoutId,
   name: 'Piernas',
   estimated_duration_minutes: 60,
   focus: 'Lower body',
@@ -388,6 +398,73 @@ describe('saveSession idempotency', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+  it.each([null, 'workout-other'])(
+    'rejects an existing client session bound to workout %s',
+    async existingWorkoutId => {
+      const supabase: any = createSupabaseMock({
+        progress_logs: [{
+          data: {
+            id: 'log-existing',
+            workout_id: existingWorkoutId,
+            session_result_snapshot: storedSnapshot,
+          },
+        }],
+      })
+      createClientMock.mockResolvedValue(supabase)
+
+      await expect(saveSession(payload)).resolves.toMatchObject({
+        success: false,
+        progressLogId: null,
+        error: expect.stringContaining('otro entrenamiento'),
+      })
+      expect(supabase.rpc).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rejects a non-UUID workout before reading progress', async () => {
+    const supabase = createSupabaseMock({})
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession({ ...payload, workoutId: 'workout-invalid' })).resolves.toMatchObject({
+      success: false,
+      progressLogId: null,
+      error: 'Identificador de sesión inválido',
+    })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('does not treat a different missing RPC name as the v2 rollout signal', async () => {
+    const supabase: any = createSupabaseMock({ progress_logs: [{ data: null }] })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.save_session_log_atomic in the schema cache',
+      },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: false })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.from).not.toHaveBeenCalledWith('profiles')
+  })
+
+  it('does not fall back when a v2 error mentions the function without PGRST202', async () => {
+    const supabase: any = createSupabaseMock({ progress_logs: [{ data: null }] })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: {
+        code: '42501',
+        message: 'permission denied for function public.save_session_log_atomic_v2',
+      },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: false })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.from).not.toHaveBeenCalledWith('profiles')
+  })
+
   it('applies progression side effects only for the original winner', async () => {
     const winner: any = createSupabaseMock({
       progress_logs: [{ data: null }, { data: [] }, { data: [] }],
@@ -497,7 +574,11 @@ describe('saveSession idempotency', () => {
   ])('reconstructs and backfills %s results using only history strictly before the winner', async (_label, resultSnapshot) => {
     const supabase: any = createSupabaseMock({
       progress_logs: [
-        { data: { id: winnerId, session_result_snapshot: resultSnapshot } },
+        { data: {
+          id: winnerId,
+          workout_id: payload.workoutId,
+          session_result_snapshot: resultSnapshot,
+        } },
         { data: { id: winnerId, completed_at: winnerCompletedAt, session_result_snapshot: resultSnapshot } },
         { data: null, error: null },
       ],
@@ -553,7 +634,11 @@ describe('saveSession idempotency', () => {
   it.each([null, 'not-a-date'])('fails closed when the authoritative timestamp is %s', async completedAt => {
     const supabase: any = createSupabaseMock({
       progress_logs: [
-        { data: { id: winnerId, session_result_snapshot: null } },
+        { data: {
+          id: winnerId,
+          workout_id: payload.workoutId,
+          session_result_snapshot: null,
+        } },
         { data: { id: winnerId, completed_at: completedAt, session_result_snapshot: null } },
       ],
     })

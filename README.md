@@ -143,7 +143,18 @@ Aplica las migraciones SQL en este orden:
 031_reclassify_exercise_cardio.sql
 032_plan_generation_reliability.sql
 033_remove_legacy_plan_generator.sql
+034_product_events.sql
+035_session_save_idempotency.sql
+036_completed_session_context.sql
+037_atomic_plan_lifecycle.sql
+038_session_authorizations.sql
 ```
+
+Para el rollout de autorizaciones de sesión, despliega primero la base de datos:
+aplica `038_session_authorizations.sql` y después publica la app. La app anterior
+sigue funcionando con `save_session_log_atomic` v1. El fallback v1/directo de la
+app nueva existe sólo como puente para clientes o sesiones legacy que ya estaban
+en ejecución; `authorize_session_start` no omite la autorización si falta la RPC.
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
 normal. `009_reset_test_accounts.sql` es destructiva, contiene una cuenta de

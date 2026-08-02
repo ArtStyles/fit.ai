@@ -572,12 +572,12 @@ async function recoverLegacySessionOutcome(
 }
 
 function isMissingAtomicSaveRpc(
-  error: { message: string } | null,
+  error: { code?: string | null; message: string } | null,
   rpcName: 'save_session_log_atomic_v2' | 'save_session_log_atomic',
 ): boolean {
-  if (!error) return false
-  return error.message.includes(rpcName) &&
-    /schema cache|could not find the function|pgrst202/i.test(error.message)
+  if (!error || error.code !== 'PGRST202') return false
+  const escapedRpcName = rpcName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:public\\.)?${escapedRpcName}(?![A-Za-z0-9_])`, 'i').test(error.message)
 }
 
 function isMissingProgressLogColumn(
@@ -742,18 +742,30 @@ export async function saveSession(
     }
   }
 
-  if (!isUuid(payload.clientSessionId)) {
+  if (!isUuid(payload.clientSessionId) || !isUuid(payload.workoutId)) {
     return { success: false, progressLogId: null, prs: [], progressions: [], error: 'Identificador de sesión inválido' }
   }
 
   const { data: existingSession } = await (supabase
     .from('progress_logs') as any)
-    .select('id, session_result_snapshot')
+    .select('id, workout_id, session_result_snapshot')
     .eq('user_id', user.id)
     .eq('client_session_id', payload.clientSessionId)
-    .maybeSingle() as { data: { id: string; session_result_snapshot: unknown } | null }
+    .maybeSingle() as {
+      data: { id: string; workout_id: string | null; session_result_snapshot: unknown } | null
+    }
 
   if (existingSession) {
+    if (existingSession.workout_id !== payload.workoutId) {
+      return {
+        success: false,
+        progressLogId: null,
+        prs: [],
+        progressions: [],
+        error: 'Este identificador de sesión pertenece a otro entrenamiento.',
+      }
+    }
+
     const storedResult = parseSessionResultSnapshot(existingSession.session_result_snapshot)
     const recoveredResult = storedResult
       ? { success: true as const, outcome: snapshotToSessionOutcome(storedResult) }
