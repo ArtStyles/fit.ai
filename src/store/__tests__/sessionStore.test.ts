@@ -91,4 +91,21 @@ describe('session store side effects', () => {
     useSessionStore.getState().updateSetField('we-one', 0, 'reps', '9')
     expect(useSessionStore.getState().clientSessionId).toBe(migrated)
   })
+
+  it('replaces an invalid restored id once and keeps the replacement stable', () => {
+    const state = useSessionStore.getState()
+    state.restoreSession({
+      clientSessionId: 'not-a-session-id',
+      workoutId: state.workoutId,
+      workoutName: state.workoutName,
+      startedAt: state.startedAt,
+      exercises: state.exercises,
+    })
+
+    const migrated = useSessionStore.getState().clientSessionId
+    expect(migrated).not.toBe('not-a-session-id')
+    expect(migrated).toMatch(/^[0-9a-f-]{36}$/i)
+    useSessionStore.getState().updateSetField('we-one', 0, 'reps', '9')
+    expect(useSessionStore.getState().clientSessionId).toBe(migrated)
+  })
 })

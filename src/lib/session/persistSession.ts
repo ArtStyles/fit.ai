@@ -16,6 +16,10 @@ export interface SessionSnapshot {
   exercises:   ExerciseSession[]
 }
 
+export type RestorableSessionSnapshot = Omit<SessionSnapshot, 'clientSessionId'> & {
+  clientSessionId?: string
+}
+
 export type PersistenceResult = { ok: true } | { ok: false; error: string }
 
 function backupKey(workoutId: string): string {
@@ -24,6 +28,18 @@ function backupKey(workoutId: string): string {
 
 function persistenceError(error: unknown): string {
   return error instanceof Error ? error.message : 'Local storage unavailable'
+}
+
+function isSessionSnapshot(value: unknown, workoutId: string): value is RestorableSessionSnapshot {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const snapshot = value as Partial<RestorableSessionSnapshot>
+
+  return snapshot.workoutId === workoutId &&
+    (snapshot.clientSessionId === undefined || typeof snapshot.clientSessionId === 'string') &&
+    typeof snapshot.workoutName === 'string' &&
+    typeof snapshot.startedAt === 'number' &&
+    Number.isFinite(snapshot.startedAt) &&
+    Array.isArray(snapshot.exercises)
 }
 
 export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {
@@ -35,12 +51,12 @@ export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {
   }
 }
 
-export function loadBackup(workoutId: string): SessionSnapshot | null {
+export function loadBackup(workoutId: string): RestorableSessionSnapshot | null {
   try {
     const raw = localStorage.getItem(backupKey(workoutId))
     if (!raw) return null
-    const parsed = JSON.parse(raw) as SessionSnapshot
-    if (parsed.workoutId !== workoutId) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (!isSessionSnapshot(parsed, workoutId)) return null
     return parsed
   } catch {
     return null

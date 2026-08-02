@@ -1,0 +1,101 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import {
+  canMountSessionClient,
+  canUseAuthorization,
+  nextSessionAuthorizationState,
+} from '../authorization'
+
+const migration = readFileSync(
+  new URL('../../../../supabase/migrations/038_session_authorizations.sql', import.meta.url),
+  'utf8',
+)
+const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
+
+describe('session authorization validity', () => {
+  const now = new Date('2026-08-02T12:00:00.000Z')
+  const future = '2026-08-02T12:00:01.000Z'
+  const past = '2026-08-02T11:59:59.000Z'
+
+  it('accepts only an unconsumed matching authorization before its expiry', () => {
+    expect(canUseAuthorization({
+      expiresAt: future,
+      consumedAt: null,
+      userMatches: true,
+      workoutMatches: true,
+    }, now)).toBe(true)
+
+    expect(canUseAuthorization({
+      expiresAt: past,
+      consumedAt: null,
+      userMatches: true,
+      workoutMatches: true,
+    }, now)).toBe(false)
+
+    expect(canUseAuthorization({
+      expiresAt: future,
+      consumedAt: now.toISOString(),
+      userMatches: true,
+      workoutMatches: true,
+    }, now)).toBe(false)
+  })
+
+  it.each([
+    { userMatches: false, workoutMatches: true },
+    { userMatches: true, workoutMatches: false },
+  ])('rejects a mismatched owner or workout', matches => {
+    expect(canUseAuthorization({
+      expiresAt: future,
+      consumedAt: null,
+      ...matches,
+    }, now)).toBe(false)
+  })
+})
+
+describe('client authorization state', () => {
+  it('moves through retryable authorization states without treating an error as ready', () => {
+    expect(nextSessionAuthorizationState('authorizing', 'succeeded')).toBe('ready')
+    expect(nextSessionAuthorizationState('authorizing', 'failed')).toBe('error')
+    expect(nextSessionAuthorizationState('error', 'retry')).toBe('authorizing')
+    expect(nextSessionAuthorizationState('ready', 'failed')).toBe('ready')
+  })
+
+  it('mounts recovery UI for an owned inactive workout but not a missing workout', () => {
+    expect(canMountSessionClient({ allowed: false, workout: { id: 'workout-old' } })).toBe(true)
+    expect(canMountSessionClient({ allowed: false })).toBe(false)
+    expect(canMountSessionClient({ allowed: true, workout: { id: 'workout-current' } })).toBe(true)
+  })
+})
+
+describe('session authorization migration', () => {
+  it('adds an own-row authorization table without destructive history operations', () => {
+    expect(migration).toContain('CREATE TABLE public.session_authorizations')
+    expect(migration).toMatch(/client_session_id UUID PRIMARY KEY/i)
+    expect(migration).toMatch(/CREATE POLICY[\s\S]+auth\.uid\(\) = user_id/i)
+    expect(migration).not.toMatch(/\bDELETE\s+FROM\b|\bTRUNCATE\b/i)
+    expect(migration).not.toMatch(/ALTER TABLE public\.(?:progress_logs|exercise_logs)[\s\S]+(?:DROP|NOT NULL)/i)
+  })
+
+  it('issues an exact server-side twelve-hour authorization under the plan lock', () => {
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION public.authorize_session_start')
+    expect(migration).toContain("v_created_at + INTERVAL '12 hours'")
+    expect(migration).toMatch(/pg_advisory_xact_lock[\s\S]+is_active = TRUE/i)
+    expect(migration).toMatch(/jsonb_build_object\([\s\S]+'workout'[\s\S]+'plan'[\s\S]+'exercises'/i)
+    expect(migration).toMatch(/consumed_at IS NOT NULL[\s\S]+progress_logs[\s\S]+RETURN v_existing\.session_context_snapshot/i)
+  })
+
+  it('locks and consumes authorization in the same atomic save as the winning rows', () => {
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2')
+    expect(migration).toMatch(/session_authorizations[\s\S]+FOR UPDATE/i)
+    expect(migration).toMatch(/IF v_inserted THEN[\s\S]+INSERT INTO public\.exercise_logs/i)
+    expect(migration).toMatch(/IF v_inserted THEN[\s\S]+UPDATE public\.session_authorizations[\s\S]+consumed_at = NOW\(\)/i)
+    expect(migration).toContain('session_context_snapshot')
+    expect(migration).toContain('RETURN QUERY SELECT v_progress_log_id, v_inserted, v_result_snapshot')
+  })
+
+  it('publishes the authorization table and both RPC contracts in database types', () => {
+    expect(databaseTypes).toContain('session_authorizations:')
+    expect(databaseTypes).toContain('authorize_session_start:')
+    expect(databaseTypes).toContain('save_session_log_atomic_v2:')
+  })
+})

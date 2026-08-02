@@ -571,9 +571,13 @@ async function recoverLegacySessionOutcome(
   }
 }
 
-function isMissingAtomicSaveRpc(error: { message: string } | null): boolean {
+function isMissingAtomicSaveRpc(
+  error: { message: string } | null,
+  rpcName: 'save_session_log_atomic_v2' | 'save_session_log_atomic',
+): boolean {
   if (!error) return false
-  return /save_session_log_atomic|schema cache|could not find the function|pgrst202/i.test(error.message)
+  return error.message.includes(rpcName) &&
+    /schema cache|could not find the function|pgrst202/i.test(error.message)
 }
 
 function isMissingProgressLogColumn(
@@ -773,40 +777,12 @@ export async function saveSession(
     }
   }
 
-  const { data: profileRow } = await (supabase
-    .from('profiles') as any)
-    .select('timezone')
-    .eq('id', user.id)
-    .maybeSingle() as { data: { timezone: string | null } | null }
-
-  const access = await getWorkoutStartAccess({
-    supabase,
-    userId: user.id,
-    workoutId: payload.workoutId,
-    timeZone: resolveUserTimeZone(profileRow?.timezone),
-  })
-
-  if (!access.allowed) {
-    return {
-      success: false,
-      progressLogId: null,
-      prs: [],
-      progressions: [],
-      error: ACCESS_ERROR_MESSAGES[access.reason] ?? DEFAULT_ACCESS_ERROR,
-    }
-  }
-
   const durationMinutes = Math.max(
     1,
     Math.round((payload.finishedAt - payload.startedAt) / 60_000),
   )
 
   const candidateOutcome = await deriveSessionOutcome(supabase, user.id, payload)
-  candidateOutcome.contextSnapshot = await deriveSessionContextSnapshot(
-    supabase,
-    user.id,
-    payload.workoutId,
-  )
   const candidateSnapshot = createSessionResultSnapshot(
     candidateOutcome.prs,
     candidateOutcome.progressions,
@@ -814,7 +790,7 @@ export async function saveSession(
 
   const completedAt = new Date(payload.finishedAt).toISOString()
   let { data: persistedRows, error: persistenceError } = await (supabase as any).rpc(
-    'save_session_log_atomic',
+    'save_session_log_atomic_v2',
     {
       p_client_session_id: payload.clientSessionId,
       p_workout_id: payload.workoutId,
@@ -833,18 +809,68 @@ export async function saveSession(
     error: { message: string } | null
   }
 
-  if (isMissingAtomicSaveRpc(persistenceError)) {
-    const fallback = await persistSessionWithoutAtomicRpc({
+  if (isMissingAtomicSaveRpc(persistenceError, 'save_session_log_atomic_v2')) {
+    const { data: profileRow } = await (supabase
+      .from('profiles') as any)
+      .select('timezone')
+      .eq('id', user.id)
+      .maybeSingle() as { data: { timezone: string | null } | null }
+
+    const access = await getWorkoutStartAccess({
       supabase,
       userId: user.id,
-      payload,
-      completedAt,
-      durationMinutes,
-      candidateOutcome,
-      candidateSnapshot,
+      workoutId: payload.workoutId,
+      timeZone: resolveUserTimeZone(profileRow?.timezone),
     })
-    persistedRows = fallback.data
-    persistenceError = fallback.error
+
+    if (!access.allowed) {
+      return {
+        success: false,
+        progressLogId: null,
+        prs: [],
+        progressions: [],
+        error: ACCESS_ERROR_MESSAGES[access.reason] ?? DEFAULT_ACCESS_ERROR,
+      }
+    }
+
+    candidateOutcome.contextSnapshot = await deriveSessionContextSnapshot(
+      supabase,
+      user.id,
+      payload.workoutId,
+    )
+
+    const v1Result = await (supabase as any).rpc(
+      'save_session_log_atomic',
+      {
+        p_client_session_id: payload.clientSessionId,
+        p_workout_id: payload.workoutId,
+        p_completed_at: completedAt,
+        p_duration_minutes: durationMinutes,
+        p_mood_rating: payload.moodRating,
+        p_exercise_logs: candidateOutcome.exerciseLogs,
+        p_result_snapshot: candidateSnapshot,
+      },
+    ) as {
+      data: PersistedSessionRow[] | null
+      error: { message: string } | null
+    }
+
+    persistedRows = v1Result.data
+    persistenceError = v1Result.error
+
+    if (isMissingAtomicSaveRpc(persistenceError, 'save_session_log_atomic')) {
+      const fallback = await persistSessionWithoutAtomicRpc({
+        supabase,
+        userId: user.id,
+        payload,
+        completedAt,
+        durationMinutes,
+        candidateOutcome,
+        candidateSnapshot,
+      })
+      persistedRows = fallback.data
+      persistenceError = fallback.error
+    }
   }
 
   const persisted = persistedRows?.[0]

@@ -139,6 +139,11 @@ function createClientSessionId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
+function isClientSessionId(value: string | undefined): value is string {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 function buildFlexibleExercise(
@@ -216,7 +221,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   // Restaura el estado completo desde un backup (localStorage) sin resetear
   restoreSession({ clientSessionId, workoutId, workoutName, startedAt, exercises }) {
     set({
-      clientSessionId: clientSessionId ?? createClientSessionId(),
+      clientSessionId: isClientSessionId(clientSessionId) ? clientSessionId : createClientSessionId(),
       workoutId,
       workoutName,
       startedAt,

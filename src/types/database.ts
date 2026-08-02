@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 037_atomic_plan_lifecycle
+ * Last updated: migration 038_session_authorizations
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -471,6 +471,40 @@ export interface Database {
 
       // ─── progress_logs ────────────────────────────────────────────────────
 
+      session_authorizations: {
+        Row: {
+          client_session_id: string
+          user_id: string
+          workout_id: string
+          plan_id: string
+          session_context_snapshot: Json
+          created_at: string
+          expires_at: string
+          consumed_at: string | null
+        }
+        Insert: {
+          client_session_id: string
+          user_id: string
+          workout_id: string
+          plan_id: string
+          session_context_snapshot: Json
+          created_at: string
+          expires_at: string
+          consumed_at?: string | null
+        }
+        Update: {
+          client_session_id?: string
+          user_id?: string
+          workout_id?: string
+          plan_id?: string
+          session_context_snapshot?: Json
+          created_at?: string
+          expires_at?: string
+          consumed_at?: string | null
+        }
+        Relationships: []
+      }
+
       progress_logs: {
         Row: {
           id: string
@@ -891,6 +925,29 @@ export interface Database {
           result_snapshot: Json
         }>
       }
+      authorize_session_start: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+        }
+        Returns: Json
+      }
+      save_session_log_atomic_v2: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+          p_completed_at: string
+          p_duration_minutes: number
+          p_mood_rating: number | null
+          p_exercise_logs: Json
+          p_result_snapshot: Json
+        }
+        Returns: Array<{
+          progress_log_id: string
+          inserted: boolean
+          result_snapshot: Json
+        }>
+      }
       get_dashboard_payload: {
         Args: {
           p_week_start: string
@@ -1033,6 +1090,7 @@ export type Exercise        = Database['public']['Tables']['exercises']['Row']
 export type WorkoutPlan     = Database['public']['Tables']['workout_plans']['Row']
 export type Workout         = Database['public']['Tables']['workouts']['Row']
 export type WorkoutExercise = Database['public']['Tables']['workout_exercises']['Row']
+export type SessionAuthorization = Database['public']['Tables']['session_authorizations']['Row']
 export type ProgressLog     = Database['public']['Tables']['progress_logs']['Row']
 export type ExerciseLog     = Database['public']['Tables']['exercise_logs']['Row']
 export type Measurement     = Database['public']['Tables']['measurements']['Row']

@@ -42,8 +42,18 @@ function createSupabaseMock(results: Record<string, { data: unknown; error?: unk
       })),
     },
     from: vi.fn((table: string) => query(queues[table]?.shift() ?? { data: null })),
-    rpc: vi.fn(() => Promise.resolve({ data: null, error: { message: 'mock rpc' } })),
+    rpc: vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'Could not find the function public.save_session_log_atomic_v2 in the schema cache' },
+    })),
   }
+}
+
+function missingAtomicRpcs() {
+  return vi.fn((rpcName: string) => Promise.resolve({
+    data: null,
+    error: { message: `Could not find the function public.${rpcName} in the schema cache` },
+  }))
 }
 
 const payload: SaveSessionPayload = {
@@ -318,9 +328,51 @@ describe('saveSession idempotency', () => {
       prs: storedSnapshot.prs,
       progressions: storedSnapshot.progressions,
     })
-    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic', expect.objectContaining({
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
       p_result_snapshot: { version: 1, prs: [], progressions: [] },
     }))
+  })
+
+  it('saves an authorized session after its source plan is no longer active', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: null }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: [{ progress_log_id: 'log-authorized', inserted: true, result_snapshot: storedSnapshot }],
+      error: null,
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-authorized',
+    })
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
+      p_client_session_id: payload.clientSessionId,
+      p_workout_id: payload.workoutId,
+    }))
+    expect(supabase.from).not.toHaveBeenCalledWith('profiles')
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_plans')
+  })
+
+  it('fails closed when v2 rejects an unclaimed session', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: null }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'SESSION_AUTHORIZATION_REQUIRED' },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      progressLogId: null,
+      error: 'SESSION_AUTHORIZATION_REQUIRED',
+    })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_plans')
   })
 
   it('returns the existing completed log on a lost-response retry without replaying side effects', async () => {
@@ -341,14 +393,10 @@ describe('saveSession idempotency', () => {
       progress_logs: [{ data: null }, { data: [] }, { data: [] }],
       profiles: [{ data: { timezone: 'UTC' } }],
       workouts: [
-        { data: workout },
         { data: { plan_id: 'plan-1' } },
         { data: [{ id: 'workout-1' }] },
       ],
-      workout_plans: [
-        { data: { id: 'plan-1' } },
-        { data: { id: 'plan-1' } },
-      ],
+      workout_plans: [{ data: { id: 'plan-1' } }],
       workout_exercises: [{ data: null, error: null }],
     })
     winner.rpc = vi.fn(() => Promise.resolve({
@@ -385,8 +433,6 @@ describe('saveSession idempotency', () => {
     const supabase: any = createSupabaseMock({
       progress_logs: [
         { data: null },
-        { data: [] },
-        { data: [] },
         { data: { id: winnerId, completed_at: winnerCompletedAt, session_result_snapshot: null } },
         { data: null, error: null },
       ],
@@ -442,7 +488,7 @@ describe('saveSession idempotency', () => {
     expect(backfillQuery.eq).toHaveBeenCalledWith('id', winnerId)
     expect(backfillQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
     expect(backfillQuery.eq).toHaveBeenCalledWith('client_session_id', payload.clientSessionId)
-    expect(supabase.from).toHaveBeenCalledWith('workout_exercises')
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
   })
 
   it.each([
@@ -529,7 +575,7 @@ describe('saveSession idempotency', () => {
 
     await expect(saveSession(payload)).resolves.toMatchObject({ success: false, error: 'detail rejected' })
     await expect(saveSession(payload)).resolves.toMatchObject({ success: true, progressLogId: 'log-new' })
-    expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic', expect.objectContaining({
+    expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
       p_client_session_id: payload.clientSessionId,
     }))
     expect(retried.rpc).toHaveBeenCalledTimes(1)
@@ -559,10 +605,7 @@ describe('saveSession idempotency', () => {
       ],
       workout_exercises: [{ data: null, error: null }],
     })
-    supabase.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    supabase.rpc = missingAtomicRpcs()
     createClientMock.mockResolvedValue(supabase)
 
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
@@ -616,10 +659,7 @@ describe('saveSession idempotency', () => {
         },
       }] }],
     })
-    supabase.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    supabase.rpc = missingAtomicRpcs()
     createClientMock.mockResolvedValue(supabase)
 
     await expect(saveSession(payload)).resolves.toMatchObject({
@@ -675,10 +715,7 @@ describe('saveSession idempotency', () => {
         workouts: [{ data: workout }],
         workout_plans: [{ data: { id: 'plan-1' } }],
       })
-      supabase.rpc = vi.fn(() => Promise.resolve({
-        data: null,
-        error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-      }))
+      supabase.rpc = missingAtomicRpcs()
       createClientMock.mockResolvedValue(supabase)
 
       await expect(saveSession(payload)).resolves.toMatchObject({
@@ -719,10 +756,7 @@ describe('saveSession idempotency', () => {
       workouts: [{ data: workout }],
       workout_plans: [{ data: { id: 'plan-1' } }],
     })
-    supabase.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    supabase.rpc = missingAtomicRpcs()
     createClientMock.mockResolvedValue(supabase)
 
     await expect(saveSession(payload)).resolves.toMatchObject({
@@ -759,10 +793,7 @@ describe('saveSession idempotency', () => {
         { data: null, error: { message: 'detail rejected' } },
       ],
     })
-    failed.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    failed.rpc = missingAtomicRpcs()
 
     const retried: any = createSupabaseMock({
       progress_logs: [
@@ -787,10 +818,7 @@ describe('saveSession idempotency', () => {
       ],
       workout_exercises: [{ data: null, error: null }],
     })
-    retried.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    retried.rpc = missingAtomicRpcs()
     createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
 
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({

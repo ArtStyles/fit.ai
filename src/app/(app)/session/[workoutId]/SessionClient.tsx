@@ -22,6 +22,11 @@ import type { ProgressionItem } from '@/components/session/PreSessionScreen'
 import { saveBackup, loadBackup, clearBackup } from '@/lib/session/persistSession'
 import type { ExerciseSession, SessionExerciseDraft } from '@/store/sessionStore'
 import type { SessionSnapshot } from '@/lib/session/persistSession'
+import { authorizeSessionStart } from '@/app/actions/authorizeSession'
+import {
+  nextSessionAuthorizationState,
+  type SessionAuthorizationState,
+} from '@/lib/session/authorization'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -65,10 +70,13 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
   const startedAt         = useSessionStore(s => s.startedAt)
   const workoutNameStore  = useSessionStore(s => s.workoutName)
   const clientSessionId   = useSessionStore(s => s.clientSessionId)
+  const [authorizationState, setAuthorizationState] = useState<SessionAuthorizationState>('authorizing')
+  const [authorizationError, setAuthorizationError] = useState<string | null>(null)
   const [syncState, setSyncState] = useState<SessionSyncState>('syncing')
   const [syncErrorSource, setSyncErrorSource] = useState<SessionSyncErrorSource>(null)
   const focusWindow = buildSessionFocusWindow(storeExercises)
   const latestBackupRef = useRef<SessionSnapshot | null>(null)
+  const authorizationAttemptRef = useRef(0)
   const onSyncEvent = useCallback((event: SessionSyncEvent, source: SessionSyncErrorSource = null) => {
     setSyncState(current => nextSessionSyncState(current, event))
     setSyncErrorSource(event === 'local-error' || event === 'server-error' ? source : null)
@@ -80,6 +88,51 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     const result = saveBackup(snapshot)
     onSyncEvent(syncEventForStorageResult('write', result), result.ok ? null : 'backup-write')
   }, [onSyncEvent])
+  const authorizeCurrentSession = useCallback(async () => {
+    const attempt = ++authorizationAttemptRef.current
+    setAuthorizationState(current => nextSessionAuthorizationState(current, 'retry'))
+    setAuthorizationError(null)
+
+    const state = useSessionStore.getState()
+    if (!state.clientSessionId || state.workoutId !== workoutId) {
+      setAuthorizationState(current => nextSessionAuthorizationState(current, 'failed'))
+      setAuthorizationError(t('No se pudo preparar la sesión. Inténtalo nuevamente.'))
+      return
+    }
+
+    const snapshot: SessionSnapshot = {
+      clientSessionId: state.clientSessionId,
+      workoutId: state.workoutId,
+      workoutName: state.workoutName,
+      startedAt: state.startedAt,
+      exercises: state.exercises,
+    }
+    latestBackupRef.current = snapshot
+
+    // A lost response can only be retried safely if this exact ID is already local.
+    const backupResult = saveBackup(snapshot)
+    onSyncEvent(
+      syncEventForStorageResult('write', backupResult),
+      backupResult.ok ? null : 'backup-write',
+    )
+    if (!backupResult.ok) {
+      if (attempt !== authorizationAttemptRef.current) return
+      setAuthorizationState(current => nextSessionAuthorizationState(current, 'failed'))
+      setAuthorizationError(t('No se pudo respaldar la sesión. Libera espacio y vuelve a intentar.'))
+      return
+    }
+
+    const result = await authorizeSessionStart(state.clientSessionId, workoutId)
+    if (attempt !== authorizationAttemptRef.current) return
+
+    if (!result.success) {
+      setAuthorizationState(current => nextSessionAuthorizationState(current, 'failed'))
+      setAuthorizationError(result.error)
+      return
+    }
+
+    setAuthorizationState(current => nextSessionAuthorizationState(current, 'succeeded'))
+  }, [onSyncEvent, t, workoutId])
 
   // Pre-calcular progresiones desde la prop del servidor (antes de hidratación)
   const progressions = extractProgressions(exercises)
@@ -98,6 +151,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     // Si el store ya tiene esta sesión activa (p.ej. hot-reload) no reiniciar
     if (storeWorkoutId === workoutId && storeExercises.length > 0) {
       initializedRef.current = true
+      void authorizeCurrentSession()
       return
     }
 
@@ -110,6 +164,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     }
 
     initializedRef.current = true
+    void authorizeCurrentSession()
   // Solo al montar — workoutId no cambia en esta página
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workoutId])
@@ -137,6 +192,29 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
 
   // ── Wake lock: pantalla encendida durante el entrenamiento ────────────────
   useWakeLock(!isFinished)
+
+  if (authorizationState !== 'ready') {
+    return (
+      <main className="flex min-h-[60vh] items-center justify-center px-6" aria-live="polite">
+        <div className="w-full max-w-sm space-y-4 text-center">
+          <p role={authorizationState === 'error' ? 'alert' : 'status'} className="text-sm text-muted-foreground">
+            {authorizationState === 'authorizing'
+              ? t('Preparando sesión…')
+              : authorizationError ?? t('No se pudo preparar la sesión.')}
+          </p>
+          {authorizationState === 'error' && (
+            <button
+              type="button"
+              onClick={() => void authorizeCurrentSession()}
+              className="min-h-[44px] rounded-md bg-violet-600 px-5 py-2 font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+            >
+              {t('Reintentar autorización')}
+            </button>
+          )}
+        </div>
+      </main>
+    )
+  }
 
   // ── Pantalla pre-sesión (progresiones pendientes) ─────────────────────────
   if (showPreSession && progressions.length > 0) {
