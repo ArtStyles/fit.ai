@@ -73,6 +73,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               'grid grid-cols-[auto,1fr,auto] items-start gap-3 rounded-xl border bg-background/95 p-4 text-foreground shadow-lg shadow-black/30 backdrop-blur-md',
               'data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=open]:fade-in-0',
               'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=closed]:fade-out-0',
+              'motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none',
               toast.variant === 'success' && 'border-green-500/30',
               toast.variant === 'error' && 'border-red-500/30',
               toast.variant === 'info' && 'border-violet-500/30',
@@ -91,14 +92,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </div>
             <ToastPrimitive.Close
               aria-label="Cerrar notificacion"
-              className="rounded-md text-muted-foreground transition-colors hover:text-foreground"
+              className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             >
               <X className="h-4 w-4" />
             </ToastPrimitive.Close>
           </ToastPrimitive.Root>
         ))}
 
-        <ToastPrimitive.Viewport className="fixed right-4 top-4 z-[100] flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2 outline-none" />
+        <ToastPrimitive.Viewport className="fixed right-[calc(var(--app-safe-area-right)_+_1rem)] top-[calc(var(--app-safe-area-top)_+_1rem)] z-[100] flex w-[calc(100vw_-_var(--app-safe-area-left)_-_var(--app-safe-area-right)_-_2rem)] max-w-sm flex-col gap-2 outline-none" />
       </ToastPrimitive.Provider>
     </ToastContext.Provider>
   )
