@@ -35,14 +35,14 @@ async function loadCalendarSessionPayload(
   supabase: AppSupabaseClient,
   userId: string,
   timeZone: string,
+  fallbackWorkoutName: string,
 ) {
   const from = addDays(new Date(), -365).toISOString()
 
   const { data: logs, error: logsError } = await supabase
     .from('progress_logs')
-    .select('id, workout_id, completed_at, duration_minutes, workout:workouts(name, focus)')
+    .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot, workout:workouts(name, focus)')
     .eq('user_id', userId)
-    .not('workout_id', 'is', null)
     .gte('completed_at', from)
     .order('completed_at', { ascending: false }) as unknown as {
       data: RawCalendarProgressLog[] | null
@@ -67,7 +67,7 @@ async function loadCalendarSessionPayload(
     exerciseLogs = data ?? []
   }
 
-  return buildCalendarSessionPayload(logs ?? [], exerciseLogs, timeZone)
+  return buildCalendarSessionPayload(logs ?? [], exerciseLogs, timeZone, fallbackWorkoutName)
 }
 
 async function loadCalendarDays(
@@ -100,7 +100,7 @@ export default async function CalendarPage() {
   const t = createTranslator(normalizeLanguage(profile.language))
   const timeZone = resolveUserTimeZone(profile.timezone)
   const todayStr = getLocalDateString(new Date(), timeZone)
-  const rawPayload = await loadCalendarSessionPayload(supabase, user.id, timeZone)
+  const rawPayload = await loadCalendarSessionPayload(supabase, user.id, timeZone, t('Entrenamiento'))
   const days = await loadCalendarDays(supabase, timeZone, rawPayload.days)
 
   return (

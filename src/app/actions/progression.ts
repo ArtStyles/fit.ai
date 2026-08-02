@@ -28,7 +28,6 @@ export async function getExerciseProgressionData(
     .from('progress_logs') as any)
     .select('id, completed_at')
     .eq('user_id', user.id)
-    .not('workout_id', 'is', null)
     .order('completed_at', { ascending: true })
     .limit(300) as { data: { id: string; completed_at: string }[] | null }
 

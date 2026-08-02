@@ -13,16 +13,14 @@ import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata = { title: 'Historial · Vekira' }
 
-type WorkoutSummary = {
-  name: string
-  focus: string | null
-}
+type WorkoutSummary = CompletedSessionWorkoutRelation
 
 type ProgressLogRow = {
   id: string
@@ -30,6 +28,7 @@ type ProgressLogRow = {
   completed_at: string
   duration_minutes: number | null
   mood_rating: number | null
+  session_context_snapshot: unknown
   workout: WorkoutSummary | WorkoutSummary[] | null
 }
 
@@ -54,10 +53,6 @@ type ExerciseLogRow = {
 
 type AppSupabaseClient = Awaited<ReturnType<typeof requireAppUserContext>>['supabase']
 
-function getWorkout(row: ProgressLogRow): WorkoutSummary | null {
-  return Array.isArray(row.workout) ? row.workout[0] ?? null : row.workout
-}
-
 function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
   return Array.isArray(row.exercise) ? row.exercise[0] ?? null : row.exercise
 }
@@ -75,10 +70,10 @@ async function loadHistoryPayload(
       completed_at,
       duration_minutes,
       mood_rating,
+      session_context_snapshot,
       workout:workouts(name, focus)
     `)
     .eq('user_id', userId)
-    .not('workout_id', 'is', null)
     .order('completed_at', { ascending: false })
     .limit(50) as unknown as {
       data: ProgressLogRow[] | null
@@ -175,15 +170,15 @@ export default async function HistoryPage() {
   const { sessionLogs, exerciseLogs } = await loadHistoryPayload(supabase, user.id, language)
 
   const sessions: HistorySessionInput[] = sessionLogs.map(log => {
-    const workout = getWorkout(log)
+    const presentation = toCompletedSessionPresentation(log, t('Entrenamiento'))
     return {
-      id: log.id,
-      workoutId: log.workout_id,
+      id: presentation.id,
+      workoutId: presentation.workoutId,
       date: getLocalDateString(new Date(log.completed_at), timeZone),
-      completedAt: log.completed_at,
-      workoutName: workout ? getWorkoutDisplayName(workout.name, workout.focus) : t('Entrenamiento'),
-      focus: workout?.focus ?? null,
-      durationMinutes: Number(log.duration_minutes) || 0,
+      completedAt: presentation.completedAt,
+      workoutName: getWorkoutDisplayName(presentation.workoutName, presentation.focus),
+      focus: presentation.focus,
+      durationMinutes: presentation.durationMinutes,
     }
   })
   const exercises: HistoryExerciseInput[] = exerciseLogs.map(row => ({

@@ -15,15 +15,13 @@ import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
+import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 
 export const metadata = { title: 'Detalle de sesión · Vekira' }
 
-type WorkoutSummary = {
-  name: string
-  focus: string | null
-}
+type WorkoutSummary = CompletedSessionWorkoutRelation
 
 type ProgressLogRow = {
   id: string
@@ -33,6 +31,7 @@ type ProgressLogRow = {
   notes: string | null
   mood_rating: number | null
   energy_rating: number | null
+  session_context_snapshot: unknown
   workout: WorkoutSummary | WorkoutSummary[] | null
 }
 
@@ -66,10 +65,6 @@ type PreviousExerciseLogRow = {
 
 interface PageProps {
   params: { logId: string }
-}
-
-function getWorkout(row: ProgressLogRow): WorkoutSummary | null {
-  return Array.isArray(row.workout) ? row.workout[0] ?? null : row.workout
 }
 
 function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
@@ -118,6 +113,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
       notes,
       mood_rating,
       energy_rating,
+      session_context_snapshot,
       workout:workouts(name, focus)
     `)
     .eq('id', params.logId)
@@ -208,8 +204,8 @@ export default async function HistoryDetailPage({ params }: PageProps) {
     previousByExercise,
     priorBestByExercise,
   })
-  const workout = getWorkout(log)
-  const workoutName = workout ? getWorkoutDisplayName(workout.name, workout.focus) : t('Entrenamiento')
+  const presentation = toCompletedSessionPresentation(log, t('Entrenamiento'))
+  const workoutName = getWorkoutDisplayName(presentation.workoutName, presentation.focus)
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -225,7 +221,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
         <EvidenceHero
           eyebrow={t('Debrief de entrenamiento')}
           title={workoutName}
-          description={[formatDateTime(log.completed_at, language), workout?.focus].filter(Boolean).join(' · ')}
+          description={[formatDateTime(log.completed_at, language), presentation.focus].filter(Boolean).join(' · ')}
         >
           <MetricStrip
             items={[

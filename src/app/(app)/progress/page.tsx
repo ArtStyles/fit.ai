@@ -165,7 +165,6 @@ async function loadProgressData(
       .from('progress_logs')
       .select('id, workout_id, completed_at, duration_minutes')
       .eq('user_id', userId)
-      .not('workout_id', 'is', null)
       .gte('completed_at', from)
       .order('completed_at', { ascending: false })
       .limit(300) as unknown as Promise<{ data: ProgressLogRow[] | null; error: { message?: string } | null }>,
