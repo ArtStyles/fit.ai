@@ -11,6 +11,21 @@ function readRule(source: string, selector: string) {
   return match?.[1] ?? ''
 }
 
+function readBlock(source: string, marker: string) {
+  const start = source.indexOf(marker)
+  expect(start, `Missing block for ${marker}`).toBeGreaterThan(-1)
+  const openingBrace = source.indexOf('{', start)
+  let depth = 0
+
+  for (let index = openingBrace; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1
+    if (source[index] === '}') depth -= 1
+    if (depth === 0) return source.slice(openingBrace + 1, index)
+  }
+
+  throw new Error(`Unclosed block for ${marker}`)
+}
+
 describe('shared dialog layout contract', () => {
   it('uses a safe mobile bottom sheet with a 44px close control', () => {
     expect(dialog).toContain('fitai-dialog-content')
@@ -21,16 +36,33 @@ describe('shared dialog layout contract', () => {
     expect(mobile).toContain('inset-inline: 1rem;')
     expect(mobile).toContain('bottom: 0;')
     expect(mobile).toContain('max-height: calc(100dvh - var(--app-safe-area-top) - 1.5rem);')
-    expect(mobile).toContain('overflow-y: auto;')
+    expect(mobile).toContain('overflow: hidden;')
     expect(css).toContain('padding-bottom: calc(1.5rem + var(--app-safe-area-bottom)) !important;')
     expect(css).toContain('fitai-dialog-sheet-in 280ms')
     expect(css).toContain('fitai-dialog-sheet-out 200ms')
   })
 
+  it('keeps the close control outside an internal scrolling layout region', () => {
+    expect(dialog).toContain('data-fitai-dialog-scroll-region')
+    expect(dialog).toContain('fitai-dialog-scroll-region')
+    expect(dialog).toContain('"pr-14"')
+
+    const scrollRegion = readRule(css, '.fitai-dialog-scroll-region')
+    expect(scrollRegion).toContain('min-height: 0;')
+    expect(scrollRegion).toContain('overflow-y: auto;')
+    expect(scrollRegion).toContain('display: inherit;')
+    expect(scrollRegion).toContain('gap: inherit;')
+
+    const regionStart = dialog.indexOf('data-fitai-dialog-scroll-region')
+    const closeStart = dialog.indexOf('<DialogPrimitive.Close')
+    expect(regionStart).toBeGreaterThan(-1)
+    expect(closeStart).toBeGreaterThan(regionStart)
+  })
+
   it('restores centered geometry and restrained motion from 640px', () => {
-    const desktopStart = css.indexOf('@media (min-width: 640px)')
-    expect(desktopStart).toBeGreaterThan(-1)
-    const desktop = readRule(css.slice(desktopStart), '.fitai-dialog-content')
+    const components = readBlock(css, '@layer components')
+    const desktopMedia = readBlock(components, '@media (min-width: 640px)')
+    const desktop = readRule(desktopMedia, '.fitai-dialog-content')
     expect(desktop).toContain('left: 50%;')
     expect(desktop).toContain('top: 50%;')
     expect(desktop).toContain('transform: translate(-50%, -50%);')

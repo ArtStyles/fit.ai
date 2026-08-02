@@ -125,7 +125,7 @@ export function ReadinessReviewDialog({ open, onOpenChange, onSaved }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md overflow-y-auto">
+      <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>Revisión antes de regenerar</DialogTitle></DialogHeader>
         <p className="text-xs leading-relaxed text-muted-foreground">
           No es un diagnóstico. Si declaras señales de alarma o una lesión aguda, la generación automática se detendrá.

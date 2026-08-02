@@ -195,7 +195,7 @@ export function PlanAdjustButton({ planId, options }: Props) {
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg gap-0 overflow-y-auto rounded-2xl border-border/60 bg-popover p-0">
+        <DialogContent className="max-w-lg gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-sm text-white">
               <SlidersHorizontal className="h-4 w-4 text-violet-400" aria-hidden="true" />

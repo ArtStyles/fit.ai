@@ -40,7 +40,12 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
     >
-      {children}
+      <div
+        className="fitai-dialog-scroll-region"
+        data-fitai-dialog-scroll-region
+      >
+        {children}
+      </div>
       <DialogPrimitive.Close className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground ring-offset-background transition-colors hover:bg-accent hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
         <X className="h-4 w-4" />
         <span className="sr-only">Cerrar</span>
@@ -57,7 +62,8 @@ const DialogHeader = ({
   <div
     className={cn(
       "flex flex-col space-y-1.5 text-center sm:text-left",
-      className
+      className,
+      "pr-14"
     )}
     {...props}
   />

@@ -132,7 +132,7 @@ export function PostImageCropper({ file, open, onCancel, onComplete }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={next => { if (!next && !saving) onCancel() }}>
-      <DialogContent className="max-w-md overflow-y-auto border-border/70 p-0 sm:rounded-2xl">
+      <DialogContent className="max-w-md border-border/70 p-0 sm:rounded-2xl">
         <DialogHeader className="border-b border-border/60 px-5 py-4 text-left">
           <DialogTitle className="flex items-center gap-2">
             <Grid3X3 className="h-5 w-5 text-primary" /> Ajustar foto
