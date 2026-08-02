@@ -15,6 +15,7 @@ function query(result: { data: unknown; error?: unknown }) {
     gte: vi.fn(() => builder),
     lt: vi.fn(() => builder),
     limit: vi.fn(() => builder),
+    order: vi.fn(() => builder),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
     single: vi.fn(() => Promise.resolve(result)),
     insert: vi.fn(() => builder),
@@ -377,7 +378,7 @@ describe('saveSession idempotency', () => {
       progressions: storedSnapshot.progressions,
     })
     expect(supabase.rpc).toHaveBeenCalledTimes(1)
-    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
+    expect(supabase.from).not.toHaveBeenCalledWith('exercise_logs')
   })
 
   it('reconstructs an invalid duplicate-race snapshot from history strictly before the winner', async () => {
@@ -426,18 +427,22 @@ describe('saveSession idempotency', () => {
       prs: [{ exerciseName: 'Press Banca', weightKg: 10, kind: 'weight' }],
     })
 
-    const historyQuery = supabase.from.mock.results[8].value
+    const historyQuery = supabase.from.mock.results
+      .filter((_: unknown, index: number) => supabase.from.mock.calls[index][0] === 'exercise_logs')
+      .at(-1).value
     expect(historyQuery.lt).toHaveBeenCalledWith('progress_logs.completed_at', winnerCompletedAt)
     expect(historyQuery.neq).toHaveBeenCalledWith('progress_log_id', winnerId)
 
-    const backfillQuery = supabase.from.mock.results[9].value
+    const backfillQuery = supabase.from.mock.results
+      .filter((_: unknown, index: number) => supabase.from.mock.calls[index][0] === 'progress_logs')
+      .at(-1).value
     expect(backfillQuery.update).toHaveBeenCalledWith(expect.objectContaining({
       session_result_snapshot: expect.objectContaining({ version: 1 }),
     }))
     expect(backfillQuery.eq).toHaveBeenCalledWith('id', winnerId)
     expect(backfillQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
     expect(backfillQuery.eq).toHaveBeenCalledWith('client_session_id', payload.clientSessionId)
-    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
+    expect(supabase.from).toHaveBeenCalledWith('workout_exercises')
   })
 
   it.each([
@@ -571,6 +576,85 @@ describe('saveSession idempotency', () => {
     }))
     expect(supabase.from).toHaveBeenCalledWith('progress_logs')
     expect(supabase.from).toHaveBeenCalledWith('exercise_logs')
+  })
+
+  it('writes immutable session context with a direct fallback insert', async () => {
+    const emptyResultSnapshot = { version: 1, prs: [], progressions: [] }
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        { data: null },
+        { data: [] },
+        { data: [] },
+        { data: { id: 'log-context', session_result_snapshot: emptyResultSnapshot }, error: null },
+      ],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [
+        { data: workout },
+        { data: {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'Piernas',
+          focus: 'Lower body',
+          day_of_week: 3,
+          plan: {
+            id: '22222222-2222-4222-8222-222222222222',
+            family_id: '33333333-3333-4333-8333-333333333333',
+            name: 'Strength block',
+            week_number: 2,
+          },
+        } },
+      ],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      workout_exercises: [{ data: [{
+        exercise_id: '44444444-4444-4444-8444-444444444444',
+        order_index: 0,
+        exercise: {
+          name: 'Back squat',
+          name_es: 'Sentadilla trasera',
+          muscle_groups: ['quadriceps'],
+          muscle_groups_es: ['cuádriceps'],
+          is_compound: true,
+        },
+      }] }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-context',
+    })
+
+    const progressQueries = supabase.from.mock.results
+      .filter((_: unknown, index: number) => supabase.from.mock.calls[index][0] === 'progress_logs')
+      .map((result: { value: any }) => result.value)
+    const insert = progressQueries.at(-1).insert.mock.calls[0][0]
+
+    expect(insert.session_context_snapshot).toEqual({
+      version: 1,
+      workout: {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Piernas',
+        focus: 'Lower body',
+        dayOfWeek: 3,
+      },
+      plan: {
+        id: '22222222-2222-4222-8222-222222222222',
+        familyId: '33333333-3333-4333-8333-333333333333',
+        name: 'Strength block',
+        weekNumber: 2,
+      },
+      exercises: [{
+        exerciseId: '44444444-4444-4444-8444-444444444444',
+        name: 'Back squat',
+        nameEs: 'Sentadilla trasera',
+        muscleGroups: ['quadriceps'],
+        muscleGroupsEs: ['cuádriceps'],
+        isCompound: true,
+      }],
+    })
   })
 
   it('falls back to a legacy progress log insert when idempotency columns are not deployed', async () => {

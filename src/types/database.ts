@@ -326,6 +326,10 @@ export interface Database {
           generation_metadata: Json
           source_post_id: string | null
           source_user_id: string | null
+          family_id: string
+          superseded_at: string | null
+          retired_at: string | null
+          generation_request_id: string | null
           created_at: string
           updated_at: string
         }
@@ -350,6 +354,10 @@ export interface Database {
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
+          family_id?: string
+          superseded_at?: string | null
+          retired_at?: string | null
+          generation_request_id?: string | null
         }
         Update: {
           name?: string
@@ -370,6 +378,10 @@ export interface Database {
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
+          family_id?: string
+          superseded_at?: string | null
+          retired_at?: string | null
+          generation_request_id?: string | null
         }
         Relationships: []
       }
@@ -465,6 +477,7 @@ export interface Database {
           user_id: string
           client_session_id: string | null
           session_result_snapshot: Json | null
+          session_context_snapshot: Json | null
           workout_id: string | null
           completed_at: string
           duration_minutes: number | null
@@ -477,6 +490,7 @@ export interface Database {
           user_id: string
           client_session_id?: string | null
           session_result_snapshot?: Json | null
+          session_context_snapshot?: Json | null
           workout_id?: string | null
           completed_at?: string
           duration_minutes?: number | null
@@ -487,6 +501,7 @@ export interface Database {
         Update: {
           client_session_id?: string | null
           session_result_snapshot?: Json | null
+          session_context_snapshot?: Json | null
           workout_id?: string | null
           duration_minutes?: number | null
           notes?: string | null

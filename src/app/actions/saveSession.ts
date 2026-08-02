@@ -14,6 +14,10 @@ import {
   parseSessionResultSnapshot,
   type SessionResultSnapshot,
 } from '@/lib/session/resultSnapshot'
+import {
+  parseSessionContextSnapshot,
+  type SessionContextSnapshotV1,
+} from '@/lib/session/contextSnapshot'
 
 export type { PRRecord } from '@/lib/progression/records'
 
@@ -202,6 +206,7 @@ type SessionOutcome = {
   prs: PRRecord[]
   progressions: ProgressionSuggestion[]
   exerciseLogs: ExerciseLogPayload[]
+  contextSnapshot: SessionContextSnapshotV1 | null
 }
 
 const RESULT_RECOVERY_ERROR = 'No se pudo reconstruir el resultado guardado de la sesión.'
@@ -211,6 +216,7 @@ function snapshotToSessionOutcome(snapshot: SessionResultSnapshot): SessionOutco
     prs: snapshot.prs,
     progressions: snapshot.progressions,
     exerciseLogs: [],
+    contextSnapshot: null,
   }
 }
 
@@ -331,7 +337,94 @@ async function deriveSessionOutcome(
     if (record) prs.push(record)
   }
 
-  return { prs, progressions, exerciseLogs }
+  return { prs, progressions, exerciseLogs, contextSnapshot: null }
+}
+
+type SessionContextPlanRelation = {
+  id: unknown
+  family_id: unknown
+  name: unknown
+  week_number: unknown
+}
+
+type SessionContextWorkoutRow = {
+  id: unknown
+  name: unknown
+  focus: unknown
+  day_of_week: unknown
+  plan: SessionContextPlanRelation | SessionContextPlanRelation[] | null
+}
+
+type SessionContextExerciseRelation = {
+  name: unknown
+  name_es: unknown
+  muscle_groups: unknown
+  muscle_groups_es: unknown
+  is_compound: unknown
+}
+
+type SessionContextExerciseRow = {
+  exercise_id: unknown
+  order_index: unknown
+  exercise: SessionContextExerciseRelation | SessionContextExerciseRelation[] | null
+}
+
+function getSessionContextRelation<T>(value: T | T[] | null): T | null {
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+async function deriveSessionContextSnapshot(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  workoutId: string,
+): Promise<SessionContextSnapshotV1 | null> {
+  const [{ data: workout }, { data: exerciseRows }] = await Promise.all([
+    (supabase
+      .from('workouts') as any)
+      .select('id, name, focus, day_of_week, plan:workout_plans(id, family_id, name, week_number)')
+      .eq('id', workoutId)
+      .eq('user_id', userId)
+      .maybeSingle() as Promise<{ data: SessionContextWorkoutRow | null }>,
+    (supabase
+      .from('workout_exercises') as any)
+      .select('exercise_id, order_index, exercise:exercises(name, name_es, muscle_groups, muscle_groups_es, is_compound)')
+      .eq('workout_id', workoutId)
+      .order('order_index', { ascending: true }) as Promise<{ data: SessionContextExerciseRow[] | null }>,
+  ])
+
+  if (!workout) return null
+
+  const plan = getSessionContextRelation(workout.plan)
+  const candidate = {
+    version: 1,
+    workout: {
+      id: workout.id,
+      name: workout.name,
+      focus: workout.focus,
+      dayOfWeek: workout.day_of_week,
+    },
+    plan: plan
+      ? {
+          id: plan.id,
+          familyId: plan.family_id,
+          name: plan.name,
+          weekNumber: plan.week_number,
+        }
+      : null,
+    exercises: (exerciseRows ?? []).map(row => {
+      const exercise = getSessionContextRelation(row.exercise)
+      return {
+        exerciseId: row.exercise_id,
+        name: exercise?.name,
+        nameEs: exercise?.name_es ?? null,
+        muscleGroups: exercise?.muscle_groups,
+        muscleGroupsEs: exercise?.muscle_groups_es ?? [],
+        isCompound: exercise?.is_compound,
+      }
+    }),
+  }
+
+  return parseSessionContextSnapshot(candidate)
 }
 
 async function updateActivePlanTargets(
@@ -531,6 +624,7 @@ async function persistSessionWithoutAtomicRpc({
     completed_at: completedAt,
     duration_minutes: durationMinutes,
     mood_rating: payload.moodRating,
+    session_context_snapshot: candidateOutcome.contextSnapshot,
   }
 
   let { data: progressLog, error: progressError } = await (supabase
@@ -685,6 +779,11 @@ export async function saveSession(
   )
 
   const candidateOutcome = await deriveSessionOutcome(supabase, user.id, payload)
+  candidateOutcome.contextSnapshot = await deriveSessionContextSnapshot(
+    supabase,
+    user.id,
+    payload.workoutId,
+  )
   const candidateSnapshot = createSessionResultSnapshot(
     candidateOutcome.prs,
     candidateOutcome.progressions,
