@@ -101,6 +101,95 @@ describe('buildWeekContinuity', () => {
     expect(day.hasTrainingEvidence).toBe(true)
   })
 
+  it('uses a live legacy workout relation when no snapshot is available', () => {
+    const [day] = buildWeekContinuity({
+      activeWorkouts: [],
+      weekLogs: [{
+        id: 'legacy-log',
+        workout_id: '55555555-5555-4555-8555-555555555555',
+        completed_at: '2026-07-06T14:00:00.000Z',
+        duration_minutes: 31,
+        session_context_snapshot: null,
+        workout: [{ name: 'Legacy Back Day', focus: 'Back' }],
+      }],
+      dates,
+      today: '2026-07-06',
+      timeZone: 'America/Havana',
+      fallbackWorkoutName: 'Entrenamiento',
+    })
+
+    expect(day.completedEvidence).toMatchObject({
+      workoutName: 'Legacy Back Day',
+      focus: 'Back',
+      source: 'workout',
+    })
+  })
+
+  it('selects the same newest evidence regardless of input order and breaks timestamp ties by id', () => {
+    const logs = [
+      {
+        id: 'log-a',
+        workout_id: null,
+        completed_at: '2026-07-06T15:00:00.000Z',
+        duration_minutes: 31,
+        session_context_snapshot: null,
+      },
+      {
+        id: 'log-z',
+        workout_id: null,
+        completed_at: '2026-07-06T15:00:00.000Z',
+        duration_minutes: 32,
+        session_context_snapshot: null,
+      },
+    ]
+    const input = {
+      activeWorkouts: [],
+      dates,
+      today: '2026-07-06',
+      timeZone: 'America/Havana',
+      fallbackWorkoutName: 'Entrenamiento',
+    }
+
+    const [forward] = buildWeekContinuity({ ...input, weekLogs: logs })
+    const [reversed] = buildWeekContinuity({ ...input, weekLogs: [...logs].reverse() })
+
+    expect(forward.completedEvidence?.logId).toBe('log-z')
+    expect(reversed.completedEvidence?.logId).toBe('log-z')
+  })
+
+  it('prioritizes an exact scheduled-workout log over newer prior-plan evidence', () => {
+    const [day] = buildWeekContinuity({
+      activeWorkouts: [planBWorkout],
+      weekLogs: [
+        {
+          id: 'prior-plan-newer',
+          workout_id: planASnapshot.workout.id,
+          completed_at: '2026-07-06T16:00:00.000Z',
+          duration_minutes: 53,
+          session_context_snapshot: planASnapshot,
+        },
+        {
+          id: 'plan-b-earlier',
+          workout_id: planBWorkout.id,
+          completed_at: '2026-07-06T14:00:00.000Z',
+          duration_minutes: 42,
+          session_context_snapshot: null,
+          workout: { name: 'Plan B Full Body', focus: 'Full body' },
+        },
+      ],
+      dates,
+      today: '2026-07-06',
+      timeZone: 'America/Havana',
+      fallbackWorkoutName: 'Workout',
+    })
+
+    expect(day.isScheduledWorkoutCompleted).toBe(true)
+    expect(day.completedEvidence).toMatchObject({
+      logId: 'plan-b-earlier',
+      workoutName: 'Plan B Full Body',
+    })
+  })
+
   it('places evidence on the user-local date across a UTC day boundary', () => {
     const [sunday, monday] = buildWeekContinuity({
       activeWorkouts: [planBWorkout],

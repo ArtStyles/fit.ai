@@ -193,10 +193,11 @@ async function loadDashboardFallback(
       }>,
     supabase
       .from('progress_logs')
-      .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot')
+      .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot, workout:workouts(name, focus)')
       .eq('user_id', userId)
       .gte('completed_at', recentStart.toISOString())
-      .order('completed_at', { ascending: false }) as unknown as Promise<{ data: WeekLogRow[] | null }>,
+      .order('completed_at', { ascending: false })
+      .order('id', { ascending: false }) as unknown as Promise<{ data: WeekLogRow[] | null }>,
     supabase
       .from('progress_logs')
       .select('id')

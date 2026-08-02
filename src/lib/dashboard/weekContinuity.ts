@@ -58,6 +58,12 @@ function toEvidence(log: WeekContinuityLog, fallbackWorkoutName: string): Comple
   }
 }
 
+function compareLogsNewestFirst(left: WeekContinuityLog, right: WeekContinuityLog): number {
+  const completedAtDifference = new Date(right.completed_at).getTime() - new Date(left.completed_at).getTime()
+  if (completedAtDifference !== 0) return completedAtDifference
+  return right.id.localeCompare(left.id)
+}
+
 export function buildWeekContinuity<TWorkout extends WeekContinuityWorkout>({
   activeWorkouts,
   weekLogs,
@@ -80,6 +86,7 @@ export function buildWeekContinuity<TWorkout extends WeekContinuityWorkout>({
     logs.push(log)
     logsByDate.set(dateStr, logs)
   }
+  Array.from(logsByDate.values()).forEach(logs => logs.sort(compareLogsNewestFirst))
 
   return dates.map(date => {
     const scheduledWorkout = activeWorkouts.find(workout => workout.day_of_week === date.isoDay) ?? null

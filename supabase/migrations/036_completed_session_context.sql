@@ -95,7 +95,7 @@ WITH active_plan AS (
   FROM progress_logs pl
   LEFT JOIN workouts w ON w.id = pl.workout_id AND w.user_id = auth.uid()
   WHERE pl.user_id = auth.uid() AND pl.completed_at >= p_recent_start
-  ORDER BY pl.completed_at DESC
+  ORDER BY pl.completed_at DESC, pl.id DESC
 ), week_logs AS (
   SELECT * FROM recent_logs WHERE completed_at >= p_week_start
 ), week_volume AS (
@@ -114,8 +114,8 @@ WITH active_plan AS (
 SELECT jsonb_build_object(
   'active_plan', (SELECT to_jsonb(ap) FROM active_plan ap),
   'workouts', COALESCE((SELECT jsonb_agg(to_jsonb(pw) ORDER BY pw.order_in_plan NULLS LAST) FROM plan_workouts pw), '[]'::jsonb),
-  'recent_logs', COALESCE((SELECT jsonb_agg(to_jsonb(rl) ORDER BY rl.completed_at DESC) FROM recent_logs rl), '[]'::jsonb),
-  'week_logs', COALESCE((SELECT jsonb_agg(to_jsonb(wl) ORDER BY wl.completed_at DESC) FROM week_logs wl), '[]'::jsonb),
+  'recent_logs', COALESCE((SELECT jsonb_agg(to_jsonb(rl) ORDER BY rl.completed_at DESC, rl.id DESC) FROM recent_logs rl), '[]'::jsonb),
+  'week_logs', COALESCE((SELECT jsonb_agg(to_jsonb(wl) ORDER BY wl.completed_at DESC, wl.id DESC) FROM week_logs wl), '[]'::jsonb),
   'week_volume_kg', COALESCE((SELECT total_kg FROM week_volume), 0),
   'has_completed_sessions', COALESCE((SELECT value FROM has_history), false)
 );
