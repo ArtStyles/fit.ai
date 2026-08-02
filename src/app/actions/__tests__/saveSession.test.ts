@@ -657,7 +657,53 @@ describe('saveSession idempotency', () => {
     })
   })
 
-  it('falls back to a legacy progress log insert when idempotency columns are not deployed', async () => {
+  it.each(['client_session_id', 'session_result_snapshot'])(
+    'falls back to a legacy progress log insert when %s is not deployed',
+    async missingColumn => {
+      const supabase: any = createSupabaseMock({
+        progress_logs: [
+          { data: null },
+          { data: [] },
+          { data: [] },
+          {
+            data: null,
+            error: { message: `Could not find the '${missingColumn}' column of 'progress_logs' in the schema cache` },
+          },
+          { data: { id: 'log-legacy' }, error: null },
+        ],
+        profiles: [{ data: { timezone: 'UTC' } }],
+        workouts: [{ data: workout }],
+        workout_plans: [{ data: { id: 'plan-1' } }],
+      })
+      supabase.rpc = vi.fn(() => Promise.resolve({
+        data: null,
+        error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
+      }))
+      createClientMock.mockResolvedValue(supabase)
+
+      await expect(saveSession(payload)).resolves.toMatchObject({
+        success: true,
+        progressLogId: 'log-legacy',
+        prs: [],
+        progressions: [],
+      })
+
+      const progressQueries = supabase.from.mock.results
+        .map((result: { value: any }) => result.value)
+        .filter((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
+      const modernInsert = progressQueries.at(-2).insert.mock.calls[0][0]
+      const legacyInsert = progressQueries.at(-1).insert.mock.calls[0][0]
+
+      expect(modernInsert).toHaveProperty('client_session_id', payload.clientSessionId)
+      expect(modernInsert).toHaveProperty('session_result_snapshot')
+      expect(legacyInsert).not.toHaveProperty('client_session_id')
+      expect(legacyInsert).not.toHaveProperty('session_result_snapshot')
+      expect(legacyInsert).not.toHaveProperty('session_context_snapshot')
+    },
+  )
+
+  it('retries without context when only the snapshot column is not deployed', async () => {
+    const emptyResultSnapshot = { version: 1, prs: [], progressions: [] }
     const supabase: any = createSupabaseMock({
       progress_logs: [
         { data: null },
@@ -665,9 +711,9 @@ describe('saveSession idempotency', () => {
         { data: [] },
         {
           data: null,
-          error: { message: "Could not find the 'client_session_id' column of 'progress_logs' in the schema cache" },
+          error: { message: "Could not find the 'session_context_snapshot' column of 'progress_logs' in the schema cache" },
         },
-        { data: { id: 'log-legacy' }, error: null },
+        { data: { id: 'log-without-context', session_result_snapshot: emptyResultSnapshot }, error: null },
       ],
       profiles: [{ data: { timezone: 'UTC' } }],
       workouts: [{ data: workout }],
@@ -681,21 +727,19 @@ describe('saveSession idempotency', () => {
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: true,
-      progressLogId: 'log-legacy',
-      prs: [],
-      progressions: [],
+      progressLogId: 'log-without-context',
     })
 
     const progressQueries = supabase.from.mock.results
       .map((result: { value: any }) => result.value)
       .filter((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
-    const modernInsert = progressQueries.at(-2).insert.mock.calls[0][0]
-    const legacyInsert = progressQueries.at(-1).insert.mock.calls[0][0]
+    const fullInsert = progressQueries.at(-2).insert.mock.calls[0][0]
+    const contextCompatibleInsert = progressQueries.at(-1).insert.mock.calls[0][0]
 
-    expect(modernInsert).toHaveProperty('client_session_id', payload.clientSessionId)
-    expect(modernInsert).toHaveProperty('session_result_snapshot')
-    expect(legacyInsert).not.toHaveProperty('client_session_id')
-    expect(legacyInsert).not.toHaveProperty('session_result_snapshot')
+    expect(fullInsert).toHaveProperty('session_context_snapshot')
+    expect(contextCompatibleInsert).toHaveProperty('client_session_id', payload.clientSessionId)
+    expect(contextCompatibleInsert).toHaveProperty('session_result_snapshot')
+    expect(contextCompatibleInsert).not.toHaveProperty('session_context_snapshot')
   })
 
   it('rolls back a direct fallback progress log when detail insert fails so retry can persist cleanly', async () => {

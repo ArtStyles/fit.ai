@@ -576,9 +576,17 @@ function isMissingAtomicSaveRpc(error: { message: string } | null): boolean {
   return /save_session_log_atomic|schema cache|could not find the function|pgrst202/i.test(error.message)
 }
 
-function isMissingProgressLogCompatibilityColumn(error: { message: string } | null): boolean {
+function isMissingProgressLogColumn(
+  error: { message: string } | null,
+  column: 'client_session_id' | 'session_result_snapshot' | 'session_context_snapshot',
+): boolean {
   if (!error) return false
-  return /client_session_id|session_result_snapshot|schema cache|could not find.*column|pgrst204/i.test(error.message)
+  return error.message.includes(column) && /column|schema cache|pgrst204/i.test(error.message)
+}
+
+function isMissingIdempotencyColumn(error: { message: string } | null): boolean {
+  return isMissingProgressLogColumn(error, 'client_session_id') ||
+    isMissingProgressLogColumn(error, 'session_result_snapshot')
 }
 
 async function existingPersistedSession(
@@ -618,29 +626,44 @@ async function persistSessionWithoutAtomicRpc({
   candidateOutcome: SessionOutcome
   candidateSnapshot: SessionResultSnapshot
 }): Promise<{ data: PersistedSessionRow[] | null; error: { message: string } | null }> {
-  const progressLogPayload = {
+  const baseProgressLogPayload = {
     user_id: userId,
     workout_id: payload.workoutId,
     completed_at: completedAt,
     duration_minutes: durationMinutes,
     mood_rating: payload.moodRating,
+  }
+  const idempotentProgressLogPayload = {
+    ...baseProgressLogPayload,
+    client_session_id: payload.clientSessionId,
+    session_result_snapshot: candidateSnapshot,
+  }
+  const completeProgressLogPayload = {
+    ...idempotentProgressLogPayload,
     session_context_snapshot: candidateOutcome.contextSnapshot,
   }
 
   let { data: progressLog, error: progressError } = await (supabase
     .from('progress_logs') as any)
-    .insert({
-      ...progressLogPayload,
-      client_session_id: payload.clientSessionId,
-      session_result_snapshot: candidateSnapshot,
-    })
+    .insert(completeProgressLogPayload)
     .select('id, session_result_snapshot')
     .single() as { data: { id: string; session_result_snapshot: unknown } | null; error: { message: string } | null }
 
-  if (isMissingProgressLogCompatibilityColumn(progressError)) {
+  if (isMissingProgressLogColumn(progressError, 'session_context_snapshot')) {
+    const contextCompatibleResult = await (supabase
+      .from('progress_logs') as any)
+      .insert(idempotentProgressLogPayload)
+      .select('id, session_result_snapshot')
+      .single() as { data: { id: string; session_result_snapshot: unknown } | null; error: { message: string } | null }
+
+    progressLog = contextCompatibleResult.data
+    progressError = contextCompatibleResult.error
+  }
+
+  if (isMissingIdempotencyColumn(progressError)) {
     const legacyResult = await (supabase
       .from('progress_logs') as any)
-      .insert(progressLogPayload)
+      .insert(baseProgressLogPayload)
       .select('id')
       .single() as { data: { id: string } | null; error: { message: string } | null }
 
