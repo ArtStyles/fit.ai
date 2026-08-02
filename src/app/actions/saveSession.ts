@@ -185,6 +185,10 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+function isSameUuid(left: string | null, right: string): boolean {
+  return left !== null && left.toLowerCase() === right.toLowerCase()
+}
+
 function buildExerciseLogNote(exercise: ExercisePayload): string | null {
   if (exercise.status === 'skipped' && exercise.skipReason) return `Saltado: ${exercise.skipReason}.`
   if (exercise.source === 'ad_hoc') return 'Agregado solo por hoy.'
@@ -758,7 +762,7 @@ export async function saveSession(
     }
 
   if (existingSession) {
-    if (existingSession.workout_id !== payload.workoutId) {
+    if (!isSameUuid(existingSession.workout_id, payload.workoutId)) {
       return {
         success: false,
         progressLogId: null,

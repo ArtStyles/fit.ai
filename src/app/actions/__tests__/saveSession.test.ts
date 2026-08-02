@@ -398,6 +398,22 @@ describe('saveSession idempotency', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+  it('recovers a retry when the same workout UUID uses different letter casing', async () => {
+    const supabase = successfulSaveMock({ existingId: 'log-existing' })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession({
+      ...payload,
+      workoutId: payload.workoutId.toUpperCase(),
+    })).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-existing',
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
   it.each([null, 'workout-other'])(
     'rejects an existing client session bound to workout %s',
     async existingWorkoutId => {

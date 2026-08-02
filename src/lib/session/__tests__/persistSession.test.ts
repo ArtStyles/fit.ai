@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '@/store/sessionStore'
+import { MAX_SESSION_SETS } from '../limits'
 import { clearBackup, loadBackup, saveBackup, type SessionSnapshot } from '../persistSession'
 
 const snapshot = {
@@ -173,6 +174,38 @@ describe('session backup persistence results', () => {
       exercises: [{ ...legacyExercise, [field]: invalidValue }],
     }))
     expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it('rejects more stored sets than the shared session limit when targetSets is omitted', () => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{
+        ...legacyExercise,
+        sets: Array.from(
+          { length: MAX_SESSION_SETS + 1 },
+          () => ({ ...legacyExercise.sets[0] }),
+        ),
+      }],
+    }))
+
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it('accepts exactly the shared set limit and derives a bounded legacy targetSets', () => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{
+        ...legacyExercise,
+        sets: Array.from(
+          { length: MAX_SESSION_SETS },
+          () => ({ ...legacyExercise.sets[0] }),
+        ),
+      }],
+    }))
+
+    const restoredExercise = loadBackup(snapshot.workoutId)?.exercises[0]
+    expect(restoredExercise?.sets).toHaveLength(MAX_SESSION_SETS)
+    expect(restoredExercise?.targetSets).toBe(MAX_SESSION_SETS)
   })
 
   it.each([

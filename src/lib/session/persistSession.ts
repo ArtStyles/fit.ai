@@ -135,7 +135,7 @@ function normalizeStoredExercise(value: unknown): ExerciseSession | null {
     typeof value.name !== 'string' || value.name.length === 0 ||
     (value.status !== 'pending' && value.status !== 'active' &&
       value.status !== 'completed' && value.status !== 'skipped') ||
-    !Array.isArray(value.sets)) {
+    !Array.isArray(value.sets) || value.sets.length > MAX_SESSION_SETS) {
     return null
   }
 
