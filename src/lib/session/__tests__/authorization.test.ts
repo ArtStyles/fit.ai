@@ -119,11 +119,39 @@ describe('session authorization migration', () => {
     expect(saveV2).not.toMatch(/workout_plans|is_active\s*=\s*TRUE/i)
   })
 
-  it('anchors the daily policy window to the server-issued authorization day', () => {
+  it('freezes the complete server-side calendar policy when authorization is issued', () => {
+    expect(migration).toMatch(/policy_timezone TEXT NOT NULL/i)
+    expect(migration).toMatch(/policy_date DATE NOT NULL/i)
+    expect(migration).toMatch(/policy_day_start TIMESTAMPTZ NOT NULL/i)
+    expect(migration).toMatch(/policy_day_end TIMESTAMPTZ NOT NULL/i)
+    expect(migration).toMatch(/workout_window_start TIMESTAMPTZ NOT NULL/i)
+    expect(migration).toMatch(/CHECK \(policy_day_start < policy_day_end\)/i)
+    expect(migration).toMatch(/CHECK \(workout_window_start <= policy_day_start\)/i)
+
+    const authorize = migration.slice(
+      migration.indexOf('CREATE OR REPLACE FUNCTION public.authorize_session_start'),
+      migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'),
+    )
+    expect(authorize).toMatch(/policy_timezone,[\s\S]+policy_date,[\s\S]+policy_day_start,[\s\S]+policy_day_end,[\s\S]+workout_window_start/i)
+    expect(authorize).toMatch(/v_time_zone,[\s\S]+\(v_created_at AT TIME ZONE v_time_zone\)::DATE,[\s\S]+v_today_start,[\s\S]+v_today_end,[\s\S]+v_window_start/i)
+  })
+
+  it('uses only frozen authorization policy for a new save', () => {
     const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
-    expect(saveV2).toMatch(/v_policy_at\s+TIMESTAMPTZ/i)
-    expect(saveV2).toMatch(/v_policy_at\s*:=\s*v_authorization\.created_at/i)
-    expect(saveV2).toMatch(/v_policy_at AT TIME ZONE v_time_zone/i)
+    expect(saveV2).not.toMatch(/FROM public\.profiles|FROM public\.workouts|pg_timezone_names/i)
+    expect(saveV2).toMatch(/completed_at >= v_authorization\.workout_window_start[\s\S]+completed_at < v_authorization\.policy_day_end/i)
+    expect(saveV2).toMatch(/completed_at >= v_authorization\.policy_day_start[\s\S]+completed_at < v_authorization\.policy_day_end/i)
+    expect(saveV2).toMatch(/FROM public\.session_authorizations[\s\S]+user_id = v_user_id[\s\S]+policy_date = v_authorization\.policy_date[\s\S]+client_session_id IS DISTINCT FROM p_client_session_id[\s\S]+consumed_at IS NOT NULL/i)
+  })
+
+  it('validates completion timestamps without using them to choose the daily slot', () => {
+    const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
+    expect(saveV2).toMatch(/p_completed_at IS NULL[\s\S]+SESSION_COMPLETED_AT_INVALID/i)
+    expect(saveV2).toMatch(/p_completed_at < v_authorization\.created_at - INTERVAL '15 minutes'/i)
+    expect(saveV2).toMatch(/p_completed_at > LEAST\([\s\S]+v_authorization\.expires_at[\s\S]+v_save_at \+ INTERVAL '5 minutes'/i)
+    const validationEnd = saveV2.indexOf('END IF;', saveV2.indexOf('SESSION_COMPLETED_AT_INVALID')) + 7
+    const slotChecks = saveV2.slice(validationEnd, saveV2.indexOf('INSERT INTO public.progress_logs'))
+    expect(slotChecks).not.toMatch(/p_completed_at/)
   })
 
   it('reconciles an exact preexisting progress row without replaying details', () => {
@@ -131,12 +159,16 @@ describe('session authorization migration', () => {
     expect(saveV2).toMatch(/IF NOT v_inserted THEN[\s\S]+session_context_snapshot = COALESCE\([\s\S]+v_authorization\.session_context_snapshot/i)
     expect(saveV2).toMatch(/UPDATE public\.session_authorizations[\s\S]+consumed_at = COALESCE\(consumed_at, NOW\(\)\)/i)
     expect(saveV2).toMatch(/IF v_inserted THEN[\s\S]+INSERT INTO public\.exercise_logs/i)
+    const exactRecovery = saveV2.indexOf('Recover a save that committed through a legacy client')
+    const exactReturn = saveV2.indexOf('RETURN QUERY SELECT v_progress_log_id, FALSE', exactRecovery)
+    expect(saveV2.indexOf('SESSION_AUTHORIZATION_EXPIRED')).toBeGreaterThan(exactReturn)
   })
 
   it('publishes the authorization table and both RPC contracts in database types', () => {
     expect(databaseTypes).toContain('session_authorizations:')
     expect(databaseTypes).toContain('authorize_session_start:')
     expect(databaseTypes).toContain('save_session_log_atomic_v2:')
+    expect(databaseTypes).toMatch(/session_authorizations:[\s\S]+policy_timezone: string[\s\S]+policy_date: string[\s\S]+policy_day_start: string[\s\S]+policy_day_end: string[\s\S]+workout_window_start: string/i)
   })
 
   it('translates safe authorization errors at the client boundary', () => {

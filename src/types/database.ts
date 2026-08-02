@@ -478,6 +478,11 @@ export interface Database {
           workout_id: string
           plan_id: string
           session_context_snapshot: Json
+          policy_timezone: string
+          policy_date: string
+          policy_day_start: string
+          policy_day_end: string
+          workout_window_start: string
           created_at: string
           expires_at: string
           consumed_at: string | null
@@ -488,6 +493,11 @@ export interface Database {
           workout_id: string
           plan_id: string
           session_context_snapshot: Json
+          policy_timezone: string
+          policy_date: string
+          policy_day_start: string
+          policy_day_end: string
+          workout_window_start: string
           created_at: string
           expires_at: string
           consumed_at?: string | null
@@ -498,6 +508,11 @@ export interface Database {
           workout_id?: string
           plan_id?: string
           session_context_snapshot?: Json
+          policy_timezone?: string
+          policy_date?: string
+          policy_day_start?: string
+          policy_day_end?: string
+          workout_window_start?: string
           created_at?: string
           expires_at?: string
           consumed_at?: string | null

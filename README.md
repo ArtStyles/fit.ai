@@ -155,6 +155,12 @@ aplica `038_session_authorizations.sql` y después publica la app. La app anteri
 sigue funcionando con `save_session_log_atomic` v1. El fallback v1/directo de la
 app nueva existe sólo como puente para clientes o sesiones legacy que ya estaban
 en ejecución; `authorize_session_start` no omite la autorización si falta la RPC.
+La autorización congela `policy_timezone`, `policy_date`, los límites UTC del día
+y el inicio de la ventana del workout. El guard de guardado reutiliza esos valores
+inmutables y serializa por usuario; no reconstruye la política desde perfil, plan,
+workout ni `completed_at`. El timestamp cliente se conserva como fecha histórica,
+pero sólo se acepta desde 15 minutos antes de autorizar hasta el menor entre el
+vencimiento de 12 horas y 5 minutos después del intento de guardado.
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
 normal. `009_reset_test_accounts.sql` es destructiva, contiene una cuenta de
