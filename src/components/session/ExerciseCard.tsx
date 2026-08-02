@@ -148,7 +148,7 @@ export function ExerciseCard({ exercise, exerciseOptions, focusWindow }: Props) 
           }
         }}
       >
-        <DialogContent className="mx-4 max-w-sm rounded-2xl border-border/70">
+        <DialogContent className="max-w-sm rounded-2xl border-border/70">
           <DialogHeader><DialogTitle>{t('Corregir serie {number}', { number: (editSetIndex ?? 0) + 1 })}</DialogTitle></DialogHeader>
           {editDraft && (
             <div className="space-y-4">

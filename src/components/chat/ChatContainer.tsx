@@ -260,7 +260,7 @@ export function ChatContainer({ initialConversations }: Props) {
       </main>
 
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-        <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
+        <DialogContent className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="text-base text-white">{t('Nueva conversación')}</DialogTitle>
           </DialogHeader>

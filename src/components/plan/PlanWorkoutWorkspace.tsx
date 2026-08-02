@@ -190,7 +190,7 @@ export function PlanWorkoutWorkspace(props: WorkspaceProps) {
           else requestIntent({ kind: 'close' })
         }}
       >
-        <DialogContent className="bottom-0 left-0 top-auto max-h-[90dvh] w-full max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-t-3xl border-border/70 bg-background p-5 lg:hidden">
+        <DialogContent className="border-border/70 bg-background p-5 lg:hidden">
           <DialogHeader className="pr-8 text-left">
             <DialogTitle>{selectedWorkout?.summary.name ?? t('Detalle de sesión')}</DialogTitle>
           </DialogHeader>
@@ -199,7 +199,7 @@ export function PlanWorkoutWorkspace(props: WorkspaceProps) {
       </Dialog>
 
       <Dialog open={pendingIntent !== null} onOpenChange={open => { if (!open) setPendingIntent(null) }}>
-        <DialogContent className="mx-4 max-w-sm rounded-2xl border-border/70">
+        <DialogContent className="max-w-sm rounded-2xl border-border/70">
           <DialogHeader>
             <DialogTitle>{t('¿Descartar cambios?')}</DialogTitle>
             <DialogDescription>{t('Hay cambios sin guardar en esta sesión.')}</DialogDescription>

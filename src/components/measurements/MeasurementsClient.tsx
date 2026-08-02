@@ -417,7 +417,7 @@ export function MeasurementsClient({ initialMeasurements }: Props) {
 
       {/* Form dialog */}
       <Dialog open={formState.open} onOpenChange={(o) => { if (!o) setFormState({ open: false }) }}>
-        <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
+        <DialogContent className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="text-base text-white">
               {formState.editing ? 'Editar medida' : 'Registrar medidas'}

@@ -95,7 +95,7 @@ export function ProfileConnectionsStats({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[82vh] gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
           <DialogHeader className="border-b border-border/40 px-4 py-4 text-left">
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription className="sr-only">

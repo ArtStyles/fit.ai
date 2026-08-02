@@ -99,7 +99,7 @@ export function WorkoutAdjustButton({ workoutId, workoutName }: Props) {
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="mx-4 max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
+        <DialogContent className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-sm text-white">
               <Sparkles className="h-4 w-4 text-violet-400" />

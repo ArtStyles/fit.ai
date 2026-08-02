@@ -141,7 +141,7 @@ export function ExerciseImage({
 
       <DialogContent
         aria-describedby={undefined}
-        className="grid h-[100dvh] w-screen max-w-none place-items-center border-0 bg-transparent p-0 text-white shadow-none sm:rounded-none"
+        className="grid h-[100dvh] w-screen place-items-center border-0 bg-transparent p-0 text-white shadow-none sm:rounded-none"
       >
         <div className="flex w-[92vw] max-w-3xl flex-col items-center">
           <div className="relative h-[78vh] w-full">
