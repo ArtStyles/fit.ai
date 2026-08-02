@@ -18,6 +18,8 @@ import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 import type { Database } from '@/types/database'
 import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import { buildDashboardFallbackHistory } from '@/lib/dashboard/historyEvidence'
+import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import {
   DASHBOARD_BANNER_SLOT,
   isDashboardBannerVisible,
@@ -92,6 +94,7 @@ type WeekLogRow = {
   workout_id: string | null
   completed_at: string
   duration_minutes: number | null
+  session_context_snapshot?: unknown
 }
 
 type ExerciseProgressRow = {
@@ -184,16 +187,14 @@ async function loadDashboardFallback(
       }>,
     supabase
       .from('progress_logs')
-      .select('id, workout_id, completed_at, duration_minutes')
+      .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot')
       .eq('user_id', userId)
-      .not('workout_id', 'is', null)
       .gte('completed_at', recentStart.toISOString())
       .order('completed_at', { ascending: false }) as unknown as Promise<{ data: WeekLogRow[] | null }>,
     supabase
       .from('progress_logs')
       .select('id')
       .eq('user_id', userId)
-      .not('workout_id', 'is', null)
       .limit(1) as unknown as Promise<{ data: { id: string }[] | null }>,
   ])
 
@@ -233,8 +234,8 @@ async function loadDashboardFallback(
     })))
   }
 
-  const allRecentLogs = recentLogs ?? []
-  const weekLogs = allRecentLogs.filter(log => log.completed_at >= weekStart.toISOString())
+  const history = buildDashboardFallbackHistory(recentLogs ?? [], weekStart)
+  const { allRecentLogs, weekLogs } = history
   const logIds = weekLogs.map(log => log.id)
   let weekVolumeKg = 0
 
@@ -261,7 +262,7 @@ async function loadDashboardFallback(
     allRecentLogs,
     weekLogs,
     weekVolumeKg,
-    hasCompletedSessions: allRecentLogs.length > 0 || (completedHistoryRows?.length ?? 0) > 0,
+    hasCompletedSessions: history.hasCompletedSessions || (completedHistoryRows?.length ?? 0) > 0,
   }
 }
 
@@ -420,14 +421,27 @@ export default async function DashboardPage() {
     allRecentLogs,
     language,
   )
-  const workoutNameById = new Map(workouts.map(workout => [workout.id, workout.name]))
+  const workoutById = new Map<string, CompletedSessionWorkoutRelation>(workouts.map(workout => [
+    workout.id,
+    { name: workout.name, focus: workout.focus },
+  ]))
   const latestCompletedSession = allRecentLogs[0]
+  const latestSessionPresentation = latestCompletedSession
+    ? toCompletedSessionPresentation({
+        ...latestCompletedSession,
+        session_context_snapshot: latestCompletedSession.session_context_snapshot ?? null,
+        workout: latestCompletedSession.workout_id
+          ? workoutById.get(latestCompletedSession.workout_id) ?? null
+          : null,
+      }, t('Entrenamiento'))
+    : null
   const latestSession = latestCompletedSession
     ? {
         id: latestCompletedSession.id,
-        workoutName: latestCompletedSession.workout_id
-          ? workoutNameById.get(latestCompletedSession.workout_id) ?? t('Entrenamiento')
-          : t('Entrenamiento'),
+        workoutName: getWorkoutDisplayName(
+          latestSessionPresentation!.workoutName,
+          latestSessionPresentation!.focus,
+        ),
         completedAt: latestCompletedSession.completed_at,
         durationMinutes: latestCompletedSession.duration_minutes,
       }
@@ -497,7 +511,7 @@ export default async function DashboardPage() {
   const recoverableDay = weekDays.find(d => d.isRecoverable) ?? null
 
   // ── Quick stats ────────────────────────────────────────────────────────────
-  const sessionsThisWeek   = weekLogs.filter(l => l.workout_id !== null).length
+  const sessionsThisWeek   = weekLogs.length
   const scheduledThisWeek  = workouts.length
 
   const bannerContext = getBannerContext(planRaw, hasCompletedSessions)
