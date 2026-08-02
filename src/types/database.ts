@@ -889,12 +889,14 @@ export interface Database {
             workout_id: string | null
             completed_at: string
             duration_minutes: number | null
+            session_context_snapshot: Json | null
           }[]
           week_logs: {
             id: string
             workout_id: string | null
             completed_at: string
             duration_minutes: number | null
+            session_context_snapshot: Json | null
           }[]
           week_volume_kg: number | string
           has_completed_sessions: boolean
@@ -911,6 +913,7 @@ export interface Database {
             completed_at: string
             duration_minutes: number | null
             mood_rating: number | null
+            session_context_snapshot: Json | null
             workout: {
               name: string
               focus: string | null
@@ -974,6 +977,7 @@ export interface Database {
               completed_at: string
               duration_minutes: number | null
               mood_rating: number | null
+              session_context_snapshot: Json | null
             } | null
           }[]
           workouts: {
