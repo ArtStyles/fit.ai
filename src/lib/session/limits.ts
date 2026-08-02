@@ -1,0 +1,9 @@
+export const MAX_SESSION_WEIGHT_KG = 500
+export const MAX_SESSION_REPS = 100
+export const MAX_SESSION_SETS = 100
+export const MAX_SESSION_DURATION_SECONDS = 12 * 60 * 60
+export const MAX_SESSION_REST_SECONDS = 60 * 60
+export const MIN_SESSION_RPE = 1
+export const MAX_SESSION_RPE = 10
+export const MAX_SESSION_AGE_MS = 12 * 60 * 60_000 + 15 * 60_000
+export const MAX_SESSION_FUTURE_SKEW_MS = 5 * 60_000

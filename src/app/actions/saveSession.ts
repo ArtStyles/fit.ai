@@ -19,6 +19,10 @@ import {
   type SessionContextSnapshotV1,
 } from '@/lib/session/contextSnapshot'
 import { saveSessionErrorMessage } from '@/lib/session/authorization'
+import {
+  MAX_SESSION_REPS,
+  MAX_SESSION_WEIGHT_KG,
+} from '@/lib/session/limits'
 
 export type { PRRecord } from '@/lib/progression/records'
 
@@ -32,9 +36,6 @@ const DEFAULT_ACCESS_ERROR =
   'Solo puedes registrar la rutina de hoy o recuperar una sesión perdida reciente.'
 
 // Cotas de sanidad: un typo (1500 kg) contaminaría PRs y progresiones para siempre.
-const MAX_WEIGHT_KG = 500
-const MAX_REPS_PER_SET = 100
-
 function findImplausibleExercise(exercises: ExercisePayload[]): string | null {
   for (const exercise of exercises) {
     for (const set of exercise.sets) {
@@ -44,7 +45,7 @@ function findImplausibleExercise(exercises: ExercisePayload[]): string | null {
       const reps = parseInt(set.reps) || 0
       const rpeInvalid = set.rpe !== null && (set.rpe < 1 || set.rpe > 10)
 
-      if (weight > MAX_WEIGHT_KG || reps > MAX_REPS_PER_SET || rpeInvalid) {
+      if (weight > MAX_SESSION_WEIGHT_KG || reps > MAX_SESSION_REPS || rpeInvalid) {
         return exercise.name
       }
     }
@@ -739,7 +740,7 @@ export async function saveSession(
       progressLogId: null,
       prs: [],
       progressions: [],
-      error: `Valores fuera de rango en "${implausibleExercise}". Revisa peso (máx. ${MAX_WEIGHT_KG} kg), reps (máx. ${MAX_REPS_PER_SET}) y RPE (1-10).`,
+      error: `Valores fuera de rango. Revisa peso (máx. ${MAX_SESSION_WEIGHT_KG} kg), reps (máx. ${MAX_SESSION_REPS}) y RPE (1-10).`,
     }
   }
 

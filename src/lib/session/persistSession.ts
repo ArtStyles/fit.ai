@@ -7,6 +7,17 @@
  */
 
 import type { ExerciseSession, PreviousPerformanceData, SetData } from '@/store/sessionStore'
+import {
+  MAX_SESSION_AGE_MS,
+  MAX_SESSION_DURATION_SECONDS,
+  MAX_SESSION_FUTURE_SKEW_MS,
+  MAX_SESSION_REPS,
+  MAX_SESSION_REST_SECONDS,
+  MAX_SESSION_RPE,
+  MAX_SESSION_SETS,
+  MAX_SESSION_WEIGHT_KG,
+  MIN_SESSION_RPE,
+} from './limits'
 
 export interface SessionSnapshot {
   clientSessionId: string
@@ -46,13 +57,43 @@ function isNullableFiniteNumber(value: unknown): value is number | null {
   return value === null || isFiniteNumber(value)
 }
 
+function isNumberInRange(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  integer = false,
+): value is number {
+  return isFiniteNumber(value) && value >= minimum && value <= maximum &&
+    (!integer || Number.isInteger(value))
+}
+
+function isNullableNumberInRange(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  integer = false,
+): value is number | null {
+  return value === null || isNumberInRange(value, minimum, maximum, integer)
+}
+
+function isNumericInputInRange(value: string, maximum: number, integer = false): boolean {
+  if (value === '') return true
+  if (value.trim() !== value || value.trim() === '') return false
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= maximum &&
+    (!integer || Number.isInteger(parsed))
+}
+
 function normalizeStoredSet(value: unknown): SetData | null {
   if (!isRecord(value)) return null
   if (typeof value.weightKg !== 'string' ||
     typeof value.reps !== 'string' ||
-    !isNullableFiniteNumber(value.rpe) ||
+    !isNullableNumberInRange(value.rpe, MIN_SESSION_RPE, MAX_SESSION_RPE) ||
     typeof value.completed !== 'boolean' ||
-    (value.durationSeconds !== undefined && !isFiniteNumber(value.durationSeconds))) {
+    !isNumericInputInRange(value.weightKg, MAX_SESSION_WEIGHT_KG) ||
+    !isNumericInputInRange(value.reps, MAX_SESSION_REPS, true) ||
+    (value.durationSeconds !== undefined &&
+      !isNumberInRange(value.durationSeconds, 0, MAX_SESSION_DURATION_SECONDS))) {
     return null
   }
 
@@ -72,9 +113,10 @@ function normalizePreviousPerformance(value: unknown): PreviousPerformanceData[]
   const normalized: PreviousPerformanceData[] = []
   for (const row of value) {
     if (!isRecord(row) ||
-      !isNullableFiniteNumber(row.weightKg) ||
-      !isNullableFiniteNumber(row.reps) ||
-      (row.durationSeconds !== undefined && !isNullableFiniteNumber(row.durationSeconds))) {
+      !isNullableNumberInRange(row.weightKg, 0, MAX_SESSION_WEIGHT_KG) ||
+      !isNullableNumberInRange(row.reps, 0, MAX_SESSION_REPS, true) ||
+      (row.durationSeconds !== undefined &&
+        !isNullableNumberInRange(row.durationSeconds, 0, MAX_SESSION_DURATION_SECONDS))) {
       return false
     }
     normalized.push({
@@ -122,6 +164,19 @@ function normalizeStoredExercise(value: unknown): ExerciseSession | null {
   const numberFields = ['targetSets', 'restSeconds', 'targetRpe'] as const
   if (numberFields.some(field => value[field] !== undefined && !isFiniteNumber(value[field]))) return null
 
+  if (value.targetSets !== undefined &&
+    !isNumberInRange(value.targetSets, 0, MAX_SESSION_SETS, true)) return null
+  if (value.targetReps !== undefined &&
+    !isNullableNumberInRange(value.targetReps, 0, MAX_SESSION_REPS, true)) return null
+  if (value.targetDuration !== undefined &&
+    !isNullableNumberInRange(value.targetDuration, 0, MAX_SESSION_DURATION_SECONDS)) return null
+  if (value.restSeconds !== undefined &&
+    !isNumberInRange(value.restSeconds, 0, MAX_SESSION_REST_SECONDS)) return null
+  if (value.targetRpe !== undefined &&
+    !isNumberInRange(value.targetRpe, MIN_SESSION_RPE, MAX_SESSION_RPE)) return null
+  if (value.suggestedWeight !== undefined &&
+    !isNullableNumberInRange(value.suggestedWeight, 0, MAX_SESSION_WEIGHT_KG)) return null
+
   if (value.isCompound !== undefined && typeof value.isCompound !== 'boolean') return null
   if (value.expanded !== undefined && typeof value.expanded !== 'boolean') return null
   if (value.hasLastSessionData !== undefined && typeof value.hasLastSessionData !== 'boolean') return null
@@ -166,11 +221,16 @@ function normalizeStoredExercise(value: unknown): ExerciseSession | null {
 }
 
 function normalizeSessionSnapshot(value: unknown, workoutId: string): RestorableSessionSnapshot | null {
+  const now = Date.now()
   if (!isRecord(value) ||
     value.workoutId !== workoutId ||
     (value.clientSessionId !== undefined && typeof value.clientSessionId !== 'string') ||
     typeof value.workoutName !== 'string' ||
-    !isFiniteNumber(value.startedAt) ||
+    !isNumberInRange(
+      value.startedAt,
+      now - MAX_SESSION_AGE_MS,
+      now + MAX_SESSION_FUTURE_SKEW_MS,
+    ) ||
     !Array.isArray(value.exercises)) return null
 
   const exercises: ExerciseSession[] = []

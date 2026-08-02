@@ -6,7 +6,7 @@ const snapshot = {
   clientSessionId: '11111111-1111-4111-8111-111111111111',
   workoutId: 'workout-1',
   workoutName: 'Workout',
-  startedAt: 1,
+  startedAt: Date.now() - 60_000,
   exercises: [],
 } as SessionSnapshot
 
@@ -151,6 +151,68 @@ describe('session backup persistence results', () => {
       }],
     }))
 
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it.each([
+    ['targetSets', -1],
+    ['targetSets', 101],
+    ['targetReps', -1],
+    ['targetReps', 101],
+    ['targetDuration', -1],
+    ['targetDuration', 43_201],
+    ['restSeconds', -1],
+    ['restSeconds', 3_601],
+    ['targetRpe', 0],
+    ['targetRpe', 11],
+    ['suggestedWeight', -1],
+    ['suggestedWeight', 501],
+  ])('rejects out-of-domain exercise field %s=%s', (field, invalidValue) => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{ ...legacyExercise, [field]: invalidValue }],
+    }))
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it.each([
+    ['weightKg', '-1'],
+    ['weightKg', '501'],
+    ['reps', '-1'],
+    ['reps', '101'],
+    ['rpe', 0],
+    ['rpe', 11],
+    ['durationSeconds', -1],
+    ['durationSeconds', 43_201],
+    ['weightKg', ' '],
+  ])('rejects out-of-domain set field %s=%s', (field, invalidValue) => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{
+        ...legacyExercise,
+        sets: [{ ...legacyExercise.sets[0], [field]: invalidValue }],
+      }],
+    }))
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it.each([
+    { weightKg: -1, reps: 8, durationSeconds: null },
+    { weightKg: 10, reps: 101, durationSeconds: null },
+    { weightKg: 10, reps: 8, durationSeconds: 43_201 },
+  ])('rejects out-of-domain previous performance %j', previousPerformance => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{ ...legacyExercise, previousPerformance: [previousPerformance] }],
+    }))
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it.each([
+    Date.now() - 12 * 60 * 60_000 - 15 * 60_000 - 1,
+    Date.now() + 6 * 60_000,
+  ])('rejects implausible crash timestamp %s', startedAt => {
+    getItem.mockReturnValue(JSON.stringify({ ...snapshot, startedAt }))
     expect(loadBackup(snapshot.workoutId)).toBeNull()
   })
 })

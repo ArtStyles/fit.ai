@@ -79,9 +79,18 @@ describe('UI translations', () => {
     ['Ya registraste una sesión hoy. Máximo una sesión por día.', 'You already logged a session today. Maximum one session per day.'],
     ['La autorización de esta sesión expiró. Inicia una nueva sesión.', 'This session authorization expired. Start a new session.'],
     ['No se pudo guardar la sesión. Inténtalo nuevamente.', 'The session could not be saved. Try again.'],
+    ['No se pudo guardar la sesión', 'The session could not be saved'],
     ['No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.', 'This session authorization could not be validated. Start a new session.'],
     ['La fecha de finalización de esta sesión no es válida.', 'This session completion date is invalid.'],
     ['Tu sesión expiró. Inicia sesión nuevamente.', 'Your session expired. Sign in again.'],
+    ['No autenticado', 'Not authenticated'],
+    ['Valores fuera de rango. Revisa peso (máx. 500 kg), reps (máx. 100) y RPE (1-10).', 'Values are out of range. Check weight (max. 500 kg), reps (max. 100), and RPE (1-10).'],
+    ['Identificador de sesión inválido', 'Invalid session identifier'],
+    ['Este identificador de sesión pertenece a otro entrenamiento.', 'This session identifier belongs to another workout.'],
+    ['Esta rutina ya fue completada hoy.', 'This workout was already completed today.'],
+    ['Esta rutina ya fue registrada desde su día programado.', 'This workout was already logged since its scheduled day.'],
+    ['Solo puedes registrar la rutina de hoy o recuperar una sesión perdida reciente.', 'You can only log today\'s workout or recover a recent missed session.'],
+    ['No se pudo reconstruir el resultado guardado de la sesión.', 'The saved session result could not be reconstructed.'],
   ])('translates durable session authorization copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })

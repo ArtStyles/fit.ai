@@ -250,7 +250,7 @@ describe('saveSession access guard', () => {
       }],
     })).resolves.toMatchObject({
       success: false,
-      error: expect.stringContaining('Press Banca'),
+      error: 'Valores fuera de rango. Revisa peso (máx. 500 kg), reps (máx. 100) y RPE (1-10).',
     })
 
     expect(supabase.from).not.toHaveBeenCalledWith('progress_logs')
@@ -270,7 +270,7 @@ describe('saveSession access guard', () => {
       }],
     })).resolves.toMatchObject({
       success: false,
-      error: expect.stringContaining('Curl'),
+      error: 'Valores fuera de rango. Revisa peso (máx. 500 kg), reps (máx. 100) y RPE (1-10).',
     })
   })
 
