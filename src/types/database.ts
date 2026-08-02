@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 034_product_events
+ * Last updated: migration 037_atomic_plan_lifecycle
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -830,14 +830,35 @@ export interface Database {
         Args: Record<string, unknown>
         Returns: unknown
       }
-      create_engine_plan: {
+      create_engine_plan_v2: {
         Args: {
           p_plan: Json
           p_metadata: Json
           p_week_number: number
           p_plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
-          p_parent_plan_id?: string | null
+          p_expected_parent_plan_id: string | null
+          p_generation_request_id: string
           p_profile_updates?: Json
+        }
+        Returns: string
+      }
+      activate_plan_version: {
+        Args: {
+          p_plan_id: string
+        }
+        Returns: string
+      }
+      retire_plan_family: {
+        Args: {
+          p_plan_id: string
+        }
+        Returns: string | null
+      }
+      create_manual_plan_atomic: {
+        Args: {
+          p_plan: Json
+          p_workouts: Json
+          p_make_active?: boolean
         }
         Returns: string
       }

@@ -6,6 +6,7 @@ import { PlanAdjustButton } from '@/components/plan/PlanAdjustButton'
 import { PlanDistribution } from '@/components/plan/PlanDistribution'
 import { PlanOverview } from '@/components/plan/PlanOverview'
 import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
+import { PlanRetireButton } from '@/components/plan/PlanRetireButton'
 import { PlanWorkoutWorkspace } from '@/components/plan/PlanWorkoutWorkspace'
 import {
   appliedConstraintLabels,
@@ -23,7 +24,6 @@ import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import {
   activatePlan,
   createManualPlan,
-  deletePlan,
   updatePlanSummary,
 } from '@/app/actions/plan'
 import {
@@ -36,7 +36,6 @@ import {
   MoreHorizontal,
   Plus,
   Sparkles,
-  Trash2,
 } from 'lucide-react'
 import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
@@ -169,17 +168,7 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
                       </SubmitButton>
                     </form>
                   )}
-                  <form action={deletePlan}>
-                    <input type="hidden" name="planId" value={plan.id} />
-                    <button
-                      type="submit"
-                      aria-label={`${t('Borrar')} ${plan.name}`}
-                      title={`${t('Borrar')} ${plan.name}`}
-                      className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:ring-2 focus-visible:ring-red-400"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </form>
+                  <PlanRetireButton planId={plan.id} planName={plan.name} />
                 </div>
               )
             })}
@@ -245,6 +234,8 @@ export default async function PlanPage() {
       .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, source_type, created_at')
     .eq('user_id', user.id)
     .eq('is_active', true)
+    .is('superseded_at', null)
+    .is('retired_at', null)
     .order('created_at', { ascending: false })
     .limit(1)
       .maybeSingle() as unknown as Promise<{ data: PlanRow | null }>,
@@ -252,6 +243,8 @@ export default async function PlanPage() {
       .from('workout_plans')
       .select('id, name, goal, days_per_week, difficulty, source_type, created_at, is_active')
       .eq('user_id', user.id)
+      .is('superseded_at', null)
+      .is('retired_at', null)
       .order('is_active', { ascending: false })
       .order('created_at', { ascending: false }) as unknown as Promise<{ data: PlanListRow[] | null }>,
   ])

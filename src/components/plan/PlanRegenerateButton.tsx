@@ -18,10 +18,11 @@ export function PlanRegenerateButton() {
   const [readinessOpen, setReadinessOpen] = useState(false)
 
   async function handleClick() {
+    const requestId = crypto.randomUUID()
     setLoading(true)
     setError(null)
 
-    const result = await generatePlan({ mode: 'weekly_regeneration' })
+    const result = await generatePlan({ mode: 'weekly_regeneration', requestId })
 
     if (!result.success) {
       if (result.requiresReadinessReview) setReadinessOpen(true)

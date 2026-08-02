@@ -3,7 +3,11 @@
 import { createClient }            from '@/lib/supabase/server'
 import { filterExercisesForUser }  from '@/lib/ai/filter'
 import { buildWeeklySummary } from '@/lib/plans/periodization'
-import { getPlanCreatePolicy, pruneExcessPlansForFreeUser } from '@/lib/plans/entitlements'
+import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
+import {
+  resolvePlanGenerationLifecycle,
+  type PlanGenerationMode,
+} from '@/lib/plans/lifecycle'
 import {
   estimateDayMinutes,
   findStalledExerciseIds,
@@ -41,15 +45,73 @@ export interface GeneratePlanResult {
   error?:            string
 }
 
-export interface GeneratePlanOptions {
+interface GeneratePlanBaseOptions {
   mode?: 'initial' | 'weekly_regeneration' | 'plan_adjustment'
-  replaceExisting?: boolean
   adjustmentIntent?: PlanAdjustmentIntent
-  previewOnly?: boolean
+  expectedParentPlanId?: string
 }
+
+export type GeneratePlanOptions =
+  | (GeneratePlanBaseOptions & { previewOnly: true; requestId?: never })
+  | (GeneratePlanBaseOptions & { previewOnly?: false; requestId: string })
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+type StoredPlanGenerationRow = {
+  id: string
+  name: string
+  days_per_week: number | null
+  week_number: number | null
+  generation_metadata: Json
+}
+
+function storedPlanGenerationResult(row: StoredPlanGenerationRow): GeneratePlanResult {
+  const metadata = row.generation_metadata
+    && typeof row.generation_metadata === 'object'
+    && !Array.isArray(row.generation_metadata)
+    ? row.generation_metadata as Record<string, Json>
+    : {}
+
+  return {
+    success: true,
+    planId: row.id,
+    planName: row.name,
+    daysCount: row.days_per_week ?? undefined,
+    weekNumber: row.week_number ?? undefined,
+    engineVersion: typeof metadata.engineVersion === 'string' ? metadata.engineVersion : undefined,
+    evidenceVersion: typeof metadata.evidenceVersion === 'string' ? metadata.evidenceVersion : undefined,
+    requiresReadinessReview: metadata.requiresReadinessReview === true,
+    warnings: asStringArray(metadata.warnings),
+  }
+}
+
+async function loadExistingPlanGeneration(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  requestId: string,
+): Promise<GeneratePlanResult | null> {
+  const { data, error } = await (supabase.from('workout_plans') as any)
+    .select('id, name, days_per_week, week_number, generation_metadata')
+    .eq('user_id', userId)
+    .eq('generation_request_id', requestId)
+    .maybeSingle() as {
+      data: StoredPlanGenerationRow | null
+      error: { message?: string } | null
+    }
+
+  if (error) throw new Error(error.message ?? 'No se pudo comprobar la operación del plan.')
+  return data ? storedPlanGenerationResult(data) : null
+}
+
+export async function findExistingPlanGeneration(
+  requestId: string,
+): Promise<GeneratePlanResult | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  return loadExistingPlanGeneration(supabase, user.id, requestId)
 }
 
 function parseReadiness(
@@ -112,7 +174,7 @@ interface RegenerationContext {
 
 async function recordEvidenceGenerationFailure(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  mode: NonNullable<GeneratePlanOptions['mode']>,
+  mode: PlanGenerationMode,
   engineVersion: string | undefined,
   errorCode: string,
   metadata: Record<string, Json> = {},
@@ -124,16 +186,6 @@ async function recordEvidenceGenerationFailure(
     p_metadata: metadata,
   })
   if (error) console.error('[generatePlan] No se pudo registrar el fallo:', error)
-}
-
-async function recordEvidenceGenerationSuccess(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  planId: string,
-): Promise<void> {
-  const { error } = await (supabase.rpc as any)('record_plan_generation_success', {
-    p_plan_id: planId,
-  })
-  if (error) console.error('[generatePlan] No se pudo registrar el éxito:', error)
 }
 
 async function buildRegenerationContext(
@@ -284,39 +336,81 @@ async function loadPlanForEngine(
 
 // ─── Server Action principal ──────────────────────────────────────────────────
 
-export async function generatePlan(options: GeneratePlanOptions = {}): Promise<GeneratePlanResult> {
+export async function generatePlan(options: GeneratePlanOptions): Promise<GeneratePlanResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
   const mode = options.mode ?? 'initial'
-  const replaceExisting = options.replaceExisting ?? mode !== 'initial'
 
-  const createPolicy = await getPlanCreatePolicy(supabase, user.id, {
-    replaceExistingForFree: replaceExisting,
-  })
-  if (!createPolicy.allowed) {
-    return { success: false, error: createPolicy.reason }
+  if (!options.previewOnly) {
+    try {
+      const existing = await loadExistingPlanGeneration(supabase, user.id, options.requestId)
+      if (existing) return existing
+    } catch (error) {
+      console.error('[generatePlan] No se pudo comprobar el requestId:', error)
+      return { success: false, error: 'No se pudo comprobar la operación del plan. Inténtalo nuevamente.' }
+    }
   }
 
-  const { data: activePlan } = await (supabase
+  const { data: activePlan, error: activePlanError } = await (supabase
     .from('workout_plans') as any)
-    .select('id, name, ai_notes, week_number')
+    .select('id, name, ai_notes, week_number, family_id')
     .eq('user_id', user.id)
     .eq('is_active', true)
+    .is('superseded_at', null)
+    .is('retired_at', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle() as {
-      data: { id: string; name: string; ai_notes: string | null; week_number: number | null } | null
+      data: {
+        id: string
+        name: string
+        ai_notes: string | null
+        week_number: number | null
+        family_id: string
+      } | null
       error: { message: string } | null
     }
 
-  const nextWeekNumber = mode === 'weekly_regeneration'
-    ? Math.max(2, (activePlan?.week_number ?? 1) + 1)
-    : mode === 'plan_adjustment' ? activePlan?.week_number ?? 1 : 1
+  if (activePlanError) {
+    console.error('[generatePlan] No se pudo leer el plan activo:', activePlanError)
+    return { success: false, error: 'No se pudo comprobar el plan activo. Recarga e inténtalo nuevamente.' }
+  }
+
+  if (options.expectedParentPlanId && activePlan?.id !== options.expectedParentPlanId) {
+    return { success: false, error: 'El plan activo cambió. Recarga e inténtalo nuevamente.' }
+  }
+
+  if (mode === 'weekly_regeneration' && !activePlan) {
+    return { success: false, error: 'No hay un plan activo para regenerar.' }
+  }
 
   if (mode === 'plan_adjustment' && (!activePlan || !options.adjustmentIntent)) {
     return { success: false, error: 'No hay un plan activo o una intención válida para ajustar.' }
   }
+
+  const lifecycle = resolvePlanGenerationLifecycle(
+    mode,
+    activePlan ? { id: activePlan.id, familyId: activePlan.family_id } : null,
+  )
+
+  let createPolicy: Awaited<ReturnType<typeof getPlanCreatePolicy>>
+  try {
+    createPolicy = await getPlanCreatePolicy(supabase, user.id, {
+      replacingFamilyId: lifecycle.replacingFamilyId,
+    })
+  } catch (error) {
+    console.error('[generatePlan] No se pudo validar el límite de planes:', error)
+    return { success: false, error: 'No se pudo comprobar tu biblioteca de planes. Inténtalo nuevamente.' }
+  }
+
+  if (!createPolicy.allowed) {
+    return { success: false, error: createPolicy.reason }
+  }
+
+  const nextWeekNumber = mode === 'weekly_regeneration'
+    ? Math.max(2, (activePlan?.week_number ?? 1) + 1)
+    : mode === 'plan_adjustment' ? activePlan?.week_number ?? 1 : 1
 
   // ── 2. Perfil del usuario ──────────────────────────────────────────────────
   type ProfileRow = {
@@ -532,14 +626,15 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     }
   }
 
-  const { data: newPlanId, error: rpcError } = await (supabase.rpc as any)('create_engine_plan', {
+  const { data: newPlanId, error: rpcError } = await (supabase.rpc as any)('create_engine_plan_v2', {
     p_plan: transactionalPlan as unknown as Json,
     p_metadata: engineResult.metadata as unknown as Json,
     p_week_number: nextWeekNumber,
     p_plan_context: mode === 'weekly_regeneration'
       ? 'weekly_regeneration'
       : mode === 'plan_adjustment' ? 'manual_update' : 'first_plan',
-    p_parent_plan_id: mode === 'initial' ? null : activePlan?.id ?? null,
+    p_expected_parent_plan_id: lifecycle.expectedParentPlanId,
+    p_generation_request_id: options.requestId,
     p_profile_updates: profileUpdates,
   })
 
@@ -548,9 +643,20 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
       supabase,
       mode,
       engineResult.metadata.engineVersion,
-      rpcError?.message?.includes('PLAN_RATE_LIMIT') ? 'rate_limit' : 'persistence',
+      rpcError?.message?.includes('PLAN_RATE_LIMIT')
+        ? 'rate_limit'
+        : rpcError?.message?.includes('PLAN_STALE_PARENT') ? 'stale_parent' : 'persistence',
     )
-    console.error('[generatePlan] create_engine_plan falló:', rpcError)
+    console.error('[generatePlan] create_engine_plan_v2 falló:', rpcError)
+    if (rpcError?.message?.includes('PLAN_STALE_PARENT')) {
+      return { success: false, error: 'El plan activo cambió. Recarga e inténtalo nuevamente.' }
+    }
+    if (rpcError?.message?.includes('PLAN_FAMILY_LIMIT')) {
+      return {
+        success: false,
+        error: 'Tu cuenta free permite guardar hasta dos planes. Reemplaza uno de tus planes o actualiza a Pro.',
+      }
+    }
     if (rpcError?.message?.includes('PLAN_RATE_LIMIT')) {
       return {
         success: false,
@@ -562,11 +668,12 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     return { success: false, error: 'Error al guardar el plan. El plan anterior no fue modificado.' }
   }
 
-  if (createPolicy.replacingExisting) {
-    await pruneExcessPlansForFreeUser(supabase, user.id, newPlanId, activePlan?.id)
+  try {
+    const persistedPlan = await loadExistingPlanGeneration(supabase, user.id, options.requestId)
+    if (persistedPlan) return persistedPlan
+  } catch (error) {
+    console.error('[generatePlan] El plan se guardó pero no pudo recargarse:', error)
   }
-
-  await recordEvidenceGenerationSuccess(supabase, newPlanId)
 
   return {
     success: true,
@@ -576,5 +683,7 @@ export async function generatePlan(options: GeneratePlanOptions = {}): Promise<G
     weekNumber: nextWeekNumber,
     engineVersion: engineResult.metadata.engineVersion,
     evidenceVersion: engineResult.metadata.evidenceVersion,
+    requiresReadinessReview: engineResult.requiresReadinessReview,
+    warnings: engineResult.metadata.warnings,
   }
 }

@@ -226,10 +226,11 @@ export default function OnboardingWizard() {
   }
 
   const handleAutomaticFinish = useCallback(async (): Promise<AutomaticOnboardingOutcome> => {
+    const requestId = crypto.randomUUID()
     const outcome = await runAutomaticOnboarding(
       answers,
       saveOnboardingAnswers,
-      () => generatePlan({ mode: 'initial' }),
+      () => generatePlan({ mode: 'initial', requestId }),
     )
 
     if (outcome.phase === 'success') {

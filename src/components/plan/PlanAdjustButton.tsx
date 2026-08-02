@@ -140,10 +140,11 @@ export function PlanAdjustButton({ planId, options }: Props) {
 
   async function handleApply() {
     if (applying || !previewIntent) return
+    const requestId = crypto.randomUUID()
     setApplying(true)
     setError(null)
 
-    const result = await applyPlanAdjustment(planId, previewIntent)
+    const result = await applyPlanAdjustment(planId, previewIntent, requestId)
     setApplying(false)
 
     if (!result.success) {

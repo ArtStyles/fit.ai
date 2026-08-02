@@ -90,6 +90,7 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
   const loadingMessage = LOADING_MESSAGES[msgIdx]
 
   const handleGenerate = useCallback(async () => {
+    const requestId = crypto.randomUUID()
     setStatus('loading')
     setResult(null)
 
@@ -99,7 +100,7 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
     }, 1800)
 
     try {
-      const res = await generatePlan()
+      const res = await generatePlan({ mode: 'initial', requestId })
       clearInterval(interval)
       setResult(res)
       setStatus(res.success ? 'success' : 'error')
