@@ -384,6 +384,8 @@ const ENGLISH: Record<string, string> = {
   'Planes guardados': 'Saved plans',
   'Crear un plan nuevo': 'Create a new plan',
   'Acciones del plan': 'Plan actions',
+  'Archivar': 'Archive',
+  'El plan se archivará, pero tu historial permanecerá intacto.': 'The plan will be archived, but your history will remain intact.',
   'Cambia el plan activo sin perder tu racha ni tu historial.': 'Switch the active plan without losing your streak or history.',
   'Activo': 'Active',
   'Activar plan': 'Activate',

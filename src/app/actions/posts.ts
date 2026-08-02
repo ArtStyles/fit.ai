@@ -6,10 +6,6 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { buildSessionSnapshot, buildRoutineSnapshot } from '@/lib/social/snapshots'
-import {
-  buildPlanInsert, buildWorkoutInsert, buildWorkoutExerciseInserts,
-} from '@/lib/social/clone'
-import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
 import type { RoutineSnapshot, RoutineSnapshotExercise, SessionSnapshot } from '@/lib/social/snapshots'
 import { postStoragePath } from '@/lib/images/post'
 
@@ -222,47 +218,21 @@ export async function clonePlanFromPost(postId: string): Promise<ActionResult<{ 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesion no valida.' }
 
-  const createPolicy = await getPlanCreatePolicy(supabase, user.id)
-  if (!createPolicy.allowed) return { ok: false, error: createPolicy.reason }
+  const { data: planId, error } = await (supabase.rpc as any)('clone_plan_from_post_atomic', {
+    p_post_id: postId,
+  })
 
-  const { data: post } = await (supabase.from('posts') as any)
-    .select('user_id, routine_snapshot')
-    .eq('id', postId)
-    .maybeSingle() as {
-      data: { user_id: string; routine_snapshot: RoutineSnapshot | null } | null
-    }
-  if (!post?.routine_snapshot) return { ok: false, error: 'Esta publicacion no tiene rutina.' }
-  const snapshot = post.routine_snapshot
-
-  const { data: plan, error: planErr } = await (supabase.from('workout_plans') as any)
-    .insert(buildPlanInsert(snapshot, user.id, { postId, userId: post.user_id }))
-    .select('id')
-    .single() as {
-      data: { id: string } | null; error: unknown
-    }
-  if (planErr || !plan) return { ok: false, error: 'No se pudo crear el plan.' }
-
-  const planId = plan.id
-  const userId = user.id
-
-  async function rollback(): Promise<void> {
-    await (supabase.from('workouts') as any).delete().eq('plan_id', planId).eq('user_id', userId)
-    await (supabase.from('workout_plans') as any).delete().eq('id', planId).eq('user_id', userId)
-  }
-
-  for (let i = 0; i < snapshot.workouts.length; i++) {
-    const sw = snapshot.workouts[i]
-    const { data: w, error: wErr } = await (supabase.from('workouts') as any)
-      .insert(buildWorkoutInsert(sw, planId, userId, i)).select('id').single() as {
-        data: { id: string } | null; error: unknown
+  if (error || !planId) {
+    if (error?.message?.includes('PLAN_FAMILY_LIMIT')) {
+      return {
+        ok: false,
+        error: 'Tu cuenta free permite guardar hasta dos planes. Archiva uno de tus planes o actualiza a Pro.',
       }
-    if (wErr || !w) { await rollback(); return { ok: false, error: 'No se pudo clonar un dia.' } }
-
-    const exInserts = buildWorkoutExerciseInserts(sw, w.id)
-    if (exInserts.length) {
-      const { error: exErr } = await (supabase.from('workout_exercises') as any).insert(exInserts)
-      if (exErr) { await rollback(); return { ok: false, error: 'No se pudieron clonar los ejercicios.' } }
     }
+    if (error?.message?.includes('POST_ROUTINE_NOT_FOUND_OR_UNAVAILABLE')) {
+      return { ok: false, error: 'Esta publicacion no tiene una rutina disponible.' }
+    }
+    return { ok: false, error: 'No se pudo clonar la rutina.' }
   }
 
   revalidatePath('/plan')

@@ -21,6 +21,13 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Archivar', 'Archive'],
+    ['El plan se archivará, pero tu historial permanecerá intacto.', 'The plan will be archived, but your history will remain intact.'],
+  ])('translates plan retirement copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['Ajustar plan', 'Adjust plan'],
     ['Días por semana', 'Days per week'],
     ['Equipamiento no disponible', 'Unavailable equipment'],

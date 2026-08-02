@@ -2,6 +2,86 @@
 -- PostgreSQL functions are transaction-scoped, so every failure below rolls back
 -- plan rows, workouts, profile changes, active-state changes and success events.
 
+-- RLS proves row ownership, but it cannot serialize a cross-row family count.
+-- This trigger is the final invariant for every write path, including direct
+-- authenticated inserts and future RPCs that might otherwise omit the check.
+CREATE OR REPLACE FUNCTION public.enforce_plan_family_limit()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_id UUID := auth.uid();
+  v_actor_role TEXT := COALESCE(auth.role(), '');
+  v_subscription_tier TEXT;
+  v_family_count INTEGER;
+  v_family_exists BOOLEAN;
+BEGIN
+  IF v_actor_id IS NULL THEN
+    IF v_actor_role <> 'service_role'
+      AND session_user NOT IN ('postgres', 'supabase_admin') THEN
+      RAISE EXCEPTION 'Not authenticated';
+    END IF;
+  ELSIF v_actor_id <> NEW.user_id THEN
+    RAISE EXCEPTION 'PLAN_OWNERSHIP_MISMATCH';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.user_id::TEXT, 0));
+
+  IF NEW.is_active AND (
+    NEW.retired_at IS NOT NULL OR NEW.superseded_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'PLAN_VERSION_UNAVAILABLE';
+  END IF;
+
+  IF NEW.retired_at IS NOT NULL OR NEW.superseded_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT subscription_tier INTO v_subscription_tier
+  FROM profiles
+  WHERE id = NEW.user_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Profile not found';
+  END IF;
+
+  IF COALESCE(v_subscription_tier, 'free') = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans
+    WHERE user_id = NEW.user_id
+      AND retired_at IS NULL
+      AND superseded_at IS NULL
+      AND id <> NEW.id;
+
+    SELECT EXISTS (
+      SELECT 1
+      FROM workout_plans
+      WHERE user_id = NEW.user_id
+        AND family_id = NEW.family_id
+        AND retired_at IS NULL
+        AND superseded_at IS NULL
+        AND id <> NEW.id
+    ) INTO v_family_exists;
+
+    IF NOT v_family_exists AND v_family_count >= 2 THEN
+      RAISE EXCEPTION 'PLAN_FAMILY_LIMIT: free plan family limit reached';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.enforce_plan_family_limit() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_enforce_plan_family_limit ON public.workout_plans;
+CREATE TRIGGER trg_enforce_plan_family_limit
+  BEFORE INSERT OR UPDATE OF user_id, family_id, retired_at, superseded_at, is_active
+  ON public.workout_plans
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_plan_family_limit();
+
 CREATE OR REPLACE FUNCTION public.create_engine_plan_v2(
   p_plan JSONB,
   p_metadata JSONB,
@@ -547,6 +627,155 @@ $$;
 
 REVOKE ALL ON FUNCTION public.create_manual_plan_atomic(JSONB, JSONB, BOOLEAN) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_manual_plan_atomic(JSONB, JSONB, BOOLEAN) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.clone_plan_from_post_atomic(p_post_id UUID)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_source_user_id UUID;
+  v_snapshot JSONB;
+  v_plan_id UUID;
+  v_family_id UUID := gen_random_uuid();
+  v_subscription_tier TEXT;
+  v_family_count INTEGER;
+  v_workout JSONB;
+  v_workout_id UUID;
+  v_exercise JSONB;
+  v_order_in_plan INTEGER := -1;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+
+  -- SECURITY INVOKER keeps the current posts SELECT policy authoritative:
+  -- removed, blocked or private posts unavailable to this user are not visible.
+  SELECT user_id, routine_snapshot
+  INTO v_source_user_id, v_snapshot
+  FROM posts
+  WHERE id = p_post_id
+    AND routine_snapshot IS NOT NULL;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'POST_ROUTINE_NOT_FOUND_OR_UNAVAILABLE';
+  END IF;
+
+  IF NULLIF(BTRIM(v_snapshot->>'name'), '') IS NULL
+    OR jsonb_typeof(v_snapshot->'workouts') IS DISTINCT FROM 'array'
+    OR jsonb_array_length(v_snapshot->'workouts') = 0 THEN
+    RAISE EXCEPTION 'POST_ROUTINE_INVALID';
+  END IF;
+
+  SELECT subscription_tier INTO v_subscription_tier
+  FROM profiles
+  WHERE id = v_user_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Profile not found';
+  END IF;
+
+  IF COALESCE(v_subscription_tier, 'free') = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans
+    WHERE user_id = v_user_id
+      AND retired_at IS NULL
+      AND superseded_at IS NULL;
+
+    IF v_family_count >= 2 THEN
+      RAISE EXCEPTION 'PLAN_FAMILY_LIMIT: free plan family limit reached';
+    END IF;
+  END IF;
+
+  INSERT INTO workout_plans (
+    user_id,
+    name,
+    goal,
+    duration_weeks,
+    days_per_week,
+    difficulty,
+    is_active,
+    generated_by_ai,
+    plan_context,
+    source_type,
+    source_post_id,
+    source_user_id,
+    family_id
+  ) VALUES (
+    v_user_id,
+    BTRIM(v_snapshot->>'name'),
+    NULLIF(BTRIM(v_snapshot->>'goal'), ''),
+    1,
+    COALESCE(NULLIF(v_snapshot->>'days_per_week', '')::INTEGER, jsonb_array_length(v_snapshot->'workouts')),
+    NULLIF(v_snapshot->>'difficulty', ''),
+    FALSE,
+    FALSE,
+    'first_plan',
+    'shared_post',
+    p_post_id,
+    v_source_user_id,
+    v_family_id
+  )
+  RETURNING id INTO v_plan_id;
+
+  FOR v_workout IN
+    SELECT value FROM jsonb_array_elements(v_snapshot->'workouts')
+  LOOP
+    v_order_in_plan := v_order_in_plan + 1;
+
+    IF NULLIF(BTRIM(v_workout->>'name'), '') IS NULL
+      OR jsonb_typeof(v_workout->'exercises') IS DISTINCT FROM 'array' THEN
+      RAISE EXCEPTION 'POST_ROUTINE_INVALID';
+    END IF;
+
+    INSERT INTO workouts (
+      user_id,
+      plan_id,
+      name,
+      day_of_week,
+      order_in_plan
+    ) VALUES (
+      v_user_id,
+      v_plan_id,
+      BTRIM(v_workout->>'name'),
+      NULLIF(v_workout->>'day_of_week', '')::INTEGER,
+      v_order_in_plan
+    )
+    RETURNING id INTO v_workout_id;
+
+    FOR v_exercise IN
+      SELECT value FROM jsonb_array_elements(v_workout->'exercises')
+    LOOP
+      INSERT INTO workout_exercises (
+        workout_id,
+        exercise_id,
+        order_index,
+        sets,
+        reps,
+        rest_seconds,
+        weight_kg
+      ) VALUES (
+        v_workout_id,
+        (v_exercise->>'exercise_id')::UUID,
+        COALESCE((v_exercise->>'order_index')::INTEGER, 0),
+        NULLIF(v_exercise->>'sets', '')::INTEGER,
+        NULLIF(v_exercise->>'reps', '')::INTEGER,
+        NULLIF(v_exercise->>'rest_seconds', '')::INTEGER,
+        NULLIF(v_exercise->>'weight_kg', '')::NUMERIC
+      );
+    END LOOP;
+  END LOOP;
+
+  RETURN v_plan_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.clone_plan_from_post_atomic(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.clone_plan_from_post_atomic(UUID) TO authenticated;
 
 -- The v1 RPC cannot express an expected parent or a durable request ID. Keep
 -- the function definition for migration compatibility, but close it as an

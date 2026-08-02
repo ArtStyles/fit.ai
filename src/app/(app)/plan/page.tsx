@@ -42,6 +42,7 @@ import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization
 import { createTranslator } from '@/lib/i18n'
 import type { PlanAdjustmentOptions } from '@/lib/plans/adjustmentIntent'
 import { FREE_PLAN_LIMIT } from '@/lib/plans/entitlements'
+import { requirePlanLibraryResults } from '@/lib/plans/library'
 import type { CardioModality } from '@/lib/training-engine'
 
 export const metadata = { title: 'Plan completo · Vekira' }
@@ -228,7 +229,7 @@ export default async function PlanPage() {
   const language = exerciseLanguage(profile.language)
   const t = createTranslator(language)
 
-  const [{ data: planRaw }, { data: planRows }] = await Promise.all([
+  const [activePlanResult, planLibraryResult] = await Promise.all([
     supabase
     .from('workout_plans')
       .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, source_type, created_at')
@@ -238,7 +239,10 @@ export default async function PlanPage() {
     .is('retired_at', null)
     .order('created_at', { ascending: false })
     .limit(1)
-      .maybeSingle() as unknown as Promise<{ data: PlanRow | null }>,
+      .maybeSingle() as unknown as Promise<{
+        data: PlanRow | null
+        error: { message?: string } | null
+      }>,
     supabase
       .from('workout_plans')
       .select('id, name, goal, days_per_week, difficulty, source_type, created_at, is_active')
@@ -246,10 +250,16 @@ export default async function PlanPage() {
       .is('superseded_at', null)
       .is('retired_at', null)
       .order('is_active', { ascending: false })
-      .order('created_at', { ascending: false }) as unknown as Promise<{ data: PlanListRow[] | null }>,
+      .order('created_at', { ascending: false }) as unknown as Promise<{
+        data: PlanListRow[] | null
+        error: { message?: string } | null
+      }>,
   ])
 
-  const plans = planRows ?? []
+  const { activePlan: planRaw, plans } = requirePlanLibraryResults(
+    activePlanResult,
+    planLibraryResult,
+  )
   const tier = profile.subscription_tier ?? 'free'
 
   if (!planRaw) {

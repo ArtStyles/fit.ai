@@ -10,6 +10,7 @@ const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.
 const generatePlanAction = readFileSync(new URL('../../../app/actions/generatePlan.ts', import.meta.url), 'utf8')
 const planActions = readFileSync(new URL('../../../app/actions/plan.ts', import.meta.url), 'utf8')
 const adjustPlanAction = readFileSync(new URL('../../../app/actions/adjustPlan.ts', import.meta.url), 'utf8')
+const postActions = readFileSync(new URL('../../../app/actions/posts.ts', import.meta.url), 'utf8')
 const generateClient = readFileSync(
   new URL('../../../app/(app)/plans/generate/GeneratePlanClient.tsx', import.meta.url),
   'utf8',
@@ -88,6 +89,7 @@ describe('atomic plan lifecycle migration', () => {
     'activate_plan_version',
     'retire_plan_family',
     'create_manual_plan_atomic',
+    'clone_plan_from_post_atomic',
   ])('%s authenticates and serializes the user before changing active state', name => {
     const fn = sqlFunction(name)
     expect(fn).toMatch(/v_user_id\s+UUID\s*:=\s*auth\.uid\(\)/i)
@@ -139,12 +141,66 @@ describe('atomic plan lifecycle migration', () => {
     expect(fn).toMatch(/IF p_make_active THEN[\s\S]+is_active\s*=\s*FALSE[\s\S]+is_active\s*=\s*TRUE/i)
   })
 
+  it('clones a visible post snapshot under the lifecycle lock in one transaction', () => {
+    const fn = sqlFunction('clone_plan_from_post_atomic')
+    const lock = fn.indexOf('pg_advisory_xact_lock')
+    const familyCount = fn.indexOf('COUNT(DISTINCT family_id)')
+
+    expect(fn).toMatch(/p_post_id\s+UUID/i)
+    expect(fn).toMatch(/SECURITY\s+INVOKER/i)
+    expect(fn).toMatch(/FROM (?:public\.)?posts[\s\S]+id\s*=\s*p_post_id/i)
+    expect(fn).toMatch(/routine_snapshot\s+IS\s+NOT\s+NULL/i)
+    expect(fn).toMatch(/INSERT INTO (?:public\.)?workout_plans/i)
+    expect(fn).toMatch(/INSERT INTO (?:public\.)?workouts/i)
+    expect(fn).toMatch(/INSERT INTO (?:public\.)?workout_exercises/i)
+    expect(fn).toMatch(/source_type[\s\S]+'shared_post'/i)
+    expect(fn).toMatch(/RETURN\s+v_plan_id/i)
+    expect(migration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.clone_plan_from_post_atomic\(UUID\) TO authenticated/i,
+    )
+    expect(lock).toBeGreaterThan(0)
+    expect(familyCount).toBeGreaterThan(lock)
+  })
+
+  it('enforces the free family invariant for direct and concurrent writes', () => {
+    const fn = sqlFunction('enforce_plan_family_limit')
+    const ownershipCheck = fn.indexOf('v_actor_id <> NEW.user_id')
+    const lock = fn.indexOf('pg_advisory_xact_lock')
+    const invalidActivation = fn.indexOf('IF NEW.is_active AND (')
+    const retiredReturn = fn.indexOf('IF NEW.retired_at IS NOT NULL OR NEW.superseded_at IS NOT NULL')
+    const familyCount = fn.indexOf('COUNT(DISTINCT family_id)')
+
+    expect(fn).toMatch(/RETURNS\s+TRIGGER/i)
+    expect(fn).toMatch(/SECURITY\s+DEFINER/i)
+    expect(fn).toMatch(/v_actor_role[\s\S]+service_role/i)
+    expect(fn).toMatch(/session_user[\s\S]+postgres[\s\S]+supabase_admin/i)
+    expect(fn).toMatch(/subscription_tier/i)
+    expect(fn).toMatch(/COUNT\(DISTINCT family_id\)/i)
+    expect(fn).toMatch(/retired_at\s+IS\s+NULL/i)
+    expect(fn).toMatch(/superseded_at\s+IS\s+NULL/i)
+    expect(fn).toMatch(/family_id\s*=\s*NEW\.family_id/i)
+    expect(fn).toMatch(/id\s*<>\s*NEW\.id/i)
+    expect(fn).toMatch(/PLAN_FAMILY_LIMIT/i)
+    expect(ownershipCheck).toBeGreaterThan(0)
+    expect(ownershipCheck).toBeLessThan(lock)
+    expect(lock).toBeGreaterThan(0)
+    expect(invalidActivation).toBeGreaterThan(lock)
+    expect(invalidActivation).toBeLessThan(retiredReturn)
+    expect(fn.slice(invalidActivation, retiredReturn)).toContain('PLAN_VERSION_UNAVAILABLE')
+    expect(retiredReturn).toBeGreaterThan(lock)
+    expect(familyCount).toBeGreaterThan(lock)
+    expect(migration).toMatch(
+      /CREATE TRIGGER trg_enforce_plan_family_limit\s+BEFORE INSERT OR UPDATE OF user_id, family_id, retired_at, superseded_at, is_active\s+ON (?:public\.)?workout_plans/i,
+    )
+  })
+
   it('publishes exact generated RPC types', () => {
     for (const name of [
       'create_engine_plan_v2',
       'activate_plan_version',
       'retire_plan_family',
       'create_manual_plan_atomic',
+      'clone_plan_from_post_atomic',
     ]) {
       expect(databaseTypes).toContain(`${name}:`)
     }
@@ -169,6 +225,18 @@ describe('plan lifecycle application boundary', () => {
     expect(generatePlanAction).toContain('PLAN_STALE_PARENT')
     expect(generatePlanAction).not.toContain('pruneExcessPlansForFreeUser')
     expect(generatePlanAction).not.toContain('recordEvidenceGenerationSuccess')
+  })
+
+  it('keeps failed previews read-only', () => {
+    const engineFailure = generatePlanAction.indexOf('if (!engineResult.success || !engineResult.plan)')
+    const previewSuccess = generatePlanAction.indexOf('if (options.previewOnly)', engineFailure)
+    const failureBranch = generatePlanAction.slice(engineFailure, previewSuccess)
+    const readOnlyGuard = failureBranch.indexOf('if (!options.previewOnly)')
+    const eventWrite = failureBranch.indexOf('await recordEvidenceGenerationFailure(')
+
+    expect(engineFailure).toBeGreaterThan(0)
+    expect(readOnlyGuard).toBeGreaterThan(0)
+    expect(eventWrite).toBeGreaterThan(readOnlyGuard)
   })
 
   it('keeps a structured adjustment bound to the plan that was previewed', () => {
@@ -228,6 +296,18 @@ describe('plan lifecycle application boundary', () => {
     expect(activate).not.toContain(".from('workout_plans')")
     expect(createManual).not.toContain('.insert(')
     expect(retire).not.toContain('.delete()')
+  })
+
+  it('clones a post only through the atomic database boundary', () => {
+    const clone = postActions.slice(postActions.indexOf('export async function clonePlanFromPost'))
+
+    expect(clone).toContain("'clone_plan_from_post_atomic'")
+    expect(clone).not.toContain(".from('workout_plans')")
+    expect(clone).not.toContain(".from('workouts')")
+    expect(clone).not.toContain(".from('workout_exercises')")
+    expect(clone).not.toContain('getPlanCreatePolicy')
+    expect(clone).not.toContain('.insert(')
+    expect(clone).not.toContain('.delete()')
   })
 
   it('creates one operation id at every persistence UI boundary', () => {

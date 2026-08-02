@@ -565,13 +565,15 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
       : generateEvidencePlan(engineInput)
 
   if (!engineResult.success || !engineResult.plan) {
-    await recordEvidenceGenerationFailure(
-      supabase,
-      mode,
-      engineResult.metadata.engineVersion,
-      engineResult.issues[0]?.code ?? 'engine_validation',
-      { issues: engineResult.issues as unknown as Json },
-    )
+    if (!options.previewOnly) {
+      await recordEvidenceGenerationFailure(
+        supabase,
+        mode,
+        engineResult.metadata.engineVersion,
+        engineResult.issues[0]?.code ?? 'engine_validation',
+        { issues: engineResult.issues as unknown as Json },
+      )
+    }
     return {
       success: false,
       error: engineResult.issues[0]?.message ?? 'No se pudo crear un plan válido.',

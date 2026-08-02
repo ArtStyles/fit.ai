@@ -862,6 +862,12 @@ export interface Database {
         }
         Returns: string
       }
+      clone_plan_from_post_atomic: {
+        Args: {
+          p_post_id: string
+        }
+        Returns: string
+      }
       save_session_log_atomic: {
         Args: {
           p_client_session_id: string
