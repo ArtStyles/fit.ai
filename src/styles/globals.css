@@ -146,6 +146,82 @@
   }
 }
 
+@layer components {
+  .fitai-dialog-content {
+    inset-inline: 1rem;
+    bottom: 0;
+    width: auto;
+    max-height: calc(100dvh - var(--app-safe-area-top) - 1.5rem);
+    overflow-y: auto;
+    border-radius: 1.5rem 1.5rem 0 0;
+    transform-origin: bottom center;
+  }
+
+  .fitai-dialog-content[data-state="open"] {
+    animation: fitai-dialog-sheet-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .fitai-dialog-content[data-state="closed"] {
+    animation: fitai-dialog-sheet-out 200ms ease-in both;
+  }
+}
+
+@media (max-width: 639px) {
+  .fitai-dialog-content {
+    padding-bottom: calc(1.5rem + var(--app-safe-area-bottom)) !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .fitai-dialog-content {
+    inset-inline: auto;
+    right: auto;
+    bottom: auto;
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    max-height: calc(100dvh - 3rem);
+    border-radius: var(--radius);
+    transform: translate(-50%, -50%);
+    transform-origin: center;
+  }
+
+  .fitai-dialog-content[data-state="open"] {
+    animation: fitai-dialog-desktop-in 200ms ease-out both;
+  }
+
+  .fitai-dialog-content[data-state="closed"] {
+    animation: fitai-dialog-desktop-out 150ms ease-in both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fitai-dialog-content[data-state="open"],
+  .fitai-dialog-content[data-state="closed"] {
+    animation: none;
+  }
+}
+
+@keyframes fitai-dialog-sheet-in {
+  from { opacity: 0; transform: translate3d(0, 100%, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes fitai-dialog-sheet-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, 100%, 0); }
+}
+
+@keyframes fitai-dialog-desktop-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes fitai-dialog-desktop-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+}
+
 @layer utilities {
   .fitai-route-progress {
     width: 42%;
