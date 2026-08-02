@@ -88,12 +88,12 @@ function normalizeStoredSet(value: unknown): SetData | null {
   if (!isRecord(value)) return null
   if (typeof value.weightKg !== 'string' ||
     typeof value.reps !== 'string' ||
-    !isNullableNumberInRange(value.rpe, MIN_SESSION_RPE, MAX_SESSION_RPE) ||
+    !isNullableNumberInRange(value.rpe, MIN_SESSION_RPE, MAX_SESSION_RPE, true) ||
     typeof value.completed !== 'boolean' ||
     !isNumericInputInRange(value.weightKg, MAX_SESSION_WEIGHT_KG) ||
     !isNumericInputInRange(value.reps, MAX_SESSION_REPS, true) ||
     (value.durationSeconds !== undefined &&
-      !isNumberInRange(value.durationSeconds, 0, MAX_SESSION_DURATION_SECONDS))) {
+      !isNumberInRange(value.durationSeconds, 0, MAX_SESSION_DURATION_SECONDS, true))) {
     return null
   }
 
@@ -116,7 +116,7 @@ function normalizePreviousPerformance(value: unknown): PreviousPerformanceData[]
       !isNullableNumberInRange(row.weightKg, 0, MAX_SESSION_WEIGHT_KG) ||
       !isNullableNumberInRange(row.reps, 0, MAX_SESSION_REPS, true) ||
       (row.durationSeconds !== undefined &&
-        !isNullableNumberInRange(row.durationSeconds, 0, MAX_SESSION_DURATION_SECONDS))) {
+        !isNullableNumberInRange(row.durationSeconds, 0, MAX_SESSION_DURATION_SECONDS, true))) {
       return false
     }
     normalized.push({
@@ -169,11 +169,11 @@ function normalizeStoredExercise(value: unknown): ExerciseSession | null {
   if (value.targetReps !== undefined &&
     !isNullableNumberInRange(value.targetReps, 0, MAX_SESSION_REPS, true)) return null
   if (value.targetDuration !== undefined &&
-    !isNullableNumberInRange(value.targetDuration, 0, MAX_SESSION_DURATION_SECONDS)) return null
+    !isNullableNumberInRange(value.targetDuration, 0, MAX_SESSION_DURATION_SECONDS, true)) return null
   if (value.restSeconds !== undefined &&
-    !isNumberInRange(value.restSeconds, 0, MAX_SESSION_REST_SECONDS)) return null
+    !isNumberInRange(value.restSeconds, 0, MAX_SESSION_REST_SECONDS, true)) return null
   if (value.targetRpe !== undefined &&
-    !isNumberInRange(value.targetRpe, MIN_SESSION_RPE, MAX_SESSION_RPE)) return null
+    !isNumberInRange(value.targetRpe, MIN_SESSION_RPE, MAX_SESSION_RPE, true)) return null
   if (value.suggestedWeight !== undefined &&
     !isNullableNumberInRange(value.suggestedWeight, 0, MAX_SESSION_WEIGHT_KG)) return null
 

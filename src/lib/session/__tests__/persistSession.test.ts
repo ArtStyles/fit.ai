@@ -176,6 +176,39 @@ describe('session backup persistence results', () => {
   })
 
   it.each([
+    ['targetDuration', 30.5],
+    ['restSeconds', 60.5],
+    ['targetRpe', 7.5],
+  ])('rejects fractional discrete exercise field %s=%s', (field, invalidValue) => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{ ...legacyExercise, [field]: invalidValue }],
+    }))
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it('accepts integer boundary values for discrete exercise and set fields', () => {
+    const boundedExercise = {
+      ...legacyExercise,
+      targetDuration: 0,
+      restSeconds: 3_600,
+      targetRpe: 10,
+      previousPerformance: [{ weightKg: 0, reps: 0, durationSeconds: 43_200 }],
+      sets: [{
+        ...legacyExercise.sets[0],
+        rpe: 1,
+        durationSeconds: 43_200,
+      }],
+    }
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [boundedExercise],
+    }))
+
+    expect(loadBackup(snapshot.workoutId)?.exercises[0]).toMatchObject(boundedExercise)
+  })
+
+  it.each([
     ['weightKg', '-1'],
     ['weightKg', '501'],
     ['reps', '-1'],
@@ -197,9 +230,24 @@ describe('session backup persistence results', () => {
   })
 
   it.each([
+    ['rpe', 7.5],
+    ['durationSeconds', 30.5],
+  ])('rejects fractional discrete set field %s=%s', (field, invalidValue) => {
+    getItem.mockReturnValue(JSON.stringify({
+      ...snapshot,
+      exercises: [{
+        ...legacyExercise,
+        sets: [{ ...legacyExercise.sets[0], [field]: invalidValue }],
+      }],
+    }))
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it.each([
     { weightKg: -1, reps: 8, durationSeconds: null },
     { weightKg: 10, reps: 101, durationSeconds: null },
     { weightKg: 10, reps: 8, durationSeconds: 43_201 },
+    { weightKg: 10, reps: 8, durationSeconds: 30.5 },
   ])('rejects out-of-domain previous performance %j', previousPerformance => {
     getItem.mockReturnValue(JSON.stringify({
       ...snapshot,
