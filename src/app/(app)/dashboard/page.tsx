@@ -17,6 +17,7 @@ import { isCheckInDue } from '@/lib/profile/checkin'
 import type { BannerContext } from '@/components/dashboard/AINotesBanner'
 import type { Database } from '@/types/database'
 import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
+import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
 import { createTranslator } from '@/lib/i18n'
 import { buildDashboardFallbackHistory } from '@/lib/dashboard/historyEvidence'
 import { buildWeekContinuity } from '@/lib/dashboard/weekContinuity'
@@ -299,12 +300,6 @@ async function loadDashboardPayload(
   return loadDashboardFallback(supabase, userId, weekStart, recentStart)
 }
 
-function getExerciseName(row: ExerciseProgressRow, language: ExerciseLanguage): string | null {
-  const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
-  if (!exercise) return null
-  return language === 'es' ? exercise.name_es?.trim() || exercise.name : exercise.name
-}
-
 type RecentInsights = {
   topRecord:    TopRecordHighlight
   volumeSeries: number[]
@@ -314,6 +309,7 @@ async function loadRecentInsights(
   supabase: SupabaseServerClient,
   recentLogs: WeekLogRow[],
   language: ExerciseLanguage,
+  fallbackExerciseName: string,
 ): Promise<RecentInsights> {
   const logIds = recentLogs.map(log => log.id)
   if (logIds.length === 0) return { topRecord: null, volumeSeries: [] }
@@ -325,6 +321,7 @@ async function loadRecentInsights(
 
   let best: NonNullable<TopRecordHighlight> | null = null
   const volumeByLog = new Map<string, number>()
+  const logById = new Map(recentLogs.map(log => [log.id, log]))
 
   for (const row of data ?? []) {
     const weights = row.weights_kg ?? []
@@ -338,8 +335,16 @@ async function loadRecentInsights(
     volumeByLog.set(row.progress_log_id, logVolume)
 
     // ── Mejor marca personal ───────────────────────────────────────────────
-    const exerciseName = getExerciseName(row, language)
-    if (!exerciseName || !row.exercise_id) continue
+    const log = logById.get(row.progress_log_id)
+    if (!row.exercise_id || !log) continue
+    const liveExercise = Array.isArray(row.exercise) ? row.exercise[0] ?? null : row.exercise
+    const exerciseName = resolveHistoricalExercisePresentation({
+      exerciseId: row.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot ?? null,
+      liveExercise,
+      language,
+      fallbackExerciseName,
+    }).name
 
     const maxWeightKg = weights.reduce((max, weight) => Math.max(max, Number(weight) || 0), 0)
     const maxWeightIndex = weights.findIndex(weight => (Number(weight) || 0) === maxWeightKg)
@@ -427,6 +432,7 @@ export default async function DashboardPage() {
     supabase,
     allRecentLogs,
     language,
+    t('Ejercicio'),
   )
   const workoutById = new Map<string, CompletedSessionWorkoutRelation>(workouts.map(workout => [
     workout.id,

@@ -13,7 +13,8 @@ import {
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
+import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
+import { exerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
@@ -140,14 +141,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
 
   if (exerciseLogError) throw new Error(exerciseLogError.message ?? 'Could not load completed exercises')
 
-  const exerciseLogs = (exerciseLogRows ?? []).map(row => ({
-    ...row,
-    exercise: Array.isArray(row.exercise)
-      ? row.exercise.map(exercise => localizeExercise(exercise, language))
-      : row.exercise
-        ? localizeExercise(row.exercise, language)
-        : null,
-  }))
+  const exerciseLogs = exerciseLogRows ?? []
   const exerciseIds = Array.from(new Set(exerciseLogs.map(row => row.exercise_id)))
   let previousLogs: PreviousExerciseLogRow[] = []
 
@@ -185,12 +179,18 @@ export default async function HistoryDetailPage({ params }: PageProps) {
   }
 
   const exercises: SessionExerciseInput[] = exerciseLogs.map(row => {
-    const exercise = getExercise(row)
+    const exercise = resolveHistoricalExercisePresentation({
+      exerciseId: row.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot,
+      liveExercise: getExercise(row),
+      language,
+      fallbackExerciseName: t('Ejercicio'),
+    })
     return {
       id: row.id,
       exerciseId: row.exercise_id,
-      exerciseName: exercise?.name ?? t('Ejercicio'),
-      muscleGroups: exercise?.muscle_groups ?? [],
+      exerciseName: exercise.name,
+      muscleGroups: exercise.muscleGroups,
       setsCompleted: row.sets_completed,
       weightsKg: row.weights_kg,
       repsCompleted: row.reps_completed,

@@ -14,7 +14,8 @@ import {
   type RawExerciseLog,
   type RawProgressLog,
 } from '@/lib/calendar/aggregate'
-import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
+import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
+import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
@@ -33,6 +34,7 @@ type ExerciseSummary = {
 
 type ProgressLogRow = RawProgressLog & {
   workout_id: string | null
+  session_context_snapshot: unknown
 }
 
 type ExerciseLogRow = RawExerciseLog & {
@@ -69,15 +71,23 @@ function buildProgressRecords(
   rows: ExerciseLogRow[],
   logs: ProgressLogRow[],
   timeZone: string,
+  language: ExerciseLanguage,
+  fallbackExerciseName: string,
 ): ProgressRecord[] {
   const logById = new Map(logs.map(log => [log.id, log]))
   const records = new Map<string, ProgressRecord>()
 
   for (const row of rows) {
     if (!row.exercise_id) continue
-    const exercise = getExercise(row)
     const log = logById.get(row.progress_log_id)
-    if (!exercise || !log) continue
+    if (!log) continue
+    const exercise = resolveHistoricalExercisePresentation({
+      exerciseId: row.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot,
+      liveExercise: getExercise(row),
+      language,
+      fallbackExerciseName,
+    })
 
     const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed)
     const maxWeightKg = performance.bestSet?.weightKg ?? 0
@@ -97,8 +107,8 @@ function buildProgressRecords(
 
     records.set(row.exercise_id, {
       exerciseId: row.exercise_id,
-      exerciseName: exercise.name,
-      muscleGroups: exercise.muscle_groups ?? [],
+      exerciseName: isBetter ? exercise.name : current!.exerciseName,
+      muscleGroups: isBetter ? exercise.muscleGroups : current!.muscleGroups,
       bestCompletedAt: isBetter ? log.completed_at : current!.bestCompletedAt,
       bestDate: isBetter
         ? getLocalDateString(new Date(log.completed_at), timeZone)
@@ -125,13 +135,21 @@ function buildProgressExercisePoints(
   rows: ExerciseLogRow[],
   logs: ProgressLogRow[],
   timeZone: string,
+  language: ExerciseLanguage,
+  fallbackExerciseName: string,
 ): ProgressExercisePoint[] {
   const logById = new Map(logs.map(log => [log.id, log]))
 
   return rows.flatMap(row => {
-    const exercise = getExercise(row)
     const log = logById.get(row.progress_log_id)
-    if (!row.exercise_id || !exercise || !log) return []
+    if (!row.exercise_id || !log) return []
+    const exercise = resolveHistoricalExercisePresentation({
+      exerciseId: row.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot,
+      liveExercise: getExercise(row),
+      language,
+      fallbackExerciseName,
+    })
     const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed)
     if (!performance.bestSet) return []
 
@@ -151,6 +169,7 @@ async function loadProgressData(
   userId: string,
   language: ExerciseLanguage,
   timeZone: string,
+  fallbackExerciseName: string,
 ): Promise<{
   sessions: ProgressSession[]
   days: DayAggregate[]
@@ -163,7 +182,7 @@ async function loadProgressData(
   const [logsResult, measurementsResult] = await Promise.all([
     supabase
       .from('progress_logs')
-      .select('id, workout_id, completed_at, duration_minutes')
+      .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot')
       .eq('user_id', userId)
       .gte('completed_at', from)
       .order('completed_at', { ascending: false })
@@ -200,14 +219,7 @@ async function loadProgressData(
 
     if (error) throw new Error(error.message ?? 'Could not load exercise progress')
 
-    exerciseLogs = (data ?? []).map(row => ({
-      ...row,
-      exercise: Array.isArray(row.exercise)
-        ? row.exercise.map(exercise => localizeExercise(exercise, language))
-        : row.exercise
-          ? localizeExercise(row.exercise, language)
-          : null,
-    }))
+    exerciseLogs = data ?? []
   }
 
   return {
@@ -219,7 +231,13 @@ async function loadProgressData(
       volumeKg: Math.round(volumeForRows(log.id, exerciseLogs)),
     })),
     days: aggregateLogsToDays(sessionLogs, exerciseLogs, timeZone),
-    records: buildProgressRecords(exerciseLogs, sessionLogs, timeZone),
+    records: buildProgressRecords(
+      exerciseLogs,
+      sessionLogs,
+      timeZone,
+      language,
+      fallbackExerciseName,
+    ),
     measurements: (measurementsResult.data ?? []).map(row => ({
       id: row.id,
       recordedAt: row.recorded_at,
@@ -228,7 +246,13 @@ async function loadProgressData(
       bodyFatPercentage: row.body_fat_percentage,
       waistCm: row.waist_cm,
     })),
-    exercisePoints: buildProgressExercisePoints(exerciseLogs, sessionLogs, timeZone),
+    exercisePoints: buildProgressExercisePoints(
+      exerciseLogs,
+      sessionLogs,
+      timeZone,
+      language,
+      fallbackExerciseName,
+    ),
   }
 }
 
@@ -243,6 +267,7 @@ export default async function ProgressPage() {
     user.id,
     exerciseLanguage(profile.language),
     timeZone,
+    t('Ejercicio'),
   )
 
   return (

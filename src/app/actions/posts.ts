@@ -8,6 +8,9 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { buildSessionSnapshot, buildRoutineSnapshot } from '@/lib/social/snapshots'
 import type { RoutineSnapshot, RoutineSnapshotExercise, SessionSnapshot } from '@/lib/social/snapshots'
 import { postStoragePath } from '@/lib/images/post'
+import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
+import { exerciseLanguage } from '@/lib/exercises/localization'
+import { createTranslator } from '@/lib/i18n'
 
 const BUCKET = 'posts'
 
@@ -76,11 +79,27 @@ export async function createPostFromSession(
 
   // Log propio + nombre del workout.
   const { data: log } = await (supabase.from('progress_logs') as any)
-    .select('id, completed_at, duration_minutes, workout_id, user_id')
+    .select('id, completed_at, duration_minutes, workout_id, user_id, session_context_snapshot')
     .eq('id', progressLogId)
     .eq('user_id', user.id)
-    .maybeSingle() as { data: { id: string; completed_at: string; duration_minutes: number | null; workout_id: string | null } | null }
+    .maybeSingle() as {
+      data: {
+        id: string
+        completed_at: string
+        duration_minutes: number | null
+        workout_id: string | null
+        session_context_snapshot: unknown
+      } | null
+    }
   if (!log) return { ok: false, error: 'Sesión no encontrada.' }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('language')
+    .eq('id', user.id)
+    .maybeSingle() as unknown as { data: { language: string | null } | null }
+  const language = exerciseLanguage(profile?.language)
+  const t = createTranslator(language)
 
   let workoutName = 'Entrenamiento'
   if (log.workout_id) {
@@ -90,17 +109,29 @@ export async function createPostFromSession(
   }
 
   const { data: exLogs } = await (supabase.from('exercise_logs') as any)
-    .select('exercise_id, reps_completed, weights_kg')
+    .select('exercise_id, reps_completed, weights_kg, exercise:exercises(name, name_es)')
     .eq('progress_log_id', progressLogId) as {
-      data: { exercise_id: string; reps_completed: number[] | null; weights_kg: number[] | null }[] | null
+      data: {
+        exercise_id: string
+        reps_completed: number[] | null
+        weights_kg: number[] | null
+        exercise: { name: string; name_es: string | null } | { name: string; name_es: string | null }[] | null
+      }[] | null
     }
 
-  const ids = Array.from(new Set((exLogs ?? []).map(e => e.exercise_id)))
   const names = new Map<string, string>()
-  if (ids.length) {
-    const { data: exs } = await (supabase.from('exercises') as any)
-      .select('id, name').in('id', ids) as { data: { id: string; name: string }[] | null }
-    for (const e of exs ?? []) names.set(e.id, e.name)
+  for (const exerciseLog of exLogs ?? []) {
+    const liveExercise = Array.isArray(exerciseLog.exercise)
+      ? exerciseLog.exercise[0] ?? null
+      : exerciseLog.exercise
+    const presentation = resolveHistoricalExercisePresentation({
+      exerciseId: exerciseLog.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot,
+      liveExercise,
+      language,
+      fallbackExerciseName: t('Ejercicio'),
+    })
+    names.set(exerciseLog.exercise_id, presentation.name)
   }
 
   const snapshot: SessionSnapshot = buildSessionSnapshot(log, workoutName, exLogs ?? [], names)

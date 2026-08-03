@@ -11,7 +11,8 @@ import {
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { exerciseLanguage, localizeExercise, type ExerciseLanguage } from '@/lib/exercises/localization'
+import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
+import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
@@ -60,7 +61,6 @@ function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
 async function loadHistoryPayload(
   supabase: AppSupabaseClient,
   userId: string,
-  language: ExerciseLanguage,
 ): Promise<{ sessionLogs: ProgressLogRow[]; exerciseLogs: ExerciseLogRow[] }> {
   const { data: logs, error: logsError } = await supabase
     .from('progress_logs')
@@ -107,26 +107,31 @@ async function loadHistoryPayload(
 
   return {
     sessionLogs,
-    exerciseLogs: (data ?? []).map(row => ({
-      ...row,
-      exercise: Array.isArray(row.exercise)
-        ? row.exercise.map(exercise => localizeExercise(exercise, language))
-        : row.exercise
-          ? localizeExercise(row.exercise, language)
-          : null,
-    })),
+    exerciseLogs: data ?? [],
   }
 }
 
-function buildHighlights(rows: ExerciseLogRow[], logs: ProgressLogRow[], timeZone: string): HistoryHighlight[] {
+function buildHighlights(
+  rows: ExerciseLogRow[],
+  logs: ProgressLogRow[],
+  timeZone: string,
+  language: ExerciseLanguage,
+  fallbackExerciseName: string,
+): HistoryHighlight[] {
   const logById = new Map(logs.map(log => [log.id, log]))
   const records = new Map<string, HistoryHighlight & { bestCompletedAt: string }>()
 
   for (const row of rows) {
     if (!row.exercise_id) continue
-    const exercise = getExercise(row)
     const log = logById.get(row.progress_log_id)
-    if (!exercise || !log) continue
+    if (!log) continue
+    const exercise = resolveHistoricalExercisePresentation({
+      exerciseId: row.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot,
+      liveExercise: getExercise(row),
+      language,
+      fallbackExerciseName,
+    })
 
     const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed, row.rpe_values)
     const bestSet = performance.bestSet
@@ -145,7 +150,7 @@ function buildHighlights(rows: ExerciseLogRow[], logs: ProgressLogRow[], timeZon
       records.set(row.exercise_id, {
         exerciseId: row.exercise_id,
         exerciseName: exercise.name,
-        muscleGroups: exercise.muscle_groups ?? [],
+        muscleGroups: exercise.muscleGroups,
         bestDate: getLocalDateString(new Date(log.completed_at), timeZone),
         bestCompletedAt: log.completed_at,
         maxWeightKg,
@@ -167,7 +172,8 @@ export default async function HistoryPage() {
   const t = createTranslator(language)
   const timeZone = resolveUserTimeZone(profile.timezone)
   const todayStr = getLocalDateString(new Date(), timeZone)
-  const { sessionLogs, exerciseLogs } = await loadHistoryPayload(supabase, user.id, language)
+  const { sessionLogs, exerciseLogs } = await loadHistoryPayload(supabase, user.id)
+  const sessionLogById = new Map(sessionLogs.map(log => [log.id, log]))
 
   const sessions: HistorySessionInput[] = sessionLogs.map(log => {
     const presentation = toCompletedSessionPresentation(log, t('Entrenamiento'))
@@ -181,18 +187,33 @@ export default async function HistoryPage() {
       durationMinutes: presentation.durationMinutes,
     }
   })
-  const exercises: HistoryExerciseInput[] = exerciseLogs.map(row => ({
-    progressLogId: row.progress_log_id,
-    exerciseId: row.exercise_id,
-    exerciseName: getExercise(row)?.name ?? null,
-    weightsKg: row.weights_kg,
-    repsCompleted: row.reps_completed,
-    rpeValues: row.rpe_values,
-    setsCompleted: row.sets_completed,
-    notes: row.notes,
-  }))
+  const exercises: HistoryExerciseInput[] = exerciseLogs.map(row => {
+    const exercise = resolveHistoricalExercisePresentation({
+      exerciseId: row.exercise_id,
+      sessionContextSnapshot: sessionLogById.get(row.progress_log_id)?.session_context_snapshot ?? null,
+      liveExercise: getExercise(row),
+      language,
+      fallbackExerciseName: t('Ejercicio'),
+    })
+    return {
+      progressLogId: row.progress_log_id,
+      exerciseId: row.exercise_id,
+      exerciseName: exercise.name,
+      weightsKg: row.weights_kg,
+      repsCompleted: row.reps_completed,
+      rpeValues: row.rpe_values,
+      setsCompleted: row.sets_completed,
+      notes: row.notes,
+    }
+  })
   const evidence = buildHistoryEvidence({ todayStr, sessions, exercises })
-  const highlights = buildHighlights(exerciseLogs, sessionLogs, timeZone)
+  const highlights = buildHighlights(
+    exerciseLogs,
+    sessionLogs,
+    timeZone,
+    language,
+    t('Ejercicio'),
+  )
   const totalVolume = evidence.rows.reduce((sum, row) => sum + row.volumeKg, 0)
 
   return (
