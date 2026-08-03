@@ -8,6 +8,32 @@
 LOCK TABLE public.workout_plans IN SHARE ROW EXCLUSIVE MODE;
 LOCK TABLE public.profiles IN SHARE ROW EXCLUSIVE MODE;
 
+-- Legacy regeneration deactivated parents but did not mark them superseded.
+-- Select exactly one current head per reconstructed family before entitlement
+-- checks. Prefer the active row, then the newest deterministic version.
+WITH ranked_family_versions AS (
+  SELECT
+    plan.id,
+    ROW_NUMBER() OVER (
+      PARTITION BY plan.user_id, plan.family_id
+      ORDER BY plan.is_active DESC, plan.created_at DESC, plan.id DESC
+    ) AS family_rank,
+    FIRST_VALUE(plan.created_at) OVER (
+      PARTITION BY plan.user_id, plan.family_id
+      ORDER BY plan.is_active DESC, plan.created_at DESC, plan.id DESC
+    ) AS family_head_created_at
+  FROM public.workout_plans AS plan
+)
+UPDATE public.workout_plans AS plan
+SET
+  superseded_at = CASE
+    WHEN ranked.family_rank = 1 THEN NULL
+    ELSE COALESCE(plan.superseded_at, ranked.family_head_created_at)
+  END,
+  is_active = CASE WHEN ranked.family_rank = 1 THEN plan.is_active ELSE FALSE END
+FROM ranked_family_versions AS ranked
+WHERE ranked.id = plan.id;
+
 DO $plan_family_preexisting_check$
 DECLARE
   v_user_id UUID;
@@ -33,6 +59,71 @@ BEGIN
   END IF;
 END;
 $plan_family_preexisting_check$;
+
+-- The broad legacy RLS policy still permits owned table writes. Lifecycle RPCs
+-- set a transaction-local actor after authenticating and locking; direct REST
+-- inserts/deletes or protected-field updates cannot forge that trusted scope.
+CREATE OR REPLACE FUNCTION public.guard_plan_lifecycle_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_role TEXT := COALESCE(auth.role(), '');
+  v_target_user_id UUID;
+  v_trusted_actor TEXT := current_setting('app.plan_lifecycle_actor', TRUE);
+  v_changes_lifecycle BOOLEAN := FALSE;
+BEGIN
+  IF v_actor_role = 'service_role'
+    OR session_user IN ('postgres', 'supabase_admin') THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    v_target_user_id := OLD.user_id;
+    v_changes_lifecycle := TRUE;
+  ELSIF TG_OP = 'INSERT' THEN
+    v_target_user_id := NEW.user_id;
+    v_changes_lifecycle := TRUE;
+  ELSE
+    v_target_user_id := NEW.user_id;
+    v_changes_lifecycle := NEW.user_id IS DISTINCT FROM OLD.user_id
+      OR NEW.family_id IS DISTINCT FROM OLD.family_id
+      OR NEW.parent_plan_id IS DISTINCT FROM OLD.parent_plan_id
+      OR NEW.generation_request_id IS DISTINCT FROM OLD.generation_request_id
+      OR NEW.retired_at IS DISTINCT FROM OLD.retired_at
+      OR NEW.superseded_at IS DISTINCT FROM OLD.superseded_at
+      OR NEW.is_active IS DISTINCT FROM OLD.is_active;
+  END IF;
+
+  IF NOT v_changes_lifecycle THEN
+    RETURN NEW;
+  END IF;
+
+  IF auth.uid() IS NULL
+    OR auth.uid() IS DISTINCT FROM v_target_user_id
+    OR v_trusted_actor IS DISTINCT FROM v_target_user_id::TEXT THEN
+    RAISE EXCEPTION 'PLAN_DIRECT_LIFECYCLE_MUTATION_FORBIDDEN';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.guard_plan_lifecycle_mutation() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_00_guard_plan_lifecycle_row ON public.workout_plans;
+CREATE TRIGGER trg_00_guard_plan_lifecycle_row
+  BEFORE INSERT OR DELETE ON public.workout_plans
+  FOR EACH ROW EXECUTE FUNCTION public.guard_plan_lifecycle_mutation();
+
+DROP TRIGGER IF EXISTS trg_00_guard_plan_lifecycle_update ON public.workout_plans;
+CREATE TRIGGER trg_00_guard_plan_lifecycle_update
+  BEFORE UPDATE OF family_id, parent_plan_id, generation_request_id, retired_at, superseded_at, is_active, user_id ON public.workout_plans
+  FOR EACH ROW EXECUTE FUNCTION public.guard_plan_lifecycle_mutation();
 
 -- RLS proves row ownership, but it cannot serialize a cross-row family count.
 -- This trigger is the final invariant for every write path, including direct
@@ -194,6 +285,7 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', p_user_id::TEXT, TRUE);
 
   SELECT subscription_tier INTO v_current_tier
   FROM profiles
@@ -264,6 +356,7 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
 
   -- A retry must win even after its parent was superseded by the first attempt.
   SELECT id INTO v_existing_plan_id
@@ -523,6 +616,7 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
 
   SELECT * INTO v_plan
   FROM workout_plans
@@ -583,6 +677,7 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
 
   SELECT * INTO v_target_plan
   FROM workout_plans
@@ -677,6 +772,7 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
 
   SELECT subscription_tier INTO v_subscription_tier
   FROM profiles
@@ -798,6 +894,7 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
 
   -- SECURITY INVOKER keeps the current posts SELECT policy authoritative:
   -- removed, blocked or private posts unavailable to this user are not visible.
@@ -923,10 +1020,63 @@ $$;
 REVOKE ALL ON FUNCTION public.clone_plan_from_post_atomic(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.clone_plan_from_post_atomic(UUID) TO authenticated;
 
--- The v1 RPC cannot express an expected parent or a durable request ID. Keep
--- the function definition for migration compatibility, but close it as an
--- authenticated lifecycle entry point so callers cannot bypass v2 invariants.
+-- DB-first rollout compatibility: already-running app instances still call
+-- v1. Serialize them, preserve the legacy short retry window, then delegate
+-- every new write to v2 with a server request id. This keeps expected-parent,
+-- family, entitlement and active-state invariants atomic during deployment.
+CREATE OR REPLACE FUNCTION public.create_engine_plan(
+  p_plan JSONB,
+  p_metadata JSONB,
+  p_week_number INTEGER,
+  p_plan_context TEXT,
+  p_parent_plan_id UUID DEFAULT NULL,
+  p_profile_updates JSONB DEFAULT '{}'::jsonb
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_recent_plan_id UUID;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+
+  SELECT id INTO v_recent_plan_id
+  FROM public.workout_plans
+  WHERE user_id = v_user_id
+    AND plan_context = p_plan_context
+    AND parent_plan_id IS NOT DISTINCT FROM p_parent_plan_id
+    AND source_type = 'engine'
+    AND created_at >= NOW() - INTERVAL '30 seconds'
+  ORDER BY created_at DESC, id DESC
+  LIMIT 1;
+
+  IF v_recent_plan_id IS NOT NULL THEN
+    RETURN v_recent_plan_id;
+  END IF;
+
+  RETURN public.create_engine_plan_v2(
+    p_plan,
+    p_metadata,
+    p_week_number,
+    p_plan_context,
+    p_parent_plan_id,
+    gen_random_uuid(),
+    p_profile_updates
+  );
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.create_engine_plan(JSONB, JSONB, INTEGER, TEXT, UUID, JSONB)
   FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.create_engine_plan(JSONB, JSONB, INTEGER, TEXT, UUID, JSONB)
-  FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.create_engine_plan(JSONB, JSONB, INTEGER, TEXT, UUID, JSONB)
+  TO authenticated;
+
+COMMENT ON FUNCTION public.create_engine_plan IS
+  'DB-first compatibility wrapper that delegates legacy callers to atomic versioned lifecycle v2.';

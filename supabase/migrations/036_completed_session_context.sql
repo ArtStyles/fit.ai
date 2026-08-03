@@ -11,6 +11,45 @@ ALTER TABLE public.workout_plans
   ADD COLUMN retired_at TIMESTAMPTZ,
   ADD COLUMN generation_request_id UUID;
 
+-- Migration 008 already linked regenerated versions through parent_plan_id.
+-- Rebuild those legacy chains before any completed-session snapshot captures a
+-- family identifier; otherwise the column default would create one family per
+-- version and the free-family precheck in migration 037 could reject valid
+-- accounts. A cross-account/missing parent is deliberately treated as a root.
+WITH RECURSIVE legacy_plan_roots AS (
+  SELECT
+    plan.id AS plan_id,
+    plan.user_id,
+    plan.id AS root_plan_id,
+    ARRAY[plan.id] AS visited_plan_ids
+  FROM public.workout_plans AS plan
+  WHERE plan.parent_plan_id IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.workout_plans AS parent
+      WHERE parent.id = plan.parent_plan_id
+        AND parent.user_id = plan.user_id
+    )
+
+  UNION ALL
+
+  SELECT
+    child.id,
+    child.user_id,
+    legacy_plan_roots.root_plan_id,
+    legacy_plan_roots.visited_plan_ids || child.id
+  FROM legacy_plan_roots
+  JOIN public.workout_plans AS child
+    ON child.parent_plan_id = legacy_plan_roots.plan_id
+   AND child.user_id = legacy_plan_roots.user_id
+  WHERE NOT child.id = ANY(legacy_plan_roots.visited_plan_ids)
+)
+UPDATE public.workout_plans AS plan
+SET family_id = legacy_plan_roots.root_plan_id
+FROM legacy_plan_roots
+WHERE plan.id = legacy_plan_roots.plan_id
+  AND plan.user_id = legacy_plan_roots.user_id;
+
 CREATE UNIQUE INDEX workout_plans_user_generation_request_unique
   ON public.workout_plans(user_id, generation_request_id)
   WHERE generation_request_id IS NOT NULL;
@@ -62,6 +101,84 @@ FROM public.workouts AS workout
 LEFT JOIN public.workout_plans AS plan ON plan.id = workout.plan_id
 WHERE progress_log.workout_id = workout.id
   AND progress_log.session_context_snapshot IS NULL;
+
+-- Snapshots are write-once database evidence. Legacy rows may receive their
+-- first value during a repair/save retry, but no caller (including service
+-- code) can replace or clear a value once captured.
+CREATE OR REPLACE FUNCTION public.enforce_completed_session_snapshot_immutability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF OLD.session_context_snapshot IS NOT NULL
+    AND NEW.session_context_snapshot IS DISTINCT FROM OLD.session_context_snapshot THEN
+    RAISE EXCEPTION 'SESSION_CONTEXT_SNAPSHOT_IMMUTABLE';
+  END IF;
+
+  IF OLD.session_result_snapshot IS NOT NULL
+    AND NEW.session_result_snapshot IS DISTINCT FROM OLD.session_result_snapshot THEN
+    RAISE EXCEPTION 'SESSION_RESULT_SNAPSHOT_IMMUTABLE';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.enforce_completed_session_snapshot_immutability() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_completed_session_snapshot_immutability ON public.progress_logs;
+CREATE TRIGGER trg_completed_session_snapshot_immutability
+  BEFORE UPDATE OF session_context_snapshot, session_result_snapshot
+  ON public.progress_logs
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_completed_session_snapshot_immutability();
+
+-- Completed evidence remains readable/appendable and can receive the one-time
+-- snapshot repair above, but authenticated REST clients cannot delete it.
+DROP POLICY IF EXISTS "progress_logs: own" ON public.progress_logs;
+CREATE POLICY "progress_logs: own read" ON public.progress_logs
+  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "progress_logs: own insert" ON public.progress_logs
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "progress_logs: own update" ON public.progress_logs
+  FOR UPDATE TO authenticated
+  USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "exercise_logs: own" ON public.exercise_logs;
+CREATE POLICY "exercise_logs: own read" ON public.exercise_logs
+  FOR SELECT TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.progress_logs AS progress_log
+      WHERE progress_log.id = exercise_logs.progress_log_id
+        AND progress_log.user_id = auth.uid()
+    )
+  );
+CREATE POLICY "exercise_logs: own insert" ON public.exercise_logs
+  FOR INSERT TO authenticated WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.progress_logs AS progress_log
+      WHERE progress_log.id = exercise_logs.progress_log_id
+        AND progress_log.user_id = auth.uid()
+    )
+  );
+CREATE POLICY "exercise_logs: own update" ON public.exercise_logs
+  FOR UPDATE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.progress_logs AS progress_log
+      WHERE progress_log.id = exercise_logs.progress_log_id
+        AND progress_log.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.progress_logs AS progress_log
+      WHERE progress_log.id = exercise_logs.progress_log_id
+        AND progress_log.user_id = auth.uid()
+    )
+  );
+
+REVOKE DELETE ON TABLE public.progress_logs, public.exercise_logs FROM anon, authenticated;
 
 -- Evidence readers must preserve detached logs. A live workout is optional
 -- metadata; its deletion cannot remove an already completed session.
