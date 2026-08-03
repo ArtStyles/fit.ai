@@ -16,6 +16,7 @@ export interface E2EAccountAdmin {
   findUserByEmail(email: string): Promise<{ id: string } | null>
   createUser(config: E2ESeedConfig): Promise<{ id: string }>
   updateUser(userId: string, config: E2ESeedConfig): Promise<void>
+  removeSessionAuthorizations(userId: string): Promise<void>
   removePlanGenerationEvents(userId: string): Promise<void>
   removeProgressLogs(userId: string): Promise<void>
   removeWorkouts(userId: string): Promise<void>
@@ -190,6 +191,12 @@ export function createE2EAccountAdmin(config: E2ESeedConfig): E2EAccountAdmin {
         assertQuery(error, 'Updating E2E auth user')
       })
     },
+    async removeSessionAuthorizations(userId) {
+      await retryTransientSupabase('Resetting session authorizations', async () => {
+        const { error } = await supabase.from('session_authorizations').delete().eq('user_id', userId)
+        assertQuery(error, 'Resetting session authorizations')
+      })
+    },
     async removePlanGenerationEvents(userId) {
       await retryTransientSupabase('Resetting plan generation events', async () => {
         const { error } = await supabase.from('plan_generation_events').delete().eq('user_id', userId)
@@ -231,14 +238,16 @@ export function createE2EAccountAdmin(config: E2ESeedConfig): E2EAccountAdmin {
 }
 
 type ResetStore = Pick<E2EAccountAdmin,
-  'removePlanGenerationEvents' | 'removeProgressLogs' | 'removeWorkouts' | 'removeWorkoutPlans' | 'resetProfile'>
+  'removeSessionAuthorizations' | 'removePlanGenerationEvents' | 'removeProgressLogs' | 'removeWorkouts' | 'removeWorkoutPlans' | 'resetProfile'>
 
 export async function resetE2EAccount(store: ResetStore, userId: string): Promise<void> {
-  // Events reference plans with ON DELETE SET NULL, so remove the account-scoped
-  // event rows first. Progress logs are removed before workouts so no
+  // Authorization leases reference workouts/plans and are ephemeral fixture
+  // state, so remove them first. Events reference plans with ON DELETE SET
+  // NULL. Progress logs are removed before workouts so no
   // workout_id fields are nulled into stale same-day sessions. Workouts are
   // removed before their parent plans so no account-owned orphan workouts
   // remain.
+  await store.removeSessionAuthorizations(userId)
   await store.removePlanGenerationEvents(userId)
   await store.removeProgressLogs(userId)
   await store.removeWorkouts(userId)
