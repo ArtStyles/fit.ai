@@ -915,7 +915,7 @@ describe('saveSession idempotency', () => {
     expect(contextCompatibleInsert).not.toHaveProperty('session_context_snapshot')
   })
 
-  it('rolls back a direct fallback progress log when detail insert fails so retry can persist cleanly', async () => {
+  it('fails closed without deleting the direct-fallback progress backup when detail insert fails', async () => {
     const failed: any = createSupabaseMock({
       progress_logs: [
         { data: null },
@@ -935,46 +935,40 @@ describe('saveSession idempotency', () => {
     failed.rpc = missingAtomicRpcs()
 
     const retried: any = createSupabaseMock({
-      progress_logs: [
-        { data: null },
-        { data: [] },
-        { data: [] },
-        { data: { id: 'log-retry', session_result_snapshot: storedSnapshot }, error: null },
-      ],
-      profiles: [{ data: { timezone: 'UTC' } }],
-      workouts: [
-        { data: workout },
-        { data: { plan_id: 'plan-1' } },
-        { data: [{ id: 'workout-1' }] },
-      ],
-      workout_plans: [
-        { data: { id: 'plan-1' } },
-        { data: { id: 'plan-1' } },
-      ],
+      progress_logs: [{ data: {
+        id: 'log-partial',
+        workout_id: fallbackPayload.workoutId,
+        session_result_snapshot: storedSnapshot,
+      } }],
       exercise_logs: [
         { data: [] },
+        { data: [], error: null },
         { data: null, error: null },
       ],
-      workout_exercises: [{ data: null, error: null }],
     })
-    retried.rpc = missingAtomicRpcs()
     createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
 
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
       success: false,
       error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
     })
-    const rollbackQuery = failed.from.mock.results
+    const destructiveQuery = failed.from.mock.results
       .map((result: { value: any }) => result.value)
       .find((queryBuilder: any) => queryBuilder.delete.mock.calls.length > 0)
-    expect(rollbackQuery).toBeDefined()
-    expect(rollbackQuery.delete).toHaveBeenCalled()
-    expect(rollbackQuery.eq).toHaveBeenCalledWith('id', 'log-partial')
-    expect(rollbackQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(destructiveQuery).toBeUndefined()
 
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
       success: true,
-      progressLogId: 'log-retry',
+      progressLogId: 'log-partial',
     })
+    const repairInsert = retried.from.mock.results
+      .map((result: { value: any }) => result.value)
+      .find((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
+    expect(repairInsert.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        progress_log_id: 'log-partial',
+        exercise_id: fallbackPayload.exercises[0].exerciseId,
+      }),
+    ])
   })
 })

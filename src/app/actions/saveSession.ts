@@ -577,6 +577,46 @@ async function recoverLegacySessionOutcome(
   }
 }
 
+async function repairMissingPersistedSessionDetails(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  payload: SaveSessionPayload,
+  progressLogId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const candidateOutcome = await deriveSessionOutcome(supabase, userId, payload)
+  if (candidateOutcome.exerciseLogs.length === 0) return { success: true }
+
+  const { data: existingDetails, error: detailLookupError } = await (supabase
+    .from('exercise_logs') as any)
+    .select('id')
+    .eq('progress_log_id', progressLogId)
+    .limit(1) as { data: Array<{ id: string }> | null; error: { message: string } | null }
+
+  if (detailLookupError) {
+    console.error('[saveSession] legacy session detail recovery lookup failed:', detailLookupError)
+    return { success: false, error: saveSessionErrorMessage(detailLookupError.message) }
+  }
+
+  // The REST batch insert is one PostgreSQL statement: a failed batch leaves
+  // zero children. Any existing child means this is not the recoverable
+  // partial-parent case, so never replay rows and risk duplicates.
+  if ((existingDetails?.length ?? 0) > 0) return { success: true }
+
+  const { error: detailInsertError } = await (supabase
+    .from('exercise_logs') as any)
+    .insert(candidateOutcome.exerciseLogs.map(log => ({
+      progress_log_id: progressLogId,
+      ...log,
+    }))) as { error: { message: string } | null }
+
+  if (detailInsertError) {
+    console.error('[saveSession] legacy session detail recovery failed:', detailInsertError)
+    return { success: false, error: saveSessionErrorMessage(detailInsertError.message) }
+  }
+
+  return { success: true }
+}
+
 function isMissingAtomicSaveRpc(
   error: { code?: string | null; message: string } | null,
   rpcName: 'save_session_log_atomic_v2' | 'save_session_log_atomic',
@@ -703,16 +743,9 @@ async function persistSessionWithoutAtomicRpc({
 
     if (detailError) {
       console.error('[saveSession] legacy session detail save failed:', detailError)
-      const { error: rollbackError } = await (supabase
-        .from('progress_logs') as any)
-        .delete()
-        .eq('id', progressLog.id)
-        .eq('user_id', userId) as { error: { message: string } | null }
-
-      if (rollbackError) {
-        console.error('[saveSession] legacy session rollback failed:', rollbackError)
-      }
-
+      // Keep the parent row as recoverable historical evidence. This legacy
+      // rollout bridge cannot atomically compensate detail failure, and
+      // deleting a completed-session backup would be the destructive outcome.
       return { data: null, error: detailError }
     }
   }
@@ -784,6 +817,22 @@ export async function saveSession(
         prs: [],
         progressions: [],
         error: recoveredResult.error,
+      }
+    }
+
+    const detailRepair = await repairMissingPersistedSessionDetails(
+      supabase,
+      user.id,
+      payload,
+      existingSession.id,
+    )
+    if (!detailRepair.success) {
+      return {
+        success: false,
+        progressLogId: null,
+        prs: [],
+        progressions: [],
+        error: detailRepair.error,
       }
     }
 
