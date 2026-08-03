@@ -306,6 +306,11 @@ export function isHistoryContinuityE2EEnabled(env: NodeJS.ProcessEnv): boolean {
   return env.E2E_HISTORY_CONTINUITY_ENABLED === 'true'
 }
 
+/** Only migration 039 creates this data-free deployment sentinel. */
+export function isHistoryContinuitySchemaVersion(value: unknown): value is 39 {
+  return value === 39
+}
+
 /**
  * Proves the dedicated E2E project has every continuity migration before the
  * fixture performs any write. All probes are SELECTs and expose no row data.
@@ -321,12 +326,10 @@ export async function assertHistoryContinuityE2EReady(): Promise<void> {
     supabase.from('progress_logs').select('id, session_context_snapshot').limit(1),
     supabase.from('workout_plans').select('id, family_id, retired_at, superseded_at').limit(1),
     supabase.from('session_authorizations').select('client_session_id').limit(1),
-    supabase.rpc('get_dashboard_payload', {
-      p_week_start: new Date(0).toISOString(),
-      p_recent_start: new Date(0).toISOString(),
-    }),
+    supabase.rpc('get_plan_history_continuity_schema_version'),
   ])
-  if (probes.some(result => result.error)) {
+  const schemaVersion = probes[3].data
+  if (probes.some(result => result.error) || !isHistoryContinuitySchemaVersion(schemaVersion)) {
     throw new Error('Continuity migrations 036, 037, 038, and 039 are required for this E2E fixture')
   }
 }
@@ -396,110 +399,174 @@ export async function seedHistoryContinuityFixture(
   const activeFamilyId = randomUUID()
   const activeWorkoutId = randomUUID()
   const progressLogId = randomUUID()
+  const fixture: HistoryContinuityFixture = {
+    userId,
+    progressLogId,
+    sourcePlanId,
+    sourceWorkoutId,
+    activePlanId,
+    activeWorkoutId,
+  }
 
-  await createHistoryContinuityPlan(supabase, {
-    id: sourcePlanId,
-    userId,
-    familyId: sourceFamilyId,
-    name: 'E2E Continuity Plan A',
-    active: true,
-    weekNumber: 1,
-  })
-  await createHistoryContinuityWorkout(supabase, {
-    id: sourceWorkoutId,
-    userId,
-    planId: sourcePlanId,
-    name: 'E2E Plan A Legs',
-    dayOfWeek,
-  })
-  await retryTransientSupabase('Creating Plan A exercise', async () => {
-    const { error } = await supabase.from('workout_exercises').insert({
-      id: randomUUID(),
-      workout_id: sourceWorkoutId,
-      exercise_id: exercise.id,
-      order_index: 1,
-      sets: 2,
-      reps: 10,
-      rest_seconds: 45,
-      weight_kg: 35,
-      target_rpe: 7,
-      weight_suggestion_basis: 'estimated_from_profile',
+  try {
+    await createHistoryContinuityPlan(supabase, {
+      id: sourcePlanId,
+      userId,
+      familyId: sourceFamilyId,
+      name: 'E2E Continuity Plan A',
+      active: true,
+      weekNumber: 1,
     })
-    assertNoError(error, 'Creating Plan A exercise')
-  })
-
-  const completedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  await retryTransientSupabase('Completing Plan A workout', async () => {
-    const { error } = await supabase.from('progress_logs').insert({
-      id: progressLogId,
-      user_id: userId,
-      workout_id: sourceWorkoutId,
-      completed_at: completedAt,
-      duration_minutes: 28,
-      mood_rating: 4,
-      session_context_snapshot: {
-        version: 1,
-        workout: { id: sourceWorkoutId, name: 'E2E Plan A Legs', focus: 'Piernas', dayOfWeek },
-        plan: { id: sourcePlanId, familyId: sourceFamilyId, name: 'E2E Continuity Plan A', weekNumber: 1 },
-        exercises: [{
-          exerciseId: exercise.id,
-          name: exercise.name,
-          nameEs: exercise.name_es,
-          muscleGroups: exercise.muscle_groups ?? [],
-          muscleGroupsEs: exercise.muscle_groups_es ?? [],
-          isCompound: exercise.is_compound ?? false,
-        }],
-      },
+    await createHistoryContinuityWorkout(supabase, {
+      id: sourceWorkoutId,
+      userId,
+      planId: sourcePlanId,
+      name: 'E2E Plan A Legs',
+      dayOfWeek,
     })
-    assertNoError(error, 'Completing Plan A workout')
-  })
-  await createExerciseLogFixture(supabase, { userId, planId: sourcePlanId, workoutId: sourceWorkoutId, exerciseId: exercise.id }, progressLogId)
+    await retryTransientSupabase('Creating Plan A exercise', async () => {
+      const { error } = await supabase.from('workout_exercises').insert({
+        id: randomUUID(),
+        workout_id: sourceWorkoutId,
+        exercise_id: exercise.id,
+        order_index: 1,
+        sets: 2,
+        reps: 10,
+        rest_seconds: 45,
+        weight_kg: 35,
+        target_rpe: 7,
+        weight_suggestion_basis: 'estimated_from_profile',
+      })
+      assertNoError(error, 'Creating Plan A exercise')
+    })
 
-  await createHistoryContinuityPlan(supabase, {
-    id: activePlanId,
-    userId,
-    familyId: activeFamilyId,
-    name: 'E2E Continuity Plan B',
-    active: false,
-    weekNumber: 2,
-  })
-  await createHistoryContinuityWorkout(supabase, {
-    id: activeWorkoutId,
-    userId,
-    planId: activePlanId,
-    name: 'E2E Plan B Full Body',
-    dayOfWeek,
-  })
-  await retryTransientSupabase('Activating Plan B and retiring Plan A', async () => {
-    const deactivate = await supabase
-      .from('workout_plans')
-      .update({ is_active: false })
-      .eq('id', sourcePlanId)
-      .eq('user_id', userId)
-    assertNoError(deactivate.error, 'Deactivating Plan A')
-    const activate = await supabase
-      .from('workout_plans')
-      .update({ is_active: true })
-      .eq('id', activePlanId)
-      .eq('user_id', userId)
-    assertNoError(activate.error, 'Activating Plan B')
-    const { error } = await supabase
-      .from('workout_plans')
-      .update({ retired_at: new Date().toISOString() })
-      .eq('id', sourcePlanId)
-      .eq('user_id', userId)
-    assertNoError(error, 'Retiring Plan A')
-  })
-  await retryTransientSupabase('Detaching Plan A evidence without deleting it', async () => {
-    const { error } = await supabase
-      .from('progress_logs')
-      .update({ workout_id: null })
-      .eq('id', progressLogId)
-      .eq('user_id', userId)
-    assertNoError(error, 'Detaching Plan A evidence without deleting it')
-  })
+    const completedAt = new Date().toISOString()
+    await retryTransientSupabase('Completing Plan A workout', async () => {
+      const { error } = await supabase.from('progress_logs').insert({
+        id: progressLogId,
+        user_id: userId,
+        workout_id: sourceWorkoutId,
+        completed_at: completedAt,
+        duration_minutes: 28,
+        mood_rating: 4,
+        session_context_snapshot: {
+          version: 1,
+          workout: { id: sourceWorkoutId, name: 'E2E Plan A Legs', focus: 'Piernas', dayOfWeek },
+          plan: { id: sourcePlanId, familyId: sourceFamilyId, name: 'E2E Continuity Plan A', weekNumber: 1 },
+          exercises: [{
+            exerciseId: exercise.id,
+            name: exercise.name,
+            nameEs: exercise.name_es,
+            muscleGroups: exercise.muscle_groups ?? [],
+            muscleGroupsEs: exercise.muscle_groups_es ?? [],
+            isCompound: exercise.is_compound ?? false,
+          }],
+        },
+      })
+      assertNoError(error, 'Completing Plan A workout')
+    })
+    await createExerciseLogFixture(supabase, { userId, planId: sourcePlanId, workoutId: sourceWorkoutId, exerciseId: exercise.id }, progressLogId)
 
-  return { userId, progressLogId, sourcePlanId, sourceWorkoutId, activePlanId, activeWorkoutId }
+    await createHistoryContinuityPlan(supabase, {
+      id: activePlanId,
+      userId,
+      familyId: activeFamilyId,
+      name: 'E2E Continuity Plan B',
+      active: false,
+      weekNumber: 2,
+    })
+    await createHistoryContinuityWorkout(supabase, {
+      id: activeWorkoutId,
+      userId,
+      planId: activePlanId,
+      name: 'E2E Plan B Full Body',
+      dayOfWeek,
+    })
+    await retryTransientSupabase('Activating Plan B and retiring Plan A', async () => {
+      const deactivate = await supabase
+        .from('workout_plans')
+        .update({ is_active: false })
+        .eq('id', sourcePlanId)
+        .eq('user_id', userId)
+      assertNoError(deactivate.error, 'Deactivating Plan A')
+      const activate = await supabase
+        .from('workout_plans')
+        .update({ is_active: true })
+        .eq('id', activePlanId)
+        .eq('user_id', userId)
+      assertNoError(activate.error, 'Activating Plan B')
+      const { error } = await supabase
+        .from('workout_plans')
+        .update({ retired_at: new Date().toISOString() })
+        .eq('id', sourcePlanId)
+        .eq('user_id', userId)
+      assertNoError(error, 'Retiring Plan A')
+    })
+    await retryTransientSupabase('Detaching Plan A evidence without deleting it', async () => {
+      const { error } = await supabase
+        .from('progress_logs')
+        .update({ workout_id: null })
+        .eq('id', progressLogId)
+        .eq('user_id', userId)
+      assertNoError(error, 'Detaching Plan A evidence without deleting it')
+    })
+
+    return fixture
+  } catch (error) {
+    await cleanupFailedHistoryContinuityFixture(supabase, fixture)
+    throw error
+  }
+}
+
+function historyContinuityCleanupOperations(
+  supabase: SupabaseClient,
+  fixture: HistoryContinuityFixture,
+): Array<() => Promise<void>> {
+  return [
+    async () => {
+      await retryTransientSupabase('Removing scoped E2E continuity evidence', async () => {
+        const { error } = await supabase
+          .from('progress_logs')
+          .delete()
+          .eq('id', fixture.progressLogId)
+          .eq('user_id', fixture.userId)
+        assertNoError(error, 'Removing scoped E2E continuity evidence')
+      })
+    },
+    async () => {
+      await retryTransientSupabase('Removing scoped E2E continuity workouts', async () => {
+        const { error } = await supabase
+          .from('workouts')
+          .delete()
+          .in('id', [fixture.sourceWorkoutId, fixture.activeWorkoutId])
+          .eq('user_id', fixture.userId)
+        assertNoError(error, 'Removing scoped E2E continuity workouts')
+      })
+    },
+    async () => {
+      await retryTransientSupabase('Removing scoped E2E continuity plans', async () => {
+        const { error } = await supabase
+          .from('workout_plans')
+          .delete()
+          .in('id', [fixture.sourcePlanId, fixture.activePlanId])
+          .eq('user_id', fixture.userId)
+        assertNoError(error, 'Removing scoped E2E continuity plans')
+      })
+    },
+  ]
+}
+
+async function cleanupFailedHistoryContinuityFixture(
+  supabase: SupabaseClient,
+  fixture: HistoryContinuityFixture,
+): Promise<void> {
+  for (const cleanup of historyContinuityCleanupOperations(supabase, fixture)) {
+    try {
+      await cleanup()
+    } catch {
+      // The seed error is more useful than a compensating cleanup failure.
+    }
+  }
 }
 
 export async function cleanupHistoryContinuityFixture(fixture: HistoryContinuityFixture): Promise<void> {
@@ -507,28 +574,7 @@ export async function cleanupHistoryContinuityFixture(fixture: HistoryContinuity
   const config = requireE2EConfig(process.env)
   const supabase = adminClient(config)
 
-  await retryTransientSupabase('Removing scoped E2E continuity evidence', async () => {
-    const { error } = await supabase
-      .from('progress_logs')
-      .delete()
-      .eq('id', fixture.progressLogId)
-      .eq('user_id', fixture.userId)
-    assertNoError(error, 'Removing scoped E2E continuity evidence')
-  })
-  await retryTransientSupabase('Removing scoped E2E continuity workouts', async () => {
-    const { error } = await supabase
-      .from('workouts')
-      .delete()
-      .in('id', [fixture.sourceWorkoutId, fixture.activeWorkoutId])
-      .eq('user_id', fixture.userId)
-    assertNoError(error, 'Removing scoped E2E continuity workouts')
-  })
-  await retryTransientSupabase('Removing scoped E2E continuity plans', async () => {
-    const { error } = await supabase
-      .from('workout_plans')
-      .delete()
-      .in('id', [fixture.sourcePlanId, fixture.activePlanId])
-      .eq('user_id', fixture.userId)
-    assertNoError(error, 'Removing scoped E2E continuity plans')
-  })
+  for (const cleanup of historyContinuityCleanupOperations(supabase, fixture)) {
+    await cleanup()
+  }
 }

@@ -59,3 +59,20 @@ SELECT jsonb_build_object(
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_dashboard_payload(timestamptz, timestamptz) TO authenticated;
+
+-- A data-free deployment sentinel for the dedicated continuity E2E harness.
+-- This is intentionally distinct from get_dashboard_payload, whose signature
+-- already existed in migration 036 and therefore cannot prove this replacement
+-- migration has been applied.
+CREATE OR REPLACE FUNCTION public.get_plan_history_continuity_schema_version()
+RETURNS integer
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+  SELECT 39;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_plan_history_continuity_schema_version() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_plan_history_continuity_schema_version() TO authenticated, service_role;
