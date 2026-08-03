@@ -77,11 +77,11 @@ async function retryTransientSupabase<T>(operation: string, action: () => Promis
   throw lastError ?? new Error(`${operation} failed`)
 }
 
-function isoTodayForE2ETimeZone(): number {
+function isoTodayForE2ETimeZone(now = new Date()): number {
   const weekday = new Intl.DateTimeFormat('en-US', {
     timeZone: E2E_TIME_ZONE,
     weekday: 'short',
-  }).format(new Date())
+  }).format(now)
 
   const isoWeekday = ISO_WEEKDAY_BY_SHORT_NAME[weekday]
   if (!isoWeekday) {
@@ -391,7 +391,8 @@ export async function seedHistoryContinuityFixture(
   await updateCoreProfile(supabase, userId, config.runId, language)
 
   const exercise = await firstPublicStrengthExercise(supabase)
-  const dayOfWeek = isoTodayForE2ETimeZone()
+  const fixtureNow = new Date()
+  const dayOfWeek = isoTodayForE2ETimeZone(fixtureNow)
   const sourcePlanId = randomUUID()
   const sourceFamilyId = randomUUID()
   const sourceWorkoutId = randomUUID()
@@ -440,7 +441,7 @@ export async function seedHistoryContinuityFixture(
       assertNoError(error, 'Creating Plan A exercise')
     })
 
-    const completedAt = new Date().toISOString()
+    const completedAt = fixtureNow.toISOString()
     await retryTransientSupabase('Completing Plan A workout', async () => {
       const { error } = await supabase.from('progress_logs').insert({
         id: progressLogId,
