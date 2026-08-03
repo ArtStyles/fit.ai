@@ -25,6 +25,7 @@ import type { SessionSnapshot } from '@/lib/session/persistSession'
 import { authorizeSessionStart } from '@/app/actions/authorizeSession'
 import {
   nextSessionAuthorizationState,
+  runSessionAuthorizationAttempt,
   type SessionAuthorizationState,
 } from '@/lib/session/authorization'
 
@@ -122,10 +123,14 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
       return
     }
 
-    const result = await authorizeSessionStart(state.clientSessionId, workoutId)
-    if (attempt !== authorizationAttemptRef.current) return
+    const result = await runSessionAuthorizationAttempt(
+      () => authorizeSessionStart(state.clientSessionId, workoutId),
+      () => attempt === authorizationAttemptRef.current,
+      t('No se pudo preparar la sesiÃ³n. IntÃ©ntalo nuevamente.'),
+    )
+    if (result.status === 'stale') return
 
-    if (!result.success) {
+    if (result.status === 'failed') {
       setAuthorizationState(current => nextSessionAuthorizationState(current, 'failed'))
       setAuthorizationError(t(result.error))
       return

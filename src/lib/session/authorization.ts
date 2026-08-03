@@ -8,6 +8,33 @@ export interface SessionAuthorizationValidity {
 export type SessionAuthorizationState = 'authorizing' | 'ready' | 'error'
 export type SessionAuthorizationEvent = 'succeeded' | 'failed' | 'retry'
 
+type SessionAuthorizationResponse =
+  | { success: true }
+  | { success: false; error: string }
+
+export type SessionAuthorizationAttemptOutcome =
+  | { status: 'succeeded' }
+  | { status: 'failed'; error: string }
+  | { status: 'stale' }
+
+export async function runSessionAuthorizationAttempt(
+  request: () => Promise<SessionAuthorizationResponse>,
+  isCurrent: () => boolean,
+  transportError: string,
+): Promise<SessionAuthorizationAttemptOutcome> {
+  try {
+    const result = await request()
+    if (!isCurrent()) return { status: 'stale' }
+    return result.success
+      ? { status: 'succeeded' }
+      : { status: 'failed', error: result.error }
+  } catch {
+    return isCurrent()
+      ? { status: 'failed', error: transportError }
+      : { status: 'stale' }
+  }
+}
+
 const AUTHORIZATION_ERROR_MESSAGES: Record<string, string> = {
   SESSION_PLAN_INACTIVE: 'Esta rutina ya no está disponible en tu plan activo.',
   SESSION_WORKOUT_NOT_FOUND: 'Esta rutina ya no está disponible en tu plan activo.',
