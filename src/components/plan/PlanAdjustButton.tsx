@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Activity,
@@ -30,6 +30,7 @@ import {
   type PlanAdjustmentCategory,
   type PlanAdjustmentDraft,
 } from './planAdjustmentForm'
+import { createPersistentRequestId, runPersistentPlanRequest } from '@/lib/plans/persistentRequestId'
 
 interface Props {
   planId: string
@@ -76,11 +77,13 @@ export function PlanAdjustButton({ planId, options }: Props) {
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const planRequestRef = useRef(createPersistentRequestId())
 
   const intent = buildPlanAdjustmentIntent(draft)
   const showingPreview = previewIntent !== null
 
   function clearPreview() {
+    planRequestRef.current.cancel()
     setPreviewIntent(null)
     setChangesSummary([])
     setError(null)
@@ -140,12 +143,19 @@ export function PlanAdjustButton({ planId, options }: Props) {
 
   async function handleApply() {
     if (applying || !previewIntent) return
-    const requestId = crypto.randomUUID()
     setApplying(true)
     setError(null)
 
-    const result = await applyPlanAdjustment(planId, previewIntent, requestId)
+    const result = await runPersistentPlanRequest(
+      planRequestRef.current,
+      requestId => applyPlanAdjustment(planId, previewIntent, requestId),
+    ).catch(() => null)
     setApplying(false)
+
+    if (!result) {
+      setError(t('No se pudo aplicar el ajuste.'))
+      return
+    }
 
     if (!result.success) {
       setError(t(result.error ?? 'No se pudo aplicar el ajuste.'))
@@ -195,7 +205,13 @@ export function PlanAdjustButton({ planId, options }: Props) {
         {t('Ajustar plan')}
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={nextOpen => {
+          if (!nextOpen && !applying) planRequestRef.current.cancel()
+          setOpen(nextOpen)
+        }}
+      >
         <DialogContent className="max-w-lg gap-0 overflow-y-auto rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="flex items-center gap-2 text-sm text-white">

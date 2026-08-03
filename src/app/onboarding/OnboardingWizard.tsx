@@ -23,6 +23,7 @@ import { ProfileStage } from '@/components/onboarding/ProfileStage'
 import { SafetyStage } from '@/components/onboarding/SafetyStage'
 import { runAutomaticOnboarding, type AutomaticOnboardingOutcome } from '@/components/onboarding/onboardingWorkflow'
 import { trackEvent } from '@/lib/analytics/events'
+import { createPersistentRequestId, runPersistentPlanRequest } from '@/lib/plans/persistentRequestId'
 import { cn } from '@/lib/utils'
 import { saveOnboardingAnswers } from './actions'
 import { defaultAnswers, type OnboardingAnswers } from './types'
@@ -145,6 +146,7 @@ export default function OnboardingWizard() {
   const [hydrated, setHydrated] = useState(false)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
   const completedRef = useRef(false)
+  const planRequestRef = useRef(createPersistentRequestId())
   const abandonmentTrackedRef = useRef(false)
 
   useEffect(() => {
@@ -226,11 +228,13 @@ export default function OnboardingWizard() {
   }
 
   const handleAutomaticFinish = useCallback(async (): Promise<AutomaticOnboardingOutcome> => {
-    const requestId = crypto.randomUUID()
     const outcome = await runAutomaticOnboarding(
       answers,
       saveOnboardingAnswers,
-      () => generatePlan({ mode: 'initial', requestId }),
+      () => runPersistentPlanRequest(
+        planRequestRef.current,
+        requestId => generatePlan({ mode: 'initial', requestId }),
+      ),
     )
 
     if (outcome.phase === 'success') {

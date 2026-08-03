@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, Loader2, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { generatePlan } from '@/app/actions/generatePlan'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { ReadinessReviewDialog } from './ReadinessReviewDialog'
+import { createPersistentRequestId, runPersistentPlanRequest } from '@/lib/plans/persistentRequestId'
 
 export function PlanRegenerateButton() {
   const router = useRouter()
@@ -16,13 +17,28 @@ export function PlanRegenerateButton() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [readinessOpen, setReadinessOpen] = useState(false)
+  const planRequestRef = useRef(createPersistentRequestId())
 
   async function handleClick() {
-    const requestId = crypto.randomUUID()
     setLoading(true)
     setError(null)
 
-    const result = await generatePlan({ mode: 'weekly_regeneration', requestId })
+    const result = await runPersistentPlanRequest(
+      planRequestRef.current,
+      requestId => generatePlan({ mode: 'weekly_regeneration', requestId }),
+    ).catch(() => null)
+
+    if (!result) {
+      const message = t('No se pudo regenerar el plan.')
+      setError(message)
+      showToast({
+        title: t('No se pudo regenerar'),
+        description: message,
+        variant: 'error',
+      })
+      setLoading(false)
+      return
+    }
 
     if (!result.success) {
       if (result.requiresReadinessReview) setReadinessOpen(true)

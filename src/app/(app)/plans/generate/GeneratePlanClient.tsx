@@ -11,6 +11,7 @@ import { cn }            from '@/lib/utils'
 import { generatePlan }  from '@/app/actions/generatePlan'
 import { useToast }      from '@/components/feedback/ToastProvider'
 import type { GeneratePlanResult } from '@/app/actions/generatePlan'
+import { createPersistentRequestId, runPersistentPlanRequest } from '@/lib/plans/persistentRequestId'
 
 // ─── Mensajes de carga rotativos ─────────────────────────────────────────────
 
@@ -82,6 +83,7 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
   const router = useRouter()
   const { showToast } = useToast()
   const autoStartedRef = useRef(false)
+  const planRequestRef = useRef(createPersistentRequestId())
 
   const [status,  setStatus]  = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [result,  setResult]  = useState<GeneratePlanResult | null>(null)
@@ -90,7 +92,6 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
   const loadingMessage = LOADING_MESSAGES[msgIdx]
 
   const handleGenerate = useCallback(async () => {
-    const requestId = crypto.randomUUID()
     setStatus('loading')
     setResult(null)
 
@@ -100,7 +101,10 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
     }, 1800)
 
     try {
-      const res = await generatePlan({ mode: 'initial', requestId })
+      const res = await runPersistentPlanRequest(
+        planRequestRef.current,
+        requestId => generatePlan({ mode: 'initial', requestId }),
+      )
       clearInterval(interval)
       setResult(res)
       setStatus(res.success ? 'success' : 'error')
