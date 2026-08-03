@@ -10,6 +10,10 @@ const migration = readFileSync(
   new URL('../../../../supabase/migrations/038_session_authorizations.sql', import.meta.url),
   'utf8',
 )
+const contextMigration = readFileSync(
+  new URL('../../../../supabase/migrations/036_completed_session_context.sql', import.meta.url),
+  'utf8',
+)
 const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
 const sessionClient = readFileSync(
   new URL('../../../app/(app)/session/[workoutId]/SessionClient.tsx', import.meta.url),
@@ -80,12 +84,35 @@ describe('session authorization migration', () => {
     expect(migration).not.toMatch(/ALTER TABLE public\.(?:progress_logs|exercise_logs)[\s\S]+(?:DROP|NOT NULL)/i)
   })
 
+  it('lets account and fixture cleanup cascade only ephemeral authorization leases', () => {
+    expect(migration).toMatch(/workout_id UUID NOT NULL[\s\S]+REFERENCES public\.workouts\(id\) ON DELETE CASCADE/i)
+    expect(migration).toMatch(/plan_id UUID NOT NULL[\s\S]+REFERENCES public\.workout_plans\(id\) ON DELETE CASCADE/i)
+  })
+
   it('issues an exact server-side twelve-hour authorization under the plan lock', () => {
     expect(migration).toContain('CREATE OR REPLACE FUNCTION public.authorize_session_start')
     expect(migration).toContain("v_created_at + INTERVAL '12 hours'")
     expect(migration).toMatch(/pg_advisory_xact_lock[\s\S]+is_active = TRUE/i)
     expect(migration).toMatch(/jsonb_build_object\([\s\S]+'workout'[\s\S]+'plan'[\s\S]+'exercises'/i)
     expect(migration).toMatch(/consumed_at IS NOT NULL[\s\S]+progress_logs[\s\S]+RETURN v_existing\.session_context_snapshot/i)
+  })
+
+  it('reserves one live user/day slot and releases expired leases before issuance', () => {
+    const authorize = migration.slice(
+      migration.indexOf('CREATE OR REPLACE FUNCTION public.authorize_session_start'),
+      migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'),
+    )
+
+    expect(migration).toMatch(/released_at TIMESTAMPTZ/i)
+    expect(migration).toMatch(
+      /CREATE UNIQUE INDEX[\s\S]+\(user_id, policy_date\)[\s\S]+consumed_at IS NULL[\s\S]+released_at IS NULL/i,
+    )
+    expect(authorize).toMatch(
+      /UPDATE public\.session_authorizations[\s\S]+SET released_at = v_created_at[\s\S]+expires_at <= v_created_at/i,
+    )
+    expect(authorize).toMatch(
+      /policy_date = \(v_created_at AT TIME ZONE v_time_zone\)::DATE[\s\S]+consumed_at IS NULL[\s\S]+released_at IS NULL[\s\S]+SESSION_DAILY_LIMIT_REACHED/i,
+    )
   })
 
   it('locks and consumes authorization in the same atomic save as the winning rows', () => {
@@ -142,6 +169,39 @@ describe('session authorization migration', () => {
     expect(saveV2).toMatch(/completed_at >= v_authorization\.workout_window_start[\s\S]+completed_at < v_authorization\.policy_day_end/i)
     expect(saveV2).toMatch(/completed_at >= v_authorization\.policy_day_start[\s\S]+completed_at < v_authorization\.policy_day_end/i)
     expect(saveV2).toMatch(/FROM public\.session_authorizations[\s\S]+user_id = v_user_id[\s\S]+policy_date = v_authorization\.policy_date[\s\S]+client_session_id IS DISTINCT FROM p_client_session_id[\s\S]+consumed_at IS NOT NULL/i)
+    expect(saveV2).not.toMatch(/workout_id IS NOT NULL/i)
+  })
+
+  it('freezes every persisted exercise row in context without changing result snapshots', () => {
+    const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
+    const snapshotBuild = saveV2.slice(
+      saveV2.indexOf('Keep the workout/plan metadata'),
+      saveV2.indexOf('Recover a save that committed'),
+    )
+
+    expect(saveV2).toMatch(/jsonb_to_recordset\(COALESCE\(p_exercise_logs/i)
+    expect(snapshotBuild).toMatch(/jsonb_array_elements\([\s\S]+session_context_snapshot->'exercises'/i)
+    expect(snapshotBuild).not.toMatch(/WHERE item\.sets_completed/i)
+    expect(snapshotBuild).toMatch(/JOIN public\.exercises AS exercise ON exercise\.id = item\.exercise_id/i)
+    expect(snapshotBuild).toMatch(/jsonb_build_object\([\s\S]+'exerciseId', exercise\.id/i)
+    expect(snapshotBuild).toMatch(/'muscleGroups', COALESCE\(exercise\.muscle_groups, ARRAY\[\]::TEXT\[\]\)/i)
+    expect(snapshotBuild).toMatch(/'isCompound', COALESCE\(exercise\.is_compound, FALSE\)/i)
+    expect(saveV2).toMatch(/jsonb_set\([\s\S]+session_context_snapshot[\s\S]+'\{exercises\}'/i)
+    expect(saveV2).toMatch(/session_context_snapshot,[\s\S]+v_session_context_snapshot/i)
+    expect(saveV2).toMatch(/session_result_snapshot,[\s\S]+p_result_snapshot/i)
+  })
+
+  it('makes completed evidence non-deletable over REST and snapshots write-once', () => {
+    expect(contextMigration).toMatch(
+      /OLD\.session_context_snapshot IS NOT NULL[\s\S]+NEW\.session_context_snapshot IS DISTINCT FROM OLD\.session_context_snapshot[\s\S]+SESSION_CONTEXT_SNAPSHOT_IMMUTABLE/i,
+    )
+    expect(contextMigration).toMatch(
+      /OLD\.session_result_snapshot IS NOT NULL[\s\S]+NEW\.session_result_snapshot IS DISTINCT FROM OLD\.session_result_snapshot[\s\S]+SESSION_RESULT_SNAPSHOT_IMMUTABLE/i,
+    )
+    expect(contextMigration).toMatch(
+      /REVOKE DELETE ON TABLE public\.progress_logs, public\.exercise_logs FROM anon, authenticated/i,
+    )
+    expect(contextMigration).not.toMatch(/CREATE POLICY[^;]+(?:progress_logs|exercise_logs)[\s\S]+FOR DELETE/i)
   })
 
   it('validates completion timestamps without using them to choose the daily slot', () => {
@@ -156,12 +216,12 @@ describe('session authorization migration', () => {
 
   it('reconciles an exact preexisting progress row without replaying details', () => {
     const saveV2 = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'))
-    expect(saveV2).toMatch(/IF NOT v_inserted THEN[\s\S]+session_context_snapshot = COALESCE\([\s\S]+v_authorization\.session_context_snapshot/i)
+    expect(saveV2).toMatch(/IF NOT v_inserted THEN[\s\S]+session_context_snapshot = COALESCE\([\s\S]+v_session_context_snapshot/i)
     expect(saveV2).toMatch(/UPDATE public\.session_authorizations[\s\S]+consumed_at = COALESCE\(consumed_at, NOW\(\)\)/i)
     expect(saveV2).toMatch(/IF v_inserted THEN[\s\S]+INSERT INTO public\.exercise_logs/i)
     const exactRecovery = saveV2.indexOf('Recover a save that committed through a legacy client')
     const exactReturn = saveV2.indexOf('RETURN QUERY SELECT v_progress_log_id, FALSE', exactRecovery)
-    expect(saveV2.indexOf('SESSION_AUTHORIZATION_EXPIRED')).toBeGreaterThan(exactReturn)
+    expect(saveV2.indexOf('IF v_authorization.expires_at <=', exactReturn)).toBeGreaterThan(exactReturn)
   })
 
   it('publishes the authorization table and both RPC contracts in database types', () => {

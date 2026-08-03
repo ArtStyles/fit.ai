@@ -177,6 +177,9 @@ describe('getWorkoutStartAccess()', () => {
       workoutId: 'workout-1',
       date: NOW,
     })).resolves.toMatchObject({ allowed: false, reason: 'another_session_today' })
+
+    const dailyQuery = supabase.from.mock.results[3].value
+    expect(dailyQuery.not).not.toHaveBeenCalledWith('workout_id', 'is', null)
   })
 
   it('resolves "today" in the user timezone', async () => {

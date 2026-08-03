@@ -14,8 +14,8 @@
 CREATE TABLE public.session_authorizations (
   client_session_id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  workout_id UUID NOT NULL REFERENCES public.workouts(id) ON DELETE RESTRICT,
-  plan_id UUID NOT NULL REFERENCES public.workout_plans(id) ON DELETE RESTRICT,
+  workout_id UUID NOT NULL REFERENCES public.workouts(id) ON DELETE CASCADE,
+  plan_id UUID NOT NULL REFERENCES public.workout_plans(id) ON DELETE CASCADE,
   session_context_snapshot JSONB NOT NULL,
   policy_timezone TEXT NOT NULL,
   policy_date DATE NOT NULL,
@@ -25,10 +25,13 @@ CREATE TABLE public.session_authorizations (
   created_at TIMESTAMPTZ NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   consumed_at TIMESTAMPTZ,
+  released_at TIMESTAMPTZ,
   CONSTRAINT session_authorizations_expiry_check
     CHECK (expires_at = created_at + INTERVAL '12 hours'),
   CONSTRAINT session_authorizations_consumed_check
     CHECK (consumed_at IS NULL OR consumed_at >= created_at),
+  CONSTRAINT session_authorizations_released_check
+    CHECK (released_at IS NULL OR (consumed_at IS NULL AND released_at >= created_at)),
   CONSTRAINT session_authorizations_policy_timezone_check
     CHECK (policy_timezone <> ''),
   CONSTRAINT session_authorizations_policy_day_check
@@ -45,7 +48,14 @@ CREATE INDEX session_authorizations_user_expiry_idx
   ON public.session_authorizations(user_id, expires_at DESC);
 
 CREATE INDEX session_authorizations_user_policy_consumed_idx
-  ON public.session_authorizations(user_id, policy_date, consumed_at);
+  ON public.session_authorizations(user_id, policy_date, consumed_at, released_at);
+
+-- PostgreSQL cannot use NOW() in a partial-index predicate. Expired unconsumed
+-- rows are atomically marked released before issuance, leaving this immutable
+-- predicate to enforce one live reservation per user/policy date.
+CREATE UNIQUE INDEX session_authorizations_user_policy_live_unique
+  ON public.session_authorizations(user_id, policy_date)
+  WHERE consumed_at IS NULL AND released_at IS NULL;
 
 ALTER TABLE public.session_authorizations ENABLE ROW LEVEL SECURITY;
 
@@ -113,7 +123,7 @@ BEGIN
       END IF;
       RAISE EXCEPTION 'SESSION_AUTHORIZATION_CONSUMED';
     END IF;
-    IF v_existing.expires_at <= v_created_at THEN
+    IF v_existing.released_at IS NOT NULL OR v_existing.expires_at <= v_created_at THEN
       RAISE EXCEPTION 'SESSION_AUTHORIZATION_EXPIRED';
     END IF;
     RETURN v_existing.session_context_snapshot;
@@ -197,9 +207,30 @@ BEGIN
     SELECT 1
     FROM public.progress_logs
     WHERE user_id = v_user_id
-      AND workout_id IS NOT NULL
       AND completed_at >= v_today_start
       AND completed_at < v_today_end
+  ) THEN
+    RAISE EXCEPTION 'SESSION_DAILY_LIMIT_REACHED';
+  END IF;
+
+  -- Release expired reservations under the same per-user lock, then reserve
+  -- the date before returning authorization A. Authorization B cannot displace
+  -- A while A remains live, even if the active plan changes in between.
+  UPDATE public.session_authorizations
+  SET released_at = v_created_at
+  WHERE user_id = v_user_id
+    AND policy_date = (v_created_at AT TIME ZONE v_time_zone)::DATE
+    AND consumed_at IS NULL
+    AND released_at IS NULL
+    AND expires_at <= v_created_at;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.session_authorizations
+    WHERE user_id = v_user_id
+      AND policy_date = (v_created_at AT TIME ZONE v_time_zone)::DATE
+      AND consumed_at IS NULL
+      AND released_at IS NULL
   ) THEN
     RAISE EXCEPTION 'SESSION_DAILY_LIMIT_REACHED';
   END IF;
@@ -224,9 +255,9 @@ BEGIN
           'exerciseId', exercise.id,
           'name', exercise.name,
           'nameEs', exercise.name_es,
-          'muscleGroups', exercise.muscle_groups,
+          'muscleGroups', COALESCE(exercise.muscle_groups, ARRAY[]::TEXT[]),
           'muscleGroupsEs', COALESCE(exercise.muscle_groups_es, ARRAY[]::TEXT[]),
-          'isCompound', exercise.is_compound
+          'isCompound', COALESCE(exercise.is_compound, FALSE)
         )
         ORDER BY workout_exercise.order_index
       )
@@ -293,6 +324,8 @@ DECLARE
   v_progress_workout_id UUID;
   v_inserted BOOLEAN := FALSE;
   v_result_snapshot JSONB;
+  v_executed_exercises JSONB;
+  v_session_context_snapshot JSONB;
 BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'SESSION_AUTHENTICATION_REQUIRED';
@@ -320,6 +353,10 @@ BEGIN
     RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH';
   END IF;
 
+  IF v_authorization.released_at IS NOT NULL THEN
+    RAISE EXCEPTION 'SESSION_AUTHORIZATION_EXPIRED';
+  END IF;
+
   IF v_authorization.consumed_at IS NOT NULL THEN
     SELECT id, workout_id, session_result_snapshot
     INTO v_progress_log_id, v_progress_workout_id, v_result_snapshot
@@ -334,6 +371,70 @@ BEGIN
     RETURN QUERY SELECT v_progress_log_id, FALSE, v_result_snapshot;
     RETURN;
   END IF;
+
+  -- Keep the workout/plan metadata captured at authorization time, but replace
+  -- its planned list with the exact exercise evidence rows being persisted
+  -- (completed or explicitly skipped). Planned/replacement exercises reuse
+  -- captured metadata when available; ad-hoc exercises are resolved from the
+  -- immutable exercise id at save time.
+  SELECT COALESCE(
+    jsonb_agg(actual.exercise_context ORDER BY actual.first_ordinal),
+    '[]'::JSONB
+  )
+  INTO v_executed_exercises
+  FROM (
+    SELECT DISTINCT ON (item.exercise_id)
+      item.exercise_id,
+      item.ordinality AS first_ordinal,
+      COALESCE(
+        captured.exercise_context,
+        jsonb_build_object(
+          'exerciseId', exercise.id,
+          'name', exercise.name,
+          'nameEs', exercise.name_es,
+          'muscleGroups', COALESCE(exercise.muscle_groups, ARRAY[]::TEXT[]),
+          'muscleGroupsEs', COALESCE(exercise.muscle_groups_es, ARRAY[]::TEXT[]),
+          'isCompound', COALESCE(exercise.is_compound, FALSE)
+        )
+      ) AS exercise_context
+    FROM ROWS FROM (
+      jsonb_to_recordset(COALESCE(p_exercise_logs, '[]'::JSONB)) AS (
+        exercise_id UUID,
+        sets_completed INTEGER,
+        reps_completed INTEGER[],
+        weights_kg NUMERIC[],
+        rpe_values NUMERIC[],
+        duration_seconds INTEGER,
+        notes TEXT
+      )
+    ) WITH ORDINALITY AS item(
+      exercise_id,
+      sets_completed,
+      reps_completed,
+      weights_kg,
+      rpe_values,
+      duration_seconds,
+      notes,
+      ordinality
+    )
+    JOIN public.exercises AS exercise ON exercise.id = item.exercise_id
+    LEFT JOIN LATERAL (
+      SELECT captured_item.value AS exercise_context
+      FROM jsonb_array_elements(
+        COALESCE(v_authorization.session_context_snapshot->'exercises', '[]'::JSONB)
+      ) AS captured_item(value)
+      WHERE captured_item.value->>'exerciseId' = item.exercise_id::TEXT
+      LIMIT 1
+    ) AS captured ON TRUE
+    ORDER BY item.exercise_id, item.ordinality
+  ) AS actual;
+
+  v_session_context_snapshot := jsonb_set(
+    v_authorization.session_context_snapshot,
+    '{exercises}',
+    v_executed_exercises,
+    TRUE
+  );
 
   -- Recover a save that committed through a legacy client before this v2 call
   -- acquired the per-user lock. Exact owner/workout binding is mandatory.
@@ -351,7 +452,7 @@ BEGIN
     UPDATE public.progress_logs
     SET session_context_snapshot = COALESCE(
       session_context_snapshot,
-      v_authorization.session_context_snapshot
+      v_session_context_snapshot
     )
     WHERE id = v_progress_log_id
       AND user_id = v_user_id;
@@ -402,7 +503,6 @@ BEGIN
     SELECT 1
     FROM public.progress_logs
     WHERE user_id = v_user_id
-      AND workout_id IS NOT NULL
       AND client_session_id IS DISTINCT FROM p_client_session_id
       AND completed_at >= v_authorization.policy_day_start
       AND completed_at < v_authorization.policy_day_end
@@ -437,7 +537,7 @@ BEGIN
     p_workout_id,
     p_client_session_id,
     p_result_snapshot,
-    v_authorization.session_context_snapshot,
+    v_session_context_snapshot,
     p_completed_at,
     p_duration_minutes,
     p_mood_rating
@@ -464,7 +564,7 @@ BEGIN
     UPDATE public.progress_logs
     SET session_context_snapshot = COALESCE(
       session_context_snapshot,
-      v_authorization.session_context_snapshot
+      v_session_context_snapshot
     )
     WHERE id = v_progress_log_id
       AND user_id = v_user_id;

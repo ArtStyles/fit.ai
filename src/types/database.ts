@@ -486,6 +486,7 @@ export interface Database {
           created_at: string
           expires_at: string
           consumed_at: string | null
+          released_at: string | null
         }
         Insert: {
           client_session_id: string
@@ -501,6 +502,7 @@ export interface Database {
           created_at: string
           expires_at: string
           consumed_at?: string | null
+          released_at?: string | null
         }
         Update: {
           client_session_id?: string
@@ -516,6 +518,7 @@ export interface Database {
           created_at?: string
           expires_at?: string
           consumed_at?: string | null
+          released_at?: string | null
         }
         Relationships: []
       }

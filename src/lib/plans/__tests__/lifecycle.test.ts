@@ -6,6 +6,10 @@ const migration = readFileSync(
   new URL('../../../../supabase/migrations/037_atomic_plan_lifecycle.sql', import.meta.url),
   'utf8',
 )
+const contextMigration = readFileSync(
+  new URL('../../../../supabase/migrations/036_completed_session_context.sql', import.meta.url),
+  'utf8',
+)
 const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
 const generatePlanAction = readFileSync(new URL('../../../app/actions/generatePlan.ts', import.meta.url), 'utf8')
 const planActions = readFileSync(new URL('../../../app/actions/plan.ts', import.meta.url), 'utf8')
@@ -265,6 +269,50 @@ describe('atomic plan lifecycle migration', () => {
     expect(audit).toMatch(/PLAN_PREEXISTING_FREE_FAMILY_LIMIT/i)
   })
 
+  it('rebuilds legacy families from parent roots before snapshot backfill and lifecycle prechecks', () => {
+    const rootBackfill = contextMigration.indexOf('WITH RECURSIVE legacy_plan_roots')
+    const snapshotBackfill = contextMigration.indexOf('UPDATE public.progress_logs AS progress_log')
+    const headReconciliation = migration.indexOf('WITH ranked_family_versions AS')
+    const preexistingCheck = migration.indexOf('DO $plan_family_preexisting_check$')
+
+    expect(rootBackfill).toBeGreaterThan(0)
+    expect(contextMigration.slice(rootBackfill, snapshotBackfill)).toMatch(
+      /parent_plan_id[\s\S]+root_plan_id[\s\S]+SET family_id = legacy_plan_roots\.root_plan_id/i,
+    )
+    expect(snapshotBackfill).toBeGreaterThan(rootBackfill)
+    expect(headReconciliation).toBeGreaterThan(0)
+    expect(headReconciliation).toBeLessThan(preexistingCheck)
+    expect(migration.slice(headReconciliation, preexistingCheck)).toMatch(
+      /ROW_NUMBER\(\)[\s\S]+PARTITION BY plan\.user_id, plan\.family_id[\s\S]+superseded_at[\s\S]+is_active/i,
+    )
+  })
+
+  it('blocks direct lifecycle writes while trusted RPCs open a transaction-local guard', () => {
+    const guard = sqlFunction('guard_plan_lifecycle_mutation')
+
+    expect(guard).toMatch(/TG_OP\s*=\s*'DELETE'[\s\S]+PLAN_DIRECT_LIFECYCLE_MUTATION_FORBIDDEN/i)
+    expect(guard).toMatch(/NEW\.family_id IS DISTINCT FROM OLD\.family_id/i)
+    expect(guard).toMatch(/NEW\.retired_at IS DISTINCT FROM OLD\.retired_at/i)
+    expect(guard).toMatch(/NEW\.superseded_at IS DISTINCT FROM OLD\.superseded_at/i)
+    expect(guard).toMatch(/NEW\.is_active IS DISTINCT FROM OLD\.is_active/i)
+    expect(guard).toMatch(/NEW\.parent_plan_id IS DISTINCT FROM OLD\.parent_plan_id/i)
+    expect(guard).toMatch(/NEW\.generation_request_id IS DISTINCT FROM OLD\.generation_request_id/i)
+    expect(guard).toMatch(/current_setting\('app\.plan_lifecycle_actor', true\)/i)
+    expect(migration).toMatch(/BEFORE INSERT OR DELETE ON public\.workout_plans/i)
+    expect(migration).toMatch(/BEFORE UPDATE OF family_id, parent_plan_id, generation_request_id, retired_at, superseded_at, is_active, user_id ON public\.workout_plans/i)
+
+    for (const name of [
+      'set_subscription_tier_atomic',
+      'create_engine_plan_v2',
+      'activate_plan_version',
+      'retire_plan_family',
+      'create_manual_plan_atomic',
+      'clone_plan_from_post_atomic',
+    ]) {
+      expect(sqlFunction(name)).toMatch(/set_config\('app\.plan_lifecycle_actor'/i)
+    }
+  })
+
   it('publishes exact generated RPC types', () => {
     for (const name of [
       'create_engine_plan_v2',
@@ -279,9 +327,13 @@ describe('atomic plan lifecycle migration', () => {
     expect(databaseTypes).toContain('p_generation_request_id: string')
   })
 
-  it('revokes the legacy generation RPC so authenticated callers cannot bypass v2', () => {
+  it('keeps the legacy generation RPC as an atomic DB-first compatibility wrapper', () => {
+    const legacy = sqlFunction('create_engine_plan')
+
+    expect(legacy).toMatch(/pg_advisory_xact_lock/i)
+    expect(legacy).toMatch(/create_engine_plan_v2\([\s\S]+gen_random_uuid\(\)/i)
     expect(migration).toMatch(
-      /REVOKE EXECUTE ON FUNCTION public\.create_engine_plan\(JSONB, JSONB, INTEGER, TEXT, UUID, JSONB\)\s+FROM authenticated/i,
+      /GRANT EXECUTE ON FUNCTION public\.create_engine_plan\(JSONB, JSONB, INTEGER, TEXT, UUID, JSONB\)\s+TO authenticated/i,
     )
     expect(databaseTypes).not.toMatch(/\n\s+create_engine_plan:\s*\{/)
   })
@@ -392,9 +444,11 @@ describe('plan lifecycle application boundary', () => {
     expect(actionNotice).toContain('admin_plan_tier_busy:')
   })
 
-  it('creates one operation id at every persistence UI boundary', () => {
+  it('retains one operation id across ambiguous retries at every persistence UI boundary', () => {
     for (const source of [generateClient, regenerateButton, adjustButton, onboardingWizard]) {
-      expect(source.match(/crypto\.randomUUID\(\)/g)).toHaveLength(1)
+      expect(source).toContain('createPersistentRequestId()')
+      expect(source).toContain('runPersistentPlanRequest(')
+      expect(source).not.toContain('crypto.randomUUID()')
     }
 
     expect(generateClient).toContain("generatePlan({ mode: 'initial', requestId })")

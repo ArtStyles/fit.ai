@@ -104,7 +104,6 @@ export async function getWorkoutStartAccess({
     .from('progress_logs') as any)
     .select('id')
     .eq('user_id', userId)
-    .not('workout_id', 'is', null)
     .gte('completed_at', todayStart.toISOString())
     .lt('completed_at', todayEnd.toISOString())
     .limit(1) as { data: { id: string }[] | null }
