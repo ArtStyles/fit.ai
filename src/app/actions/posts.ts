@@ -11,6 +11,7 @@ import { postStoragePath } from '@/lib/images/post'
 import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
 import { exerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 
 const BUCKET = 'posts'
 
@@ -101,12 +102,18 @@ export async function createPostFromSession(
   const language = exerciseLanguage(profile?.language)
   const t = createTranslator(language)
 
-  let workoutName = 'Entrenamiento'
+  let workout: CompletedSessionWorkoutRelation | null = null
   if (log.workout_id) {
     const { data: w } = await (supabase.from('workouts') as any)
-      .select('name').eq('id', log.workout_id).maybeSingle() as { data: { name: string } | null }
-    if (w?.name) workoutName = w.name
+      .select('name, focus').eq('id', log.workout_id).maybeSingle() as {
+        data: CompletedSessionWorkoutRelation | null
+      }
+    workout = w ?? null
   }
+  const workoutName = toCompletedSessionPresentation(
+    { ...log, workout },
+    t('Entrenamiento'),
+  ).workoutName
 
   const { data: exLogs } = await (supabase.from('exercise_logs') as any)
     .select('exercise_id, reps_completed, weights_kg, exercise:exercises(name, name_es)')
