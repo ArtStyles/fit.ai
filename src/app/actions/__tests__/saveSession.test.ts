@@ -15,6 +15,7 @@ function query(result: { data: unknown; error?: unknown }) {
     gte: vi.fn(() => builder),
     lt: vi.fn(() => builder),
     limit: vi.fn(() => builder),
+    order: vi.fn(() => builder),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
     single: vi.fn(() => Promise.resolve(result)),
     insert: vi.fn(() => builder),
@@ -41,13 +42,29 @@ function createSupabaseMock(results: Record<string, { data: unknown; error?: unk
       })),
     },
     from: vi.fn((table: string) => query(queues[table]?.shift() ?? { data: null })),
-    rpc: vi.fn(() => Promise.resolve({ data: null, error: { message: 'mock rpc' } })),
+    rpc: vi.fn(() => Promise.resolve({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.save_session_log_atomic_v2 in the schema cache',
+      },
+    })),
   }
+}
+
+function missingAtomicRpcs() {
+  return vi.fn((rpcName: string) => Promise.resolve({
+    data: null,
+    error: {
+      code: 'PGRST202',
+      message: `Could not find the function public.${rpcName} in the schema cache`,
+    },
+  }))
 }
 
 const payload: SaveSessionPayload = {
   clientSessionId: '11111111-1111-4111-8111-111111111111',
-  workoutId: 'workout-1',
+  workoutId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   startedAt: Date.parse('2026-05-27T15:30:00.000Z'),
   finishedAt: Date.parse('2026-05-27T16:00:00.000Z'),
   moodRating: null,
@@ -69,6 +86,16 @@ const fallbackPayload: SaveSessionPayload = {
     status: 'completed',
   }],
 }
+
+const fallbackDetailBackup = [{
+  exercise_id: fallbackPayload.exercises[0].exerciseId,
+  sets_completed: 1,
+  reps_completed: [8],
+  weights_kg: [10],
+  rpe_values: [7],
+  duration_seconds: null,
+  notes: 'Agregado solo por hoy.',
+}]
 
 const winnerId = '55555555-5555-4555-8555-555555555555'
 const winnerCompletedAt = '2026-05-27T16:00:00.000Z'
@@ -115,11 +142,15 @@ function successfulSaveMock({
 }: {
   existingId?: string | null
   rpcData?: Array<{ progress_log_id: string; inserted: boolean; result_snapshot: unknown }> | null
-  rpcError?: { message: string } | null
+  rpcError?: { code?: string | null; message: string } | null
 } = {}) {
   const supabase: any = createSupabaseMock({
     progress_logs: existingId
-      ? [{ data: { id: existingId, session_result_snapshot: storedSnapshot } }]
+      ? [{ data: {
+          id: existingId,
+          workout_id: payload.workoutId,
+          session_result_snapshot: storedSnapshot,
+        } }]
       : [{ data: null }, { data: [] }, { data: [] }],
     profiles: [{ data: { timezone: 'UTC' } }],
     workouts: [{ data: workout }],
@@ -130,7 +161,7 @@ function successfulSaveMock({
 }
 
 const workout = {
-  id: 'workout-1',
+  id: payload.workoutId,
   name: 'Piernas',
   estimated_duration_minutes: 60,
   focus: 'Lower body',
@@ -229,7 +260,7 @@ describe('saveSession access guard', () => {
       }],
     })).resolves.toMatchObject({
       success: false,
-      error: expect.stringContaining('Press Banca'),
+      error: 'Valores fuera de rango. Revisa peso (máx. 500 kg), reps (máx. 100) y RPE (1-10).',
     })
 
     expect(supabase.from).not.toHaveBeenCalledWith('progress_logs')
@@ -249,7 +280,7 @@ describe('saveSession access guard', () => {
       }],
     })).resolves.toMatchObject({
       success: false,
-      error: expect.stringContaining('Curl'),
+      error: 'Valores fuera de rango. Revisa peso (máx. 500 kg), reps (máx. 100) y RPE (1-10).',
     })
   })
 
@@ -317,9 +348,51 @@ describe('saveSession idempotency', () => {
       prs: storedSnapshot.prs,
       progressions: storedSnapshot.progressions,
     })
-    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic', expect.objectContaining({
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
       p_result_snapshot: { version: 1, prs: [], progressions: [] },
     }))
+  })
+
+  it('saves an authorized session after its source plan is no longer active', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: null }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: [{ progress_log_id: 'log-authorized', inserted: true, result_snapshot: storedSnapshot }],
+      error: null,
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-authorized',
+    })
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
+      p_client_session_id: payload.clientSessionId,
+      p_workout_id: payload.workoutId,
+    }))
+    expect(supabase.from).not.toHaveBeenCalledWith('profiles')
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_plans')
+  })
+
+  it('fails closed when v2 rejects an unclaimed session', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: null }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: { message: 'SESSION_AUTHORIZATION_REQUIRED' },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      progressLogId: null,
+      error: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
+    })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_plans')
   })
 
   it('returns the existing completed log on a lost-response retry without replaying side effects', async () => {
@@ -335,19 +408,171 @@ describe('saveSession idempotency', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+  it('retries the preflight lookup without detail backup during a DB-first rollout', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        {
+          data: null,
+          error: {
+            code: 'PGRST204',
+            message: "Could not find the 'session_detail_backup' column of 'progress_logs' in the schema cache",
+          },
+        },
+        {
+          data: {
+            id: 'log-existing',
+            workout_id: payload.workoutId,
+            session_result_snapshot: storedSnapshot,
+          },
+          error: null,
+        },
+      ],
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-existing',
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+    const progressQueries = supabase.from.mock.results.map((result: { value: any }) => result.value)
+    expect(progressQueries[0].select).toHaveBeenCalledWith(
+      'id, workout_id, session_result_snapshot, session_detail_backup',
+    )
+    expect(progressQueries[1].select).toHaveBeenCalledWith(
+      'id, workout_id, session_result_snapshot',
+    )
+  })
+
+  it('recovers a retry when the same workout UUID uses different letter casing', async () => {
+    const supabase = successfulSaveMock({ existingId: 'log-existing' })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession({
+      ...payload,
+      workoutId: payload.workoutId.toUpperCase(),
+    })).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-existing',
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it.each([null, 'workout-other'])(
+    'rejects an existing client session bound to workout %s',
+    async existingWorkoutId => {
+      const supabase: any = createSupabaseMock({
+        progress_logs: [{
+          data: {
+            id: 'log-existing',
+            workout_id: existingWorkoutId,
+            session_result_snapshot: storedSnapshot,
+          },
+        }],
+      })
+      createClientMock.mockResolvedValue(supabase)
+
+      await expect(saveSession(payload)).resolves.toMatchObject({
+        success: false,
+        progressLogId: null,
+        error: expect.stringContaining('otro entrenamiento'),
+      })
+      expect(supabase.rpc).not.toHaveBeenCalled()
+    },
+  )
+
+  it('rejects a non-UUID workout before reading progress', async () => {
+    const supabase = createSupabaseMock({})
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession({ ...payload, workoutId: 'workout-invalid' })).resolves.toMatchObject({
+      success: false,
+      progressLogId: null,
+      error: 'Identificador de sesión inválido',
+    })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('does not treat a different missing RPC name as the v2 rollout signal', async () => {
+    const supabase: any = createSupabaseMock({ progress_logs: [{ data: null }] })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.save_session_log_atomic in the schema cache',
+      },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: false })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.from).not.toHaveBeenCalledWith('profiles')
+  })
+
+  it('does not fall back when a v2 error mentions the function without PGRST202', async () => {
+    const supabase: any = createSupabaseMock({ progress_logs: [{ data: null }] })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: null,
+      error: {
+        code: '42501',
+        message: 'permission denied for function public.save_session_log_atomic_v2',
+      },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: false })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.from).not.toHaveBeenCalledWith('profiles')
+  })
+
+  it.each([
+    ['SESSION_DAILY_LIMIT_REACHED', 'Ya registraste una sesión hoy. Máximo una sesión por día.'],
+    ['SESSION_WORKOUT_ALREADY_COMPLETED', 'Esta rutina ya fue completada.'],
+    ['SESSION_WORKOUT_UNAVAILABLE', 'Esta rutina ya no está disponible en tu plan activo.'],
+    ['SESSION_PLAN_INACTIVE', 'Esta rutina ya no está disponible en tu plan activo.'],
+    ['SESSION_AUTHORIZATION_EXPIRED', 'La autorización de esta sesión expiró. Inicia una nueva sesión.'],
+    ['SESSION_AUTHORIZATION_REQUIRED', 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.'],
+    ['SESSION_AUTHORIZATION_MISMATCH', 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.'],
+    ['SESSION_COMPLETED_AT_INVALID', 'La fecha de finalización de esta sesión no es válida.'],
+  ])('maps safe v2 error %s without exposing PostgreSQL text', async (rpcCode, expected) => {
+    const supabase = successfulSaveMock({
+      rpcData: null,
+      rpcError: { code: 'P0001', message: `PostgreSQL exception: ${rpcCode} CONTEXT private` },
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: expected,
+    })
+  })
+
+  it('uses a generic safe fallback for an unknown database save error', async () => {
+    const supabase = successfulSaveMock({
+      rpcData: null,
+      rpcError: { code: 'XX000', message: 'relation private_table leaked internal detail' },
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
+    })
+  })
+
   it('applies progression side effects only for the original winner', async () => {
     const winner: any = createSupabaseMock({
       progress_logs: [{ data: null }, { data: [] }, { data: [] }],
       profiles: [{ data: { timezone: 'UTC' } }],
       workouts: [
-        { data: workout },
         { data: { plan_id: 'plan-1' } },
         { data: [{ id: 'workout-1' }] },
       ],
-      workout_plans: [
-        { data: { id: 'plan-1' } },
-        { data: { id: 'plan-1' } },
-      ],
+      workout_plans: [{ data: { id: 'plan-1' } }],
       workout_exercises: [{ data: null, error: null }],
     })
     winner.rpc = vi.fn(() => Promise.resolve({
@@ -377,15 +602,13 @@ describe('saveSession idempotency', () => {
       progressions: storedSnapshot.progressions,
     })
     expect(supabase.rpc).toHaveBeenCalledTimes(1)
-    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
+    expect(supabase.from).not.toHaveBeenCalledWith('exercise_logs')
   })
 
   it('reconstructs an invalid duplicate-race snapshot from history strictly before the winner', async () => {
     const supabase: any = createSupabaseMock({
       progress_logs: [
         { data: null },
-        { data: [] },
-        { data: [] },
         { data: { id: winnerId, completed_at: winnerCompletedAt, session_result_snapshot: null } },
         { data: null, error: null },
       ],
@@ -426,11 +649,15 @@ describe('saveSession idempotency', () => {
       prs: [{ exerciseName: 'Press Banca', weightKg: 10, kind: 'weight' }],
     })
 
-    const historyQuery = supabase.from.mock.results[8].value
+    const historyQuery = supabase.from.mock.results
+      .filter((_: unknown, index: number) => supabase.from.mock.calls[index][0] === 'exercise_logs')
+      .at(-1).value
     expect(historyQuery.lt).toHaveBeenCalledWith('progress_logs.completed_at', winnerCompletedAt)
     expect(historyQuery.neq).toHaveBeenCalledWith('progress_log_id', winnerId)
 
-    const backfillQuery = supabase.from.mock.results[9].value
+    const backfillQuery = supabase.from.mock.results
+      .filter((_: unknown, index: number) => supabase.from.mock.calls[index][0] === 'progress_logs')
+      .at(-1).value
     expect(backfillQuery.update).toHaveBeenCalledWith(expect.objectContaining({
       session_result_snapshot: expect.objectContaining({ version: 1 }),
     }))
@@ -446,7 +673,11 @@ describe('saveSession idempotency', () => {
   ])('reconstructs and backfills %s results using only history strictly before the winner', async (_label, resultSnapshot) => {
     const supabase: any = createSupabaseMock({
       progress_logs: [
-        { data: { id: winnerId, session_result_snapshot: resultSnapshot } },
+        { data: {
+          id: winnerId,
+          workout_id: payload.workoutId,
+          session_result_snapshot: resultSnapshot,
+        } },
         { data: { id: winnerId, completed_at: winnerCompletedAt, session_result_snapshot: resultSnapshot } },
         { data: null, error: null },
       ],
@@ -502,7 +733,11 @@ describe('saveSession idempotency', () => {
   it.each([null, 'not-a-date'])('fails closed when the authoritative timestamp is %s', async completedAt => {
     const supabase: any = createSupabaseMock({
       progress_logs: [
-        { data: { id: winnerId, session_result_snapshot: null } },
+        { data: {
+          id: winnerId,
+          workout_id: payload.workoutId,
+          session_result_snapshot: null,
+        } },
         { data: { id: winnerId, completed_at: completedAt, session_result_snapshot: null } },
       ],
     })
@@ -522,9 +757,12 @@ describe('saveSession idempotency', () => {
     const retried = successfulSaveMock()
     createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
 
-    await expect(saveSession(payload)).resolves.toMatchObject({ success: false, error: 'detail rejected' })
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
+    })
     await expect(saveSession(payload)).resolves.toMatchObject({ success: true, progressLogId: 'log-new' })
-    expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic', expect.objectContaining({
+    expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
       p_client_session_id: payload.clientSessionId,
     }))
     expect(retried.rpc).toHaveBeenCalledTimes(1)
@@ -554,10 +792,7 @@ describe('saveSession idempotency', () => {
       ],
       workout_exercises: [{ data: null, error: null }],
     })
-    supabase.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    supabase.rpc = missingAtomicRpcs()
     createClientMock.mockResolvedValue(supabase)
 
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
@@ -573,7 +808,128 @@ describe('saveSession idempotency', () => {
     expect(supabase.from).toHaveBeenCalledWith('exercise_logs')
   })
 
-  it('falls back to a legacy progress log insert when idempotency columns are not deployed', async () => {
+  it('writes immutable session context with a direct fallback insert', async () => {
+    const emptyResultSnapshot = { version: 1, prs: [], progressions: [] }
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        { data: null },
+        { data: [] },
+        { data: [] },
+        { data: { id: 'log-context', session_result_snapshot: emptyResultSnapshot }, error: null },
+      ],
+      profiles: [{ data: { timezone: 'UTC' } }],
+      workouts: [
+        { data: workout },
+        { data: {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'Piernas',
+          focus: 'Lower body',
+          day_of_week: 3,
+          plan: {
+            id: '22222222-2222-4222-8222-222222222222',
+            family_id: '33333333-3333-4333-8333-333333333333',
+            name: 'Strength block',
+            week_number: 2,
+          },
+        } },
+      ],
+      workout_plans: [{ data: { id: 'plan-1' } }],
+      workout_exercises: [{ data: [{
+        exercise_id: '44444444-4444-4444-8444-444444444444',
+        order_index: 0,
+        exercise: {
+          name: 'Back squat',
+          name_es: 'Sentadilla trasera',
+          muscle_groups: ['quadriceps'],
+          muscle_groups_es: ['cuádriceps'],
+          is_compound: true,
+        },
+      }] }],
+    })
+    supabase.rpc = missingAtomicRpcs()
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-context',
+    })
+
+    const progressQueries = supabase.from.mock.results
+      .filter((_: unknown, index: number) => supabase.from.mock.calls[index][0] === 'progress_logs')
+      .map((result: { value: any }) => result.value)
+    const insert = progressQueries.at(-1).insert.mock.calls[0][0]
+
+    expect(insert.session_context_snapshot).toEqual({
+      version: 1,
+      workout: {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Piernas',
+        focus: 'Lower body',
+        dayOfWeek: 3,
+      },
+      plan: {
+        id: '22222222-2222-4222-8222-222222222222',
+        familyId: '33333333-3333-4333-8333-333333333333',
+        name: 'Strength block',
+        weekNumber: 2,
+      },
+      exercises: [{
+        exerciseId: '44444444-4444-4444-8444-444444444444',
+        name: 'Back squat',
+        nameEs: 'Sentadilla trasera',
+        muscleGroups: ['quadriceps'],
+        muscleGroupsEs: ['cuádriceps'],
+        isCompound: true,
+      }],
+    })
+    expect(insert.session_detail_backup).toEqual([])
+  })
+
+  it.each(['client_session_id', 'session_result_snapshot'])(
+    'falls back to a legacy progress log insert when %s is not deployed',
+    async missingColumn => {
+      const supabase: any = createSupabaseMock({
+        progress_logs: [
+          { data: null },
+          { data: [] },
+          { data: [] },
+          {
+            data: null,
+            error: { message: `Could not find the '${missingColumn}' column of 'progress_logs' in the schema cache` },
+          },
+          { data: { id: 'log-legacy' }, error: null },
+        ],
+        profiles: [{ data: { timezone: 'UTC' } }],
+        workouts: [{ data: workout }],
+        workout_plans: [{ data: { id: 'plan-1' } }],
+      })
+      supabase.rpc = missingAtomicRpcs()
+      createClientMock.mockResolvedValue(supabase)
+
+      await expect(saveSession(payload)).resolves.toMatchObject({
+        success: true,
+        progressLogId: 'log-legacy',
+        prs: [],
+        progressions: [],
+      })
+
+      const progressQueries = supabase.from.mock.results
+        .map((result: { value: any }) => result.value)
+        .filter((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
+      const modernInsert = progressQueries.at(-2).insert.mock.calls[0][0]
+      const legacyInsert = progressQueries.at(-1).insert.mock.calls[0][0]
+
+      expect(modernInsert).toHaveProperty('client_session_id', payload.clientSessionId)
+      expect(modernInsert).toHaveProperty('session_result_snapshot')
+      expect(legacyInsert).not.toHaveProperty('client_session_id')
+      expect(legacyInsert).not.toHaveProperty('session_result_snapshot')
+      expect(legacyInsert).not.toHaveProperty('session_context_snapshot')
+      expect(legacyInsert).not.toHaveProperty('session_detail_backup')
+    },
+  )
+
+  it('retries without context when only the snapshot column is not deployed', async () => {
+    const emptyResultSnapshot = { version: 1, prs: [], progressions: [] }
     const supabase: any = createSupabaseMock({
       progress_logs: [
         { data: null },
@@ -581,40 +937,37 @@ describe('saveSession idempotency', () => {
         { data: [] },
         {
           data: null,
-          error: { message: "Could not find the 'client_session_id' column of 'progress_logs' in the schema cache" },
+          error: { message: "Could not find the 'session_context_snapshot' column of 'progress_logs' in the schema cache" },
         },
-        { data: { id: 'log-legacy' }, error: null },
+        { data: { id: 'log-without-context', session_result_snapshot: emptyResultSnapshot }, error: null },
       ],
       profiles: [{ data: { timezone: 'UTC' } }],
       workouts: [{ data: workout }],
       workout_plans: [{ data: { id: 'plan-1' } }],
     })
-    supabase.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    supabase.rpc = missingAtomicRpcs()
     createClientMock.mockResolvedValue(supabase)
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: true,
-      progressLogId: 'log-legacy',
-      prs: [],
-      progressions: [],
+      progressLogId: 'log-without-context',
     })
 
     const progressQueries = supabase.from.mock.results
       .map((result: { value: any }) => result.value)
       .filter((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
-    const modernInsert = progressQueries.at(-2).insert.mock.calls[0][0]
-    const legacyInsert = progressQueries.at(-1).insert.mock.calls[0][0]
+    const fullInsert = progressQueries.at(-2).insert.mock.calls[0][0]
+    const contextCompatibleInsert = progressQueries.at(-1).insert.mock.calls[0][0]
 
-    expect(modernInsert).toHaveProperty('client_session_id', payload.clientSessionId)
-    expect(modernInsert).toHaveProperty('session_result_snapshot')
-    expect(legacyInsert).not.toHaveProperty('client_session_id')
-    expect(legacyInsert).not.toHaveProperty('session_result_snapshot')
+    expect(fullInsert).toHaveProperty('session_context_snapshot')
+    expect(fullInsert).toHaveProperty('session_detail_backup')
+    expect(contextCompatibleInsert).toHaveProperty('client_session_id', payload.clientSessionId)
+    expect(contextCompatibleInsert).toHaveProperty('session_result_snapshot')
+    expect(contextCompatibleInsert).not.toHaveProperty('session_context_snapshot')
+    expect(contextCompatibleInsert).not.toHaveProperty('session_detail_backup')
   })
 
-  it('rolls back a direct fallback progress log when detail insert fails so retry can persist cleanly', async () => {
+  it('fails closed without deleting the direct-fallback progress backup when detail insert fails', async () => {
     const failed: any = createSupabaseMock({
       progress_logs: [
         { data: null },
@@ -631,55 +984,51 @@ describe('saveSession idempotency', () => {
         { data: null, error: { message: 'detail rejected' } },
       ],
     })
-    failed.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
+    failed.rpc = missingAtomicRpcs()
 
     const retried: any = createSupabaseMock({
-      progress_logs: [
-        { data: null },
-        { data: [] },
-        { data: [] },
-        { data: { id: 'log-retry', session_result_snapshot: storedSnapshot }, error: null },
-      ],
-      profiles: [{ data: { timezone: 'UTC' } }],
-      workouts: [
-        { data: workout },
-        { data: { plan_id: 'plan-1' } },
-        { data: [{ id: 'workout-1' }] },
-      ],
-      workout_plans: [
-        { data: { id: 'plan-1' } },
-        { data: { id: 'plan-1' } },
-      ],
+      progress_logs: [{ data: {
+        id: 'log-partial',
+        workout_id: fallbackPayload.workoutId,
+        session_result_snapshot: storedSnapshot,
+        session_detail_backup: fallbackDetailBackup,
+      } }],
       exercise_logs: [
         { data: [] },
+        { data: [], error: null },
         { data: null, error: null },
       ],
-      workout_exercises: [{ data: null, error: null }],
     })
-    retried.rpc = vi.fn(() => Promise.resolve({
-      data: null,
-      error: { message: 'Could not find the function public.save_session_log_atomic in the schema cache' },
-    }))
     createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
 
+    const alteredRetryPayload = {
+      ...fallbackPayload,
+      exercises: fallbackPayload.exercises.map(exercise => ({
+        ...exercise,
+        sets: exercise.sets.map(set => ({ ...set, weightKg: '99' })),
+      })),
+    }
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
       success: false,
-      error: 'detail rejected',
+      error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
     })
-    const rollbackQuery = failed.from.mock.results
+    const destructiveQuery = failed.from.mock.results
       .map((result: { value: any }) => result.value)
       .find((queryBuilder: any) => queryBuilder.delete.mock.calls.length > 0)
-    expect(rollbackQuery).toBeDefined()
-    expect(rollbackQuery.delete).toHaveBeenCalled()
-    expect(rollbackQuery.eq).toHaveBeenCalledWith('id', 'log-partial')
-    expect(rollbackQuery.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(destructiveQuery).toBeUndefined()
 
-    await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
+    await expect(saveSession(alteredRetryPayload)).resolves.toMatchObject({
       success: true,
-      progressLogId: 'log-retry',
+      progressLogId: 'log-partial',
     })
+    const repairInsert = retried.from.mock.results
+      .map((result: { value: any }) => result.value)
+      .find((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
+    expect(repairInsert.insert).toHaveBeenCalledWith([
+      {
+        progress_log_id: 'log-partial',
+        ...fallbackDetailBackup[0],
+      },
+    ])
   })
 })

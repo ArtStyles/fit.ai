@@ -1,9 +1,12 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const page = readFileSync(new URL('../../../app/(app)/plan/page.tsx', import.meta.url), 'utf8')
 const workspace = readFileSync(new URL('../PlanWorkoutWorkspace.tsx', import.meta.url), 'utf8')
 const readView = readFileSync(new URL('../PlanWorkoutReadView.tsx', import.meta.url), 'utf8')
+const retireButton = readFileSync(new URL('../PlanRetireButton.tsx', import.meta.url), 'utf8')
+const planErrorUrl = new URL('../../../app/(app)/plan/error.tsx', import.meta.url)
+const planError = existsSync(planErrorUrl) ? readFileSync(planErrorUrl, 'utf8') : ''
 
 describe('plan information hierarchy', () => {
   it('renders overview and week map before editing tools', () => {
@@ -21,6 +24,7 @@ describe('plan information hierarchy', () => {
     for (const marker of [
       '<PlanAdjustButton',
       '<PlanRegenerateButton',
+      '<PlanRetireButton',
       '<ShareRoutineButton',
       '<PlanSwitcher',
       'updatePlanSummary',
@@ -29,6 +33,21 @@ describe('plan information hierarchy', () => {
     ]) {
       expect(`${page}\n${workspace}\n${readView}`).toContain(marker)
     }
+  })
+
+  it('lists only current family heads and confirms retirement accessibly', () => {
+    expect(page).toContain(".is('superseded_at', null)")
+    expect(page).toContain(".is('retired_at', null)")
+    expect(retireButton).toContain('window.confirm')
+    expect(retireButton).toContain('El plan se archivará, pero tu historial permanecerá intacto.')
+    expect(retireButton).toContain('aria-label')
+    expect(retireButton).toMatch(/h-11\s+w-11|w-11\s+h-11/)
+  })
+
+  it('treats active and library query failures as route errors with retry', () => {
+    expect(page).toContain('requirePlanLibraryResults')
+    expect(page).not.toContain('const plans = planRows ?? []')
+    expect(planError).toContain('<EvidenceRouteError reset={reset} />')
   })
 
   it('keeps destructive exercise controls out of the read view', () => {

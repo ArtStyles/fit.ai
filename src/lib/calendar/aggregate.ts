@@ -1,4 +1,5 @@
 import { getLocalDateString } from '@/lib/workouts/schedule'
+import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 export interface RawProgressLog {
@@ -13,13 +14,11 @@ export interface RawExerciseLog {
   reps_completed: number[] | null
 }
 
-export interface CalendarWorkoutSummary {
-  name: string
-  focus: string | null
-}
+export type CalendarWorkoutSummary = CompletedSessionWorkoutRelation
 
 export interface RawCalendarProgressLog extends RawProgressLog {
   workout_id: string | null
+  session_context_snapshot: unknown
   workout: CalendarWorkoutSummary | CalendarWorkoutSummary[] | null
 }
 
@@ -104,6 +103,7 @@ export function buildCalendarSessionPayload(
   logs: RawCalendarProgressLog[],
   exerciseLogs: RawCalendarExerciseLog[],
   timeZone: string,
+  fallbackWorkoutName = 'Entrenamiento',
 ): { days: DayAggregate[]; sessions: CalendarSessionSummary[] } {
   const exerciseLogsBySession = new Map<string, RawCalendarExerciseLog[]>()
   for (const exerciseLog of exerciseLogs) {
@@ -116,7 +116,7 @@ export function buildCalendarSessionPayload(
     .sort((a, b) => b.completed_at.localeCompare(a.completed_at))
     .map(log => {
       const sessionExerciseLogs = exerciseLogsBySession.get(log.id) ?? []
-      const workout = Array.isArray(log.workout) ? log.workout[0] ?? null : log.workout
+      const presentation = toCompletedSessionPresentation(log, fallbackWorkoutName)
       const sets = sessionExerciseLogs.reduce((sum, row) => {
         const fallback = Math.max(row.weights_kg?.length ?? 0, row.reps_completed?.length ?? 0)
         return sum + (row.sets_completed ?? fallback)
@@ -131,12 +131,12 @@ export function buildCalendarSessionPayload(
       }, 0)
 
       return {
-        id: log.id,
+        id: presentation.id,
         date: getLocalDateString(new Date(log.completed_at), timeZone),
-        completedAt: log.completed_at,
-        workoutName: workout?.name?.trim() || 'Entrenamiento',
-        focus: workout?.focus ?? null,
-        durationMin: Number(log.duration_minutes) || 0,
+        completedAt: presentation.completedAt,
+        workoutName: presentation.workoutName,
+        focus: presentation.focus,
+        durationMin: presentation.durationMinutes,
         sets,
         volumeKg,
       }

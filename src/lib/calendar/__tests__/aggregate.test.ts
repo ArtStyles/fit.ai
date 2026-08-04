@@ -67,6 +67,7 @@ describe('buildCalendarSessionPayload', () => {
         workout_id: 'workout-1',
         completed_at: '2026-08-12T18:00:00Z',
         duration_minutes: 45,
+        session_context_snapshot: null,
         workout: { name: 'Push', focus: 'Pecho' },
       }],
       [
@@ -92,6 +93,34 @@ describe('buildCalendarSessionPayload', () => {
       durationMin: 45,
       sets: 5,
       volumeKg: 1680,
+    }])
+  })
+
+  it('keeps an orphan session in its real day aggregation', () => {
+    const result = buildCalendarSessionPayload(
+      [{
+        id: 'orphan-session',
+        workout_id: null,
+        completed_at: '2026-08-13T18:00:00Z',
+        duration_minutes: 45,
+        session_context_snapshot: null,
+        workout: null,
+      }],
+      [],
+      'America/Havana',
+    )
+
+    expect(result.days).toEqual([{
+      date: '2026-08-13',
+      sessions: 1,
+      durationMin: 45,
+      volumeKg: 0,
+      logIds: ['orphan-session'],
+    }])
+    expect(result.sessions).toMatchObject([{
+      id: 'orphan-session',
+      workoutName: 'Entrenamiento',
+      focus: null,
     }])
   })
 })

@@ -143,7 +143,41 @@ Aplica las migraciones SQL en este orden:
 031_reclassify_exercise_cardio.sql
 032_plan_generation_reliability.sql
 033_remove_legacy_plan_generator.sql
+034_product_events.sql
+035_session_save_idempotency.sql
+036_completed_session_context.sql
+037_atomic_plan_lifecycle.sql
+038_session_authorizations.sql
+039_dashboard_payload_continuity.sql
 ```
+
+Las migraciones de continuidad se despliegan en orden y **primero en base de
+datos**: `036_completed_session_context.sql` → `037_atomic_plan_lifecycle.sql`
+→ `038_session_authorizations.sql` → `039_dashboard_payload_continuity.sql`.
+Aplica `038_session_authorizations.sql` antes de publicar la app que emite
+autorizaciones. La app anterior sigue funcionando con `save_session_log_atomic`
+v1. El fallback v1/directo de la app nueva existe sólo como puente para clientes
+o sesiones legacy que ya estaban en ejecución; `authorize_session_start` no omite
+la autorización si falta la RPC.
+La autorización congela `policy_timezone`, `policy_date`, los límites UTC del día
+y el inicio de la ventana del workout. El guard de guardado reutiliza esos valores
+inmutables y serializa por usuario; no reconstruye la política desde perfil, plan,
+workout ni `completed_at`. El timestamp cliente se conserva como fecha histórica,
+pero sólo se acepta desde 15 minutos antes de autorizar hasta el menor entre el
+vencimiento de 12 horas y 5 minutos después del intento de guardado.
+
+Las sesiones completadas conservan un contexto inmutable. Si un registro legacy
+quedó sin su workout, la interfaz muestra el fallback traducido `Entrenamiento` /
+`Workout`; sus filas de ejercicios y sus métricas de volumen permanecen exactas.
+Para revisar la recuperación sin modificar datos, ejecuta `pnpm audit:history`.
+El comando usa exclusivamente lecturas paginadas con la service role y escribe sólo
+agregados en stdout: nunca IDs, snapshots, nombres ni otra PII.
+
+La prueba de continuidad Playwright requiere las variables de la cuenta E2E
+dedicada, las migraciones anteriores y `E2E_HISTORY_CONTINUITY_ENABLED=true`.
+Sin ese opt-in la spec de continuidad se omite de forma segura. El harness E2E
+mantiene además su validación global de cuenta dedicada antes de iniciar cualquier
+servidor o escritura.
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
 normal. `009_reset_test_accounts.sql` es destructiva, contiene una cuenta de
@@ -230,6 +264,7 @@ pnpm cap:android
 | `pnpm test:ui` | Abre la interfaz de Vitest. |
 | `pnpm seed:exercises` | Reemplaza el catálogo de ejercicios con free-exercise-db (resetea datos de entrenamiento de prueba). |
 | `pnpm audit:plans` | Audita cobertura del catálogo, integridad de planes y métricas del motor sin modificar datos. |
+| `pnpm audit:history` | Audita en modo lectura los conteos agregados de sesiones vinculadas o separadas, snapshots y evidencia de ejercicios. |
 | `pnpm translate:setup` | Instala el motor local Argos Translate. |
 | `pnpm translate:exercises:es` | Traduce localmente el siguiente lote de 25 ejercicios sin borrar planes ni historial. |
 | `pnpm cap:sync` | Sincroniza recursos y plugins de Capacitor. |

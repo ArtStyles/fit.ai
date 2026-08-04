@@ -12,12 +12,23 @@ export type DashboardWorkout = {
 export type DashboardWeekDay = {
   isoDay: number
   dateStr: string
-  workout: DashboardWorkout | null
-  isCompleted: boolean
+  scheduledWorkout: DashboardWorkout | null
+  completedEvidence: DashboardCompletedEvidence | null
+  isScheduledWorkoutCompleted: boolean
+  hasTrainingEvidence: boolean
+  canStartScheduledWorkout: boolean
   isToday: boolean
   isRecoverable: boolean
-  completedDurationMinutes: number | null
-  completedLogId: string | null
+}
+
+export type DashboardCompletedEvidence = {
+  logId: string
+  workoutId: string | null
+  workoutName: string
+  focus: string | null
+  durationMinutes: number
+  completedAt: string
+  source: 'snapshot' | 'workout' | 'fallback'
 }
 
 export type DashboardLatestSession = {
@@ -92,6 +103,7 @@ export type DashboardViewModelInput = DashboardNoticeInput & {
 export type DashboardToday = {
   state: 'available' | 'completed' | 'completed-for-today' | 'rest' | 'needs-plan'
   workout: DashboardWorkout | null
+  completedEvidence: DashboardCompletedEvidence | null
   href: string | null
   nextWorkout: DashboardWorkout | null
   nextWorkoutIsoDay: number | null
@@ -167,11 +179,11 @@ function buildDashboardTimeline(days: DashboardWeekDay[]): DashboardTimelineItem
         : index === todayIndex
           ? 'today'
           : 'future'
-    const tone: DashboardTimelineTone = day.isCompleted
+    const tone: DashboardTimelineTone = day.hasTrainingEvidence
       ? 'completed'
-      : position === 'today' && day.workout
+      : position === 'today' && day.scheduledWorkout
         ? 'active'
-        : !day.workout
+        : !day.scheduledWorkout
           ? 'rest'
           : position === 'past'
             ? 'missed'
@@ -182,10 +194,13 @@ function buildDashboardTimeline(days: DashboardWeekDay[]): DashboardTimelineItem
 }
 
 function deriveToday(input: DashboardViewModelInput): DashboardToday {
+  const completedEvidence = input.weekDays.find(day => day.isToday)?.completedEvidence ?? null
+
   if (input.needsPlan) {
     return {
       state: 'needs-plan',
       workout: null,
+      completedEvidence,
       href: null,
       nextWorkout: null,
       nextWorkoutIsoDay: null,
@@ -197,6 +212,7 @@ function deriveToday(input: DashboardViewModelInput): DashboardToday {
       return {
         state: 'completed-for-today',
         workout: null,
+        completedEvidence,
         href: null,
         nextWorkout: input.nextWorkout,
         nextWorkoutIsoDay: input.nextWorkoutIsoDay,
@@ -205,6 +221,7 @@ function deriveToday(input: DashboardViewModelInput): DashboardToday {
     return {
       state: 'rest',
       workout: null,
+      completedEvidence,
       href: null,
       nextWorkout: input.nextWorkout,
       nextWorkoutIsoDay: input.nextWorkoutIsoDay,
@@ -215,6 +232,7 @@ function deriveToday(input: DashboardViewModelInput): DashboardToday {
     return {
       state: 'completed-for-today',
       workout: input.todayWorkout,
+      completedEvidence,
       href: null,
       nextWorkout: input.nextWorkout,
       nextWorkoutIsoDay: input.nextWorkoutIsoDay,
@@ -224,6 +242,7 @@ function deriveToday(input: DashboardViewModelInput): DashboardToday {
   return {
     state: input.isCompletedToday ? 'completed' : 'available',
     workout: input.todayWorkout,
+    completedEvidence,
     href: input.isCompletedToday ? null : `/session/${input.todayWorkout.id}`,
     nextWorkout: input.nextWorkout,
     nextWorkoutIsoDay: input.nextWorkoutIsoDay,
@@ -285,8 +304,8 @@ export function buildDashboardViewModel(input: DashboardViewModelInput): Dashboa
     weekly: {
       days: normalizedDays,
       timeline: buildDashboardTimeline(normalizedDays),
-      completed: normalizedDays.filter(day => day.workout && day.isCompleted).length,
-      scheduled: normalizedDays.filter(day => day.workout).length,
+      completed: normalizedDays.filter(day => day.hasTrainingEvidence).length,
+      scheduled: normalizedDays.filter(day => day.scheduledWorkout).length,
     },
     recommendation: deriveRecommendation(input),
     secondaryMetrics: {

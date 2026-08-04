@@ -11,6 +11,7 @@ import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
+import { toExerciseHistoryPresentation } from '@/lib/exercises/historyPresentation'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
@@ -43,6 +44,7 @@ type EmbeddedProgressLog = {
   completed_at: string
   duration_minutes: number | null
   mood_rating: number | null
+  session_context_snapshot?: unknown
 }
 
 type ExerciseLogRow = {
@@ -122,7 +124,7 @@ async function loadExerciseDetailPayloadFallback(
       weights_kg,
       rpe_values,
       notes,
-      progress_log:progress_logs!inner(id, workout_id, completed_at, duration_minutes, mood_rating, user_id)
+      progress_log:progress_logs!inner(id, workout_id, completed_at, duration_minutes, mood_rating, session_context_snapshot, user_id)
     `)
     .eq('exercise_id', exercise.id)
     .eq('progress_logs.user_id', userId) as unknown as {
@@ -333,8 +335,12 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
               {payload.logs.map(row => {
                 const progressLog = getProgressLog(row)!
                 const point = pointByLogId.get(progressLog.id)
-                const workout = progressLog.workout_id ? payload.workoutsById[progressLog.workout_id] : null
-                const workoutName = workout ? getWorkoutDisplayName(workout.name, workout.focus) : t('Entrenamiento')
+                const presentation = toExerciseHistoryPresentation(
+                  { ...progressLog, session_context_snapshot: progressLog.session_context_snapshot ?? null },
+                  payload.workoutsById,
+                  t('Entrenamiento'),
+                )
+                const workoutName = getWorkoutDisplayName(presentation.workoutName, presentation.focus)
                 const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed, row.rpe_values)
 
                 return (

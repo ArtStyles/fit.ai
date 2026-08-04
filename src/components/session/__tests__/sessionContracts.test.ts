@@ -41,6 +41,8 @@ describe('active session wiring contracts', () => {
     expect(completion).toContain("syncEventForStorageResult('delete', result)")
     expect(completion).toMatch(/syncErrorSource === 'backup-delete' \? retryCleanup/)
     expect(completion).not.toMatch(/onClearBackup\(\)\s*\n\s*setPrs/)
+    expect(completion).toContain("const message = t(result.error ?? 'No se pudo guardar la sesión')")
+    expect(completion).not.toMatch(/error instanceof Error \? error\.message/)
   })
 
   it('renders previous performance immediately before set controls', () => {

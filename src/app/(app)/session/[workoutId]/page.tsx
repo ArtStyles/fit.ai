@@ -7,6 +7,7 @@ import { getWorkoutStartAccess } from '@/lib/workouts/access'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { zipPreviousPerformanceRows } from '@/components/session/sessionViewModel'
+import { canMountSessionClient } from '@/lib/session/authorization'
 
 // ─── Tipos de datos crudos del servidor ──────────────────────────────────────
 
@@ -65,7 +66,7 @@ export default async function SessionPage({ params }: PageProps) {
     timeZone: resolveUserTimeZone(profile.timezone),
   })
 
-  if (!access.allowed) {
+  if (!canMountSessionClient(access)) {
     if (access.reason === 'not_found') notFound()
     redirect('/dashboard?error=workout_unavailable')
   }

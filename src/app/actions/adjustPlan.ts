@@ -8,7 +8,7 @@ import { loadCoachContextText } from '@/lib/ai/coachContextLoader'
 import { checkUserRateLimit, checkGlobalDailyBudget } from '@/lib/ai/rate-limits'
 import type { AdjustmentChange, AdjustmentContext } from '@/lib/ai/adjustments'
 import { isHealthChangeRequest } from '@/lib/ai/healthRequest'
-import { generatePlan } from './generatePlan'
+import { findExistingPlanGeneration, generatePlan } from './generatePlan'
 import type { CardioModality, PlanAdjustmentIntent } from '@/lib/training-engine'
 import {
   validatePlanAdjustmentIntent,
@@ -171,6 +171,7 @@ export async function previewStructuredPlanAdjustment(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
+
   const plan = await getOwnedActivePlan(supabase, user.id, planId)
   if (!plan) return { success: false, error: 'Plan activo no encontrado' }
 
@@ -182,6 +183,7 @@ export async function previewStructuredPlanAdjustment(
     const preview = await generatePlan({
       mode: 'plan_adjustment',
       adjustmentIntent: intent,
+      expectedParentPlanId: plan.id,
       previewOnly: true,
     })
     if (!preview.success) {
@@ -213,10 +215,20 @@ export async function previewStructuredPlanAdjustment(
 export async function applyPlanAdjustment(
   planId: string,
   rawIntent: unknown,
+  requestId: string,
 ): Promise<ApplyAdjustmentResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
+
+  try {
+    const existing = await findExistingPlanGeneration(requestId)
+    if (existing?.success) return { success: true, appliedCount: 1 }
+  } catch (error) {
+    console.error('[adjustPlan] No se pudo comprobar el requestId:', error)
+    throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')
+  }
+
   const plan = await getOwnedActivePlan(supabase, user.id, planId)
   if (!plan) return { success: false, error: 'El plan activo cambió. Vuelve a generar la vista previa.' }
   const options = await loadPlanAdjustmentOptions(supabase, user.id, plan.id)
@@ -226,7 +238,9 @@ export async function applyPlanAdjustment(
   const result = await generatePlan({
     mode: 'plan_adjustment',
     adjustmentIntent: intent,
+    expectedParentPlanId: plan.id,
     previewOnly: false,
+    requestId,
   })
   if (!result.success) return { success: false, error: result.error }
   revalidatePath('/plan')

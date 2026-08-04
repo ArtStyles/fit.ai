@@ -109,6 +109,14 @@ const ERRORS: Record<string, { title: string; description?: string }> = {
     title: 'No se pudo actualizar la cuenta',
     description: 'La operación administrativa falló. Intenta nuevamente.',
   },
+  admin_plan_downgrade_family_limit: {
+    title: 'No se puede cambiar a Free',
+    description: 'Archiva planes hasta dejar como máximo dos familias vigentes e intenta nuevamente.',
+  },
+  admin_plan_tier_busy: {
+    title: 'Cambio de plan en curso',
+    description: 'Hay otra operación actualizando esta cuenta. Intenta nuevamente en unos segundos.',
+  },
   admin_banner_invalid: {
     title: 'Revisa el banner',
     description: 'Completa el título, las fechas y el enlace con valores válidos.',

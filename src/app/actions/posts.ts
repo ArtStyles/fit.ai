@@ -6,12 +6,12 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { buildSessionSnapshot, buildRoutineSnapshot } from '@/lib/social/snapshots'
-import {
-  buildPlanInsert, buildWorkoutInsert, buildWorkoutExerciseInserts,
-} from '@/lib/social/clone'
-import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
 import type { RoutineSnapshot, RoutineSnapshotExercise, SessionSnapshot } from '@/lib/social/snapshots'
 import { postStoragePath } from '@/lib/images/post'
+import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
+import { exerciseLanguage } from '@/lib/exercises/localization'
+import { createTranslator } from '@/lib/i18n'
+import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 
 const BUCKET = 'posts'
 
@@ -80,31 +80,65 @@ export async function createPostFromSession(
 
   // Log propio + nombre del workout.
   const { data: log } = await (supabase.from('progress_logs') as any)
-    .select('id, completed_at, duration_minutes, workout_id, user_id')
+    .select('id, completed_at, duration_minutes, workout_id, user_id, session_context_snapshot')
     .eq('id', progressLogId)
     .eq('user_id', user.id)
-    .maybeSingle() as { data: { id: string; completed_at: string; duration_minutes: number | null; workout_id: string | null } | null }
+    .maybeSingle() as {
+      data: {
+        id: string
+        completed_at: string
+        duration_minutes: number | null
+        workout_id: string | null
+        session_context_snapshot: unknown
+      } | null
+    }
   if (!log) return { ok: false, error: 'Sesión no encontrada.' }
 
-  let workoutName = 'Entrenamiento'
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('language')
+    .eq('id', user.id)
+    .maybeSingle() as unknown as { data: { language: string | null } | null }
+  const language = exerciseLanguage(profile?.language)
+  const t = createTranslator(language)
+
+  let workout: CompletedSessionWorkoutRelation | null = null
   if (log.workout_id) {
     const { data: w } = await (supabase.from('workouts') as any)
-      .select('name').eq('id', log.workout_id).maybeSingle() as { data: { name: string } | null }
-    if (w?.name) workoutName = w.name
+      .select('name, focus').eq('id', log.workout_id).maybeSingle() as {
+        data: CompletedSessionWorkoutRelation | null
+      }
+    workout = w ?? null
   }
+  const workoutName = toCompletedSessionPresentation(
+    { ...log, workout },
+    t('Entrenamiento'),
+  ).workoutName
 
   const { data: exLogs } = await (supabase.from('exercise_logs') as any)
-    .select('exercise_id, reps_completed, weights_kg')
+    .select('exercise_id, reps_completed, weights_kg, exercise:exercises(name, name_es)')
     .eq('progress_log_id', progressLogId) as {
-      data: { exercise_id: string; reps_completed: number[] | null; weights_kg: number[] | null }[] | null
+      data: {
+        exercise_id: string
+        reps_completed: number[] | null
+        weights_kg: number[] | null
+        exercise: { name: string; name_es: string | null } | { name: string; name_es: string | null }[] | null
+      }[] | null
     }
 
-  const ids = Array.from(new Set((exLogs ?? []).map(e => e.exercise_id)))
   const names = new Map<string, string>()
-  if (ids.length) {
-    const { data: exs } = await (supabase.from('exercises') as any)
-      .select('id, name').in('id', ids) as { data: { id: string; name: string }[] | null }
-    for (const e of exs ?? []) names.set(e.id, e.name)
+  for (const exerciseLog of exLogs ?? []) {
+    const liveExercise = Array.isArray(exerciseLog.exercise)
+      ? exerciseLog.exercise[0] ?? null
+      : exerciseLog.exercise
+    const presentation = resolveHistoricalExercisePresentation({
+      exerciseId: exerciseLog.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot,
+      liveExercise,
+      language,
+      fallbackExerciseName: t('Ejercicio'),
+    })
+    names.set(exerciseLog.exercise_id, presentation.name)
   }
 
   const snapshot: SessionSnapshot = buildSessionSnapshot(log, workoutName, exLogs ?? [], names)
@@ -222,47 +256,21 @@ export async function clonePlanFromPost(postId: string): Promise<ActionResult<{ 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesion no valida.' }
 
-  const createPolicy = await getPlanCreatePolicy(supabase, user.id)
-  if (!createPolicy.allowed) return { ok: false, error: createPolicy.reason }
+  const { data: planId, error } = await (supabase.rpc as any)('clone_plan_from_post_atomic', {
+    p_post_id: postId,
+  })
 
-  const { data: post } = await (supabase.from('posts') as any)
-    .select('user_id, routine_snapshot')
-    .eq('id', postId)
-    .maybeSingle() as {
-      data: { user_id: string; routine_snapshot: RoutineSnapshot | null } | null
-    }
-  if (!post?.routine_snapshot) return { ok: false, error: 'Esta publicacion no tiene rutina.' }
-  const snapshot = post.routine_snapshot
-
-  const { data: plan, error: planErr } = await (supabase.from('workout_plans') as any)
-    .insert(buildPlanInsert(snapshot, user.id, { postId, userId: post.user_id }))
-    .select('id')
-    .single() as {
-      data: { id: string } | null; error: unknown
-    }
-  if (planErr || !plan) return { ok: false, error: 'No se pudo crear el plan.' }
-
-  const planId = plan.id
-  const userId = user.id
-
-  async function rollback(): Promise<void> {
-    await (supabase.from('workouts') as any).delete().eq('plan_id', planId).eq('user_id', userId)
-    await (supabase.from('workout_plans') as any).delete().eq('id', planId).eq('user_id', userId)
-  }
-
-  for (let i = 0; i < snapshot.workouts.length; i++) {
-    const sw = snapshot.workouts[i]
-    const { data: w, error: wErr } = await (supabase.from('workouts') as any)
-      .insert(buildWorkoutInsert(sw, planId, userId, i)).select('id').single() as {
-        data: { id: string } | null; error: unknown
+  if (error || !planId) {
+    if (error?.message?.includes('PLAN_FAMILY_LIMIT')) {
+      return {
+        ok: false,
+        error: 'Tu cuenta free permite guardar hasta dos planes. Archiva uno de tus planes o actualiza a Pro.',
       }
-    if (wErr || !w) { await rollback(); return { ok: false, error: 'No se pudo clonar un dia.' } }
-
-    const exInserts = buildWorkoutExerciseInserts(sw, w.id)
-    if (exInserts.length) {
-      const { error: exErr } = await (supabase.from('workout_exercises') as any).insert(exInserts)
-      if (exErr) { await rollback(); return { ok: false, error: 'No se pudieron clonar los ejercicios.' } }
     }
+    if (error?.message?.includes('POST_ROUTINE_NOT_FOUND_OR_UNAVAILABLE')) {
+      return { ok: false, error: 'Esta publicacion no tiene una rutina disponible.' }
+    }
+    return { ok: false, error: 'No se pudo clonar la rutina.' }
   }
 
   revalidatePath('/plan')

@@ -125,25 +125,11 @@ export async function activatePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
-  const { data: plan } = await (supabase.from('workout_plans') as any)
-    .select('id')
-    .eq('id', planId)
-    .eq('user_id', user.id)
-    .maybeSingle() as { data: { id: string } | null }
+  const { data, error } = await (supabase.rpc as any)('activate_plan_version', {
+    p_plan_id: planId,
+  })
 
-  if (!plan) redirect('/plan?error=save_failed')
-
-  await (supabase.from('workout_plans') as any)
-    .update({ is_active: false })
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-
-  const { error } = await (supabase.from('workout_plans') as any)
-    .update({ is_active: true })
-    .eq('id', planId)
-    .eq('user_id', user.id)
-
-  if (error) redirect('/plan?error=save_failed')
+  if (error || !data) redirect('/plan?error=save_failed')
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')
@@ -155,7 +141,13 @@ export async function createManualPlan(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login?error=auth_required')
 
-  const policy = await getPlanCreatePolicy(supabase, user.id)
+  let policy: Awaited<ReturnType<typeof getPlanCreatePolicy>>
+  try {
+    policy = await getPlanCreatePolicy(supabase, user.id)
+  } catch (error) {
+    console.error('[createManualPlan] No se pudo validar el límite:', error)
+    redirect('/plan?error=save_failed')
+  }
   if (!policy.allowed) redirect('/plan?error=plan_limit')
 
   const name = asNullableString(formData.get('name')) ?? 'Plan manual'
@@ -164,50 +156,27 @@ export async function createManualPlan(formData: FormData) {
   const difficulty = asNullableString(formData.get('difficulty'))
   const makeActive = formData.get('makeActive') === 'on'
 
-  if (makeActive) {
-    await (supabase.from('workout_plans') as any)
-      .update({ is_active: false })
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-  }
-
-  const { data: plan, error: planError } = await (supabase.from('workout_plans') as any)
-    .insert({
-      user_id: user.id,
-      name,
-      goal,
-      days_per_week: daysPerWeek,
-      difficulty: difficulty === 'beginner' || difficulty === 'intermediate' || difficulty === 'advanced'
-        ? difficulty
-        : null,
-      generated_by_ai: false,
-      is_active: makeActive,
-      plan_context: 'manual_update',
-      source_type: 'manual',
-      manually_updated_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single() as { data: { id: string } | null; error: { message?: string } | null }
-
-  if (planError || !plan) redirect('/plan?error=save_failed')
-
   const workoutRows = Array.from({ length: daysPerWeek }, (_, index) => ({
-    user_id: user.id,
-    plan_id: plan.id,
-    name: `Sesion ${index + 1}`,
+    name: `Sesión ${index + 1}`,
     day_of_week: index + 1,
     order_in_plan: index + 1,
     estimated_duration_minutes: 60,
   }))
 
-  const { error: workoutsError } = await (supabase.from('workouts') as any)
-    .insert(workoutRows)
+  const { data: planId, error } = await (supabase.rpc as any)('create_manual_plan_atomic', {
+    p_plan: {
+      name,
+      goal,
+      difficulty: difficulty === 'beginner' || difficulty === 'intermediate' || difficulty === 'advanced'
+        ? difficulty
+        : null,
+    },
+    p_workouts: workoutRows,
+    p_make_active: makeActive,
+  })
 
-  if (workoutsError) {
-    await (supabase.from('workouts') as any).delete().eq('plan_id', plan.id).eq('user_id', user.id)
-    await (supabase.from('workout_plans') as any).delete().eq('id', plan.id).eq('user_id', user.id)
-    redirect('/plan?error=save_failed')
-  }
+  if (error?.message?.includes('PLAN_FAMILY_LIMIT')) redirect('/plan?error=plan_limit')
+  if (error || !planId) redirect('/plan?error=save_failed')
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')
@@ -222,21 +191,15 @@ export async function deletePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
-  await (supabase.from('workouts') as any)
-    .delete()
-    .eq('plan_id', planId)
-    .eq('user_id', user.id)
-
-  const { error } = await (supabase.from('workout_plans') as any)
-    .delete()
-    .eq('id', planId)
-    .eq('user_id', user.id)
+  const { error } = await (supabase.rpc as any)('retire_plan_family', {
+    p_plan_id: planId,
+  })
 
   if (error) redirect('/plan?error=save_failed')
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')
-  redirect('/plan?notice=plan_deleted')
+  redirect('/plan?notice=plan_retired')
 }
 
 export async function updatePlanSummary(formData: FormData) {

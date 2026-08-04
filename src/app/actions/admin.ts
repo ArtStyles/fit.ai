@@ -55,7 +55,16 @@ export async function setUserSubscription(formData: FormData) {
   if (tier !== 'free' && tier !== 'pro') redirect('/admin?error=admin_invalid_action')
 
   const { user, service } = await getMutableTarget(targetUserId)
-  const { error } = await service.from('profiles').update({ subscription_tier: tier }).eq('id', targetUserId)
+  const { error } = await (service.rpc as any)('set_subscription_tier_atomic', {
+    p_user_id: targetUserId,
+    p_subscription_tier: tier,
+  })
+  if (error?.message?.includes('PLAN_DOWNGRADE_FAMILY_LIMIT')) {
+    redirect('/admin?error=admin_plan_downgrade_family_limit')
+  }
+  if (error?.message?.includes('PLAN_TIER_LOCK_BUSY_RETRY')) {
+    redirect('/admin?error=admin_plan_tier_busy')
+  }
   if (error) redirect('/admin?error=admin_update_failed')
 
   await writeAudit({

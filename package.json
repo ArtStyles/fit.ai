@@ -11,6 +11,7 @@
     "type-check": "tsc --noEmit --incremental false",
     "seed:exercises": "tsx --env-file=.env.local scripts/seed-free-exercise-db.ts --reset",
     "audit:plans": "tsx --env-file=.env.local scripts/audit-plan-generation.ts",
+    "audit:history": "tsx --env-file=.env.local scripts/audit-plan-history-continuity.ts",
     "translate:setup": "python scripts/setup-argos-translate.py",
     "translate:exercises:es": "tsx --env-file=.env.local scripts/translate-exercises-es.ts",
     "test": "vitest run",

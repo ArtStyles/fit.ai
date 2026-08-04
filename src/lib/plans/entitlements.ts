@@ -14,13 +14,15 @@ export async function getSubscriptionTier(
   supabase: SupabaseServerClient,
   userId: string,
 ): Promise<SubscriptionTier> {
-  const { data } = await (supabase.from('profiles') as any)
+  const { data, error } = await (supabase.from('profiles') as any)
     .select('subscription_tier')
     .eq('id', userId)
     .maybeSingle() as {
       data: { subscription_tier: SubscriptionTier | null } | null
+      error: { message?: string } | null
     }
 
+  if (error) throw new Error(error.message ?? 'No se pudo consultar la suscripción.')
   return data?.subscription_tier === 'pro' ? 'pro' : 'free'
 }
 
@@ -28,17 +30,36 @@ export async function getSavedPlanCount(
   supabase: SupabaseServerClient,
   userId: string,
 ): Promise<number> {
-  const { count } = await (supabase.from('workout_plans') as any)
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId) as { count: number | null }
+  const { count, error } = await (supabase.from('workout_plans') as any)
+    .select('family_id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .is('superseded_at', null)
+    .is('retired_at', null) as { count: number | null; error: { message?: string } | null }
 
+  if (error) throw new Error(error.message ?? 'No se pudo consultar la biblioteca de planes.')
   return count ?? 0
+}
+
+async function hasReplaceableFamily(
+  supabase: SupabaseServerClient,
+  userId: string,
+  familyId: string,
+): Promise<boolean> {
+  const { count, error } = await (supabase.from('workout_plans') as any)
+    .select('family_id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('family_id', familyId)
+    .is('superseded_at', null)
+    .is('retired_at', null) as { count: number | null; error: { message?: string } | null }
+
+  if (error) throw new Error(error.message ?? 'No se pudo validar la familia del plan.')
+  return (count ?? 0) > 0
 }
 
 export async function getPlanCreatePolicy(
   supabase: SupabaseServerClient,
   userId: string,
-  options: { replaceExistingForFree?: boolean } = {},
+  options: { replacingFamilyId?: string | null } = {},
 ): Promise<PlanCreatePolicy> {
   const [tier, planCount] = await Promise.all([
     getSubscriptionTier(supabase, userId),
@@ -49,12 +70,12 @@ export async function getPlanCreatePolicy(
     return { allowed: true, tier, planCount, replacingExisting: false }
   }
 
-  if (options.replaceExistingForFree && planCount > 0) {
-    return { allowed: true, tier, planCount, replacingExisting: true }
-  }
+  const replacingExisting = options.replacingFamilyId
+    ? await hasReplaceableFamily(supabase, userId, options.replacingFamilyId)
+    : false
 
-  if (planCount < FREE_PLAN_LIMIT) {
-    return { allowed: true, tier, planCount, replacingExisting: false }
+  if (replacingExisting || planCount < FREE_PLAN_LIMIT) {
+    return { allowed: true, tier, planCount, replacingExisting }
   }
 
   return {
@@ -63,52 +84,4 @@ export async function getPlanCreatePolicy(
     planCount,
     reason: 'Tu cuenta free permite guardar hasta dos planes. Reemplaza uno de tus planes o actualiza a Pro.',
   }
-}
-
-type SavedPlan = { id: string; created_at: string }
-
-export function getFreePlanIdsToRemove(
-  plans: SavedPlan[],
-  keepPlanId: string,
-  replacedPlanId?: string | null,
-): string[] {
-  const hasReplacedPlan = Boolean(
-    replacedPlanId
-    && replacedPlanId !== keepPlanId
-    && plans.some(plan => plan.id === replacedPlanId),
-  )
-  const removalCount = Math.max(hasReplacedPlan ? 1 : 0, plans.length - FREE_PLAN_LIMIT)
-  if (removalCount === 0) return []
-
-  return plans
-    .filter(plan => plan.id !== keepPlanId)
-    .sort((a, b) => {
-      if (a.id === replacedPlanId) return -1
-      if (b.id === replacedPlanId) return 1
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    })
-    .slice(0, removalCount)
-    .map(plan => plan.id)
-}
-
-export async function pruneExcessPlansForFreeUser(
-  supabase: SupabaseServerClient,
-  userId: string,
-  keepPlanId: string,
-  replacedPlanId?: string | null,
-): Promise<void> {
-  const tier = await getSubscriptionTier(supabase, userId)
-  if (tier !== 'free') return
-
-  const { data: plans } = await (supabase.from('workout_plans') as any)
-    .select('id, created_at')
-    .eq('user_id', userId) as { data: SavedPlan[] | null }
-
-  const planIds = getFreePlanIdsToRemove(plans ?? [], keepPlanId, replacedPlanId)
-  if (planIds.length === 0) return
-
-  await (supabase.from('workout_plans') as any)
-    .delete()
-    .eq('user_id', userId)
-    .in('id', planIds)
 }

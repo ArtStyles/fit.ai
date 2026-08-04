@@ -50,6 +50,8 @@ const dashboardEnglish: [string, string][] = [
   ['Pendiente', 'Pending'],
   ['Abrir avisos', 'Open notices'],
   ['Cerrar avisos', 'Close notices'],
+  ['Realizado con el plan anterior', 'Completed with the previous plan'],
+  ['Programado en tu plan actual: {workout}', 'Scheduled in your current plan: {workout}'],
 ]
 
 describe('dashboard English catalog', () => {
@@ -78,5 +80,14 @@ describe('dashboard component localization boundaries', () => {
     expect(sources).not.toMatch(/\{weekly\.completed\}\s+de\s+\{weekly\.scheduled\}/)
     expect(sources).not.toContain('const DAY_NAMES')
     expect(sources).not.toMatch(/`\$\{recommendation\.workout\.name\}.*DAY_NAMES/)
+  })
+
+  it('renders historical evidence separately from the current scheduled workout', () => {
+    const journey = readFileSync(new URL('../DashboardWeekJourney.tsx', import.meta.url), 'utf8')
+
+    expect(journey).toContain('item.completedEvidence')
+    expect(journey).toContain('today.completedEvidence')
+    expect(journey).toContain("t('Realizado con el plan anterior')")
+    expect(journey).toContain("t('Programado en tu plan actual: {workout}'")
   })
 })

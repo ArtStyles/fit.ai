@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 034_product_events
+ * Last updated: migration 038_session_authorizations
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -326,6 +326,10 @@ export interface Database {
           generation_metadata: Json
           source_post_id: string | null
           source_user_id: string | null
+          family_id: string
+          superseded_at: string | null
+          retired_at: string | null
+          generation_request_id: string | null
           created_at: string
           updated_at: string
         }
@@ -350,6 +354,10 @@ export interface Database {
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
+          family_id?: string
+          superseded_at?: string | null
+          retired_at?: string | null
+          generation_request_id?: string | null
         }
         Update: {
           name?: string
@@ -370,6 +378,10 @@ export interface Database {
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
+          family_id?: string
+          superseded_at?: string | null
+          retired_at?: string | null
+          generation_request_id?: string | null
         }
         Relationships: []
       }
@@ -459,12 +471,66 @@ export interface Database {
 
       // ─── progress_logs ────────────────────────────────────────────────────
 
+      session_authorizations: {
+        Row: {
+          client_session_id: string
+          user_id: string
+          workout_id: string
+          plan_id: string
+          session_context_snapshot: Json
+          policy_timezone: string
+          policy_date: string
+          policy_day_start: string
+          policy_day_end: string
+          workout_window_start: string
+          created_at: string
+          expires_at: string
+          consumed_at: string | null
+          released_at: string | null
+        }
+        Insert: {
+          client_session_id: string
+          user_id: string
+          workout_id: string
+          plan_id: string
+          session_context_snapshot: Json
+          policy_timezone: string
+          policy_date: string
+          policy_day_start: string
+          policy_day_end: string
+          workout_window_start: string
+          created_at: string
+          expires_at: string
+          consumed_at?: string | null
+          released_at?: string | null
+        }
+        Update: {
+          client_session_id?: string
+          user_id?: string
+          workout_id?: string
+          plan_id?: string
+          session_context_snapshot?: Json
+          policy_timezone?: string
+          policy_date?: string
+          policy_day_start?: string
+          policy_day_end?: string
+          workout_window_start?: string
+          created_at?: string
+          expires_at?: string
+          consumed_at?: string | null
+          released_at?: string | null
+        }
+        Relationships: []
+      }
+
       progress_logs: {
         Row: {
           id: string
           user_id: string
           client_session_id: string | null
           session_result_snapshot: Json | null
+          session_context_snapshot: Json | null
+          session_detail_backup: Json | null
           workout_id: string | null
           completed_at: string
           duration_minutes: number | null
@@ -477,6 +543,8 @@ export interface Database {
           user_id: string
           client_session_id?: string | null
           session_result_snapshot?: Json | null
+          session_context_snapshot?: Json | null
+          session_detail_backup?: Json | null
           workout_id?: string | null
           completed_at?: string
           duration_minutes?: number | null
@@ -487,6 +555,8 @@ export interface Database {
         Update: {
           client_session_id?: string | null
           session_result_snapshot?: Json | null
+          session_context_snapshot?: Json | null
+          session_detail_backup?: Json | null
           workout_id?: string | null
           duration_minutes?: number | null
           notes?: string | null
@@ -815,18 +885,75 @@ export interface Database {
         Args: Record<string, unknown>
         Returns: unknown
       }
-      create_engine_plan: {
+      create_engine_plan_v2: {
         Args: {
           p_plan: Json
           p_metadata: Json
           p_week_number: number
           p_plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
-          p_parent_plan_id?: string | null
+          p_expected_parent_plan_id: string | null
+          p_generation_request_id: string
           p_profile_updates?: Json
         }
         Returns: string
       }
+      activate_plan_version: {
+        Args: {
+          p_plan_id: string
+        }
+        Returns: string
+      }
+      retire_plan_family: {
+        Args: {
+          p_plan_id: string
+        }
+        Returns: string | null
+      }
+      create_manual_plan_atomic: {
+        Args: {
+          p_plan: Json
+          p_workouts: Json
+          p_make_active?: boolean
+        }
+        Returns: string
+      }
+      clone_plan_from_post_atomic: {
+        Args: {
+          p_post_id: string
+        }
+        Returns: string
+      }
+      set_subscription_tier_atomic: {
+        Args: {
+          p_user_id: string
+          p_subscription_tier: 'free' | 'pro'
+        }
+        Returns: string
+      }
       save_session_log_atomic: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+          p_completed_at: string
+          p_duration_minutes: number
+          p_mood_rating: number | null
+          p_exercise_logs: Json
+          p_result_snapshot: Json
+        }
+        Returns: Array<{
+          progress_log_id: string
+          inserted: boolean
+          result_snapshot: Json
+        }>
+      }
+      authorize_session_start: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+        }
+        Returns: Json
+      }
+      save_session_log_atomic_v2: {
         Args: {
           p_client_session_id: string
           p_workout_id: string
@@ -874,12 +1001,22 @@ export interface Database {
             workout_id: string | null
             completed_at: string
             duration_minutes: number | null
+            session_context_snapshot: Json | null
+            workout: {
+              name: string
+              focus: string | null
+            } | null
           }[]
           week_logs: {
             id: string
             workout_id: string | null
             completed_at: string
             duration_minutes: number | null
+            session_context_snapshot: Json | null
+            workout: {
+              name: string
+              focus: string | null
+            } | null
           }[]
           week_volume_kg: number | string
           has_completed_sessions: boolean
@@ -896,6 +1033,7 @@ export interface Database {
             completed_at: string
             duration_minutes: number | null
             mood_rating: number | null
+            session_context_snapshot: Json | null
             workout: {
               name: string
               focus: string | null
@@ -959,6 +1097,7 @@ export interface Database {
               completed_at: string
               duration_minutes: number | null
               mood_rating: number | null
+              session_context_snapshot: Json | null
             } | null
           }[]
           workouts: {
@@ -980,6 +1119,7 @@ export type Exercise        = Database['public']['Tables']['exercises']['Row']
 export type WorkoutPlan     = Database['public']['Tables']['workout_plans']['Row']
 export type Workout         = Database['public']['Tables']['workouts']['Row']
 export type WorkoutExercise = Database['public']['Tables']['workout_exercises']['Row']
+export type SessionAuthorization = Database['public']['Tables']['session_authorizations']['Row']
 export type ProgressLog     = Database['public']['Tables']['progress_logs']['Row']
 export type ExerciseLog     = Database['public']['Tables']['exercise_logs']['Row']
 export type Measurement     = Database['public']['Tables']['measurements']['Row']
