@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures'
 import { signInAsE2EUser } from './helpers/auth'
+import { expectNoHorizontalOverflow } from './helpers/acceptance'
 import {
   assertHistoryContinuityE2EReady,
   cleanupHistoryContinuityFixture,
@@ -21,7 +22,7 @@ test('training evidence routes form one navigable journey', async ({ page }) => 
 
   await page.goto('/progress')
   await expect(page.getByRole('heading', { name: /tu progreso tiene dirección|your progress has direction/i })).toBeVisible()
-  await page.getByRole('button', { name: /4 semanas|4 weeks/i }).click()
+  await page.getByRole('button', { name: /^(4 semanas|4 weeks)$/i }).click()
 
   await page.goto('/history')
   await expect(page.getByRole('heading', { name: /registro cronológico|chronological log/i })).toBeVisible()
@@ -70,5 +71,53 @@ test('completed evidence survives plan activation, retirement, and source detach
     await expect(page.getByText(/programado en tu plan actual: e2e plan b full body/i)).toBeVisible()
   } finally {
     await cleanupHistoryContinuityFixture(fixture)
+  }
+})
+
+test('exercise chart keeps period controls inside the mobile card and scrolls bars internally', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-375', 'Mobile responsive contract')
+  test.setTimeout(120_000)
+
+  const fixture = await seedCoreProductFixture('es')
+  await seedCoreProgressHistory(fixture)
+  await signInAsE2EUser(page)
+  await page.goto(`/exercises/${fixture.exerciseId}`)
+
+  const chart = page.getByRole('region', { name: /evolución de fuerza|strength evolution/i })
+  const selector = chart.locator('[aria-label="Seleccionar periodo del gráfico"]')
+  const bars = chart.getByRole('group', { name: /peso máximo por aparición|maximum weight by appearance/i })
+  const scrollArea = bars.locator('..')
+
+  await expect(chart).toBeVisible()
+  await expect(selector).toBeVisible()
+  await expect(bars).toBeVisible()
+
+  for (const width of [375, 498]) {
+    await page.setViewportSize({ width, height: 1080 })
+
+    const viewport = page.viewportSize()
+    const chartBox = await chart.boundingBox()
+    const selectorBox = await selector.boundingBox()
+    expect(viewport).not.toBeNull()
+    expect(chartBox).not.toBeNull()
+    expect(selectorBox).not.toBeNull()
+    if (!viewport || !chartBox || !selectorBox) throw new Error('Exercise chart geometry is unavailable')
+
+    expect(chartBox.x).toBeGreaterThanOrEqual(0)
+    expect(chartBox.x + chartBox.width).toBeLessThanOrEqual(viewport.width)
+    expect(selectorBox.x).toBeGreaterThanOrEqual(chartBox.x)
+    expect(selectorBox.x + selectorBox.width).toBeLessThanOrEqual(chartBox.x + chartBox.width)
+    await expectNoHorizontalOverflow(page)
+
+    const scrollMetrics = await scrollArea.evaluate(element => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }))
+    expect(scrollMetrics.scrollWidth).toBeGreaterThan(scrollMetrics.clientWidth)
+
+    await scrollArea.evaluate(element => {
+      element.scrollLeft = element.scrollWidth
+    })
+    expect(await scrollArea.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
   }
 })

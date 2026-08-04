@@ -32,8 +32,8 @@ export function ExerciseProgressChart({
   const maxWeight = Math.max(1, ...visiblePoints.map(point => point.maxWeightKg))
 
   return (
-    <section className="rounded-3xl border border-border/60 bg-muted/[0.05] p-4 sm:p-6" aria-labelledby="exercise-progress-title">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <section className="w-full min-w-0 max-w-full rounded-3xl border border-border/60 bg-muted/[0.05] p-4 sm:p-6" aria-labelledby="exercise-progress-title">
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{locale === 'en' ? 'Performance evidence' : 'Evidencia de rendimiento'}</p>
           <h2 id="exercise-progress-title" className="mt-1 font-display text-2xl font-bold text-foreground">{locale === 'en' ? 'Strength evolution' : 'Evolución de fuerza'}</h2>
@@ -47,7 +47,7 @@ export function ExerciseProgressChart({
           ]}
           onChange={setRangeWeeks}
           label={locale === 'en' ? 'Select chart period' : 'Seleccionar periodo del gráfico'}
-          className="w-full sm:w-[19rem]"
+          className="w-full min-w-0 max-w-full sm:w-[19rem]"
         />
       </div>
 
@@ -57,7 +57,7 @@ export function ExerciseProgressChart({
         </div>
       ) : (
         <>
-          <div className="mt-6 overflow-x-auto pb-2">
+          <div className="mt-6 max-w-full overflow-x-auto overscroll-x-contain pb-2">
             <div
               className="flex h-52 items-end gap-2"
               style={{ minWidth: `${Math.max(544, visiblePoints.length * 44 + Math.max(0, visiblePoints.length - 1) * 8)}px` }}
