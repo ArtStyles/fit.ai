@@ -27,6 +27,7 @@ import {
 } from '@/lib/training-engine'
 import type { WeeklySummary, WeeklyExerciseRow } from '@/lib/plans/periodization'
 import type { UserContext }        from '@/lib/ai/types'
+import { isConfirmedPlanRpcFailure } from '@/lib/plans/persistentRequestId'
 import type { Json } from '@/types/database'
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
@@ -348,7 +349,7 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
       if (existing) return existing
     } catch (error) {
       console.error('[generatePlan] No se pudo comprobar el requestId:', error)
-      return { success: false, error: 'No se pudo comprobar la operación del plan. Inténtalo nuevamente.' }
+      throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')
     }
   }
 
@@ -641,6 +642,16 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
   })
 
   if (rpcError || !newPlanId) {
+    if (!isConfirmedPlanRpcFailure(rpcError)) {
+      try {
+        const persistedPlan = await loadExistingPlanGeneration(supabase, user.id, options.requestId)
+        if (persistedPlan) return persistedPlan
+      } catch (error) {
+        console.error('[generatePlan] No se pudo reconciliar el resultado ambiguo del RPC:', error)
+      }
+      throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')
+    }
+
     await recordEvidenceGenerationFailure(
       supabase,
       mode,

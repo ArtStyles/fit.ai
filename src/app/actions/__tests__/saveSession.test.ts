@@ -87,6 +87,16 @@ const fallbackPayload: SaveSessionPayload = {
   }],
 }
 
+const fallbackDetailBackup = [{
+  exercise_id: fallbackPayload.exercises[0].exerciseId,
+  sets_completed: 1,
+  reps_completed: [8],
+  weights_kg: [10],
+  rpe_values: [7],
+  duration_seconds: null,
+  notes: 'Agregado solo por hoy.',
+}]
+
 const winnerId = '55555555-5555-4555-8555-555555555555'
 const winnerCompletedAt = '2026-05-27T16:00:00.000Z'
 
@@ -396,6 +406,44 @@ describe('saveSession idempotency', () => {
       progressions: storedSnapshot.progressions,
     })
     expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('retries the preflight lookup without detail backup during a DB-first rollout', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [
+        {
+          data: null,
+          error: {
+            code: 'PGRST204',
+            message: "Could not find the 'session_detail_backup' column of 'progress_logs' in the schema cache",
+          },
+        },
+        {
+          data: {
+            id: 'log-existing',
+            workout_id: payload.workoutId,
+            session_result_snapshot: storedSnapshot,
+          },
+          error: null,
+        },
+      ],
+    })
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: true,
+      progressLogId: 'log-existing',
+      prs: storedSnapshot.prs,
+      progressions: storedSnapshot.progressions,
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+    const progressQueries = supabase.from.mock.results.map((result: { value: any }) => result.value)
+    expect(progressQueries[0].select).toHaveBeenCalledWith(
+      'id, workout_id, session_result_snapshot, session_detail_backup',
+    )
+    expect(progressQueries[1].select).toHaveBeenCalledWith(
+      'id, workout_id, session_result_snapshot',
+    )
   })
 
   it('recovers a retry when the same workout UUID uses different letter casing', async () => {
@@ -834,6 +882,7 @@ describe('saveSession idempotency', () => {
         isCompound: true,
       }],
     })
+    expect(insert.session_detail_backup).toEqual([])
   })
 
   it.each(['client_session_id', 'session_result_snapshot'])(
@@ -875,6 +924,7 @@ describe('saveSession idempotency', () => {
       expect(legacyInsert).not.toHaveProperty('client_session_id')
       expect(legacyInsert).not.toHaveProperty('session_result_snapshot')
       expect(legacyInsert).not.toHaveProperty('session_context_snapshot')
+      expect(legacyInsert).not.toHaveProperty('session_detail_backup')
     },
   )
 
@@ -910,9 +960,11 @@ describe('saveSession idempotency', () => {
     const contextCompatibleInsert = progressQueries.at(-1).insert.mock.calls[0][0]
 
     expect(fullInsert).toHaveProperty('session_context_snapshot')
+    expect(fullInsert).toHaveProperty('session_detail_backup')
     expect(contextCompatibleInsert).toHaveProperty('client_session_id', payload.clientSessionId)
     expect(contextCompatibleInsert).toHaveProperty('session_result_snapshot')
     expect(contextCompatibleInsert).not.toHaveProperty('session_context_snapshot')
+    expect(contextCompatibleInsert).not.toHaveProperty('session_detail_backup')
   })
 
   it('fails closed without deleting the direct-fallback progress backup when detail insert fails', async () => {
@@ -939,6 +991,7 @@ describe('saveSession idempotency', () => {
         id: 'log-partial',
         workout_id: fallbackPayload.workoutId,
         session_result_snapshot: storedSnapshot,
+        session_detail_backup: fallbackDetailBackup,
       } }],
       exercise_logs: [
         { data: [] },
@@ -948,6 +1001,13 @@ describe('saveSession idempotency', () => {
     })
     createClientMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(retried)
 
+    const alteredRetryPayload = {
+      ...fallbackPayload,
+      exercises: fallbackPayload.exercises.map(exercise => ({
+        ...exercise,
+        sets: exercise.sets.map(set => ({ ...set, weightKg: '99' })),
+      })),
+    }
     await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
       success: false,
       error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
@@ -957,7 +1017,7 @@ describe('saveSession idempotency', () => {
       .find((queryBuilder: any) => queryBuilder.delete.mock.calls.length > 0)
     expect(destructiveQuery).toBeUndefined()
 
-    await expect(saveSession(fallbackPayload)).resolves.toMatchObject({
+    await expect(saveSession(alteredRetryPayload)).resolves.toMatchObject({
       success: true,
       progressLogId: 'log-partial',
     })
@@ -965,10 +1025,10 @@ describe('saveSession idempotency', () => {
       .map((result: { value: any }) => result.value)
       .find((queryBuilder: any) => queryBuilder.insert.mock.calls.length > 0)
     expect(repairInsert.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
+      {
         progress_log_id: 'log-partial',
-        exercise_id: fallbackPayload.exercises[0].exerciseId,
-      }),
+        ...fallbackDetailBackup[0],
+      },
     ])
   })
 })

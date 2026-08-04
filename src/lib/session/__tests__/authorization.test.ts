@@ -97,7 +97,7 @@ describe('session authorization migration', () => {
     expect(migration).toMatch(/consumed_at IS NOT NULL[\s\S]+progress_logs[\s\S]+RETURN v_existing\.session_context_snapshot/i)
   })
 
-  it('reserves one live user/day slot and releases expired leases before issuance', () => {
+  it('reserves one user/day slot and treats consumed claims as daily evidence', () => {
     const authorize = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.authorize_session_start'),
       migration.indexOf('CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v2'),
@@ -109,6 +109,9 @@ describe('session authorization migration', () => {
     )
     expect(authorize).toMatch(
       /UPDATE public\.session_authorizations[\s\S]+SET released_at = v_created_at[\s\S]+expires_at <= v_created_at/i,
+    )
+    expect(authorize).toMatch(
+      /policy_date = \(v_created_at AT TIME ZONE v_time_zone\)::DATE[\s\S]+consumed_at IS NOT NULL[\s\S]+SESSION_DAILY_LIMIT_REACHED/i,
     )
     expect(authorize).toMatch(
       /policy_date = \(v_created_at AT TIME ZONE v_time_zone\)::DATE[\s\S]+consumed_at IS NULL[\s\S]+released_at IS NULL[\s\S]+SESSION_DAILY_LIMIT_REACHED/i,
@@ -181,6 +184,8 @@ describe('session authorization migration', () => {
 
     expect(saveV2).toMatch(/jsonb_to_recordset\(COALESCE\(p_exercise_logs/i)
     expect(snapshotBuild).toMatch(/jsonb_array_elements\([\s\S]+session_context_snapshot->'exercises'/i)
+    expect(snapshotBuild).not.toMatch(/DISTINCT ON\s*\(item\.exercise_id\)/i)
+    expect(snapshotBuild).toMatch(/jsonb_agg\(actual\.exercise_context ORDER BY actual\.ordinality\)/i)
     expect(snapshotBuild).not.toMatch(/WHERE item\.sets_completed/i)
     expect(snapshotBuild).toMatch(/JOIN public\.exercises AS exercise ON exercise\.id = item\.exercise_id/i)
     expect(snapshotBuild).toMatch(/jsonb_build_object\([\s\S]+'exerciseId', exercise\.id/i)
@@ -192,6 +197,7 @@ describe('session authorization migration', () => {
   })
 
   it('makes completed evidence non-deletable over REST and snapshots write-once', () => {
+    expect(contextMigration).toMatch(/ADD COLUMN session_detail_backup JSONB/i)
     expect(contextMigration).toMatch(
       /OLD\.session_context_snapshot IS NOT NULL[\s\S]+NEW\.session_context_snapshot IS DISTINCT FROM OLD\.session_context_snapshot[\s\S]+SESSION_CONTEXT_SNAPSHOT_IMMUTABLE/i,
     )
@@ -199,9 +205,24 @@ describe('session authorization migration', () => {
       /OLD\.session_result_snapshot IS NOT NULL[\s\S]+NEW\.session_result_snapshot IS DISTINCT FROM OLD\.session_result_snapshot[\s\S]+SESSION_RESULT_SNAPSHOT_IMMUTABLE/i,
     )
     expect(contextMigration).toMatch(
-      /REVOKE DELETE ON TABLE public\.progress_logs, public\.exercise_logs FROM anon, authenticated/i,
+      /OLD\.session_detail_backup IS NOT NULL[\s\S]+NEW\.session_detail_backup IS DISTINCT FROM OLD\.session_detail_backup[\s\S]+SESSION_DETAIL_BACKUP_IMMUTABLE/i,
     )
+    expect(contextMigration).toMatch(
+      /NEW\.completed_at IS DISTINCT FROM OLD\.completed_at[\s\S]+SESSION_EVIDENCE_IMMUTABLE/i,
+    )
+    expect(contextMigration).toMatch(
+      /CREATE TRIGGER trg_completed_session_snapshot_immutability[\s\S]+BEFORE UPDATE ON public\.progress_logs/i,
+    )
+    expect(contextMigration).toMatch(
+      /CREATE TRIGGER trg_exercise_log_immutability[\s\S]+BEFORE UPDATE ON public\.exercise_logs/i,
+    )
+    expect(contextMigration).toMatch(
+      /REVOKE ALL ON TABLE public\.progress_logs, public\.exercise_logs FROM anon, authenticated/i,
+    )
+    expect(contextMigration).toMatch(/GRANT SELECT, INSERT, UPDATE ON TABLE public\.progress_logs TO authenticated/i)
+    expect(contextMigration).toMatch(/GRANT SELECT, INSERT ON TABLE public\.exercise_logs TO authenticated/i)
     expect(contextMigration).not.toMatch(/CREATE POLICY[^;]+(?:progress_logs|exercise_logs)[\s\S]+FOR DELETE/i)
+    expect(contextMigration).not.toMatch(/CREATE POLICY "exercise_logs: own update"/i)
   })
 
   it('validates completion timestamps without using them to choose the daily slot', () => {

@@ -507,6 +507,7 @@ type PersistedSessionRow = {
   progress_log_id: string
   inserted: boolean
   result_snapshot: unknown
+  detail_backup?: unknown
 }
 
 type RecoveryResult =
@@ -579,12 +580,15 @@ async function recoverLegacySessionOutcome(
 
 async function repairMissingPersistedSessionDetails(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  payload: SaveSessionPayload,
   progressLogId: string,
+  storedDetailBackup: unknown,
 ): Promise<{ success: true } | { success: false; error: string }> {
-  const candidateOutcome = await deriveSessionOutcome(supabase, userId, payload)
-  if (candidateOutcome.exerciseLogs.length === 0) return { success: true }
+  // Only the direct compatibility bridge writes this marker. Legacy/atomic
+  // sessions without one are never inferred to be partial.
+  if (storedDetailBackup === null || storedDetailBackup === undefined) return { success: true }
+  const detailBackup = parseSessionDetailBackup(storedDetailBackup)
+  if (!detailBackup) return { success: false, error: RESULT_RECOVERY_ERROR }
+  if (detailBackup.length === 0) return { success: true }
 
   const { data: existingDetails, error: detailLookupError } = await (supabase
     .from('exercise_logs') as any)
@@ -604,9 +608,9 @@ async function repairMissingPersistedSessionDetails(
 
   const { error: detailInsertError } = await (supabase
     .from('exercise_logs') as any)
-    .insert(candidateOutcome.exerciseLogs.map(log => ({
-      progress_log_id: progressLogId,
+    .insert(detailBackup.map(log => ({
       ...log,
+      progress_log_id: progressLogId,
     }))) as { error: { message: string } | null }
 
   if (detailInsertError) {
@@ -615,6 +619,37 @@ async function repairMissingPersistedSessionDetails(
   }
 
   return { success: true }
+}
+
+function parseSessionDetailBackup(value: unknown): ExerciseLogPayload[] | null {
+  if (!Array.isArray(value)) return null
+
+  const parsed: ExerciseLogPayload[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+    const row = item as Record<string, unknown>
+    if (
+      typeof row.exercise_id !== 'string' || !isUuid(row.exercise_id) ||
+      !Number.isInteger(row.sets_completed) || Number(row.sets_completed) < 0 ||
+      !Array.isArray(row.reps_completed) || !row.reps_completed.every(value => Number.isInteger(value) && Number(value) >= 0) ||
+      !Array.isArray(row.weights_kg) || !row.weights_kg.every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0) ||
+      !Array.isArray(row.rpe_values) || !row.rpe_values.every(value => value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 10)) ||
+      !(row.duration_seconds === null || (Number.isInteger(row.duration_seconds) && Number(row.duration_seconds) >= 0)) ||
+      !(row.notes === null || typeof row.notes === 'string')
+    ) return null
+
+    parsed.push({
+      exercise_id: row.exercise_id,
+      sets_completed: Number(row.sets_completed),
+      reps_completed: row.reps_completed.map(Number),
+      weights_kg: row.weights_kg.map(Number),
+      rpe_values: row.rpe_values as Array<number | null>,
+      duration_seconds: row.duration_seconds === null ? null : Number(row.duration_seconds),
+      notes: row.notes as string | null,
+    })
+  }
+
+  return parsed
 }
 
 function isMissingAtomicSaveRpc(
@@ -628,7 +663,7 @@ function isMissingAtomicSaveRpc(
 
 function isMissingProgressLogColumn(
   error: { message: string } | null,
-  column: 'client_session_id' | 'session_result_snapshot' | 'session_context_snapshot',
+  column: 'client_session_id' | 'session_result_snapshot' | 'session_context_snapshot' | 'session_detail_backup',
 ): boolean {
   if (!error) return false
   return error.message.includes(column) && /column|schema cache|pgrst204/i.test(error.message)
@@ -639,23 +674,78 @@ function isMissingIdempotencyColumn(error: { message: string } | null): boolean 
     isMissingProgressLogColumn(error, 'session_result_snapshot')
 }
 
+type ExistingPersistedSessionLookupRow = {
+  id: string
+  workout_id: string | null
+  session_result_snapshot: unknown
+  session_detail_backup: unknown
+}
+
+type ExistingPersistedSessionLookupError = {
+  code?: string | null
+  message: string
+}
+
+async function lookupExistingPersistedSession(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  clientSessionId: string,
+): Promise<{
+  data: ExistingPersistedSessionLookupRow | null
+  error: ExistingPersistedSessionLookupError | null
+}> {
+  const initial = await (supabase
+    .from('progress_logs') as any)
+    .select('id, workout_id, session_result_snapshot, session_detail_backup')
+    .eq('user_id', userId)
+    .eq('client_session_id', clientSessionId)
+    .maybeSingle() as {
+      data: ExistingPersistedSessionLookupRow | null
+      error?: ExistingPersistedSessionLookupError | null
+    }
+
+  if (!isMissingProgressLogColumn(initial.error ?? null, 'session_detail_backup')) {
+    return { data: initial.data, error: initial.error ?? null }
+  }
+
+  const compatible = await (supabase
+    .from('progress_logs') as any)
+    .select('id, workout_id, session_result_snapshot')
+    .eq('user_id', userId)
+    .eq('client_session_id', clientSessionId)
+    .maybeSingle() as {
+      data: Omit<ExistingPersistedSessionLookupRow, 'session_detail_backup'> | null
+      error?: ExistingPersistedSessionLookupError | null
+    }
+
+  return {
+    data: compatible.data ? { ...compatible.data, session_detail_backup: null } : null,
+    error: compatible.error ?? null,
+  }
+}
+
 async function existingPersistedSession(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   clientSessionId: string,
 ): Promise<PersistedSessionRow | null> {
-  const { data } = await (supabase
-    .from('progress_logs') as any)
-    .select('id, session_result_snapshot')
-    .eq('user_id', userId)
-    .eq('client_session_id', clientSessionId)
-    .maybeSingle() as { data: { id: string; session_result_snapshot: unknown } | null }
+  const { data, error } = await lookupExistingPersistedSession(
+    supabase,
+    userId,
+    clientSessionId,
+  )
+
+  if (error) {
+    console.error('[saveSession] existing persisted session lookup failed:', error)
+    return null
+  }
 
   if (!data) return null
   return {
     progress_log_id: data.id,
     inserted: false,
     result_snapshot: data.session_result_snapshot,
+    detail_backup: data.session_detail_backup,
   }
 }
 
@@ -691,6 +781,7 @@ async function persistSessionWithoutAtomicRpc({
   const completeProgressLogPayload = {
     ...idempotentProgressLogPayload,
     session_context_snapshot: candidateOutcome.contextSnapshot,
+    session_detail_backup: candidateOutcome.exerciseLogs,
   }
 
   let { data: progressLog, error: progressError } = await (supabase
@@ -699,7 +790,10 @@ async function persistSessionWithoutAtomicRpc({
     .select('id, session_result_snapshot')
     .single() as { data: { id: string; session_result_snapshot: unknown } | null; error: { message: string } | null }
 
-  if (isMissingProgressLogColumn(progressError, 'session_context_snapshot')) {
+  if (
+    isMissingProgressLogColumn(progressError, 'session_context_snapshot') ||
+    isMissingProgressLogColumn(progressError, 'session_detail_backup')
+  ) {
     const contextCompatibleResult = await (supabase
       .from('progress_logs') as any)
       .insert(idempotentProgressLogPayload)
@@ -725,7 +819,15 @@ async function persistSessionWithoutAtomicRpc({
 
   if (progressError || !progressLog) {
     const existing = await existingPersistedSession(supabase, userId, payload.clientSessionId)
-    if (existing) return { data: [existing], error: null }
+    if (existing) {
+      const detailRepair = await repairMissingPersistedSessionDetails(
+        supabase,
+        existing.progress_log_id,
+        existing.detail_backup,
+      )
+      if (!detailRepair.success) return { data: null, error: { message: detailRepair.error } }
+      return { data: [existing], error: null }
+    }
 
     return {
       data: null,
@@ -785,14 +887,21 @@ export async function saveSession(
     return { success: false, progressLogId: null, prs: [], progressions: [], error: 'Identificador de sesión inválido' }
   }
 
-  const { data: existingSession } = await (supabase
-    .from('progress_logs') as any)
-    .select('id, workout_id, session_result_snapshot')
-    .eq('user_id', user.id)
-    .eq('client_session_id', payload.clientSessionId)
-    .maybeSingle() as {
-      data: { id: string; workout_id: string | null; session_result_snapshot: unknown } | null
+  const {
+    data: existingSession,
+    error: existingSessionError,
+  } = await lookupExistingPersistedSession(supabase, user.id, payload.clientSessionId)
+
+  if (existingSessionError && !isMissingIdempotencyColumn(existingSessionError)) {
+    console.error('[saveSession] preflight idempotency lookup failed:', existingSessionError)
+    return {
+      success: false,
+      progressLogId: null,
+      prs: [],
+      progressions: [],
+      error: 'No se pudo comprobar si la sesión ya estaba guardada. Inténtalo nuevamente.',
     }
+  }
 
   if (existingSession) {
     if (!isSameUuid(existingSession.workout_id, payload.workoutId)) {
@@ -822,9 +931,8 @@ export async function saveSession(
 
     const detailRepair = await repairMissingPersistedSessionDetails(
       supabase,
-      user.id,
-      payload,
       existingSession.id,
+      existingSession.session_detail_backup,
     )
     if (!detailRepair.success) {
       return {

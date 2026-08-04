@@ -272,6 +272,7 @@ describe('atomic plan lifecycle migration', () => {
   it('rebuilds legacy families from parent roots before snapshot backfill and lifecycle prechecks', () => {
     const rootBackfill = contextMigration.indexOf('WITH RECURSIVE legacy_plan_roots')
     const snapshotBackfill = contextMigration.indexOf('UPDATE public.progress_logs AS progress_log')
+    const cycleGuard = contextMigration.indexOf('PLAN_LEGACY_PARENT_CYCLE')
     const headReconciliation = migration.indexOf('WITH ranked_family_versions AS')
     const preexistingCheck = migration.indexOf('DO $plan_family_preexisting_check$')
 
@@ -280,10 +281,18 @@ describe('atomic plan lifecycle migration', () => {
       /parent_plan_id[\s\S]+root_plan_id[\s\S]+SET family_id = legacy_plan_roots\.root_plan_id/i,
     )
     expect(snapshotBackfill).toBeGreaterThan(rootBackfill)
+    expect(cycleGuard).toBeGreaterThan(rootBackfill)
+    expect(cycleGuard).toBeLessThan(snapshotBackfill)
+    expect(contextMigration.slice(rootBackfill, snapshotBackfill)).toMatch(
+      /NOT EXISTS[\s\S]+legacy_plan_roots[\s\S]+PLAN_LEGACY_PARENT_CYCLE/i,
+    )
     expect(headReconciliation).toBeGreaterThan(0)
     expect(headReconciliation).toBeLessThan(preexistingCheck)
     expect(migration.slice(headReconciliation, preexistingCheck)).toMatch(
       /ROW_NUMBER\(\)[\s\S]+PARTITION BY plan\.user_id, plan\.family_id[\s\S]+superseded_at[\s\S]+is_active/i,
+    )
+    expect(migration.slice(headReconciliation, preexistingCheck)).toMatch(
+      /GREATEST\(plan\.created_at, ranked\.family_head_created_at\)/i,
     )
   })
 
@@ -291,6 +300,12 @@ describe('atomic plan lifecycle migration', () => {
     const guard = sqlFunction('guard_plan_lifecycle_mutation')
 
     expect(guard).toMatch(/TG_OP\s*=\s*'DELETE'[\s\S]+PLAN_DIRECT_LIFECYCLE_MUTATION_FORBIDDEN/i)
+    expect(guard).toMatch(
+      /TG_OP\s*=\s*'DELETE'\s+AND\s+session_user\s*=\s*'supabase_auth_admin'[\s\S]+RETURN OLD/i,
+    )
+    expect(guard).not.toMatch(
+      /v_actor_role\s*=\s*'service_role'[\s\S]+supabase_auth_admin/i,
+    )
     expect(guard).toMatch(/NEW\.family_id IS DISTINCT FROM OLD\.family_id/i)
     expect(guard).toMatch(/NEW\.retired_at IS DISTINCT FROM OLD\.retired_at/i)
     expect(guard).toMatch(/NEW\.superseded_at IS DISTINCT FROM OLD\.superseded_at/i)
@@ -311,6 +326,12 @@ describe('atomic plan lifecycle migration', () => {
     ]) {
       expect(sqlFunction(name)).toMatch(/set_config\('app\.plan_lifecycle_actor'/i)
     }
+  })
+
+  it('blocks the destructive workout delete performed by pre-migration clients', () => {
+    expect(migration).toMatch(
+      /REVOKE DELETE ON TABLE public\.workouts FROM anon, authenticated/i,
+    )
   })
 
   it('publishes exact generated RPC types', () => {
@@ -395,6 +416,38 @@ describe('plan lifecycle application boundary', () => {
     expect(rpcCall).toBeGreaterThan(0)
     expect(persistedReload).toBeGreaterThan(rpcCall)
     expect(generatePlanAction).toContain('return persistedPlan')
+  })
+
+  it('reconciles ambiguous RPC transport errors before confirming failure', () => {
+    const rpcCall = generatePlanAction.indexOf("'create_engine_plan_v2'")
+    const failureBranch = generatePlanAction.indexOf('if (rpcError || !newPlanId)', rpcCall)
+    const recoveryLookup = generatePlanAction.indexOf('await loadExistingPlanGeneration(', failureBranch)
+    const failureMetric = generatePlanAction.indexOf('await recordEvidenceGenerationFailure(', failureBranch)
+
+    expect(failureBranch).toBeGreaterThan(rpcCall)
+    expect(generatePlanAction).toContain('isConfirmedPlanRpcFailure')
+    expect(recoveryLookup).toBeGreaterThan(failureBranch)
+    expect(recoveryLookup).toBeLessThan(failureMetric)
+    const ambiguousBranch = generatePlanAction.slice(failureBranch, failureMetric)
+    expect(ambiguousBranch).toContain(
+      "throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')",
+    )
+    expect(ambiguousBranch.indexOf("throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')"))
+      .toBeGreaterThan(ambiguousBranch.indexOf('if (persistedPlan) return persistedPlan'))
+  })
+
+  it('propagates failed idempotency lookups so every UI keeps its request id', () => {
+    const generateStart = generatePlanAction.indexOf('export async function generatePlan')
+    const generatePreflight = generatePlanAction.indexOf('No se pudo comprobar el requestId', generateStart)
+    const applyStart = adjustPlanAction.indexOf('export async function applyPlanAdjustment')
+    const adjustmentPreflight = adjustPlanAction.indexOf('No se pudo comprobar el requestId', applyStart)
+
+    expect(generatePlanAction.slice(generatePreflight, generatePreflight + 250)).toContain(
+      "throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')",
+    )
+    expect(adjustPlanAction.slice(adjustmentPreflight, adjustmentPreflight + 250)).toContain(
+      "throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')",
+    )
   })
 
   it('never reports failure after the RPC has confirmed a committed plan id', () => {

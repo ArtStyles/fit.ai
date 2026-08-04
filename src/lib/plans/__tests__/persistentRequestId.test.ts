@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createPersistentRequestId, runPersistentPlanRequest } from '../persistentRequestId'
+import {
+  createPersistentRequestId,
+  isConfirmedPlanRpcFailure,
+  runPersistentPlanRequest,
+} from '../persistentRequestId'
 
 describe('persistent plan request id', () => {
   it('reuses the same id after an ambiguous transport failure', () => {
@@ -59,5 +63,24 @@ describe('persistent plan request id', () => {
 
     await expect(runPersistentPlanRequest(request, async () => result)).resolves.toBe(result)
     expect(request.current()).toBe('request-2')
+  })
+
+  it.each([
+    { code: 'P0001', message: 'raised exception' },
+    { code: '23505', message: 'unique violation' },
+    { code: 'XX000', message: 'internal database error' },
+    { code: 'PGRST202', message: 'function not found' },
+    { code: '', message: 'PLAN_STALE_PARENT' },
+  ])('recognizes a confirmed database failure: $code $message', error => {
+    expect(isConfirmedPlanRpcFailure(error)).toBe(true)
+  })
+
+  it.each([
+    { code: '', message: 'TypeError: Failed to fetch' },
+    { code: 'ECONNRESET', message: 'socket closed' },
+    { code: 'ETIMEDOUT', message: 'request timed out' },
+    null,
+  ])('keeps transport outcome ambiguous: $code $message', error => {
+    expect(isConfirmedPlanRpcFailure(error)).toBe(false)
   })
 })

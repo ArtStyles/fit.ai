@@ -224,6 +224,20 @@ BEGIN
     AND released_at IS NULL
     AND expires_at <= v_created_at;
 
+  -- A consumed claim remains authoritative daily evidence even when a legacy
+  -- client stored its completion timestamp outside the frozen calendar day.
+  -- Reject here so we never issue an authorization that the atomic save must
+  -- deterministically refuse later.
+  IF EXISTS (
+    SELECT 1
+    FROM public.session_authorizations
+    WHERE user_id = v_user_id
+      AND policy_date = (v_created_at AT TIME ZONE v_time_zone)::DATE
+      AND consumed_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'SESSION_DAILY_LIMIT_REACHED';
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM public.session_authorizations
@@ -378,14 +392,13 @@ BEGIN
   -- captured metadata when available; ad-hoc exercises are resolved from the
   -- immutable exercise id at save time.
   SELECT COALESCE(
-    jsonb_agg(actual.exercise_context ORDER BY actual.first_ordinal),
+    jsonb_agg(actual.exercise_context ORDER BY actual.ordinality),
     '[]'::JSONB
   )
   INTO v_executed_exercises
   FROM (
-    SELECT DISTINCT ON (item.exercise_id)
-      item.exercise_id,
-      item.ordinality AS first_ordinal,
+    SELECT
+      item.ordinality,
       COALESCE(
         captured.exercise_context,
         jsonb_build_object(
@@ -426,7 +439,6 @@ BEGIN
       WHERE captured_item.value->>'exerciseId' = item.exercise_id::TEXT
       LIMIT 1
     ) AS captured ON TRUE
-    ORDER BY item.exercise_id, item.ordinality
   ) AS actual;
 
   v_session_context_snapshot := jsonb_set(

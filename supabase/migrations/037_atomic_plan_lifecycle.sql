@@ -28,7 +28,10 @@ UPDATE public.workout_plans AS plan
 SET
   superseded_at = CASE
     WHEN ranked.family_rank = 1 THEN NULL
-    ELSE COALESCE(plan.superseded_at, ranked.family_head_created_at)
+    ELSE COALESCE(
+      plan.superseded_at,
+      GREATEST(plan.created_at, ranked.family_head_created_at)
+    )
   END,
   is_active = CASE WHEN ranked.family_rank = 1 THEN plan.is_active ELSE FALSE END
 FROM ranked_family_versions AS ranked
@@ -75,6 +78,13 @@ DECLARE
   v_trusted_actor TEXT := current_setting('app.plan_lifecycle_actor', TRUE);
   v_changes_lifecycle BOOLEAN := FALSE;
 BEGIN
+  -- GoTrue deletes auth.users as supabase_auth_admin. The resulting FK cascade
+  -- must be allowed to remove owned plans, but this internal role receives no
+  -- lifecycle write bypass for inserts or updates.
+  IF TG_OP = 'DELETE' AND session_user = 'supabase_auth_admin' THEN
+    RETURN OLD;
+  END IF;
+
   IF v_actor_role = 'service_role'
     OR session_user IN ('postgres', 'supabase_admin') THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
@@ -124,6 +134,13 @@ DROP TRIGGER IF EXISTS trg_00_guard_plan_lifecycle_update ON public.workout_plan
 CREATE TRIGGER trg_00_guard_plan_lifecycle_update
   BEFORE UPDATE OF family_id, parent_plan_id, generation_request_id, retired_at, superseded_at, is_active, user_id ON public.workout_plans
   FOR EACH ROW EXECUTE FUNCTION public.guard_plan_lifecycle_mutation();
+
+-- DB-first rollout safety: the previous deletePlan action removed child
+-- workouts before attempting to delete the guarded plan row. Block that first
+-- destructive step for direct API clients. Lifecycle RPCs never delete these
+-- rows, while service operations and FK account cleanup retain their privileges.
+REVOKE DELETE ON TABLE public.workouts FROM PUBLIC;
+REVOKE DELETE ON TABLE public.workouts FROM anon, authenticated;
 
 -- RLS proves row ownership, but it cannot serialize a cross-row family count.
 -- This trigger is the final invariant for every write path, including direct

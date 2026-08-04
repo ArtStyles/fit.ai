@@ -530,6 +530,7 @@ export interface Database {
           client_session_id: string | null
           session_result_snapshot: Json | null
           session_context_snapshot: Json | null
+          session_detail_backup: Json | null
           workout_id: string | null
           completed_at: string
           duration_minutes: number | null
@@ -543,6 +544,7 @@ export interface Database {
           client_session_id?: string | null
           session_result_snapshot?: Json | null
           session_context_snapshot?: Json | null
+          session_detail_backup?: Json | null
           workout_id?: string | null
           completed_at?: string
           duration_minutes?: number | null
@@ -554,6 +556,7 @@ export interface Database {
           client_session_id?: string | null
           session_result_snapshot?: Json | null
           session_context_snapshot?: Json | null
+          session_detail_backup?: Json | null
           workout_id?: string | null
           duration_minutes?: number | null
           notes?: string | null

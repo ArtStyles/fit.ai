@@ -226,7 +226,7 @@ export async function applyPlanAdjustment(
     if (existing?.success) return { success: true, appliedCount: 1 }
   } catch (error) {
     console.error('[adjustPlan] No se pudo comprobar el requestId:', error)
-    return { success: false, error: 'No se pudo comprobar la operación del plan.' }
+    throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')
   }
 
   const plan = await getOwnedActivePlan(supabase, user.id, planId)

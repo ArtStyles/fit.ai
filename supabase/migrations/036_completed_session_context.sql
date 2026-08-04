@@ -3,7 +3,8 @@
 -- reference and is intentionally not rewritten here.
 
 ALTER TABLE public.progress_logs
-  ADD COLUMN session_context_snapshot JSONB;
+  ADD COLUMN session_context_snapshot JSONB,
+  ADD COLUMN session_detail_backup JSONB;
 
 ALTER TABLE public.workout_plans
   ADD COLUMN family_id UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -49,6 +50,59 @@ SET family_id = legacy_plan_roots.root_plan_id
 FROM legacy_plan_roots
 WHERE plan.id = legacy_plan_roots.plan_id
   AND plan.user_id = legacy_plan_roots.user_id;
+
+-- A component whose parent pointers form a cycle has no root and is therefore
+-- absent from the recursive result above. Abort before snapshots or lifecycle
+-- limits observe one random family per version; the data must be repaired
+-- explicitly rather than silently inventing lineage.
+DO $legacy_plan_parent_cycle_check$
+DECLARE
+  v_cycle_plan_id UUID;
+BEGIN
+  WITH RECURSIVE legacy_plan_roots AS (
+    SELECT
+      plan.id AS plan_id,
+      plan.user_id,
+      ARRAY[plan.id] AS visited_plan_ids
+    FROM public.workout_plans AS plan
+    WHERE plan.parent_plan_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1
+        FROM public.workout_plans AS parent
+        WHERE parent.id = plan.parent_plan_id
+          AND parent.user_id = plan.user_id
+      )
+
+    UNION ALL
+
+    SELECT
+      child.id,
+      child.user_id,
+      legacy_plan_roots.visited_plan_ids || child.id
+    FROM legacy_plan_roots
+    JOIN public.workout_plans AS child
+      ON child.parent_plan_id = legacy_plan_roots.plan_id
+     AND child.user_id = legacy_plan_roots.user_id
+    WHERE NOT child.id = ANY(legacy_plan_roots.visited_plan_ids)
+  )
+  SELECT plan.id INTO v_cycle_plan_id
+  FROM public.workout_plans AS plan
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM legacy_plan_roots
+    WHERE legacy_plan_roots.plan_id = plan.id
+      AND legacy_plan_roots.user_id = plan.user_id
+  )
+  ORDER BY plan.id
+  LIMIT 1;
+
+  IF v_cycle_plan_id IS NOT NULL THEN
+    RAISE EXCEPTION
+      'PLAN_LEGACY_PARENT_CYCLE: repair parent_plan_id cycle containing plan % before retrying migration',
+      v_cycle_plan_id;
+  END IF;
+END;
+$legacy_plan_parent_cycle_check$;
 
 CREATE UNIQUE INDEX workout_plans_user_generation_request_unique
   ON public.workout_plans(user_id, generation_request_id)
@@ -121,6 +175,26 @@ BEGIN
     RAISE EXCEPTION 'SESSION_RESULT_SNAPSHOT_IMMUTABLE';
   END IF;
 
+  IF OLD.session_detail_backup IS NOT NULL
+    AND NEW.session_detail_backup IS DISTINCT FROM OLD.session_detail_backup THEN
+    RAISE EXCEPTION 'SESSION_DETAIL_BACKUP_IMMUTABLE';
+  END IF;
+
+  IF NEW.id IS DISTINCT FROM OLD.id
+    OR NEW.user_id IS DISTINCT FROM OLD.user_id
+    OR (
+      NEW.workout_id IS DISTINCT FROM OLD.workout_id
+      AND NOT (OLD.workout_id IS NOT NULL AND NEW.workout_id IS NULL)
+    )
+    OR NEW.client_session_id IS DISTINCT FROM OLD.client_session_id
+    OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
+    OR NEW.duration_minutes IS DISTINCT FROM OLD.duration_minutes
+    OR NEW.notes IS DISTINCT FROM OLD.notes
+    OR NEW.mood_rating IS DISTINCT FROM OLD.mood_rating
+    OR NEW.energy_rating IS DISTINCT FROM OLD.energy_rating THEN
+    RAISE EXCEPTION 'SESSION_EVIDENCE_IMMUTABLE';
+  END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -129,9 +203,25 @@ REVOKE ALL ON FUNCTION public.enforce_completed_session_snapshot_immutability() 
 
 DROP TRIGGER IF EXISTS trg_completed_session_snapshot_immutability ON public.progress_logs;
 CREATE TRIGGER trg_completed_session_snapshot_immutability
-  BEFORE UPDATE OF session_context_snapshot, session_result_snapshot
-  ON public.progress_logs
+  BEFORE UPDATE ON public.progress_logs
   FOR EACH ROW EXECUTE FUNCTION public.enforce_completed_session_snapshot_immutability();
+
+CREATE OR REPLACE FUNCTION public.enforce_exercise_log_immutability()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION 'SESSION_EXERCISE_EVIDENCE_IMMUTABLE';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.enforce_exercise_log_immutability() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_exercise_log_immutability ON public.exercise_logs;
+CREATE TRIGGER trg_exercise_log_immutability
+  BEFORE UPDATE ON public.exercise_logs
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_exercise_log_immutability();
 
 -- Completed evidence remains readable/appendable and can receive the one-time
 -- snapshot repair above, but authenticated REST clients cannot delete it.
@@ -161,24 +251,10 @@ CREATE POLICY "exercise_logs: own insert" ON public.exercise_logs
         AND progress_log.user_id = auth.uid()
     )
   );
-CREATE POLICY "exercise_logs: own update" ON public.exercise_logs
-  FOR UPDATE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.progress_logs AS progress_log
-      WHERE progress_log.id = exercise_logs.progress_log_id
-        AND progress_log.user_id = auth.uid()
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.progress_logs AS progress_log
-      WHERE progress_log.id = exercise_logs.progress_log_id
-        AND progress_log.user_id = auth.uid()
-    )
-  );
 
-REVOKE DELETE ON TABLE public.progress_logs, public.exercise_logs FROM anon, authenticated;
+REVOKE ALL ON TABLE public.progress_logs, public.exercise_logs FROM anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.progress_logs TO authenticated;
+GRANT SELECT, INSERT ON TABLE public.exercise_logs TO authenticated;
 
 -- Evidence readers must preserve detached logs. A live workout is optional
 -- metadata; its deletion cannot remove an already completed session.
