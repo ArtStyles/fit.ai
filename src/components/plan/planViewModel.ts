@@ -54,12 +54,6 @@ type MovementLimitationRecord = {
   clinician_cleared?: unknown
 }
 
-const GYM_LABELS: Record<string, string> = {
-  home_no_equipment: 'Casa sin equipo',
-  home_basic: 'Casa con equipo básico',
-  full_gym: 'Gimnasio completo',
-}
-
 function normalizeIsoWeekday(value: number | null): number | null {
   return Number.isInteger(value) && value !== null && value >= 1 && value <= 7 ? value : null
 }
@@ -167,12 +161,6 @@ export function buildPlanDistribution(
       || a.muscleGroup.localeCompare(b.muscleGroup, 'es', { sensitivity: 'base' }))
 }
 
-function safeStringList(values: string[] | null | undefined): string[] {
-  return (values ?? [])
-    .map(value => value.trim())
-    .filter(Boolean)
-}
-
 function clearedLimitationCount(value: unknown): number {
   if (!Array.isArray(value)) return 0
 
@@ -190,15 +178,8 @@ export function appliedConstraintLabels(
 ): string[] {
   const t = (source: string, values?: Record<string, string | number>) => translate(locale, source, values)
   const labels: string[] = []
-  const gymLabel = profile.gymType ? GYM_LABELS[profile.gymType] : null
-  const equipment = safeStringList(profile.availableEquipment)
   const clearedCount = clearedLimitationCount(profile.movementLimitations)
 
-  if (gymLabel) labels.push(t(gymLabel))
-  if (equipment.length > 0) labels.push(t('Equipo: {items}', { items: equipment.slice(0, 4).join(', ') }))
-  if (profile.sessionDurationMinutes) {
-    labels.push(t('Sesiones de {minutes} min', { minutes: profile.sessionDurationMinutes }))
-  }
   if (clearedCount === 1) {
     labels.push(t('{count} restricción autorizada considerada', { count: clearedCount }))
   } else if (clearedCount > 1) {

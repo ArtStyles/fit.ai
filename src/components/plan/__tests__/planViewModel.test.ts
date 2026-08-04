@@ -116,25 +116,28 @@ describe('applied constraint labels', () => {
     }, 'es')
 
     expect(result).toEqual([
-      'Casa con equipo básico',
-      'Equipo: mancuernas, bandas',
-      'Sesiones de 45 min',
       '1 restricción autorizada considerada',
     ])
     expect(result.join(' ')).not.toMatch(/rodilla|sentadilla|hombro|press|molestia/i)
   })
 
-  it('localizes location and duration labels in English', () => {
+  it('omits non-safety profile details when no cleared restriction exists', () => {
     expect(appliedConstraintLabels({
       gymType: 'full_gym',
-      availableEquipment: [],
+      availableEquipment: ['dumbbells'],
       sessionDurationMinutes: 60,
       injuries: null,
       readinessStatus: 'cleared',
       movementLimitations: [],
-    }, 'en')).toEqual([
-      'Full gym',
-      '60-minute sessions',
-    ])
+    }, 'en')).toEqual([])
+  })
+
+  it('localizes multiple cleared restriction notices in English', () => {
+    expect(appliedConstraintLabels({
+      movementLimitations: [
+        { status: 'stable', clinicianCleared: true },
+        { status: 'stable', clinician_cleared: true },
+      ],
+    }, 'en')).toEqual(['2 cleared restrictions considered'])
   })
 })
