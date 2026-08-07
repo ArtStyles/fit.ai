@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 038_session_authorizations
+ * Last updated: migration 040_trainer_foundations
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -38,6 +38,142 @@ export interface Database {
           properties?: Json
         }
         Update: Record<string, never>
+        Relationships: []
+      }
+
+      product_notifications: {
+        Row: {
+          id: string
+          user_id: string
+          type: string
+          title: string
+          body: string
+          url: string | null
+          payload: Json
+          dedupe_key: string
+          read_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          type: string
+          title: string
+          body: string
+          url?: string | null
+          payload?: Json
+          dedupe_key: string
+          read_at?: string | null
+          created_at?: string
+        }
+        Update: Partial<{
+          id: string
+          user_id: string
+          type: string
+          title: string
+          body: string
+          url: string | null
+          payload: Json
+          dedupe_key: string
+          read_at: string | null
+          created_at: string
+        }>
+        Relationships: []
+      }
+
+      product_push_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          token: string
+          platform: 'android' | 'ios'
+          device_id: string
+          enabled: boolean
+          last_seen_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          token: string
+          platform: 'android' | 'ios'
+          device_id: string
+          enabled?: boolean
+          last_seen_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<{
+          id: string
+          user_id: string
+          token: string
+          platform: 'android' | 'ios'
+          device_id: string
+          enabled: boolean
+          last_seen_at: string
+          created_at: string
+          updated_at: string
+        }>
+        Relationships: []
+      }
+
+      product_notification_preferences: {
+        Row: {
+          user_id: string
+          professional_enabled: boolean
+          push_enabled: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          professional_enabled?: boolean
+          push_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<{
+          user_id: string
+          professional_enabled: boolean
+          push_enabled: boolean
+          created_at: string
+          updated_at: string
+        }>
+        Relationships: []
+      }
+
+      professional_audit_logs: {
+        Row: {
+          id: string
+          actor_user_id: string | null
+          subject_user_id: string | null
+          entity_type: string
+          entity_id: string | null
+          action: string
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_user_id?: string | null
+          subject_user_id?: string | null
+          entity_type: string
+          entity_id?: string | null
+          action: string
+          metadata?: Json
+          created_at?: string
+        }
+        Update: Partial<{
+          id: string
+          actor_user_id: string | null
+          subject_user_id: string | null
+          entity_type: string
+          entity_id: string | null
+          action: string
+          metadata: Json
+          created_at: string
+        }>
         Relationships: []
       }
 
@@ -896,6 +1032,29 @@ export interface Database {
           p_profile_updates?: Json
         }
         Returns: string
+      }
+      create_product_notification: {
+        Args: {
+          p_user_id: string
+          p_type: string
+          p_title: string
+          p_body: string
+          p_url: string | null
+          p_dedupe_key: string
+          p_payload?: Json
+        }
+        Returns: {
+          id: string
+          user_id: string
+          type: string
+          title: string
+          body: string
+          url: string | null
+          payload: Json
+          dedupe_key: string
+          read_at: string | null
+          created_at: string
+        }
       }
       activate_plan_version: {
         Args: {
