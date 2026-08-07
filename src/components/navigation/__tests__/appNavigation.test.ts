@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { APP_NAV_ITEMS, isAppNavItemActive } from '../appNavigation'
+import { getPersonalNavItems, isAppNavItemActive } from '../appNavigation'
 
 describe('app navigation', () => {
-  it('uses the approved five destinations in order', () => {
-    expect(APP_NAV_ITEMS.map(item => item.href)).toEqual([
-      '/dashboard', '/plan', '/entrenar', '/progress', '/feed',
-    ])
+  it('uses Entrenadores as the final destination when community is disabled', () => {
+    expect(getPersonalNavItems({ communityEnabled: false }).at(-1)).toMatchObject({
+      href: '/trainers',
+      label: 'Entrenadores',
+    })
+  })
+
+  it('uses Comunidad as the final destination when community is enabled', () => {
+    expect(getPersonalNavItems({ communityEnabled: true }).at(-1)).toMatchObject({
+      href: '/feed',
+      label: 'Comunidad',
+    })
   })
 
   it('matches exact and nested routes without matching unrelated prefixes', () => {

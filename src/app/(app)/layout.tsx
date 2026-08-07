@@ -5,6 +5,8 @@ import { AndroidBackHandler } from '@/components/native/AndroidBackHandler'
 import { SocialPushNotificationsInit } from '@/components/native/SocialPushNotificationsInit'
 import { TimezoneSync } from '@/components/profile/TimezoneSync'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
+import { getPersonalNavItems } from '@/components/navigation/appNavigation'
+import { isCommunityEnabled } from '@/lib/features/community'
 import { normalizeLanguage } from '@/lib/i18n'
 
 export const metadata: Metadata = {
@@ -14,13 +16,14 @@ export const metadata: Metadata = {
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile } = await requireAppUserContext()
   const language = normalizeLanguage(profile.language)
+  const navItems = getPersonalNavItems({ communityEnabled: isCommunityEnabled() })
 
   return (
     <I18nProvider language={language}>
       <AndroidBackHandler />
       <SocialPushNotificationsInit />
       <TimezoneSync current={profile.timezone} />
-      <AppShell>{children}</AppShell>
+      <AppShell navItems={navItems}>{children}</AppShell>
     </I18nProvider>
   )
 }

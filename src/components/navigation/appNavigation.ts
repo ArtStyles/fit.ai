@@ -1,18 +1,38 @@
 import { BarChart3, Dumbbell, Home, Play, Users, type LucideIcon } from 'lucide-react'
 
 export type AppNavItem = {
-  href: '/dashboard' | '/plan' | '/entrenar' | '/progress' | '/feed'
-  label: 'Inicio' | 'Plan' | 'Entrenar' | 'Progreso' | 'Comunidad'
-  icon: LucideIcon
+  href: '/dashboard' | '/plan' | '/entrenar' | '/progress' | '/feed' | '/trainers'
+  label: 'Inicio' | 'Plan' | 'Entrenar' | 'Progreso' | 'Comunidad' | 'Entrenadores'
 }
 
-export const APP_NAV_ITEMS: readonly AppNavItem[] = [
-  { href: '/dashboard', label: 'Inicio', icon: Home },
-  { href: '/plan', label: 'Plan', icon: Dumbbell },
-  { href: '/entrenar', label: 'Entrenar', icon: Play },
-  { href: '/progress', label: 'Progreso', icon: BarChart3 },
-  { href: '/feed', label: 'Comunidad', icon: Users },
+const PERSONAL_NAV_ITEMS: readonly AppNavItem[] = [
+  { href: '/dashboard', label: 'Inicio' },
+  { href: '/plan', label: 'Plan' },
+  { href: '/entrenar', label: 'Entrenar' },
+  { href: '/progress', label: 'Progreso' },
 ]
+
+export function getPersonalNavItems({ communityEnabled }: { communityEnabled: boolean }): readonly AppNavItem[] {
+  return [
+    ...PERSONAL_NAV_ITEMS,
+    communityEnabled
+      ? { href: '/feed', label: 'Comunidad' }
+      : { href: '/trainers', label: 'Entrenadores' },
+  ]
+}
+
+const APP_NAV_ICONS: Record<AppNavItem['href'], LucideIcon> = {
+  '/dashboard': Home,
+  '/plan': Dumbbell,
+  '/entrenar': Play,
+  '/progress': BarChart3,
+  '/feed': Users,
+  '/trainers': Users,
+}
+
+export function getAppNavIcon(href: AppNavItem['href']): LucideIcon {
+  return APP_NAV_ICONS[href]
+}
 
 export function isAppNavItemActive(pathname: string, href: string): boolean {
   if (pathname === href) return true

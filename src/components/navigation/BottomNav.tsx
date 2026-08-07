@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import { PendingLink } from './PendingLink'
-import { APP_NAV_ITEMS, isAppNavItemActive } from './appNavigation'
+import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigation'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { hapticImpact } from '@/lib/native/haptics'
@@ -10,7 +10,7 @@ import { hapticImpact } from '@/lib/native/haptics'
 // Routes where the bottom bar should be hidden (full-screen flows)
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
 
-export function BottomNav() {
+export function BottomNav({ navItems }: { navItems: readonly AppNavItem[] }) {
   const pathname = usePathname()
   const { t } = useI18n()
 
@@ -22,7 +22,8 @@ export function BottomNav() {
       className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-background/95 backdrop-blur lg:hidden"
     >
       <div className="mx-auto flex h-16 max-w-lg items-center px-2">
-        {APP_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        {navItems.map(({ href, label }) => {
+          const Icon = getAppNavIcon(href)
           const isActive = isAppNavItemActive(pathname, href)
           const isTrainAction = href === '/entrenar'
 

@@ -4,12 +4,12 @@ import { usePathname } from 'next/navigation'
 import { VekiraLogo } from '@/components/branding/VekiraLogo'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { cn } from '@/lib/utils'
-import { APP_NAV_ITEMS, isAppNavItemActive } from './appNavigation'
+import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigation'
 import { PendingLink } from './PendingLink'
 
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
 
-export function DesktopSidebar() {
+export function DesktopSidebar({ navItems }: { navItems: readonly AppNavItem[] }) {
   const pathname = usePathname()
   const { t } = useI18n()
 
@@ -27,7 +27,8 @@ export function DesktopSidebar() {
       </PendingLink>
 
       <nav aria-label={t('Navegación principal')} className="mt-10 flex flex-1 flex-col gap-2 px-4">
-        {APP_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        {navItems.map(({ href, label }) => {
+          const Icon = getAppNavIcon(href)
           const isActive = isAppNavItemActive(pathname, href)
 
           return (
