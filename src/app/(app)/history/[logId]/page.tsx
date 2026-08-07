@@ -13,6 +13,7 @@ import {
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
+import { isCommunityEnabled } from '@/lib/features/community'
 import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
 import { exerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
@@ -101,6 +102,7 @@ function formatVolume(value: number, language: 'es' | 'en'): string {
 
 export default async function HistoryDetailPage({ params }: PageProps) {
   const { supabase, user, profile } = await requireAppUserContext()
+  const communityEnabled = isCommunityEnabled()
   const language = exerciseLanguage(profile.language)
   const t = createTranslator(language)
 
@@ -276,13 +278,15 @@ export default async function HistoryDetailPage({ params }: PageProps) {
             ) : null}
             {log.notes ? <EvidenceInsight title={t('Notas')} tone="neutral">{log.notes}</EvidenceInsight> : null}
 
-            <section className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
-              <div className="flex items-center gap-2 text-violet-200">
-                {debrief.recordCount > 0 ? <Trophy className="h-4 w-4" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
-                <p className="text-sm font-semibold">{t('Compartir resultado')}</p>
-              </div>
-              <div className="mt-4"><ShareSessionButton progressLogId={params.logId} /></div>
-            </section>
+            {communityEnabled ? (
+              <section className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
+                <div className="flex items-center gap-2 text-violet-200">
+                  {debrief.recordCount > 0 ? <Trophy className="h-4 w-4" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
+                  <p className="text-sm font-semibold">{t('Compartir resultado')}</p>
+                </div>
+                <div className="mt-4"><ShareSessionButton progressLogId={params.logId} /></div>
+              </section>
+            ) : null}
           </aside>
         </div>
       </main>

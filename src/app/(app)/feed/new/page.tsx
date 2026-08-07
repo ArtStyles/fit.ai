@@ -3,8 +3,11 @@ import { ArrowLeft, Images } from 'lucide-react'
 import { PostComposer } from '@/components/social/PostComposer'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { requireAppUserContext } from '@/lib/auth/server'
+import { isCommunityEnabled } from '@/lib/features/community'
+import { notFound } from 'next/navigation'
 
 export default async function NewPostPage() {
+  if (!isCommunityEnabled()) notFound()
   const { profile } = await requireAppUserContext()
   const name = profile.full_name || profile.username || 'Usuario'
 

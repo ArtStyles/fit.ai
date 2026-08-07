@@ -4,6 +4,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { communityUnavailableResult, isCommunityEnabled } from '@/lib/features/community'
 import type { ActionResult } from './posts'
 
 export interface ReportInput {
@@ -13,6 +14,7 @@ export interface ReportInput {
 }
 
 export async function reportContent(input: ReportInput): Promise<ActionResult> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -32,6 +34,7 @@ export async function reportContent(input: ReportInput): Promise<ActionResult> {
 }
 
 export async function blockUser(blockedId: string): Promise<ActionResult> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -53,6 +56,7 @@ export async function blockUser(blockedId: string): Promise<ActionResult> {
 }
 
 export async function unblockUser(blockedId: string): Promise<ActionResult> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }

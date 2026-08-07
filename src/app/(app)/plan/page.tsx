@@ -20,6 +20,7 @@ import {
   type PlanWorkoutExerciseRow,
 } from '@/components/plan/WorkoutExerciseList'
 import { requireAppUserContext } from '@/lib/auth/server'
+import { isCommunityEnabled } from '@/lib/features/community'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import {
   activatePlan,
@@ -226,6 +227,7 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
 
 export default async function PlanPage() {
   const { supabase, user, profile } = await requireAppUserContext()
+  const communityEnabled = isCommunityEnabled()
   const language = exerciseLanguage(profile.language)
   const t = createTranslator(language)
 
@@ -447,9 +449,11 @@ export default async function PlanPage() {
                   {t('Historial')}
                 </PendingLink>
               </Button>
-              <div className="[&>button]:w-full [&>button]:justify-center">
-                <ShareRoutineButton planId={planRaw.id} />
-              </div>
+              {communityEnabled ? (
+                <div className="[&>button]:w-full [&>button]:justify-center">
+                  <ShareRoutineButton planId={planRaw.id} />
+                </div>
+              ) : null}
               <details className="group/summary border-t border-border/60 pt-2">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl px-3 text-sm font-semibold text-foreground hover:bg-muted/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 [&::-webkit-details-marker]:hidden">
                   {t('Editar detalles')}

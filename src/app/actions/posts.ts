@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { communityUnavailableResult, isCommunityEnabled } from '@/lib/features/community'
 import { buildSessionSnapshot, buildRoutineSnapshot } from '@/lib/social/snapshots'
 import type { RoutineSnapshot, RoutineSnapshotExercise, SessionSnapshot } from '@/lib/social/snapshots'
 import { postStoragePath } from '@/lib/images/post'
@@ -27,6 +28,7 @@ export interface CreatePostInput {
 
 // Crea un post con texto + fotos + (opcional) snapshot de rutina ya construido en cliente.
 export async function createPost(formData: FormData): Promise<ActionResult<{ id: string }>> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -74,6 +76,7 @@ export async function createPostFromSession(
   progressLogId: string,
   body?: string,
 ): Promise<ActionResult<{ id: string }>> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -162,6 +165,7 @@ export async function createPostFromPlan(
   planId: string,
   body?: string,
 ): Promise<ActionResult<{ id: string }>> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -230,6 +234,7 @@ export async function createPostFromPlan(
 }
 
 export async function deletePost(postId: string): Promise<ActionResult> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -252,6 +257,7 @@ export async function deletePost(postId: string): Promise<ActionResult> {
 
 // Clona la rutina de un post a las tablas del usuario actual.
 export async function clonePlanFromPost(postId: string): Promise<ActionResult<{ planId: string }>> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesion no valida.' }

@@ -2,6 +2,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { isCommunityEnabled } from '@/lib/features/community'
 import { decodeCursor, encodeCursor, FEED_PAGE_SIZE } from '@/lib/social/feed'
 import type { FeedPage, FeedPost, PostAuthor, PostCommentView, PostDetail } from '@/lib/social/types'
 import type { RoutineSnapshot, SessionSnapshot } from '@/lib/social/snapshots'
@@ -66,6 +67,7 @@ function toFeedPost(
 const POST_COLS = 'id, user_id, body, photo_urls, session_snapshot, routine_snapshot, like_count, comment_count, created_at'
 
 export async function getDiscoverFeed(cursorToken?: string | null): Promise<FeedPage> {
+  if (!isCommunityEnabled()) return { posts: [], nextCursor: null }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { posts: [], nextCursor: null }
@@ -99,6 +101,7 @@ export async function getDiscoverFeed(cursorToken?: string | null): Promise<Feed
 }
 
 export async function getFollowingFeed(cursorToken?: string | null): Promise<FeedPage> {
+  if (!isCommunityEnabled()) return { posts: [], nextCursor: null }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { posts: [], nextCursor: null }
@@ -154,6 +157,7 @@ export async function getProfile(username: string): Promise<{
     followState: 'follow' as import('@/lib/social/follow').FollowState,
     isPrivate: false, canViewPosts: false, isMe: false,
   }
+  if (!isCommunityEnabled()) return empty
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return empty
@@ -210,6 +214,7 @@ export async function getProfile(username: string): Promise<{
 }
 
 export async function getPostDetail(postId: string): Promise<PostDetail | null> {
+  if (!isCommunityEnabled()) return null
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null

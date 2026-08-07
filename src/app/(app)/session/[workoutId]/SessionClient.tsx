@@ -35,6 +35,7 @@ interface Props {
   workoutId:        string
   workoutName:      string
   estimatedMinutes: number | null
+  communityEnabled: boolean
   exercises:        ExerciseSession[]   // estado inicial del servidor
   exerciseOptions:  SessionExerciseDraft[]
 }
@@ -59,7 +60,7 @@ function extractProgressions(exercises: ExerciseSession[]): ProgressionItem[] {
     .filter(p => p.fromWeightKg == null || p.fromWeightKg !== p.toWeightKg)
 }
 
-export function SessionClient({ workoutId, workoutName, exercises, exerciseOptions }: Props) {
+export function SessionClient({ workoutId, workoutName, exercises, exerciseOptions, communityEnabled }: Props) {
   const { t } = useI18n()
   const initSession       = useSessionStore(s => s.initSession)
   const restoreSession    = useSessionStore(s => s.restoreSession)
@@ -240,6 +241,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     return (
       <CompletionScreen
         workoutId={workoutId}
+        communityEnabled={communityEnabled}
         syncState={syncState}
         syncErrorSource={syncErrorSource}
         onSyncEvent={onSyncEvent}

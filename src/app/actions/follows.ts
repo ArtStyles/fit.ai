@@ -3,11 +3,13 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { communityUnavailableResult, isCommunityEnabled } from '@/lib/features/community'
 import { notifyFollowAccepted, notifyFollowCreated } from '@/lib/notifications/socialPush'
 import type { ActionResult } from './posts'
 import type { PostAuthor, RequestUser } from '@/lib/social/types'
 
 export async function followUser(targetId: string): Promise<ActionResult<{ status: 'pending' | 'accepted' }>> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -31,6 +33,7 @@ export async function followUser(targetId: string): Promise<ActionResult<{ statu
 }
 
 export async function unfollowUser(targetId: string): Promise<ActionResult> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -44,6 +47,7 @@ export async function unfollowUser(targetId: string): Promise<ActionResult> {
 }
 
 export async function getPendingRequestCount(): Promise<number> {
+  if (!isCommunityEnabled()) return 0
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return 0
@@ -54,6 +58,7 @@ export async function getPendingRequestCount(): Promise<number> {
 }
 
 export async function getFollowRequests(): Promise<RequestUser[]> {
+  if (!isCommunityEnabled()) return []
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return []
@@ -76,6 +81,7 @@ export async function getFollowRequests(): Promise<RequestUser[]> {
 }
 
 export async function acceptFollowRequest(followerId: string): Promise<ActionResult> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }
@@ -93,6 +99,7 @@ export async function acceptFollowRequest(followerId: string): Promise<ActionRes
 }
 
 export async function rejectFollowRequest(followerId: string): Promise<ActionResult> {
+  if (!isCommunityEnabled()) return communityUnavailableResult()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Sesión no válida.' }

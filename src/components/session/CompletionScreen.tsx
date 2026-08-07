@@ -56,6 +56,7 @@ function progressionTarget(suggestion: ProgressionSuggestion): string {
 
 interface Props {
   workoutId: string
+  communityEnabled: boolean
   syncState: SessionSyncState
   syncErrorSource: SessionSyncErrorSource
   onSyncEvent: (event: SessionSyncEvent, source?: SessionSyncErrorSource) => void
@@ -65,6 +66,7 @@ interface Props {
 
 export function CompletionScreen({
   workoutId,
+  communityEnabled,
   syncState,
   syncErrorSource,
   onSyncEvent,
@@ -290,9 +292,11 @@ export function CompletionScreen({
           )) : <p className="text-sm text-muted-foreground">{saved ? t('Mantén los objetivos actuales la próxima vez.') : t('Disponibles después de sincronizar.')}</p>}
         </motion.section>
 
-        <motion.section variants={itemMotion} data-section="share" className="flex justify-start">
-          {progressLogId && cleanupComplete ? <ShareSessionButton progressLogId={progressLogId} /> : null}
-        </motion.section>
+        {communityEnabled ? (
+          <motion.section variants={itemMotion} data-section="share" className="flex justify-start">
+            {progressLogId && cleanupComplete ? <ShareSessionButton progressLogId={progressLogId} /> : null}
+          </motion.section>
+        ) : null}
 
         <motion.section variants={itemMotion} data-section="dashboard">
           <Button onClick={handleDone} disabled={!saved || !cleanupComplete} className="h-14 w-full bg-violet-600 text-base font-bold text-white hover:bg-violet-500">

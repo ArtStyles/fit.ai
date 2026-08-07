@@ -6,8 +6,10 @@ import { PostCard } from '@/components/social/PostCard'
 import { CommentList } from '@/components/social/CommentList'
 import { CommentInput } from '@/components/social/CommentInput'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
+import { isCommunityEnabled } from '@/lib/features/community'
 
 export default async function PostDetailPage({ params }: { params: { id: string } }) {
+  if (!isCommunityEnabled()) notFound()
   const { id } = params
   const detail = await getPostDetail(id)
   if (!detail) notFound()

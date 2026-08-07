@@ -5,3 +5,7 @@ export function isCommunityEnabled(
 ): boolean {
   return env.COMMUNITY_ENABLED === 'true'
 }
+
+export function communityUnavailableResult(): { ok: false; error: 'Comunidad no esta disponible.' } {
+  return { ok: false, error: 'Comunidad no esta disponible.' }
+}

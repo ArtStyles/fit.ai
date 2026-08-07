@@ -6,8 +6,11 @@ import { FeedTabs } from '@/components/social/FeedTabs'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
+import { isCommunityEnabled } from '@/lib/features/community'
+import { redirect } from 'next/navigation'
 
 export default async function FeedPage() {
+  if (!isCommunityEnabled()) redirect('/trainers')
   const { profile } = await requireAppUserContext()
   const t = createTranslator(normalizeLanguage(profile.language))
   // Cargamos ambos feeds en paralelo (latencia = máx, no suma). getFollowingFeed es

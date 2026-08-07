@@ -8,6 +8,7 @@ import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { zipPreviousPerformanceRows } from '@/components/session/sessionViewModel'
 import { canMountSessionClient } from '@/lib/session/authorization'
+import { isCommunityEnabled } from '@/lib/features/community'
 
 // ─── Tipos de datos crudos del servidor ──────────────────────────────────────
 
@@ -55,6 +56,7 @@ interface PageProps {
 
 export default async function SessionPage({ params }: PageProps) {
   const { workoutId } = params
+  const communityEnabled = isCommunityEnabled()
 
   const { supabase, user, profile } = await requireAppUserContext()
   const language = exerciseLanguage(profile.language)
@@ -205,6 +207,7 @@ export default async function SessionPage({ params }: PageProps) {
       workoutId={workoutId}
       workoutName={workout.name}
       estimatedMinutes={workout.estimated_duration_minutes}
+      communityEnabled={communityEnabled}
       exercises={exercises}
       exerciseOptions={exerciseOptions}
     />
