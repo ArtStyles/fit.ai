@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { AppShell } from '@/components/navigation/AppShell'
 import { AndroidBackHandler } from '@/components/native/AndroidBackHandler'
+import { ProductPushNotificationsInit } from '@/components/native/ProductPushNotificationsInit'
 import { SocialPushNotificationsInit } from '@/components/native/SocialPushNotificationsInit'
 import { TimezoneSync } from '@/components/profile/TimezoneSync'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
@@ -15,13 +16,15 @@ export const metadata: Metadata = {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile } = await requireAppUserContext()
+  const communityEnabled = isCommunityEnabled()
   const language = normalizeLanguage(profile.language)
-  const navItems = getPersonalNavItems({ communityEnabled: isCommunityEnabled() })
+  const navItems = getPersonalNavItems({ communityEnabled })
 
   return (
     <I18nProvider language={language}>
       <AndroidBackHandler />
-      <SocialPushNotificationsInit />
+      <ProductPushNotificationsInit />
+      {communityEnabled ? <SocialPushNotificationsInit /> : null}
       <TimezoneSync current={profile.timezone} />
       <AppShell navItems={navItems}>{children}</AppShell>
     </I18nProvider>
