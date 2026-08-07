@@ -13,7 +13,7 @@ import {
   getSafeInternalNotificationUrl,
   loadNextNotificationPage,
   markNotificationReadInteraction,
-  mergeProductNotifications,
+  mergeNotificationPageIntoCurrent,
   NotificationCenter,
   type ProductNotificationView,
 } from '../NotificationCenter'
@@ -38,6 +38,16 @@ const SECOND: ProductNotificationView = {
   createdAt: '2026-08-07T14:00:00.000Z',
 }
 
+const THIRD: ProductNotificationView = {
+  id: '00000000-0000-4000-8000-000000000005',
+  type: 'trainer.message',
+  title: 'Nuevo seguimiento',
+  body: 'Tu entrenador actualizó el seguimiento.',
+  url: '/trainers/relationships/active',
+  readAt: null,
+  createdAt: '2026-08-07T13:00:00.000Z',
+}
+
 function renderWithProviders(element: ReactElement): string {
   return renderToStaticMarkup(
     <I18nProvider language="es" syncDocumentLanguage={false}>
@@ -51,7 +61,7 @@ describe('NotificationCenter', () => {
     const sameTimeLowerId = { ...FIRST, id: '00000000-0000-4000-8000-000000000003' }
     const sameTimeHigherId = { ...FIRST, id: '00000000-0000-4000-8000-000000000004', title: 'Más reciente' }
 
-    const merged = mergeProductNotifications(
+    const merged = mergeNotificationPageIntoCurrent(
       [SECOND, sameTimeLowerId],
       [sameTimeHigherId, SECOND],
     )
@@ -138,7 +148,6 @@ describe('NotificationCenter', () => {
   it('loads a page through the interaction flow and returns its live announcement', async () => {
     const result = await loadNextNotificationPage({
       cursor: 'next-page',
-      notifications: [FIRST],
     }, async ({ cursor }) => {
       expect(cursor).toBe('next-page')
       return { notifications: [SECOND], nextCursor: null }
@@ -146,26 +155,57 @@ describe('NotificationCenter', () => {
 
     expect(result).toEqual({
       ok: true,
-      notifications: [FIRST, SECOND],
-      cursor: null,
+      incomingNotifications: [SECOND],
+      nextCursor: null,
       announcement: '1 notificaciones cargadas.',
       error: null,
       toast: null,
     })
   })
 
+  it('preserves a read applied while a stale notification page is still loading', async () => {
+    let resolvePage!: (page: {
+      notifications: ProductNotificationView[]
+      nextCursor: string | null
+    }) => void
+    const pendingPage = new Promise<{
+      notifications: ProductNotificationView[]
+      nextCursor: string | null
+    }>(resolve => {
+      resolvePage = resolve
+    })
+
+    const loading = loadNextNotificationPage({
+      cursor: 'next-page',
+    }, async () => pendingPage)
+
+    const readAt = '2026-08-07T16:00:00.000Z'
+    const currentAfterMark = [{ ...FIRST, readAt }]
+    resolvePage({ notifications: [FIRST, THIRD], nextCursor: 'after-page' })
+    const result = await loading
+    const finalNotifications = mergeNotificationPageIntoCurrent(
+      currentAfterMark,
+      result.incomingNotifications,
+    )
+
+    expect(currentAfterMark[0]?.readAt).toBe(readAt)
+    expect(finalNotifications.find(item => item.id === FIRST.id)?.readAt).toBe(readAt)
+    expect(finalNotifications.some(item => item.id === THIRD.id)).toBe(true)
+    expect(result.nextCursor).toBe('after-page')
+    expect(result.announcement).toBe('2 notificaciones cargadas.')
+  })
+
   it('turns a rejected page load into visible feedback data for announcement and toast', async () => {
     const result = await loadNextNotificationPage({
       cursor: 'next-page',
-      notifications: [FIRST],
     }, async () => {
       throw new Error('network unavailable')
     })
 
     expect(result).toEqual({
       ok: false,
-      notifications: [FIRST],
-      cursor: 'next-page',
+      incomingNotifications: [],
+      nextCursor: 'next-page',
       error: 'No se pudieron cargar las notificaciones.',
       announcement: 'No se pudieron cargar las notificaciones.',
       toast: {

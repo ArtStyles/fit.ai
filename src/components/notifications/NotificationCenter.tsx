@@ -38,12 +38,12 @@ export function getSafeInternalNotificationUrl(value: string | null): string | n
   }
 }
 
-export function mergeProductNotifications(
+export function mergeNotificationPageIntoCurrent(
   current: ProductNotificationView[],
   incoming: ProductNotificationView[],
 ): ProductNotificationView[] {
-  const byId = new Map(current.map(notification => [notification.id, notification]))
-  for (const notification of incoming) byId.set(notification.id, notification)
+  const byId = new Map(incoming.map(notification => [notification.id, notification]))
+  for (const notification of current) byId.set(notification.id, notification)
 
   return Array.from(byId.values()).sort((left, right) => {
     const byCreatedAt = Date.parse(right.createdAt) - Date.parse(left.createdAt)
@@ -58,8 +58,8 @@ type NotificationInteractionToast = {
 
 type NotificationLoadInteractionResult = {
   ok: boolean
-  notifications: ProductNotificationView[]
-  cursor: string | null
+  incomingNotifications: ProductNotificationView[]
+  nextCursor: string | null
   announcement: string
   error: string | null
   toast: NotificationInteractionToast | null
@@ -69,7 +69,7 @@ const LOAD_NOTIFICATIONS_ERROR = 'No se pudieron cargar las notificaciones.'
 const MARK_NOTIFICATION_ERROR = 'No se pudo marcar la notificación.'
 
 export async function loadNextNotificationPage(
-  input: { cursor: string; notifications: ProductNotificationView[] },
+  input: { cursor: string },
   fetchPage: (input: { cursor: string }) => Promise<ProductNotificationPage> = listProductNotifications,
 ): Promise<NotificationLoadInteractionResult> {
   try {
@@ -77,8 +77,8 @@ export async function loadNextNotificationPage(
     if (page.error) {
       return {
         ok: false,
-        notifications: input.notifications,
-        cursor: input.cursor,
+        incomingNotifications: [],
+        nextCursor: input.cursor,
         announcement: page.error,
         error: page.error,
         toast: { title: page.error, variant: 'error' },
@@ -87,8 +87,8 @@ export async function loadNextNotificationPage(
 
     return {
       ok: true,
-      notifications: mergeProductNotifications(input.notifications, page.notifications),
-      cursor: page.nextCursor,
+      incomingNotifications: page.notifications,
+      nextCursor: page.nextCursor,
       announcement: `${page.notifications.length} notificaciones cargadas.`,
       error: null,
       toast: null,
@@ -96,8 +96,8 @@ export async function loadNextNotificationPage(
   } catch {
     return {
       ok: false,
-      notifications: input.notifications,
-      cursor: input.cursor,
+      incomingNotifications: [],
+      nextCursor: input.cursor,
       announcement: LOAD_NOTIFICATIONS_ERROR,
       error: LOAD_NOTIFICATIONS_ERROR,
       toast: { title: LOAD_NOTIFICATIONS_ERROR, variant: 'error' },
@@ -164,7 +164,7 @@ export function NotificationCenter({ initialPage }: { initialPage: ProductNotifi
   const router = useRouter()
   const { showToast } = useToast()
   const [notifications, setNotifications] = useState(() => (
-    mergeProductNotifications([], initialPage.notifications)
+    mergeNotificationPageIntoCurrent([], initialPage.notifications)
   ))
   const [cursor, setCursor] = useState(initialPage.nextCursor)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -206,9 +206,13 @@ export function NotificationCenter({ initialPage }: { initialPage: ProductNotifi
     if (!cursor || loadingMore) return
     setLoadingMore(true)
     try {
-      const result = await loadNextNotificationPage({ cursor, notifications })
-      setNotifications(result.notifications)
-      setCursor(result.cursor)
+      const result = await loadNextNotificationPage({ cursor })
+      if (result.ok) {
+        setNotifications(current => (
+          mergeNotificationPageIntoCurrent(current, result.incomingNotifications)
+        ))
+      }
+      setCursor(result.nextCursor)
       setAnnouncement(result.announcement)
       setErrorMessage(result.error)
       if (result.toast) showToast(result.toast)
