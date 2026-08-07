@@ -2,9 +2,22 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createClient } from '@/lib/supabase/server'
 import {
   disableProductPushToken,
+  listProductNotifications,
+  markProductNotificationRead,
   registerProductPushToken,
   updateProductNotificationPreferences,
 } from '../notifications'
+
+type NotificationRow = {
+  id: string
+  user_id: string
+  type: string
+  title: string
+  body: string
+  url: string | null
+  read_at: string | null
+  created_at: string
+}
 
 const createClientMock = createClient as unknown as Mock
 
@@ -21,12 +34,31 @@ function createActionClient(userId: string | null = 'user-1') {
     professional_enabled: boolean
     push_enabled: boolean
   }>()
+  const notifications: NotificationRow[] = []
 
   function tableQuery(table: string) {
     const filters: Record<string, unknown> = {}
     let updateValue: Record<string, unknown> | null = null
+    let requestedLimit: number | null = null
+    let cursorFilter: string | null = null
+    const requestedOrders: Array<{ column: string; ascending: boolean }> = []
 
     const builder: any = {
+      select() {
+        return builder
+      },
+      order(column: string, options: { ascending?: boolean } = {}) {
+        requestedOrders.push({ column, ascending: options.ascending !== false })
+        return builder
+      },
+      limit(value: number) {
+        requestedLimit = value
+        return builder
+      },
+      or(value: string) {
+        cursorFilter = value
+        return builder
+      },
       async upsert(value: Record<string, unknown>) {
         if (table !== 'product_push_tokens') throw new Error(`Unexpected upsert on ${table}`)
         tokens.set(String(value.device_id), {
@@ -61,6 +93,45 @@ function createActionClient(userId: string | null = 'user-1') {
             push_enabled: Boolean(updateValue.push_enabled),
           })
         }
+        if (table === 'product_notifications') {
+          if (updateValue) {
+            const notificationUpdate = updateValue
+            notifications.forEach((notification, index) => {
+              if (notification.id === filters.id && notification.user_id === filters.user_id) {
+                notifications[index] = {
+                  ...notification,
+                  read_at: String(notificationUpdate.read_at),
+                }
+              }
+            })
+            return Promise.resolve({ error: null }).then(resolve, reject)
+          }
+
+          let rows = notifications
+            .filter(notification => notification.user_id === filters.user_id)
+            .sort((left, right) => {
+              for (const order of requestedOrders) {
+                const leftValue = String(left[order.column as keyof NotificationRow])
+                const rightValue = String(right[order.column as keyof NotificationRow])
+                const comparison = leftValue.localeCompare(rightValue)
+                if (comparison !== 0) return order.ascending ? comparison : -comparison
+              }
+              return 0
+            })
+
+          if (cursorFilter) {
+            const match = cursorFilter.match(/^created_at\.lt\.([^,]+),and\(created_at\.eq\.([^,]+),id\.lt\.([^)]+)\)$/)
+            if (!match) throw new Error(`Unexpected cursor filter: ${cursorFilter}`)
+            const [, beforeCreatedAt, equalCreatedAt, beforeId] = match
+            rows = rows.filter(notification => (
+              notification.created_at < beforeCreatedAt
+              || (notification.created_at === equalCreatedAt && notification.id < beforeId)
+            ))
+          }
+
+          if (requestedLimit !== null) rows = rows.slice(0, requestedLimit)
+          return Promise.resolve({ data: rows, error: null }).then(resolve, reject)
+        }
         return Promise.resolve({ error: null }).then(resolve, reject)
       },
     }
@@ -76,7 +147,24 @@ function createActionClient(userId: string | null = 'user-1') {
     from: vi.fn(tableQuery),
   }
 
-  return { client, tokens, preferences }
+  return { client, tokens, preferences, notifications }
+}
+
+function notificationId(index: number): string {
+  return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+}
+
+function notificationRow(index: number, userId = 'authenticated-user'): NotificationRow {
+  return {
+    id: notificationId(index),
+    user_id: userId,
+    type: 'trainer.update',
+    title: `Aviso ${index}`,
+    body: `Detalle ${index}`,
+    url: '/trainers',
+    read_at: null,
+    created_at: '2026-08-07T15:00:00.000Z',
+  }
 }
 
 describe('product notification actions', () => {
@@ -182,6 +270,62 @@ describe('product notification actions', () => {
       professionalEnabled: 'yes',
       pushEnabled: true,
     } as never)).resolves.toEqual({ ok: false, error: 'Preferencias no validas.' })
+
+    expect(createClientMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed list cursor before opening a session', async () => {
+    await expect(listProductNotifications({ cursor: 'not-a-valid-cursor' })).resolves.toEqual({
+      notifications: [],
+      nextCursor: null,
+      error: 'Cursor no válido.',
+    })
+
+    expect(createClientMock).not.toHaveBeenCalled()
+  })
+
+  it('lists at most 30 owner notifications with a stable descending cursor', async () => {
+    const state = createActionClient('authenticated-user')
+    state.notifications.push(
+      ...Array.from({ length: 31 }, (_, index) => notificationRow(index + 1)),
+      notificationRow(99, 'other-user'),
+    )
+    createClientMock.mockResolvedValue(state.client)
+
+    const firstPage = await listProductNotifications()
+
+    expect(firstPage.error).toBeUndefined()
+    expect(firstPage.notifications).toHaveLength(30)
+    expect(firstPage.notifications[0]?.id).toBe(notificationId(31))
+    expect(firstPage.notifications.at(-1)?.id).toBe(notificationId(2))
+    expect(firstPage.notifications.every(item => item.title !== 'Aviso 99')).toBe(true)
+    expect(firstPage.nextCursor).toEqual(expect.any(String))
+
+    const secondPage = await listProductNotifications({ cursor: firstPage.nextCursor })
+    expect(secondPage.notifications.map(item => item.id)).toEqual([notificationId(1)])
+    expect(secondPage.nextCursor).toBeNull()
+  })
+
+  it('marks only the authenticated owner notification as read', async () => {
+    const state = createActionClient('authenticated-user')
+    state.notifications.push(
+      notificationRow(1),
+      notificationRow(2, 'other-user'),
+    )
+    createClientMock.mockResolvedValue(state.client)
+
+    await expect(markProductNotificationRead(notificationId(1))).resolves.toEqual({ ok: true })
+    await expect(markProductNotificationRead(notificationId(2))).resolves.toEqual({ ok: true })
+
+    expect(state.notifications[0]?.read_at).toEqual(expect.any(String))
+    expect(state.notifications[1]?.read_at).toBeNull()
+  })
+
+  it('rejects a malformed notification id before opening a session', async () => {
+    await expect(markProductNotificationRead('not-a-uuid')).resolves.toEqual({
+      ok: false,
+      error: 'Notificación no válida.',
+    })
 
     expect(createClientMock).not.toHaveBeenCalled()
   })

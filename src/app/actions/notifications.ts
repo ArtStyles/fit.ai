@@ -1,12 +1,155 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import type { Database } from '@/types/database'
 
 type PushPlatform = 'android' | 'ios'
 
 type PushTokenResult =
   | { ok: true }
   | { ok: false; error: string }
+
+type ProductNotificationRow = Database['public']['Tables']['product_notifications']['Row']
+
+export type ProductNotificationView = {
+  id: string
+  type: string
+  title: string
+  body: string
+  url: string | null
+  readAt: string | null
+  createdAt: string
+}
+
+export type ProductNotificationPage = {
+  notifications: ProductNotificationView[]
+  nextCursor: string | null
+  error?: string
+}
+
+const PRODUCT_NOTIFICATION_PAGE_SIZE = 30
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+
+type NotificationCursor = {
+  createdAt: string
+  id: string
+}
+
+function emptyNotificationPage(error?: string): ProductNotificationPage {
+  return {
+    notifications: [],
+    nextCursor: null,
+    ...(error ? { error } : {}),
+  }
+}
+
+function isValidTimestamp(value: unknown): value is string {
+  return typeof value === 'string'
+    && ISO_TIMESTAMP_PATTERN.test(value)
+    && Number.isFinite(Date.parse(value))
+}
+
+function decodeNotificationCursor(value: unknown): NotificationCursor | null | undefined {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+    const cursor = parsed as Record<string, unknown>
+    if (!isValidTimestamp(cursor.createdAt)) return undefined
+    if (typeof cursor.id !== 'string' || !UUID_PATTERN.test(cursor.id)) return undefined
+    return { createdAt: cursor.createdAt, id: cursor.id }
+  } catch {
+    return undefined
+  }
+}
+
+function encodeNotificationCursor(cursor: NotificationCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
+}
+
+function toNotificationView(row: ProductNotificationRow): ProductNotificationView {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    url: row.url,
+    readAt: row.read_at,
+    createdAt: row.created_at,
+  }
+}
+
+export async function listProductNotifications(
+  input: { cursor?: string | null } = {},
+): Promise<ProductNotificationPage> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return emptyNotificationPage('Solicitud no válida.')
+  }
+
+  const cursor = decodeNotificationCursor(input.cursor)
+  if (cursor === undefined) return emptyNotificationPage('Cursor no válido.')
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return emptyNotificationPage('Sesión no válida.')
+
+  let query = (supabase
+    .from('product_notifications') as any)
+    .select('id, type, title, body, url, read_at, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(PRODUCT_NOTIFICATION_PAGE_SIZE + 1)
+
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+    )
+  }
+
+  const { data, error } = await query as {
+    data: ProductNotificationRow[] | null
+    error: { message?: string } | null
+  }
+  if (error) return emptyNotificationPage('No se pudieron cargar las notificaciones.')
+
+  const rows = data ?? []
+  const hasMore = rows.length > PRODUCT_NOTIFICATION_PAGE_SIZE
+  const visible = hasMore ? rows.slice(0, PRODUCT_NOTIFICATION_PAGE_SIZE) : rows
+  const last = visible.at(-1)
+
+  return {
+    notifications: visible.map(toNotificationView),
+    nextCursor: hasMore && last
+      ? encodeNotificationCursor({ createdAt: last.created_at, id: last.id })
+      : null,
+  }
+}
+
+export async function markProductNotificationRead(id: string): Promise<PushTokenResult> {
+  const normalized = typeof id === 'string' ? id.trim() : ''
+  if (!UUID_PATTERN.test(normalized)) {
+    return { ok: false, error: 'Notificación no válida.' }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sesión no válida.' }
+
+  const { error } = await (supabase
+    .from('product_notifications') as any)
+    .update({ read_at: new Date().toISOString() })
+    .eq('id', normalized)
+    .eq('user_id', user.id)
+
+  if (error) return { ok: false, error: 'No se pudo marcar la notificación.' }
+  return { ok: true }
+}
 
 export async function registerProductPushToken(input: {
   token: string
