@@ -146,6 +146,7 @@ export async function markProductNotificationRead(id: string): Promise<PushToken
     .update({ read_at: new Date().toISOString() })
     .eq('id', normalized)
     .eq('user_id', user.id)
+    .is('read_at', null)
 
   if (error) return { ok: false, error: 'No se pudo marcar la notificación.' }
   return { ok: true }

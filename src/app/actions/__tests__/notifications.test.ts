@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createClient } from '@/lib/supabase/server'
 import {
   disableProductPushToken,
@@ -79,6 +79,10 @@ function createActionClient(userId: string | null = 'user-1') {
         filters[column] = value
         return builder
       },
+      is(column: string, value: unknown) {
+        filters[column] = value
+        return builder
+      },
       then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) {
         if (table === 'product_push_tokens' && updateValue?.enabled === false) {
           tokens.forEach((token, deviceId) => {
@@ -97,7 +101,13 @@ function createActionClient(userId: string | null = 'user-1') {
           if (updateValue) {
             const notificationUpdate = updateValue
             notifications.forEach((notification, index) => {
-              if (notification.id === filters.id && notification.user_id === filters.user_id) {
+              const matchesReadState = !('read_at' in filters)
+                || notification.read_at === filters.read_at
+              if (
+                notification.id === filters.id
+                && notification.user_id === filters.user_id
+                && matchesReadState
+              ) {
                 notifications[index] = {
                   ...notification,
                   read_at: String(notificationUpdate.read_at),
@@ -170,6 +180,10 @@ function notificationRow(index: number, userId = 'authenticated-user'): Notifica
 describe('product notification actions', () => {
   beforeEach(() => {
     createClientMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('rejects an empty registration token before opening a session', async () => {
@@ -319,6 +333,20 @@ describe('product notification actions', () => {
 
     expect(state.notifications[0]?.read_at).toEqual(expect.any(String))
     expect(state.notifications[1]?.read_at).toBeNull()
+  })
+
+  it('preserves the first read timestamp when marking the same notification twice', async () => {
+    vi.useFakeTimers()
+    const state = createActionClient('authenticated-user')
+    state.notifications.push(notificationRow(1))
+    createClientMock.mockResolvedValue(state.client)
+
+    vi.setSystemTime(new Date('2026-08-07T16:00:00.000Z'))
+    await markProductNotificationRead(notificationId(1))
+    vi.setSystemTime(new Date('2026-08-07T17:00:00.000Z'))
+    await markProductNotificationRead(notificationId(1))
+
+    expect(state.notifications[0]?.read_at).toBe('2026-08-07T16:00:00.000Z')
   })
 
   it('rejects a malformed notification id before opening a session', async () => {

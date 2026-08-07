@@ -11,6 +11,8 @@ vi.mock('next/navigation', () => ({
 
 import {
   getSafeInternalNotificationUrl,
+  loadNextNotificationPage,
+  markNotificationReadInteraction,
   mergeProductNotifications,
   NotificationCenter,
   type ProductNotificationView,
@@ -115,6 +117,77 @@ describe('NotificationCenter', () => {
     )
 
     expect(html).toContain('No tienes notificaciones todavía')
+  })
+
+  it('renders an initial loading error visibly and accessibly instead of an empty inbox', () => {
+    const html = renderWithProviders(
+      <NotificationCenter
+        initialPage={{
+          notifications: [],
+          nextCursor: null,
+          error: 'No se pudieron cargar las notificaciones.',
+        }}
+      />,
+    )
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No se pudieron cargar las notificaciones.')
+    expect(html).not.toContain('No tienes notificaciones todavía')
+  })
+
+  it('loads a page through the interaction flow and returns its live announcement', async () => {
+    const result = await loadNextNotificationPage({
+      cursor: 'next-page',
+      notifications: [FIRST],
+    }, async ({ cursor }) => {
+      expect(cursor).toBe('next-page')
+      return { notifications: [SECOND], nextCursor: null }
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      notifications: [FIRST, SECOND],
+      cursor: null,
+      announcement: '1 notificaciones cargadas.',
+      error: null,
+      toast: null,
+    })
+  })
+
+  it('turns a rejected page load into visible feedback data for announcement and toast', async () => {
+    const result = await loadNextNotificationPage({
+      cursor: 'next-page',
+      notifications: [FIRST],
+    }, async () => {
+      throw new Error('network unavailable')
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      notifications: [FIRST],
+      cursor: 'next-page',
+      error: 'No se pudieron cargar las notificaciones.',
+      announcement: 'No se pudieron cargar las notificaciones.',
+      toast: {
+        title: 'No se pudieron cargar las notificaciones.',
+        variant: 'error',
+      },
+    })
+  })
+
+  it('turns a rejected mark-read interaction into feedback without changing the item', async () => {
+    const result = await markNotificationReadInteraction(FIRST, async id => {
+      expect(id).toBe(FIRST.id)
+      throw new Error('server action unavailable')
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      notification: FIRST,
+      error: 'No se pudo marcar la notificación.',
+      announcement: 'No se pudo marcar la notificación.',
+      toast: { title: 'No se pudo marcar la notificación.', variant: 'error' },
+    })
   })
 })
 
