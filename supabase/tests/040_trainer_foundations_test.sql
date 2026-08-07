@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(65);
+SELECT plan(68);
 
 SELECT has_table('public', 'product_notifications', 'product notifications table exists');
 SELECT has_table('public', 'product_push_tokens', 'product push tokens table exists');
@@ -54,6 +54,12 @@ SELECT ok(has_table_privilege('service_role', 'public.professional_audit_logs', 
 
 SELECT has_table('public', 'social_push_tokens', 'existing social push tokens remain present');
 SELECT has_table('public', 'social_notification_preferences', 'existing social preferences remain present');
+SELECT is(
+  (SELECT count(*) FROM public.product_notification_preferences
+    WHERE user_id = '33333333-3333-4333-8333-333333333333'),
+  1::bigint,
+  'migration backfills preferences for a profile that predates migration 040'
+);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -171,6 +177,11 @@ SELECT lives_ok(
   $$UPDATE public.product_push_tokens SET enabled = false WHERE token = 'token-user-a'$$,
   'authenticated can disable an own token'
 );
+SELECT is(
+  (SELECT enabled FROM public.product_push_tokens WHERE token = 'token-user-a'),
+  false,
+  'own push token update persists the disabled state'
+);
 SELECT lives_ok(
   $$UPDATE public.product_push_tokens SET enabled = false WHERE token = 'token-user-b'$$,
   'cross-user token update affects no visible rows'
@@ -181,6 +192,12 @@ SELECT is((SELECT count(*) FROM public.product_notification_preferences WHERE us
 SELECT lives_ok(
   $$UPDATE public.product_notification_preferences SET push_enabled = false WHERE user_id = '11111111-1111-4111-8111-111111111111'$$,
   'authenticated can update own notification preferences'
+);
+SELECT is(
+  (SELECT push_enabled FROM public.product_notification_preferences
+    WHERE user_id = '11111111-1111-4111-8111-111111111111'),
+  false,
+  'own preference update persists the disabled push state'
 );
 SELECT lives_ok(
   $$UPDATE public.product_notification_preferences SET push_enabled = false WHERE user_id = '22222222-2222-4222-8222-222222222222'$$,
