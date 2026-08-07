@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { waitForFinalDatabase } from './trainer-foundations-readiness.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const image = process.env.TRAINER_FOUNDATIONS_DB_IMAGE
@@ -71,18 +72,40 @@ function runPsql(sql, label) {
 }
 
 function waitForDatabase() {
-  const deadline = Date.now() + 90_000
-  while (Date.now() < deadline) {
-    const result = docker([
-      'exec', container,
-      'pg_isready', '-U', 'postgres', '-d', 'postgres',
-    ], { print: false })
+  return waitForFinalDatabase({
+    inspectHealth: () => {
+      const result = docker([
+        'inspect', container,
+        '--format', '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}',
+      ], { print: false })
 
-    if (result.status === 0) return
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
-  }
+      if (result.status !== 0) {
+        return `inspect-error-${result.status}`
+      }
+      return result.stdout.trim() || 'unknown'
+    },
+    probeFinalDatabase: () => {
+      const result = docker([
+        'exec', container,
+        'psql', '-X', '-A', '-t', '-q', '-U', 'postgres', '-d', 'postgres',
+        '-c', `SELECT CASE WHEN
+          to_regclass('auth.users') IS NOT NULL
+          AND (SELECT count(*) FROM pg_roles WHERE rolname IN ('anon', 'authenticated', 'service_role')) = 3
+          THEN 'ready' ELSE 'missing auth.users or API roles' END`,
+      ], { print: false })
+      const output = result.stdout.trim()
 
-  throw new Error('isolated PostgreSQL container did not become ready within 90 seconds')
+      if (result.status === 0 && output === 'ready') {
+        return { ok: true, diagnostic: 'auth.users and API roles ready' }
+      }
+
+      const error = result.stderr.trim() || output || `psql exit ${result.status}`
+      return { ok: false, diagnostic: error }
+    },
+    wait: milliseconds => {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+    },
+  })
 }
 
 let started = false
@@ -98,7 +121,10 @@ try {
   if (start.status !== 0) throw new Error(`docker run failed with exit code ${start.status}`)
   started = true
 
-  waitForDatabase()
+  const readiness = waitForDatabase()
+  process.stdout.write(
+    `[trainer-db] final database ready (${readiness.health}; ${readiness.diagnostic})\n`,
+  )
   runPsql(bootstrapSql, 'applying minimal historical bootstrap')
   runPsql(readFileSync(migrationPath, 'utf8'), 'applying migration 040')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 040 pgTAP behavior suite')
