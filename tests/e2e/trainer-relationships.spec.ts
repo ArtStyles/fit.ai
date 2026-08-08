@@ -2,6 +2,7 @@ import { expect, test } from './fixtures'
 import {
   cleanupTrainerRelationshipsFixture,
   endSuspendReinstateAndResumeTrainerRelationship,
+  deriveTrainerRelationshipScope,
   exerciseTrainerRelationshipLifecycle,
   isTrainerRelationshipsE2EEnabled,
   seedTrainerRelationshipsFixture,
@@ -9,10 +10,15 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-test('trainer relationships keep requests, consent, suspension, and resume isolated to the E2E run', async ({ page }) => {
+test('trainer relationships keep requests, consent, suspension, and resume isolated to the E2E run', async ({ page }, testInfo) => {
   test.skip(!isTrainerRelationshipsE2EEnabled(process.env), 'Requires E2E_TRAINER_RELATIONSHIPS_ENABLED=true and dedicated E2E credentials')
   test.setTimeout(300_000)
-  const fixture = await seedTrainerRelationshipsFixture()
+  const fixture = await seedTrainerRelationshipsFixture(deriveTrainerRelationshipScope({
+    projectName: testInfo.project.name,
+    workerIndex: testInfo.workerIndex,
+    parallelIndex: testInfo.parallelIndex,
+    retry: testInfo.retry,
+  }))
   try {
     await page.goto('/login')
     await page.getByLabel('Correo electrÃ³nico', { exact: true }).fill(fixture.client.email)

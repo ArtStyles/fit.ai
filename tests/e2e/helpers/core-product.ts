@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   requireE2EConfig,
@@ -39,6 +39,16 @@ export type TrainerRelationshipsFixture = {
   admin: { id: string; email: string }
   service: SupabaseClient
   runId: string
+  scope: string
+  created: {
+    userIds: string[]
+    applicationIds: string[]
+    profileIds: string[]
+    serviceIds: string[]
+    requestIds: string[]
+    relationshipIds: string[]
+    consentIds: string[]
+  }
 }
 
 type TrainerRelationshipRows = {
@@ -53,8 +63,34 @@ function requireTrainerRelationshipsAnonKey(env: NodeJS.ProcessEnv): string {
   return value
 }
 
-function trainerRelationshipEmail(runId: string, role: 'trainer-a' | 'trainer-b' | 'admin'): string {
-  return `e2e-${runId}-${role}@example.test`
+type TrainerRelationshipRole = 'client' | 'trainer-a' | 'trainer-b' | 'admin'
+
+type TrainerRelationshipScopeInput = {
+  projectName: string
+  workerIndex: number
+  parallelIndex: number
+  retry: number
+}
+
+function cleanScopePart(value: string, fallback: string): string {
+  const cleaned = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return (cleaned || fallback).slice(0, 20).replace(/-+$/, '')
+}
+
+export function deriveTrainerRelationshipScope(input: TrainerRelationshipScopeInput): string {
+  return `${cleanScopePart(input.projectName, 'project')}-w${input.workerIndex}-p${input.parallelIndex}-r${input.retry}`
+}
+
+export function deriveTrainerRelationshipIdentity(
+  runId: string,
+  scope: string,
+  role: TrainerRelationshipRole,
+): { email: string; username: string } {
+  const runPart = cleanScopePart(runId, 'run').slice(0, 18)
+  const scopePart = cleanScopePart(scope, 'scope').slice(0, 16).replace(/-+$/, '')
+  const hash = createHash('sha256').update(`${runId}:${scope}:${role}`).digest('hex').slice(0, 8)
+  const localPart = `e2e-${runPart}-${scopePart}-${hash}-${role}`
+  return { email: `${localPart}@example.test`, username: localPart.replace(/-/g, '_') }
 }
 
 function fixtureClient(config: E2ESeedConfig): SupabaseClient {
@@ -71,18 +107,20 @@ async function signInFixtureClient(client: SupabaseClient, email: string, passwo
 async function ensureTrainerRelationshipsAccount(
   service: SupabaseClient,
   config: E2ESeedConfig,
-  role: 'trainer-a' | 'trainer-b' | 'admin',
+  scope: string,
+  role: TrainerRelationshipRole,
 ): Promise<{ id: string; email: string }> {
-  const email = trainerRelationshipEmail(config.runId, role)
+  const identity = deriveTrainerRelationshipIdentity(config.runId, scope, role)
   const listed = await service.auth.admin.listUsers({ page: 1, perPage: 1000 })
   assertNoError(listed.error, `Listing ${role} trainer relationships fixture`)
-  const existing = listed.data.users.find(user => user.email?.toLowerCase() === email)
+  const existing = listed.data.users.find(user => user.email?.toLowerCase() === identity.email)
   if (existing) {
+    await cleanupTrainerRelationshipsAccount(service, existing.id)
     const { error } = await service.auth.admin.deleteUser(existing.id)
     assertNoError(error, `Removing stale ${role} trainer relationships fixture`)
   }
   const created = await service.auth.admin.createUser({
-    email,
+    email: identity.email,
     password: config.password,
     email_confirm: true,
     user_metadata: { e2e_run_id: config.runId, trainer_relationship_role: role },
@@ -91,7 +129,7 @@ async function ensureTrainerRelationshipsAccount(
   if (!created.data.user) throw new Error(`Creating ${role} trainer relationships fixture returned no user`)
   const { error: profileError } = await (service.from('profiles') as any).upsert({
     id: created.data.user.id,
-    username: `e2e_${config.runId.replace(/-/g, '_')}_${role.replace(/-/g, '_')}`,
+    username: identity.username,
     full_name: `E2E ${role}`,
     onboarding_done: true,
     account_status: 'active',
@@ -100,7 +138,7 @@ async function ensureTrainerRelationshipsAccount(
     timezone: E2E_TIME_ZONE,
   })
   assertNoError(profileError, `Preparing ${role} trainer relationships profile`)
-  return { id: created.data.user.id, email }
+  return { id: created.data.user.id, email: identity.email }
 }
 
 async function createVerifiedTrainerFixture(
@@ -108,7 +146,7 @@ async function createVerifiedTrainerFixture(
   account: { id: string; email: string },
   config: E2ESeedConfig,
   suffix: 'a' | 'b',
-): Promise<{ profileId: string; serviceId: string; slug: string }> {
+): Promise<{ applicationId: string; profileId: string; serviceId: string; slug: string }> {
   const applicationId = randomUUID()
   const profileId = randomUUID()
   const serviceId = randomUUID()
@@ -160,7 +198,7 @@ async function createVerifiedTrainerFixture(
     billing_interval: null,
   })
   assertNoError(serviceError, `Creating non-commercial trainer ${suffix} service`)
-  return { profileId, serviceId, slug }
+  return { applicationId, profileId, serviceId, slug }
 }
 
 /** Performs read-only migration probes before any relationship fixture write. */
@@ -187,20 +225,31 @@ export async function assertTrainerRelationshipsE2EReady(): Promise<void> {
   }
 }
 
-export async function seedTrainerRelationshipsFixture(): Promise<TrainerRelationshipsFixture> {
+export async function seedTrainerRelationshipsFixture(scope: string): Promise<TrainerRelationshipsFixture> {
   await assertTrainerRelationshipsE2EReady()
   const config = requireE2EConfig(process.env)
   const service = adminClient(config)
-  const clientId = await seedE2EAccount(config)
+  const created = {
+    userIds: [] as string[],
+    applicationIds: [] as string[],
+    profileIds: [] as string[],
+    serviceIds: [] as string[],
+    requestIds: [] as string[],
+    relationshipIds: [] as string[],
+    consentIds: [] as string[],
+  }
+  const clientAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'client')
+  created.userIds.push(clientAccount.id)
   const client = fixtureClient(config)
-  await signInFixtureClient(client, config.email, config.password)
+  await signInFixtureClient(client, clientAccount.email, config.password)
   const { error: clientProfileError } = await (service.from('profiles') as any).update({
     onboarding_done: true, account_status: 'active', is_admin: false, language: 'es', timezone: E2E_TIME_ZONE,
-  }).eq('id', clientId)
+  }).eq('id', clientAccount.id)
   assertNoError(clientProfileError, 'Preparing trainer relationships client profile')
-  const trainerAAccount = await ensureTrainerRelationshipsAccount(service, config, 'trainer-a')
-  const trainerBAccount = await ensureTrainerRelationshipsAccount(service, config, 'trainer-b')
-  const admin = await ensureTrainerRelationshipsAccount(service, config, 'admin')
+  const trainerAAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-a')
+  const trainerBAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-b')
+  const admin = await ensureTrainerRelationshipsAccount(service, config, scope, 'admin')
+  created.userIds.push(trainerAAccount.id, trainerBAccount.id, admin.id)
   const trainerAClient = fixtureClient(config)
   const trainerBClient = fixtureClient(config)
   await Promise.all([
@@ -209,13 +258,18 @@ export async function seedTrainerRelationshipsFixture(): Promise<TrainerRelation
   ])
   const trainerA = await createVerifiedTrainerFixture(service, trainerAAccount, config, 'a')
   const trainerB = await createVerifiedTrainerFixture(service, trainerBAccount, config, 'b')
+  created.applicationIds.push(trainerA.applicationId, trainerB.applicationId)
+  created.profileIds.push(trainerA.profileId, trainerB.profileId)
+  created.serviceIds.push(trainerA.serviceId, trainerB.serviceId)
   return {
-    client: { id: clientId, email: config.email, client },
+    client: { id: clientAccount.id, email: clientAccount.email, client },
     trainerA: { ...trainerAAccount, client: trainerAClient, ...trainerA },
     trainerB: { ...trainerBAccount, client: trainerBClient, ...trainerB },
     admin,
     service,
     runId: config.runId,
+    scope,
+    created,
   }
 }
 
@@ -236,6 +290,7 @@ export async function exerciseTrainerRelationshipLifecycle(fixture: TrainerRelat
   assertNoError(createB.error, 'Creating competing pending coaching request')
   const firstRequestId = rpcRows<{ request_id: string }>(createA.data, 'Creating first pending coaching request').request_id
   const competingRequestId = rpcRows<{ request_id: string }>(createB.data, 'Creating competing pending coaching request').request_id
+  fixture.created.requestIds.push(firstRequestId, competingRequestId)
   const accepted = await (fixture.trainerA.client.rpc as any)('accept_coaching_request', { request_id: firstRequestId, idempotency_key: randomUUID() })
   assertNoError(accepted.error, 'Accepting first coaching request')
   const acceptedRow = rpcRows<{ relationship_id: string; accepted_request_id: string; cancelled_request_ids: string[] }>(accepted.data, 'Accepting first coaching request')
@@ -251,13 +306,15 @@ export async function exerciseTrainerRelationshipLifecycle(fixture: TrainerRelat
   assertNoError(relationshipError, 'Reading active coaching relationship')
   expectRelationshipValue(activeRelationships?.length, 1, 'one active coaching relationship')
   const relationshipId = acceptedRow.relationship_id
+  fixture.created.relationshipIds.push(relationshipId)
   const grant = await (fixture.client.client.rpc as any)('grant_body_measurements_consent', { p_relationship_id: relationshipId, p_consent_version: 'body-measurements-v1', p_idempotency_key: randomUUID() })
   assertNoError(grant.error, 'Granting body measurements consent')
   const revoke = await (fixture.client.client.rpc as any)('revoke_body_measurements_consent', { p_relationship_id: relationshipId, p_idempotency_key: randomUUID() })
   assertNoError(revoke.error, 'Revoking body measurements consent')
   const { data: bodyConsent, error: consentError } = await (fixture.service.from('coaching_consents') as any)
-    .select('scope,revoked_at').eq('relationship_id', relationshipId).eq('scope', 'body_measurements').order('created_at', { ascending: false }).limit(1).maybeSingle()
+    .select('id,scope,revoked_at').eq('relationship_id', relationshipId).eq('scope', 'body_measurements').order('created_at', { ascending: false }).limit(1).maybeSingle()
   assertNoError(consentError, 'Reading body measurements consent')
+  if (bodyConsent?.id) fixture.created.consentIds.push(bodyConsent.id)
   expectRelationshipValue(Boolean(bodyConsent?.revoked_at), true, 'revoked body measurements consent')
   return { relationshipId, firstRequestId, competingRequestId }
 }
@@ -284,9 +341,11 @@ export async function endSuspendReinstateAndResumeTrainerRelationship(
   })
   assertNoError(freshRequest.error, 'Creating request before suspension')
   const freshRequestId = rpcRows<{ request_id: string }>(freshRequest.data, 'Creating request before suspension').request_id
+  fixture.created.requestIds.push(freshRequestId)
   const freshAccepted = await (fixture.trainerA.client.rpc as any)('accept_coaching_request', { request_id: freshRequestId, idempotency_key: randomUUID() })
   assertNoError(freshAccepted.error, 'Accepting request before suspension')
   const relationshipId = rpcRows<{ relationship_id: string }>(freshAccepted.data, 'Accepting request before suspension').relationship_id
+  fixture.created.relationshipIds.push(relationshipId)
   const suspended = await (fixture.service.rpc as any)('suspend_account_and_professional', {
     p_user_id: fixture.trainerA.id, p_admin_id: fixture.admin.id, p_reason: 'Suspensión administrativa E2E.', p_until: null,
   })
@@ -328,31 +387,65 @@ export async function endSuspendReinstateAndResumeTrainerRelationship(
     .select('id').eq('relationship_id', relationshipId).eq('scope', 'training_profile').is('revoked_at', null)
   assertNoError(renewedConsentError, 'Reading renewed training consent')
   expectRelationshipValue(renewedTrainingConsent?.length, 1, 'renewed training consent')
+  if (renewedTrainingConsent?.[0]?.id) fixture.created.consentIds.push(renewedTrainingConsent[0].id)
   return relationshipId
 }
 
-export async function cleanupTrainerRelationshipsFixture(fixture: TrainerRelationshipsFixture): Promise<void> {
-  const ids = [fixture.client.id, fixture.trainerA.id, fixture.trainerB.id, fixture.admin.id]
-  const operations = [
-    (fixture.service.from('product_notifications') as any).delete().in('user_id', ids),
-    (fixture.service.from('professional_audit_logs') as any).delete().in('actor_user_id', ids),
-    (fixture.service.from('professional_audit_logs') as any).delete().in('subject_user_id', ids),
-    (fixture.service.from('admin_audit_logs') as any).delete().in('admin_user_id', ids),
-    (fixture.service.from('admin_audit_logs') as any).delete().in('target_user_id', ids),
-    (fixture.service.from('coaching_consents') as any).delete().in('relationship_id', (await (fixture.service.from('coaching_relationships') as any).select('id').eq('client_user_id', fixture.client.id)).data?.map((row: any) => row.id) ?? []),
-    (fixture.service.from('coaching_relationships') as any).delete().eq('client_user_id', fixture.client.id),
-    (fixture.service.from('coaching_requests') as any).delete().eq('client_user_id', fixture.client.id),
-    (fixture.service.from('trainer_service_offerings') as any).delete().in('trainer_profile_id', [fixture.trainerA.profileId, fixture.trainerB.profileId]),
-    (fixture.service.from('trainer_profiles') as any).delete().in('id', [fixture.trainerA.profileId, fixture.trainerB.profileId]),
-    (fixture.service.from('trainer_applications') as any).delete().in('user_id', [fixture.trainerA.id, fixture.trainerB.id]),
-  ]
-  for (const operation of operations) {
-    const { error } = await operation
-    assertNoError(error, 'Cleaning trainer relationships fixture data')
+async function deleteExactRows(service: SupabaseClient, table: string, column: string, ids: string[], operation: string): Promise<void> {
+  if (!ids.length) return
+  const { error } = await (service.from(table) as any).delete().in(column, Array.from(new Set(ids)))
+  assertNoError(error, operation)
+}
+
+/** Removes only rows tied to one dedicated fixture account before recreating it. */
+async function cleanupTrainerRelationshipsAccount(service: SupabaseClient, userId: string): Promise<void> {
+  const { data: profiles, error: profilesError } = await (service.from('trainer_profiles') as any)
+    .select('id').eq('user_id', userId)
+  assertNoError(profilesError, 'Reading stale trainer relationship profiles')
+  const profileIds = (profiles ?? []).map((profile: { id: string }) => profile.id)
+  const { data: relationships, error: relationshipsError } = await (service.from('coaching_relationships') as any)
+    .select('id').or(`client_user_id.eq.${userId},trainer_user_id.eq.${userId}`)
+  assertNoError(relationshipsError, 'Reading stale trainer relationship rows')
+  const relationshipIds = (relationships ?? []).map((relationship: { id: string }) => relationship.id)
+
+  await deleteExactRows(service, 'coaching_consents', 'relationship_id', relationshipIds, 'Removing stale trainer relationship consents')
+  await deleteExactRows(service, 'coaching_relationships', 'id', relationshipIds, 'Removing stale trainer relationships')
+  const { error: requestError } = await (service.from('coaching_requests') as any)
+    .delete().or(`client_user_id.eq.${userId},trainer_user_id.eq.${userId}`)
+  assertNoError(requestError, 'Removing stale trainer relationship requests')
+  await deleteExactRows(service, 'trainer_service_offerings', 'trainer_profile_id', profileIds, 'Removing stale trainer relationship services')
+  await deleteExactRows(service, 'trainer_profiles', 'id', profileIds, 'Removing stale trainer relationship profiles')
+  const { error: applicationsError } = await (service.from('trainer_applications') as any).delete().eq('user_id', userId)
+  assertNoError(applicationsError, 'Removing stale trainer relationship applications')
+  for (const [table, column] of [
+    ['product_notifications', 'user_id'],
+    ['professional_audit_logs', 'actor_user_id'],
+    ['professional_audit_logs', 'subject_user_id'],
+    ['admin_audit_logs', 'admin_user_id'],
+    ['admin_audit_logs', 'target_user_id'],
+  ] as const) {
+    const { error } = await (service.from(table) as any).delete().eq(column, userId)
+    assertNoError(error, `Removing stale ${table}`)
   }
-  for (const id of ids) {
-    const { error } = await fixture.service.auth.admin.deleteUser(id)
-    assertNoError(error, 'Deleting trainer relationships fixture auth user')
+}
+
+export async function cleanupTrainerRelationshipsFixture(fixture: TrainerRelationshipsFixture): Promise<void> {
+  const relationshipIds = Array.from(new Set(fixture.created.relationshipIds))
+  const { data: consents, error: consentsError } = relationshipIds.length
+    ? await (fixture.service.from('coaching_consents') as any).select('id').in('relationship_id', relationshipIds)
+    : { data: [], error: null }
+  assertNoError(consentsError, 'Reading exact trainer relationship consents for cleanup')
+  fixture.created.consentIds.push(...(consents ?? []).map((consent: { id: string }) => consent.id))
+  await deleteExactRows(fixture.service, 'coaching_consents', 'id', fixture.created.consentIds, 'Cleaning exact trainer relationship consents')
+  await deleteExactRows(fixture.service, 'coaching_relationships', 'id', relationshipIds, 'Cleaning exact trainer relationships')
+  await deleteExactRows(fixture.service, 'coaching_requests', 'id', fixture.created.requestIds, 'Cleaning exact trainer relationship requests')
+  await deleteExactRows(fixture.service, 'trainer_service_offerings', 'id', fixture.created.serviceIds, 'Cleaning exact trainer relationship services')
+  await deleteExactRows(fixture.service, 'trainer_profiles', 'id', fixture.created.profileIds, 'Cleaning exact trainer relationship profiles')
+  await deleteExactRows(fixture.service, 'trainer_applications', 'id', fixture.created.applicationIds, 'Cleaning exact trainer relationship applications')
+  for (const userId of fixture.created.userIds) {
+    await cleanupTrainerRelationshipsAccount(fixture.service, userId)
+    const { error } = await fixture.service.auth.admin.deleteUser(userId)
+    assertNoError(error, 'Deleting exact dedicated trainer relationship auth user')
   }
 }
 
