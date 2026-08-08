@@ -9,7 +9,7 @@ import {
 import { trainerCredentialPath } from '@/lib/coaching/trainerCredentialPath'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import type { Database } from '@/types/database'
+import type { Database, Json } from '@/types/database'
 
 const TRAINER_CREDENTIAL_BUCKET = 'trainer-credentials'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -38,6 +38,7 @@ type TransitionRpcResult = {
   event_id: string
 }
 type CleanupJob = { id: string; storage_path: string }
+type DraftSaveRpcResult = { application_id: string; status: 'draft' | 'changes_requested' }
 
 function actionError(error: string, validation?: ValidationResult<unknown>): ActionError {
   return {
@@ -73,6 +74,13 @@ function isCleanupJob(value: unknown): value is CleanupJob {
   const job = value as Record<string, unknown>
   return typeof job.id === 'string' && validUuid(job.id)
     && typeof job.storage_path === 'string' && job.storage_path.length > 0
+}
+
+function isDraftSaveResult(value: unknown): value is DraftSaveRpcResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const row = value as Record<string, unknown>
+  return typeof row.application_id === 'string'
+    && (row.status === 'draft' || row.status === 'changes_requested')
 }
 
 function storageFailureMessage(error: unknown): string {
@@ -140,7 +148,12 @@ export async function saveTrainerApplicationDraft(formData: FormData): Promise<A
 
   const profiles = supabase.from('profiles') as any
   const applications = supabase.from('trainer_applications') as any
-  const [{ data: profile, error: profileError }, { data: current, error: currentError }] = await Promise.all([
+  const trainerProfiles = supabase.from('trainer_profiles') as any
+  const [
+    { data: profile, error: profileError },
+    { data: current, error: currentError },
+    { data: trainerProfile, error: trainerProfileError },
+  ] = await Promise.all([
     profiles
       .select('avatar_url, onboarding_done')
       .eq('id', user.id)
@@ -151,9 +164,16 @@ export async function saveTrainerApplicationDraft(formData: FormData): Promise<A
       .eq('application_kind', 'initial')
       .in('status', ['draft', 'changes_requested'])
       .maybeSingle(),
+    trainerProfiles
+      .select('id, status')
+      .eq('user_id', user.id)
+      .maybeSingle(),
   ])
-  if (profileError || currentError || !profile?.onboarding_done) {
+  if (profileError || currentError || trainerProfileError || !profile?.onboarding_done) {
     return actionError('No se pudo abrir el borrador de solicitud.')
+  }
+  if (trainerProfile) {
+    return actionError('Ya tienes un perfil profesional. Usa la edición de perfil para solicitar cambios.')
   }
 
   const allowedPhotoUrls = [profile.avatar_url, current?.professional_photo_url]
@@ -178,23 +198,11 @@ export async function saveTrainerApplicationDraft(formData: FormData): Promise<A
     interview_availability: draft.interviewAvailability,
   }
 
-  if (current) {
-    const { data, error } = await applications
-      .update(payload)
-      .eq('id', current.id)
-      .eq('user_id', user.id)
-      .select('id, status')
-      .single()
-    if (error || !data) return actionError('No se pudo guardar el borrador.')
-    return { ok: true, applicationId: data.id, status: data.status }
-  }
-
-  const { data, error } = await applications
-    .insert({ ...payload, user_id: user.id, status: 'draft' })
-    .select('id, status')
-    .single()
-  if (error || !data) return actionError('No se pudo guardar el borrador.')
-  return { ok: true, applicationId: data.id, status: data.status }
+  const { data, error } = await (supabase.rpc as any)('save_trainer_application_draft', {
+    p_payload: payload as unknown as Json,
+  })
+  if (error || !isDraftSaveResult(data)) return actionError('No se pudo guardar el borrador.')
+  return { ok: true, applicationId: data.application_id, status: data.status }
 }
 
 export async function uploadTrainerCredential(formData: FormData): Promise<CredentialActionResult> {

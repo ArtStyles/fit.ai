@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(157);
+SELECT plan(177);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
@@ -30,12 +30,20 @@ SELECT has_column('public', 'trainer_applications', 'application_kind', 'applica
 SELECT has_column('public', 'trainer_applications', 'source_profile_id', 'profile updates reference the approved profile');
 SELECT has_column('public', 'trainer_applications', 'credential_source_application_id', 'profile updates reference approved credentials without duplication');
 SELECT has_function('public', 'save_trainer_profile_changes', ARRAY['jsonb'], 'owner-safe trainer profile save RPC exists');
+SELECT has_function('public', 'save_trainer_application_draft', ARRAY['jsonb'], 'atomic initial draft save RPC exists');
 SELECT ok(
   CASE WHEN to_regprocedure('public.save_trainer_profile_changes(jsonb)') IS NULL
     THEN FALSE
     ELSE has_function_privilege('authenticated', 'public.save_trainer_profile_changes(jsonb)', 'EXECUTE')
   END,
   'authenticated owners can execute trainer profile save'
+);
+SELECT ok(
+  CASE WHEN to_regprocedure('public.save_trainer_application_draft(jsonb)') IS NULL
+    THEN FALSE
+    ELSE has_function_privilege('authenticated', 'public.save_trainer_application_draft(jsonb)', 'EXECUTE')
+  END,
+  'authenticated applicants can execute atomic initial draft save'
 );
 SELECT ok(
   CASE WHEN to_regprocedure('public.save_trainer_profile_changes(jsonb)') IS NULL
@@ -49,6 +57,7 @@ SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_c
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_credentials', 'UPDATE'), 'authenticated cannot forge credential metadata');
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_credentials', 'DELETE'), 'authenticated cannot delete metadata before storage cleanup');
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_applications', 'DELETE'), 'authenticated cannot cascade-delete credential storage references');
+SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_applications', 'INSERT'), 'authenticated cannot race initial creation outside the atomic RPC');
 SELECT has_view('public', 'trainer_interviews_applicant_public', 'applicant-safe interview view exists');
 SELECT ok(has_table_privilege('authenticated', 'public.trainer_interviews_applicant_public', 'SELECT'), 'authenticated can read the applicant-safe interview view');
 SELECT ok(NOT has_table_privilege('anon', 'public.trainer_interviews_applicant_public', 'SELECT'), 'anonymous users cannot read applicant interview details');
@@ -468,6 +477,61 @@ SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'ap
 SELECT dblink_disconnect('verification_c1');
 SELECT dblink_disconnect('verification_c2');
 
+SELECT dblink_connect('initial_draft_race', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('initial_approve_race', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('initial_draft_race', $$SET request.jwt.claim.sub = 'abababab-abab-4bab-8bab-abababababab'$$);
+SELECT dblink_exec('initial_draft_race', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('initial_draft_race', 'SET ROLE authenticated');
+SELECT dblink_exec('initial_approve_race', 'SET ROLE service_role');
+SELECT dblink_send_query('initial_draft_race', $$SELECT public.save_trainer_application_draft(jsonb_build_object(
+  'professional_name', 'Draft Race Trainer',
+  'professional_photo_url', 'https://cdn.example.test/ab.jpg',
+  'bio', repeat('updated bio ', 8),
+  'specialties', jsonb_build_array('strength'),
+  'modalities', jsonb_build_array('online'),
+  'experience_summary', repeat('updated experience ', 3),
+  'general_location', NULL,
+  'languages', jsonb_build_array('es'),
+  'contact_email', 'ab@example.test',
+  'contact_phone', NULL,
+  'preferred_contact', 'email',
+  'timezone', 'America/Havana',
+  'interview_availability', 'Weekdays after 15:00'
+))$$);
+SELECT dblink_send_query('initial_approve_race', $$SELECT public.transition_trainer_application(
+  '3abababa-abab-4aba-8aba-abababababab',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'approve',
+  '{"public_note":"Aprobacion concurrente con intento de segundo borrador."}'::jsonb
+)$$);
+CREATE TEMP TABLE initial_approve_race_result (result JSONB);
+INSERT INTO initial_approve_race_result
+SELECT result FROM dblink_get_result('initial_approve_race') AS response(result JSONB);
+SELECT throws_ok(
+  $$SELECT * FROM dblink_get_result('initial_draft_race') AS response(result JSONB)$$,
+  'P0001', NULL,
+  'atomic draft save loses safely against concurrent initial approval'
+);
+SELECT is(
+  (SELECT count(*) FROM initial_approve_race_result WHERE (result->>'transitioned')::boolean),
+  1::bigint,
+  'concurrent initial approval still completes exactly once'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_profiles WHERE user_id = 'abababab-abab-4bab-8bab-abababababab'),
+  1::bigint,
+  'concurrent initial approval creates the trainer profile'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_applications
+   WHERE user_id = 'abababab-abab-4bab-8bab-abababababab'
+     AND application_kind = 'initial'),
+  1::bigint,
+  'concurrent draft save leaves no second initial after profile creation'
+);
+SELECT dblink_disconnect('initial_draft_race');
+SELECT dblink_disconnect('initial_approve_race');
+
 SELECT dblink_connect('verification_admin_c1', 'dbname=postgres user=supabase_admin');
 SELECT dblink_connect('verification_admin_c2', 'dbname=postgres user=supabase_admin');
 SELECT dblink_exec('verification_admin_c1', 'SET ROLE service_role');
@@ -624,6 +688,82 @@ SELECT is(
 );
 SELECT dblink_disconnect('mixed_profile_save');
 SELECT dblink_disconnect('mixed_profile_approve');
+
+SELECT set_config('request.jwt.claim.sub', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$INSERT INTO public.trainer_applications (
+    id, user_id, professional_name, professional_photo_url, bio, specialties, modalities,
+    experience_summary, languages, contact_email, preferred_contact, timezone, interview_availability
+  ) VALUES (
+    '3d1ddddd-dddd-4ddd-8ddd-dddddddddddd', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    'Forbidden Second Initial', 'https://cdn.example.test/d.jpg', repeat('second bio ', 6),
+    ARRAY['strength'], ARRAY['online'], repeat('second experience ', 3), ARRAY['es'],
+    'd@example.test', 'email', 'America/Havana', 'Weekdays'
+  )$$,
+  '42501', NULL, 'RLS blocks creating a second initial application after any trainer profile exists'
+);
+RESET ROLE;
+DELETE FROM public.trainer_applications
+WHERE id = '3d1ddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+INSERT INTO public.trainer_applications (
+  id, user_id, application_kind, status, professional_name, professional_photo_url, bio,
+  specialties, modalities, experience_summary, languages, contact_email, preferred_contact,
+  timezone, interview_availability
+) VALUES (
+  '3d2ddddd-dddd-4ddd-8ddd-dddddddddddd', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'initial', 'draft', 'Manual Second Initial', 'https://cdn.example.test/d.jpg', repeat('second bio ', 6),
+  ARRAY['strength'], ARRAY['online'], repeat('second experience ', 3), ARRAY['es'],
+  'd@example.test', 'email', 'America/Havana', 'Weekdays'
+);
+INSERT INTO public.trainer_application_credentials (
+  id, application_id, credential_type, title, external_url
+) VALUES (
+  '4d2ddddd-dddd-4ddd-8ddd-dddddddddddd', '3d2ddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'link', 'Manual second initial credential', 'https://issuer.example.test/second-initial'
+);
+
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.submit_trainer_application('3d2ddddd-dddd-4ddd-8ddd-dddddddddddd')$$,
+  '42501', NULL, 'submit rejects a second initial application when any trainer profile exists'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT status FROM public.trainer_applications WHERE id = '3d2ddddd-dddd-4ddd-8ddd-dddddddddddd'),
+  'draft',
+  'failed second-initial submit preserves draft state'
+);
+
+UPDATE public.trainer_applications SET status = 'under_review'
+WHERE id = '3d2ddddd-dddd-4ddd-8ddd-dddddddddddd';
+SET LOCAL ROLE service_role;
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+    '3d2ddddd-dddd-4ddd-8ddd-dddddddddddd',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'approve',
+    '{"public_note":"No debe reemplazar el perfil existente."}'::jsonb
+  )$$,
+  '42501', NULL, 'approval rejects a second initial application if a trainer profile appeared before decision'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT status FROM public.trainer_applications WHERE id = '3d2ddddd-dddd-4ddd-8ddd-dddddddddddd'),
+  'under_review',
+  'failed second-initial approval preserves application state'
+);
+SELECT is(
+  (SELECT concat_ws('|', status, professional_name, source_application_id)
+   FROM public.trainer_profiles WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+  'active|Concurrent Reviewed Name|' ||
+    (SELECT id::text FROM public.trainer_applications
+     WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+       AND application_kind = 'profile_update' AND status = 'approved'),
+  'failed second-initial approval preserves the existing trainer profile'
+);
 
 CREATE OR REPLACE FUNCTION public.fail_notification_after_submission_mutations()
 RETURNS TRIGGER
@@ -1058,7 +1198,7 @@ SELECT lives_ok(
     'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
     'bio', repeat('direct bio ', 8),
     'specialties', jsonb_build_array('strength'),
-    'modalities', jsonb_build_array('online'),
+    'modalities', jsonb_build_array('hybrid'),
     'experienceSummary', 'Updated experience in the same submitted review.',
     'generalLocation', 'New location',
     'languages', jsonb_build_array('es', 'en')
@@ -1123,7 +1263,7 @@ SELECT lives_ok(
     'professionalPhotoUrl', 'https://cdn.example.test/reverted-direct.jpg',
     'bio', repeat('reverted direct bio ', 5),
     'specialties', jsonb_build_array('strength', 'mobility'),
-    'modalities', jsonb_build_array('online'),
+    'modalities', jsonb_build_array('hybrid'),
     'experienceSummary', 'Recreated reviewed experience after reverting the prior proposal.',
     'generalLocation', 'Reverted direct location',
     'languages', jsonb_build_array('es')
@@ -1267,7 +1407,7 @@ SELECT lives_ok(
     'professionalPhotoUrl', 'https://cdn.example.test/latest-direct.jpg',
     'bio', repeat('latest direct bio ', 6),
     'specialties', jsonb_build_array('strength', 'mobility'),
-    'modalities', jsonb_build_array('online'),
+    'modalities', jsonb_build_array('hybrid'),
     'experienceSummary', 'Recreated reviewed experience after reverting the prior proposal.',
     'generalLocation', 'Latest direct location',
     'languages', jsonb_build_array('es', 'fr')
@@ -1289,6 +1429,102 @@ SELECT lives_ok(
   )$$,
   'administrator can start review of a profile update'
 );
+SELECT set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Approved Profile Trainer',
+    'professionalPhotoUrl', 'https://cdn.example.test/latest-direct.jpg',
+    'bio', repeat('latest direct bio ', 6),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Eight years of approved experience.',
+    'generalLocation', NULL,
+    'languages', jsonb_build_array('es', 'fr')
+  ))$$,
+  'P0001',
+    'General location is required while approved or pending modalities include in-person or hybrid coaching.',
+  'direct save validates location against the locked effective pending modalities'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT general_location FROM public.trainer_profiles
+   WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'Latest direct location',
+  'failed direct location removal preserves the approved profile location'
+);
+
+UPDATE public.trainer_profiles SET modalities = ARRAY['hybrid']
+WHERE id = '59999999-9999-4999-8999-999999999999';
+UPDATE public.trainer_applications SET modalities = ARRAY['online']
+WHERE user_id = '99999999-9999-4999-8999-999999999999'
+  AND application_kind = 'profile_update'
+  AND status = 'under_review';
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Approved Profile Trainer',
+    'professionalPhotoUrl', 'https://cdn.example.test/latest-direct.jpg',
+    'bio', repeat('latest direct bio ', 6),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Eight years of approved experience.',
+    'generalLocation', NULL,
+    'languages', jsonb_build_array('es', 'fr')
+  ))$$,
+  'P0001',
+  'General location is required while approved or pending modalities include in-person or hybrid coaching.',
+  'direct save also validates location against currently approved hybrid modalities'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT general_location FROM public.trainer_profiles
+   WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'Latest direct location',
+  'failed removal under approved hybrid modalities preserves the profile location'
+);
+UPDATE public.trainer_profiles SET modalities = ARRAY['online']
+WHERE id = '59999999-9999-4999-8999-999999999999';
+UPDATE public.trainer_applications SET modalities = ARRAY['hybrid']
+WHERE user_id = '99999999-9999-4999-8999-999999999999'
+  AND application_kind = 'profile_update'
+  AND status = 'under_review';
+
+UPDATE public.trainer_profiles SET general_location = ''
+WHERE id = '59999999-9999-4999-8999-999999999999';
+SET LOCAL ROLE service_role;
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'under_review'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'approve',
+    '{"public_note":"Debe fallar sin ubicacion final."}'::jsonb
+  )$$,
+  'P0001',
+  'Add a general location before approving in-person or hybrid coaching modalities.',
+  'profile-update approval rejects an invalid final modality and location combination'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT status FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'
+     AND status = 'under_review'),
+  'under_review',
+  'invalid final profile combination leaves the profile update under review'
+);
+SELECT is(
+  (SELECT concat_ws('|', status, professional_name, array_to_string(modalities, ','))
+   FROM public.trainer_profiles WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'active|Approved Profile Trainer|online',
+  'rejected profile-update approval preserves the active approved profile'
+);
+UPDATE public.trainer_profiles SET general_location = 'Restored final location'
+WHERE id = '59999999-9999-4999-8999-999999999999';
 UPDATE public.trainer_profiles SET status = 'suspended'
 WHERE id = '59999999-9999-4999-8999-999999999999';
 SELECT throws_ok(
@@ -1337,8 +1573,8 @@ SELECT is(
     bio, general_location, array_to_string(languages, ','))
    FROM public.trainer_profiles
    WHERE id = '59999999-9999-4999-8999-999999999999'),
-  'Updated Name Recreated Review|strength,mobility|online|Recreated reviewed experience after reverting the prior proposal.|https://cdn.example.test/latest-direct.jpg|'
-    || btrim(repeat('latest direct bio ', 6)) || '|Latest direct location|es,fr',
+  'Updated Name Recreated Review|strength,mobility|hybrid|Recreated reviewed experience after reverting the prior proposal.|https://cdn.example.test/latest-direct.jpg|'
+    || btrim(repeat('latest direct bio ', 6)) || '|Restored final location|es,fr',
   'profile-update approval applies reviewed fields without reverting newer direct fields'
 );
 

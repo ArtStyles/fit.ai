@@ -59,10 +59,18 @@ describe('trainer application actions', () => {
   it('derives draft ownership from the authenticated user and ignores a forged userId', async () => {
     let inserted: Record<string, unknown> | undefined
     const applicationFilters: Array<[string, unknown]> = []
+    const rpc = vi.fn().mockResolvedValue({
+      data: { application_id: applicationId, status: 'draft' },
+      error: null,
+    })
     const client = authClient({
+      rpc,
       from: vi.fn((table: string) => {
         if (table === 'profiles') return {
           select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { avatar_url: 'https://cdn.example/avatar.jpg', onboarding_done: true }, error: null }) }) }),
+        }
+        if (table === 'trainer_profiles') return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
         }
         if (table === 'trainer_applications') return {
           select: () => {
@@ -92,11 +100,12 @@ describe('trainer application actions', () => {
       applicationId,
       status: 'draft',
     })
-    expect(inserted).toMatchObject({ user_id: userId, professional_name: 'Alex Entrenador' })
-    expect(inserted).not.toHaveProperty('application_kind')
+    expect(rpc).toHaveBeenCalledWith('save_trainer_application_draft', {
+      p_payload: expect.objectContaining({ professional_name: 'Alex Entrenador' }),
+    })
     expect(applicationFilters).toContainEqual(['application_kind', 'initial'])
-    expect(inserted).not.toHaveProperty('userId')
-    expect(inserted).not.toHaveProperty('government_id')
+    expect(JSON.stringify(rpc.mock.calls)).not.toContain('attacker')
+    expect(inserted).toBeUndefined()
   })
 
   it('never opens a server dependency when forbidden identity data is supplied', async () => {
@@ -107,6 +116,38 @@ describe('trainer application actions', () => {
       error: 'La solicitud contiene campos de identidad no permitidos.',
     })
     expect(createClientMock).not.toHaveBeenCalled()
+  })
+
+  it('blocks a new initial draft when any trainer profile already exists', async () => {
+    const insert = vi.fn()
+    const client = authClient({
+      from: vi.fn((table: string) => {
+        if (table === 'profiles') return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { avatar_url: 'https://cdn.example/avatar.jpg', onboarding_done: true }, error: null }) }) }),
+        }
+        if (table === 'trainer_profiles') return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'existing-profile', status: 'suspended' }, error: null }) }) }),
+        }
+        if (table === 'trainer_applications') return {
+          select: () => {
+            const query = {
+              eq: () => query,
+              in: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+            }
+            return query
+          },
+          insert,
+        }
+        throw new Error(`Unexpected table ${table}`)
+      }),
+    })
+    createClientMock.mockResolvedValue(client)
+
+    await expect(saveTrainerApplicationDraft(validDraft())).resolves.toEqual({
+      ok: false,
+      error: 'Ya tienes un perfil profesional. Usa la edición de perfil para solicitar cambios.',
+    })
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it('uploads an owned credential and registers metadata through the credential RPC', async () => {

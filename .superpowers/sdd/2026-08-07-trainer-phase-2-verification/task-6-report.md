@@ -94,3 +94,64 @@ La re-revisión confirmó los cuatro arreglos. Detectó además que incluir expl
 - No se añadieron políticas de lectura pública de perfiles ni datos ficticios fuera del alcance.
 - `git diff --check` no detectó errores. Git únicamente informó avisos locales de conversión LF/CRLF en archivos ya rastreados.
 - Vitest emitió el aviso preexistente de que `vite-tsconfig-paths` puede sustituirse por la opción nativa de Vite; no afecta el resultado de las pruebas ni forma parte de esta tarea.
+
+## Fix round 1/5 oficial
+
+Se cerraron los dos hallazgos Important de la revisión oficial sin modificar el Minor diferido:
+
+- La ubicación directa ahora se valida contra la unión de las modalidades aprobadas visibles y las modalidades pendientes o propuestas efectivas. Esto cubre tanto `online -> hybrid` como `hybrid -> online`: mientras cualquiera de los dos estados requiera presencialidad, no se puede borrar `general_location`. La transición administrativa vuelve a validar la combinación final antes de mutar perfil, solicitud, evento, auditoría o notificación.
+- La creación y reutilización del borrador `initial` pasó a `save_trainer_application_draft(jsonb)`, una RPC owner-safe y transaccional que deriva el propietario de `auth.uid()`, usa el mismo advisory lock `trainer-profile:<user_id>` que submit, guardado de perfil y aprobación, comprueba cuenta/onboarding y rechaza cualquier `trainer_profile` existente. La Server Action conserva su guard temprano pero persiste exclusivamente por la RPC. `authenticated` ya no tiene privilegio INSERT directo sobre `trainer_applications`; RLS queda como defensa secundaria. No se usa metadata de Auth.
+- Se añadió una fixture comprometida y una carrera PostgreSQL real con dos conexiones `dblink`: aprobación inicial y guardado de borrador se lanzan simultáneamente. La aprobación termina una vez, se crea un solo perfil y queda exactamente una solicitud `initial`; el guardado concurrente pierde de forma segura. El cambio en `scripts/test-trainer-verification-db.mjs` fue necesario para crear esa fixture fuera de la transacción pgTAP, de modo que ambas conexiones pudieran verla y competir de verdad.
+
+### Evidencia RED
+
+Primer ciclo de la ronda oficial:
+
+```text
+pnpm vitest run src/app/actions/__tests__/trainerProfile.test.ts src/app/actions/__tests__/trainerApplications.test.ts
+Tests  2 failed | 18 passed (20)
+
+pnpm test:db:verification
+1..168
+12 assertions failed (incluidas preservaciones en cascada)
+```
+
+La re-revisión detectó dos huecos residuales y se escribieron regresiones antes de corregirlos:
+
+```text
+pnpm vitest run src/app/actions/__tests__/trainerProfile.test.ts src/app/actions/__tests__/trainerApplications.test.ts
+Tests  2 failed | 19 passed (21)
+
+pnpm test:db:verification
+1..173
+4 assertions failed: RPC/privilegio y modalidad aprobada/preservación
+```
+
+### Evidencia GREEN final
+
+Ejecutado sobre el estado exacto previo al commit del fix:
+
+```text
+pnpm vitest run src/lib/coaching/__tests__/access.test.ts "src/app/(app)/coach/__tests__/workspace.test.tsx" src/app/actions/__tests__/trainerProfile.test.ts src/components/coaching/__tests__/trainerProfileForm.test.tsx src/app/actions/__tests__/adminTrainers.test.ts src/app/actions/__tests__/trainerApplications.test.ts
+Test Files  6 passed (6)
+Tests       52 passed (52)
+
+pnpm test:db:verification
+1..177
+PASS: all pgTAP assertions passed
+
+pnpm test
+Test Files  138 passed (138)
+Tests       1205 passed (1205)
+
+pnpm type-check
+Exit code: 0
+
+pnpm lint
+Exit code: 0
+
+git diff --check
+Exit code: 0
+```
+
+La re-revisión independiente final devolvió **PASS**, sin findings Critical ni Important. Confirmó la unión de modalidades aprobadas/efectivas, la validación final administrativa, el advisory lock compartido, el uso de la RPC desde la Server Action, la ausencia del privilegio INSERT directo y la carrera `dblink` contra aprobación.

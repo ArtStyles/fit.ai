@@ -1312,6 +1312,12 @@ export interface Database {
         }
         Returns: Json
       }
+      save_trainer_application_draft: {
+        Args: {
+          p_payload: Json
+        }
+        Returns: Json
+      }
       save_trainer_profile_changes: {
         Args: {
           p_payload: Json

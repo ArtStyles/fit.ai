@@ -133,13 +133,46 @@ function isProfileSaveResult(value: unknown): value is {
 }
 
 export async function updateTrainerProfile(formData: FormData): Promise<TrainerProfileActionResult> {
-  const { supabase } = await requireActiveTrainerContext()
+  const { supabase, user, trainerProfile } = await requireActiveTrainerContext()
   const validation = validateProfileForm(formData)
   if (!validation.ok) {
     return {
       ok: false,
       error: 'Revisa los campos del perfil profesional.',
       fieldErrors: validation.fieldErrors,
+    }
+  }
+
+  const reviews = supabase.from('trainer_applications') as any
+  const { data: pendingReview, error: pendingReviewError } = await reviews
+    .select('status, modalities')
+    .eq('user_id', user.id)
+    .eq('application_kind', 'profile_update')
+    .in('status', ['draft', 'submitted', 'under_review', 'changes_requested', 'interview_required'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (pendingReviewError) {
+    return { ok: false, error: 'No se pudo verificar la revisión profesional pendiente.' }
+  }
+
+  const pendingModalities = pendingReview
+    && ['under_review', 'interview_required'].includes(pendingReview.status)
+    ? pendingReview.modalities as string[]
+    : validation.value.modalities
+  const effectiveModalities = Array.from(new Set([
+    ...(trainerProfile.modalities ?? []),
+    ...pendingModalities,
+  ]))
+  if (!validation.value.generalLocation
+    && (effectiveModalities.includes('in_person') || effectiveModalities.includes('hybrid'))) {
+    return {
+      ok: false,
+      error: 'Añade una ubicación general antes de guardar: tu perfil aprobado o revisión pendiente incluye atención presencial o híbrida.',
+      fieldErrors: {
+        generalLocation: 'La ubicación es obligatoria mientras el perfil aprobado o pendiente incluya atención presencial o híbrida.',
+      },
     }
   }
 

@@ -110,12 +110,14 @@ const concurrencyFixtureSql = `
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
   ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'verification-concurrent@example.test', '{}'::jsonb),
+  ('abababab-abab-4bab-8bab-abababababab', 'verification-draft-race@example.test', '{}'::jsonb),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'verification-admin@example.test', '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.profiles (id, avatar_url, onboarding_done, is_admin, account_status)
 VALUES
   ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'https://cdn.example.test/d.jpg', true, false, 'active'),
+  ('abababab-abab-4bab-8bab-abababababab', 'https://cdn.example.test/ab.jpg', true, false, 'active'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'https://cdn.example.test/admin.jpg', true, true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   avatar_url = EXCLUDED.avatar_url,
@@ -132,13 +134,25 @@ INSERT INTO public.trainer_applications (
   'Concurrent Trainer', 'https://cdn.example.test/d.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
   repeat('experience ', 4), NULL, ARRAY['es'], 'd@example.test', 'email',
   'America/Havana', 'Weekdays after 14:00'
+), (
+  '3abababa-abab-4aba-8aba-abababababab', 'abababab-abab-4bab-8bab-abababababab',
+  'Draft Race Trainer', 'https://cdn.example.test/ab.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+  repeat('experience ', 4), NULL, ARRAY['es'], 'ab@example.test', 'email',
+  'America/Havana', 'Weekdays after 14:00'
 );
+
+UPDATE public.trainer_applications
+SET status = 'under_review', submitted_at = NOW()
+WHERE id = '3abababa-abab-4aba-8aba-abababababab';
 
 INSERT INTO public.trainer_application_credentials (
   id, application_id, credential_type, title, external_url
 ) VALUES (
   '4ddddddd-dddd-4ddd-8ddd-dddddddddddd', '3ddddddd-dddd-4ddd-8ddd-dddddddddddd',
   'link', 'Concurrent certificate', 'https://issuer.example.test/cert/d'
+), (
+  '4abababa-abab-4aba-8aba-abababababab', '3abababa-abab-4aba-8aba-abababababab',
+  'link', 'Draft race certificate', 'https://issuer.example.test/cert/ab'
 );
 `
 

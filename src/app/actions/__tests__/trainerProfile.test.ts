@@ -23,6 +23,25 @@ function validProfileForm(): FormData {
   return formData
 }
 
+function profileSupabase(rpc: ReturnType<typeof vi.fn>) {
+  return {
+    rpc,
+    from: vi.fn(() => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            in: () => ({
+              order: () => ({
+                limit: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    })),
+  }
+}
+
 describe('updateTrainerProfile', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -37,7 +56,7 @@ describe('updateTrainerProfile', () => {
     })
     requireActiveTrainerContext.mockResolvedValue({
       user: { id: 'owner-user-1' },
-      supabase: { rpc },
+      supabase: profileSupabase(rpc),
       trainerProfile: { id: 'trainer-profile-1', status: 'active' },
     })
     const formData = validProfileForm()
@@ -72,7 +91,7 @@ describe('updateTrainerProfile', () => {
     const rpc = vi.fn()
     requireActiveTrainerContext.mockResolvedValue({
       user: { id: 'owner-user-1' },
-      supabase: { rpc },
+      supabase: profileSupabase(rpc),
       trainerProfile: { id: 'trainer-profile-1', status: 'active' },
     })
     const formData = validProfileForm()
@@ -113,7 +132,7 @@ describe('updateTrainerProfile', () => {
     })
     requireActiveTrainerContext.mockResolvedValue({
       user: { id: 'owner-user-1' },
-      supabase: { rpc },
+      supabase: profileSupabase(rpc),
       trainerProfile: { id: 'trainer-profile-1', status: 'active' },
     })
     const { updateTrainerProfile } = await import('../trainerProfile')
@@ -129,7 +148,7 @@ describe('updateTrainerProfile', () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'conflict' } })
     requireActiveTrainerContext.mockResolvedValue({
       user: { id: 'owner-user-1' },
-      supabase: { rpc },
+      supabase: profileSupabase(rpc),
       trainerProfile: { id: 'trainer-profile-1', status: 'active' },
     })
     const { updateTrainerProfile } = await import('../trainerProfile')
@@ -138,5 +157,85 @@ describe('updateTrainerProfile', () => {
       ok: false,
       error: 'No se pudo guardar el perfil profesional.',
     })
+  })
+
+  it('rejects clearing location while a locked pending review would make the profile hybrid', async () => {
+    const rpc = vi.fn()
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { status: 'under_review', modalities: ['hybrid'] },
+      error: null,
+    })
+    requireActiveTrainerContext.mockResolvedValue({
+      user: { id: 'owner-user-1' },
+      supabase: {
+        rpc,
+        from: vi.fn(() => ({
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                in: () => ({
+                  order: () => ({ limit: () => ({ maybeSingle }) }),
+                }),
+              }),
+            }),
+          }),
+        })),
+      },
+      trainerProfile: { id: 'trainer-profile-1', status: 'active' },
+    })
+    const formData = validProfileForm()
+    formData.delete('modalities')
+    formData.append('modalities', 'online')
+    formData.set('generalLocation', '')
+    const { updateTrainerProfile } = await import('../trainerProfile')
+
+    await expect(updateTrainerProfile(formData)).resolves.toEqual({
+      ok: false,
+      error: 'Añade una ubicación general antes de guardar: tu perfil aprobado o revisión pendiente incluye atención presencial o híbrida.',
+      fieldErrors: {
+        generalLocation: 'La ubicación es obligatoria mientras el perfil aprobado o pendiente incluya atención presencial o híbrida.',
+      },
+    })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('rejects clearing location while currently approved modalities remain hybrid', async () => {
+    const rpc = vi.fn()
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { status: 'submitted', modalities: ['online'] },
+      error: null,
+    })
+    requireActiveTrainerContext.mockResolvedValue({
+      user: { id: 'owner-user-1' },
+      supabase: {
+        rpc,
+        from: vi.fn(() => ({
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                in: () => ({
+                  order: () => ({ limit: () => ({ maybeSingle }) }),
+                }),
+              }),
+            }),
+          }),
+        })),
+      },
+      trainerProfile: { id: 'trainer-profile-1', status: 'active', modalities: ['hybrid'] },
+    })
+    const formData = validProfileForm()
+    formData.delete('modalities')
+    formData.append('modalities', 'online')
+    formData.set('generalLocation', '')
+    const { updateTrainerProfile } = await import('../trainerProfile')
+
+    await expect(updateTrainerProfile(formData)).resolves.toEqual({
+      ok: false,
+      error: 'Añade una ubicación general antes de guardar: tu perfil aprobado o revisión pendiente incluye atención presencial o híbrida.',
+      fieldErrors: {
+        generalLocation: 'La ubicación es obligatoria mientras el perfil aprobado o pendiente incluya atención presencial o híbrida.',
+      },
+    })
+    expect(rpc).not.toHaveBeenCalled()
   })
 })
