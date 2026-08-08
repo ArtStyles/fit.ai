@@ -973,6 +973,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_client_user_id UUID := auth.uid();
+  v_trainer_user_id UUID;
   v_relationship public.coaching_relationships%ROWTYPE;
   v_trainer_account public.profiles%ROWTYPE;
   v_trainer_profile public.trainer_profiles%ROWTYPE;
@@ -985,23 +986,39 @@ BEGIN
   -- Every operation that can create the sole active relationship takes this
   -- client lock first, preventing an accept and a resume from interleaving.
   PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
-  SELECT * INTO v_relationship
+
+  -- This untrusted pre-read supplies only the trainer lock key. The relationship
+  -- is re-read under lock below before any state is accepted or changed.
+  SELECT relationship.trainer_user_id INTO v_trainer_user_id
   FROM public.coaching_relationships relationship
   WHERE relationship.id = p_relationship_id AND relationship.client_user_id = v_client_user_id
+  ;
+  IF NOT FOUND THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_FOUND'; END IF;
+
+  -- Suspension uses this same trainer lock before touching account/profile or
+  -- relationships. Taking it before the relationship row prevents the former
+  -- account -> relationship / relationship -> account deadlock cycle.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_trainer_user_id::TEXT, 0));
+  IF NOT public.is_account_active(v_client_user_id) THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+  -- Match suspension's account -> profile order before checking resumability.
+  SELECT * INTO v_trainer_account FROM public.profiles account
+  WHERE account.id = v_trainer_user_id FOR UPDATE;
+  IF NOT FOUND OR v_trainer_account.account_status <> 'active' THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+  SELECT * INTO v_trainer_profile FROM public.trainer_profiles trainer_profile
+  WHERE trainer_profile.user_id = v_trainer_user_id FOR UPDATE;
+  IF NOT FOUND OR v_trainer_profile.status <> 'active' THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+
+  SELECT * INTO v_relationship
+  FROM public.coaching_relationships relationship
+  WHERE relationship.id = p_relationship_id
+    AND relationship.client_user_id = v_client_user_id
+    AND relationship.trainer_user_id = v_trainer_user_id
   FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_FOUND'; END IF;
   IF v_relationship.status <> 'paused_by_platform' THEN
     IF v_relationship.status = 'active' THEN RETURN QUERY SELECT v_relationship.id, FALSE; RETURN; END IF;
     RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_PAUSED';
   END IF;
-  IF NOT public.is_account_active(v_client_user_id) THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
-  -- Match suspension's account -> profile order before checking resumability.
-  SELECT * INTO v_trainer_account FROM public.profiles account
-  WHERE account.id = v_relationship.trainer_user_id FOR UPDATE;
-  IF NOT FOUND OR v_trainer_account.account_status <> 'active' THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
-  SELECT * INTO v_trainer_profile FROM public.trainer_profiles trainer_profile
-  WHERE trainer_profile.user_id = v_relationship.trainer_user_id FOR UPDATE;
-  IF NOT FOUND OR v_trainer_profile.status <> 'active' THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
   SELECT * INTO v_service FROM public.trainer_service_offerings service
   WHERE service.id = v_relationship.service_id
     AND service.trainer_profile_id = v_trainer_profile.id FOR UPDATE;

@@ -94,6 +94,21 @@ describe('trainer relationships migration', () => {
     expect(migration).not.toMatch(/\bworkout_plans\b|\bprogress_logs\b|\bexercise_logs\b/i)
   })
 
+  it('takes the trainer suspension lock before locking a paused relationship during resume', () => {
+    const resume = migration.match(
+      /CREATE OR REPLACE FUNCTION public\.resume_paused_coaching_relationship\([\s\S]+?END;\n\$\$;/i,
+    )?.[0]
+
+    expect(resume).toBeDefined()
+    const trainerRead = resume!.indexOf('SELECT relationship.trainer_user_id INTO v_trainer_user_id')
+    const trainerLock = resume!.indexOf('pg_advisory_xact_lock(hashtextextended(v_trainer_user_id::TEXT, 0))')
+    const relationshipLock = resume!.indexOf('AND relationship.trainer_user_id = v_trainer_user_id\n  FOR UPDATE;')
+
+    expect(trainerRead).toBeGreaterThanOrEqual(0)
+    expect(trainerLock).toBeGreaterThan(trainerRead)
+    expect(relationshipLock).toBeGreaterThan(trainerLock)
+  })
+
   it('uses RLS and minimum grants instead of direct participant mutations', () => {
     for (const table of relationshipTables) {
       expect(migration).toMatch(

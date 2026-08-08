@@ -256,26 +256,57 @@ DECLARE
   suspension_result BOOLEAN;
   resume_error TEXT;
   suspension_error TEXT;
+  resume_backend_pid INTEGER;
+  resume_waiting_on_relationship BOOLEAN := FALSE;
+  attempt INTEGER;
 BEGIN
+  -- Hold the relationship first. The resume must reach that blocked row before
+  -- suspension starts; the new trainer advisory lock makes suspension wait
+  -- behind resume, while the former order deterministically formed a deadlock.
+  PERFORM dblink_connect('suspend_resume_guard', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
   PERFORM dblink_connect('suspend_resume_client', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
   PERFORM dblink_connect('suspend_resume_admin', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_exec('suspend_resume_guard', 'BEGIN');
+  PERFORM 1 FROM dblink('suspend_resume_guard', $query$SELECT 1 FROM public.coaching_relationships WHERE id = 'b7000000-0000-4000-8000-000000000007' FOR UPDATE$query$) AS guard_lock(locked INTEGER);
   PERFORM dblink_exec('suspend_resume_client', $query$SET request.jwt.claim.sub = 'b2000000-0000-4000-8000-000000000002'$query$);
   PERFORM dblink_exec('suspend_resume_client', $query$SET request.jwt.claim.role = 'authenticated'$query$);
   PERFORM dblink_exec('suspend_resume_client', 'SET ROLE authenticated');
   PERFORM dblink_exec('suspend_resume_admin', $query$SET request.jwt.claim.sub = ''$query$);
   PERFORM dblink_exec('suspend_resume_admin', $query$SET request.jwt.claim.role = 'service_role'$query$);
   PERFORM dblink_exec('suspend_resume_admin', 'SET ROLE service_role');
+  SELECT pid INTO resume_backend_pid
+  FROM dblink('suspend_resume_client', 'SELECT pg_backend_pid()') AS backend(pid INTEGER);
   PERFORM dblink_send_query('suspend_resume_client', $query$SELECT relationship_id FROM public.resume_paused_coaching_relationship('b7000000-0000-4000-8000-000000000007', 'b9000000-0000-4000-8000-000000000009')$query$);
+  FOR attempt IN 1..100000 LOOP
+    SELECT COALESCE(wait_event_type = 'Lock', FALSE) INTO resume_waiting_on_relationship
+    FROM pg_stat_activity
+    WHERE pid = resume_backend_pid;
+    EXIT WHEN resume_waiting_on_relationship;
+  END LOOP;
+  IF NOT resume_waiting_on_relationship THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_INTERLEAVE_NOT_REACHED';
+  END IF;
   PERFORM dblink_send_query('suspend_resume_admin', $query$SELECT account_suspended FROM public.suspend_account_and_professional('b1000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000003', 'Administrative race suspension', NULL)$query$);
+  PERFORM dblink_exec('suspend_resume_guard', 'COMMIT');
   SELECT relationship_id INTO resume_result FROM dblink_get_result('suspend_resume_client', false) AS result(relationship_id UUID);
   SELECT account_suspended INTO suspension_result FROM dblink_get_result('suspend_resume_admin', false) AS result(account_suspended BOOLEAN);
   resume_error := dblink_error_message('suspend_resume_client');
   suspension_error := dblink_error_message('suspend_resume_admin');
+  IF COALESCE(resume_error, '') ~* '40P01|deadlock' OR COALESCE(suspension_error, '') ~* '40P01|deadlock' THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_DEADLOCK: resume=% suspension=%', resume_error, suspension_error;
+  END IF;
   IF suspension_result IS DISTINCT FROM TRUE THEN
     RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_SUSPENSION_FAILED: result=% error=%', suspension_result, suspension_error;
   END IF;
   IF resume_result IS NULL AND resume_error NOT LIKE '%COACHING_TRAINER_NOT_ACTIVE%' THEN
     RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_WRONG_LOSER_ERROR: %', resume_error;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.profiles profile
+    WHERE profile.id = 'b1000000-0000-4000-8000-000000000001'
+      AND profile.account_status <> 'suspended'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_TRAINER_NOT_SUSPENDED';
   END IF;
   IF EXISTS (
     SELECT 1 FROM public.coaching_relationships relationship
@@ -286,6 +317,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_ACTIVE_STATE: result=% error=%', resume_result, resume_error;
   END IF;
+  PERFORM dblink_disconnect('suspend_resume_guard');
   PERFORM dblink_disconnect('suspend_resume_client');
   PERFORM dblink_disconnect('suspend_resume_admin');
 END;
