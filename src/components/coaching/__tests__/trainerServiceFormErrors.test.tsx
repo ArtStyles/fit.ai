@@ -67,10 +67,13 @@ describe('TrainerServiceForm error accessibility', () => {
     expect(new Set(controls.map(tag => attribute(tag, 'id'))).size).toBe(24)
     expect(errorIds).toHaveLength(24)
     expect(new Set(errorIds).size).toBe(24)
+    const describedByValues = controls.map(tag => attribute(tag, 'aria-describedby'))
+    expect(new Set(describedByValues).size).toBe(24)
     for (const control of controls) {
+      const controlId = attribute(control, 'id')
       const describedBy = attribute(control, 'aria-describedby')
-      expect(describedBy).toBeTruthy()
-      expect(errorIds).toContain(describedBy)
+      expect(describedBy).toBe(`${controlId}-error`)
+      expect(errorIds.filter(errorId => errorId === describedBy)).toHaveLength(1)
     }
   })
 })
