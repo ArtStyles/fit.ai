@@ -1048,6 +1048,32 @@ REVOKE ALL ON TABLE public.trainer_application_events_public FROM PUBLIC, anon, 
 GRANT SELECT ON TABLE public.trainer_application_events_public TO authenticated;
 GRANT SELECT ON TABLE public.trainer_application_events_public TO service_role;
 
+DROP VIEW IF EXISTS public.trainer_interviews_applicant_public;
+CREATE VIEW public.trainer_interviews_applicant_public
+WITH (security_barrier = true)
+AS
+SELECT
+  interview.id,
+  interview.application_id,
+  interview.proposed_at,
+  interview.timezone,
+  interview.medium,
+  interview.external_url,
+  interview.status,
+  interview.public_note,
+  interview.created_at,
+  interview.updated_at
+FROM public.trainer_interviews interview
+JOIN public.trainer_applications application
+  ON application.id = interview.application_id
+WHERE application.user_id = auth.uid()
+  AND public.is_account_active(auth.uid());
+
+ALTER VIEW public.trainer_interviews_applicant_public OWNER TO postgres;
+REVOKE ALL ON TABLE public.trainer_interviews_applicant_public FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.trainer_interviews_applicant_public TO authenticated;
+GRANT SELECT ON TABLE public.trainer_interviews_applicant_public TO service_role;
+
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'trainer-credentials',
@@ -1069,6 +1095,8 @@ COMMENT ON TABLE public.trainer_application_events IS
   'Append-oriented trainer application status history including private administrative notes.';
 COMMENT ON VIEW public.trainer_application_events_public IS
   'Applicant-safe application history that intentionally omits internal_note.';
+COMMENT ON VIEW public.trainer_interviews_applicant_public IS
+  'Owner-filtered interview schedule for applicants; omits outcome, internal_note and creator identity.';
 COMMENT ON TABLE public.trainer_interviews IS
   'Private proposed trainer interviews, external meeting details and outcomes.';
 COMMENT ON TABLE public.trainer_profiles IS

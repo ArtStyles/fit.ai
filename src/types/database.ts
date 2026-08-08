@@ -1240,6 +1240,21 @@ export interface Database {
         }
         Relationships: []
       }
+      trainer_interviews_applicant_public: {
+        Row: {
+          id: string
+          application_id: string
+          proposed_at: string
+          timezone: string
+          medium: 'video_call' | 'phone' | 'in_person'
+          external_url: string | null
+          status: 'proposed' | 'scheduled' | 'completed' | 'cancelled'
+          public_note: string | null
+          created_at: string
+          updated_at: string
+        }
+        Relationships: []
+      }
       [name: string]: {
         Row: Record<string, unknown>
         Relationships: []

@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { createProductNotification } from '@/lib/notifications/product'
+import { trainerCredentialPath } from '@/lib/coaching/trainerCredentialPath'
 import {
   removeTrainerCredential,
   saveTrainerApplicationDraft,
   submitTrainerApplication,
-  trainerCredentialPath,
   uploadTrainerCredential,
   withdrawTrainerApplication,
 } from '../trainerApplications'

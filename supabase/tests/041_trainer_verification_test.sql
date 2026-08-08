@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(51);
+SELECT plan(58);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
@@ -16,6 +16,18 @@ SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_c
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_credentials', 'UPDATE'), 'authenticated cannot forge credential metadata');
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_credentials', 'DELETE'), 'authenticated cannot delete metadata before storage cleanup');
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_applications', 'DELETE'), 'authenticated cannot cascade-delete credential storage references');
+SELECT has_view('public', 'trainer_interviews_applicant_public', 'applicant-safe interview view exists');
+SELECT ok(has_table_privilege('authenticated', 'public.trainer_interviews_applicant_public', 'SELECT'), 'authenticated can read the applicant-safe interview view');
+SELECT ok(NOT has_table_privilege('anon', 'public.trainer_interviews_applicant_public', 'SELECT'), 'anonymous users cannot read applicant interview details');
+SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_interviews', 'SELECT'), 'authenticated cannot read the private interview table directly');
+SELECT is(
+  (SELECT count(*) FROM information_schema.columns
+   WHERE table_schema = 'public'
+     AND table_name = 'trainer_interviews_applicant_public'
+     AND column_name IN ('outcome', 'internal_note', 'created_by')),
+  0::bigint,
+  'applicant-safe interview view omits outcome, internal note and creator identity'
+);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -96,11 +108,38 @@ INSERT INTO public.trainer_application_credentials (
     'link', 'Null avatar certificate', 'https://issuer.example.test/cert/f'
   );
 
+INSERT INTO public.trainer_interviews (
+  id, application_id, proposed_at, timezone, medium, external_url, status,
+  outcome, public_note, internal_note, created_by
+) VALUES
+  (
+    '51111111-1111-4111-8111-111111111111',
+    '31111111-1111-4111-8111-111111111111',
+    '2026-08-10T18:30:00Z', 'Europe/Madrid', 'video_call',
+    'https://meet.example.test/interview/a', 'scheduled', 'pending',
+    'Bring your credentials.', 'Admin-only interview context.',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  ),
+  (
+    '52222222-2222-4222-8222-222222222222',
+    '32222222-2222-4222-8222-222222222222',
+    '2026-08-11T18:30:00Z', 'Europe/Madrid', 'phone', NULL,
+    'proposed', NULL, 'We will call you.', 'Other applicant private context.',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  );
+
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
 
 SELECT is((SELECT count(*) FROM public.trainer_applications), 1::bigint, 'RLS hides other applicant applications');
+SELECT is((SELECT count(*) FROM public.trainer_interviews_applicant_public), 1::bigint, 'applicant interview view hides other owners');
+SELECT is(
+  (SELECT concat_ws('|', timezone, medium, external_url, status, public_note)
+   FROM public.trainer_interviews_applicant_public),
+  'Europe/Madrid|video_call|https://meet.example.test/interview/a|scheduled|Bring your credentials.',
+  'applicant interview view exposes only the scheduling details needed by the owner experience'
+);
 SELECT throws_ok(
   $$SELECT public.submit_trainer_application('32222222-2222-4222-8222-222222222222')$$,
   '42501', NULL, 'applicant cannot submit another owner application'

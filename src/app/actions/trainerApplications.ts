@@ -6,6 +6,7 @@ import {
   validateTrainerCredential,
   type ValidationResult,
 } from '@/lib/coaching/applicationValidation'
+import { trainerCredentialPath } from '@/lib/coaching/trainerCredentialPath'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { Database } from '@/types/database'
@@ -126,15 +127,6 @@ async function processPendingTrainerCredentialCleanup(
     if (!isCleanupJob(value) || !await cleanupStorageJob(supabase, userId, value)) clean = false
   }
   return clean
-}
-
-export function trainerCredentialPath(
-  userId: string,
-  applicationId: string,
-  credentialId: string,
-  extension: string,
-): string {
-  return `${userId}/${applicationId}/${credentialId}.${extension}`
 }
 
 export async function saveTrainerApplicationDraft(formData: FormData): Promise<ApplicationActionResult> {
