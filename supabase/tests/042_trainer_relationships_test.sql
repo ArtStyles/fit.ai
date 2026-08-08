@@ -468,6 +468,8 @@ SELECT throws_ok(
 RESET ROLE;
 
 SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 UPDATE public.profiles SET account_status = 'suspended'
 WHERE id = '33333333-3333-4333-8333-333333333333';
 RESET ROLE;
@@ -498,6 +500,8 @@ SELECT is(
 );
 RESET ROLE;
 SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 UPDATE public.profiles SET account_status = 'active'
 WHERE id = '33333333-3333-4333-8333-333333333333';
 UPDATE public.profiles SET account_status = 'suspended'
@@ -530,6 +534,8 @@ SELECT is(
 );
 RESET ROLE;
 SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 UPDATE public.profiles SET account_status = 'active'
 WHERE id = '11111111-1111-4111-8111-111111111111';
 RESET ROLE;
@@ -1045,11 +1051,14 @@ SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT * FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)$$,
-  '42501', 'an authenticated non-admin cannot invoke administrative suspension'
+  '42501', 'permission denied for function suspend_account_and_professional',
+  'an authenticated non-admin cannot invoke administrative suspension'
 );
 RESET ROLE;
 
 SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 SELECT lives_ok(
   $$SELECT * FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)$$,
   'an authenticated active admin can suspend a trainer atomically'
@@ -1064,15 +1073,21 @@ SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id =
 SELECT is((SELECT count(*) FROM public.admin_audit_logs WHERE target_user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2' AND action = 'account_suspended'), 1::bigint, 'suspension writes one administrative audit record');
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-trainer-suspended:14141414-1414-4141-8141-141414141417:%'), 2::bigint, 'suspension notifies the trainer and client without leaking request messages');
 SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 SELECT is((SELECT account_suspended FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)), FALSE, 'repeated suspension is idempotent');
 RESET ROLE;
 SELECT is((SELECT count(*) FROM public.admin_audit_logs WHERE target_user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2' AND action = 'account_suspended'), 1::bigint, 'repeated suspension does not duplicate the audit record');
 
 SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 UPDATE public.profiles SET account_status = 'active', suspension_reason = NULL, suspended_at = NULL, suspended_until = NULL, suspended_by = NULL
 WHERE id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
 RESET ROLE;
 SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 SELECT lives_ok(
   $$SELECT * FROM public.reinstate_trainer_profile('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1')$$,
   'an active admin can explicitly reinstate the trainer profile'
