@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { UserRound } from 'lucide-react'
 import {
   ApplicationTimeline,
@@ -106,6 +107,13 @@ export default async function CoachProfilePage() {
     <div className="min-h-screen bg-background pb-28">
       <PageTopBar title="Perfil profesional" subtitle="Información aprobada y revisiones" backHref="/coach" backLabel="Resumen" icon={<UserRound className="h-5 w-5" />} />
       <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-muted/10 p-4">
+          <div>
+            <h2 className="font-semibold text-foreground">Servicios profesionales</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Describe las modalidades de acompañamiento que ofreces.</p>
+          </div>
+          <Link href="/coach/services" className="rounded-xl border border-border/70 px-4 py-2 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Gestionar servicios</Link>
+        </section>
         <ApplicationTimeline
           events={events}
           interview={interview}

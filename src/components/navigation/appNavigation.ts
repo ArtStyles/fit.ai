@@ -1,10 +1,10 @@
-import { BarChart3, ClipboardList, Dumbbell, Home, LayoutDashboard, Play, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { BarChart3, Briefcase, ClipboardList, Dumbbell, Home, LayoutDashboard, Play, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export type AppNavItem = {
   href: '/dashboard' | '/plan' | '/entrenar' | '/progress' | '/feed' | '/trainers'
-    | '/coach' | '/coach/clients' | '/coach/programs' | '/coach/requests' | '/coach/profile'
+    | '/coach' | '/coach/clients' | '/coach/programs' | '/coach/requests' | '/coach/profile' | '/coach/services'
   label: 'Inicio' | 'Plan' | 'Entrenar' | 'Progreso' | 'Comunidad' | 'Entrenadores'
-    | 'Resumen' | 'Clientes' | 'Rutinas' | 'Solicitudes' | 'Perfil'
+    | 'Resumen' | 'Clientes' | 'Rutinas' | 'Solicitudes' | 'Perfil' | 'Servicios'
 }
 
 const PERSONAL_NAV_ITEMS: readonly AppNavItem[] = [
@@ -47,6 +47,7 @@ const APP_NAV_ICONS: Record<AppNavItem['href'], LucideIcon> = {
   '/coach/programs': Dumbbell,
   '/coach/requests': ClipboardList,
   '/coach/profile': UserRound,
+  '/coach/services': Briefcase,
 }
 
 export function getAppNavIcon(href: AppNavItem['href']): LucideIcon {
