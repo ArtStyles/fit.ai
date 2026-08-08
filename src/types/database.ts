@@ -261,6 +261,35 @@ export interface Database {
         Relationships: []
       }
 
+      trainer_credential_storage_cleanup: {
+        Row: {
+          id: string
+          user_id: string
+          application_id: string
+          credential_id: string
+          storage_path: string
+          reason: 'upload_rollback' | 'user_removal'
+          attempt_count: number
+          last_error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          application_id: string
+          credential_id: string
+          storage_path: string
+          reason: 'upload_rollback' | 'user_removal'
+          attempt_count?: number
+          last_error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_credential_storage_cleanup']['Insert']>
+        Relationships: []
+      }
+
       trainer_application_events: {
         Row: {
           id: string
@@ -1261,6 +1290,48 @@ export interface Database {
           p_application_id: string
         }
         Returns: Json
+      }
+      create_trainer_application_credential: {
+        Args: {
+          p_credential_id: string
+          p_application_id: string
+          p_credential_type: 'document' | 'link'
+          p_title: string
+          p_issuer: string | null
+          p_issued_on: string | null
+          p_expires_on: string | null
+          p_external_url: string | null
+          p_mime_type: 'application/pdf' | 'image/jpeg' | 'image/png' | null
+          p_size_bytes: number | null
+        }
+        Returns: Json
+      }
+      queue_trainer_credential_cleanup: {
+        Args: {
+          p_application_id: string
+          p_credential_id: string
+          p_storage_path: string
+        }
+        Returns: Json
+      }
+      prepare_trainer_credential_removal: {
+        Args: {
+          p_application_id: string
+          p_credential_id: string
+        }
+        Returns: Json
+      }
+      list_trainer_credential_cleanup: {
+        Args: Record<string, never>
+        Returns: Array<{ id: string; storage_path: string }>
+      }
+      record_trainer_credential_cleanup_failure: {
+        Args: { p_cleanup_id: string; p_error: string }
+        Returns: boolean
+      }
+      finalize_trainer_credential_cleanup: {
+        Args: { p_cleanup_id: string }
+        Returns: boolean
       }
       withdraw_trainer_application: {
         Args: {

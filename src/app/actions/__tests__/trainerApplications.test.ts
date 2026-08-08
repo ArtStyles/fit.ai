@@ -21,6 +21,7 @@ const userId = '11111111-1111-4111-8111-111111111111'
 const adminId = '22222222-2222-4222-8222-222222222222'
 const applicationId = '33333333-3333-4333-8333-333333333333'
 const credentialId = '44444444-4444-4444-8444-444444444444'
+const cleanupId = '55555555-5555-4555-8555-555555555555'
 
 function validDraft(): FormData {
   const formData = new FormData()
@@ -96,19 +97,21 @@ describe('trainer application actions', () => {
     expect(createClientMock).not.toHaveBeenCalled()
   })
 
-  it('uploads an owned credential to the private normalized path without a public URL', async () => {
+  it('uploads an owned credential and registers metadata through the credential RPC', async () => {
     const uploaded: Array<{ path: string; options: unknown }> = []
-    let inserted: Record<string, unknown> | undefined
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === 'list_trainer_credential_cleanup') return { data: [], error: null }
+      if (name === 'queue_trainer_credential_cleanup') return { data: { id: cleanupId, storage_path: `${userId}/${applicationId}/${credentialId}.pdf` }, error: null }
+      if (name === 'create_trainer_application_credential') {
+        return { data: { id: credentialId, ...args }, error: null }
+      }
+      throw new Error(`Unexpected RPC ${name}`)
+    })
     const client = authClient({
+      rpc,
       from: vi.fn((table: string) => {
         if (table === 'trainer_applications') return {
           select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
-        }
-        if (table === 'trainer_application_credentials') return {
-          insert: (value: Record<string, unknown>) => {
-            inserted = value
-            return { select: () => ({ single: async () => ({ data: { id: credentialId }, error: null }) }) }
-          },
         }
         throw new Error(`Unexpected table ${table}`)
       }),
@@ -136,13 +139,18 @@ describe('trainer application actions', () => {
       path: `${userId}/${applicationId}/${credentialId}.pdf`,
       options: { contentType: 'application/pdf', upsert: false },
     }])
-    expect(inserted).toMatchObject({
-      id: credentialId,
-      application_id: applicationId,
-      storage_path: `${userId}/${applicationId}/${credentialId}.pdf`,
-      mime_type: 'application/pdf',
-      size_bytes: 3,
+    expect(rpc).toHaveBeenCalledWith('queue_trainer_credential_cleanup', {
+      p_application_id: applicationId,
+      p_credential_id: credentialId,
+      p_storage_path: `${userId}/${applicationId}/${credentialId}.pdf`,
     })
+    expect(rpc).toHaveBeenCalledWith('create_trainer_application_credential', expect.objectContaining({
+      p_credential_id: credentialId,
+      p_application_id: applicationId,
+      p_credential_type: 'document',
+      p_mime_type: 'application/pdf',
+      p_size_bytes: 3,
+    }))
     expect(service.storage.from).toHaveBeenCalledWith('trainer-credentials')
     expect(bucket).not.toHaveProperty('getPublicUrl')
   })
@@ -171,47 +179,143 @@ describe('trainer application actions', () => {
     expect(createServiceClientMock).not.toHaveBeenCalled()
   })
 
-  it('removes storage only when the stored path belongs to the authenticated owner', async () => {
-    const removed: string[][] = []
-    const credentialQuery = (storagePath: string) => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({ maybeSingle: async () => ({ data: { id: credentialId, application_id: applicationId, storage_path: storagePath }, error: null }) }),
-        }),
-      }),
-      delete: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+  it('keeps a durable cleanup reference when storage removal fails and completes it on retry', async () => {
+    let removalFails = true
+    let cleanupPending = false
+    let credentialExists = true
+    const storagePath = `${userId}/${applicationId}/${credentialId}.pdf`
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'list_trainer_credential_cleanup') {
+        return { data: cleanupPending ? [{ id: cleanupId, storage_path: storagePath }] : [], error: null }
+      }
+      if (name === 'prepare_trainer_credential_removal') {
+        cleanupPending = credentialExists
+        return { data: credentialExists ? { cleanup_id: cleanupId, storage_path: storagePath } : null, error: null }
+      }
+      if (name === 'record_trainer_credential_cleanup_failure') return { data: true, error: null }
+      if (name === 'finalize_trainer_credential_cleanup') {
+        cleanupPending = false
+        credentialExists = false
+        return { data: true, error: null }
+      }
+      throw new Error(`Unexpected RPC ${name}`)
     })
-    const bucket = { remove: vi.fn(async (paths: string[]) => { removed.push(paths); return { error: null } }) }
+    const bucket = {
+      remove: vi.fn(async () => removalFails
+        ? { error: { message: 'storage unavailable' } }
+        : { error: null }),
+    }
     createServiceClientMock.mockReturnValue({ storage: { from: () => bucket } })
-
-    createClientMock.mockResolvedValue(authClient({
-      from: vi.fn(() => credentialQuery(`${userId}/${applicationId}/${credentialId}.pdf`)),
-    }))
+    createClientMock.mockResolvedValue(authClient({ rpc }))
     const formData = new FormData()
     formData.set('applicationId', applicationId)
     formData.set('credentialId', credentialId)
-    await expect(removeTrainerCredential(formData)).resolves.toEqual({ ok: true })
-    expect(removed).toEqual([[`${userId}/${applicationId}/${credentialId}.pdf`]])
 
-    removed.length = 0
-    createClientMock.mockResolvedValue(authClient({
-      from: vi.fn(() => credentialQuery(`${adminId}/${applicationId}/${credentialId}.pdf`)),
-    }))
-    await expect(removeTrainerCredential(formData)).resolves.toEqual({ ok: false, error: 'Ruta de credencial no valida.' })
-    expect(removed).toEqual([])
+    await expect(removeTrainerCredential(formData)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo limpiar el archivo privado; la limpieza quedo pendiente.',
+    })
+    expect(cleanupPending).toBe(true)
+    expect(credentialExists).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('record_trainer_credential_cleanup_failure', {
+      p_cleanup_id: cleanupId,
+      p_error: 'storage unavailable',
+    })
+
+    removalFails = false
+    await expect(removeTrainerCredential(formData)).resolves.toEqual({ ok: true })
+    expect(cleanupPending).toBe(false)
+    expect(credentialExists).toBe(false)
   })
 
-  it('submits through the applicant RPC and creates deduplicated admin notifications', async () => {
+  it('persists a cleanup job before credential metadata and keeps failures observable', async () => {
+    const storagePath = `${userId}/${applicationId}/${credentialId}.pdf`
+    let cleanupQueued = false
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'list_trainer_credential_cleanup') return { data: cleanupQueued ? [{ id: cleanupId, storage_path: storagePath }] : [], error: null }
+      if (name === 'queue_trainer_credential_cleanup') {
+        cleanupQueued = true
+        return { data: { id: cleanupId, storage_path: storagePath }, error: null }
+      }
+      if (name === 'create_trainer_application_credential') return { data: null, error: { message: 'metadata rejected' } }
+      if (name === 'record_trainer_credential_cleanup_failure') return { data: true, error: null }
+      throw new Error(`Unexpected RPC ${name}`)
+    })
+    const client = authClient({
+      rpc,
+      from: vi.fn(() => ({
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+      })),
+    })
+    const bucket = {
+      upload: vi.fn(async () => ({ error: null })),
+      remove: vi.fn(async () => ({ error: { message: 'storage unavailable' } })),
+    }
+    createClientMock.mockResolvedValue(client)
+    createServiceClientMock.mockReturnValue({ storage: { from: () => bucket } })
+    const formData = new FormData()
+    formData.set('applicationId', applicationId)
+    formData.set('credentialType', 'document')
+    formData.set('title', 'Certificacion')
+    formData.set('file', new File(['pdf'], 'certificate.pdf', { type: 'application/pdf' }))
+
+    await expect(uploadTrainerCredential(formData)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo guardar la credencial; la limpieza del archivo quedo pendiente.',
+    })
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'list_trainer_credential_cleanup',
+      'queue_trainer_credential_cleanup',
+      'create_trainer_application_credential',
+      'create_trainer_application_credential',
+      'list_trainer_credential_cleanup',
+      'record_trainer_credential_cleanup_failure',
+    ])
+  })
+
+  it('retries an ambiguous metadata RPC response before deleting the uploaded object', async () => {
+    const storagePath = `${userId}/${applicationId}/${credentialId}.pdf`
+    let createAttempts = 0
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'list_trainer_credential_cleanup') return { data: [], error: null }
+      if (name === 'queue_trainer_credential_cleanup') return { data: { id: cleanupId, storage_path: storagePath }, error: null }
+      if (name === 'create_trainer_application_credential') {
+        createAttempts += 1
+        return createAttempts === 1
+          ? { data: null, error: { message: 'connection reset after commit' } }
+          : { data: { id: credentialId }, error: null }
+      }
+      throw new Error(`Unexpected RPC ${name}`)
+    })
+    const client = authClient({
+      rpc,
+      from: vi.fn(() => ({
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+      })),
+    })
+    const bucket = {
+      upload: vi.fn(async () => ({ error: null })),
+      remove: vi.fn(async () => ({ error: null })),
+    }
+    createClientMock.mockResolvedValue(client)
+    createServiceClientMock.mockReturnValue({ storage: { from: () => bucket } })
+    const formData = new FormData()
+    formData.set('applicationId', applicationId)
+    formData.set('credentialType', 'document')
+    formData.set('title', 'Certificacion')
+    formData.set('file', new File(['pdf'], 'certificate.pdf', { type: 'application/pdf' }))
+
+    await expect(uploadTrainerCredential(formData)).resolves.toEqual({ ok: true, credentialId })
+    expect(createAttempts).toBe(2)
+    expect(bucket.remove).not.toHaveBeenCalled()
+  })
+
+  it('submits through the applicant RPC without a fallible post-commit notification dependency', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: { application_id: applicationId, user_id: userId, status: 'submitted', transitioned: true, event_id: 'event-1' },
       error: null,
     })
     createClientMock.mockResolvedValue(authClient({ rpc }))
-    createServiceClientMock.mockReturnValue({
-      from: vi.fn(() => ({
-        select: () => ({ eq: () => ({ eq: async () => ({ data: [{ id: adminId }], error: null }) }) }),
-      })),
-    })
     const formData = new FormData()
     formData.set('applicationId', applicationId)
     formData.set('userId', adminId)
@@ -223,15 +327,8 @@ describe('trainer application actions', () => {
       transitioned: true,
     })
     expect(rpc).toHaveBeenCalledWith('submit_trainer_application', { p_application_id: applicationId })
-    expect(createProductNotificationMock).toHaveBeenCalledWith({
-      recipientUserId: adminId,
-      type: 'trainer_application_status',
-      title: 'Nueva solicitud de entrenador',
-      body: 'Una solicitud de entrenador esta lista para revision.',
-      url: `/admin/trainers/${applicationId}`,
-      dedupeKey: `trainer-application:${applicationId}:submitted:event-1`,
-      payload: { applicationId, status: 'submitted' },
-    })
+    expect(createServiceClientMock).not.toHaveBeenCalled()
+    expect(createProductNotificationMock).not.toHaveBeenCalled()
   })
 
   it('withdraws through the applicant RPC without trusting form ownership', async () => {

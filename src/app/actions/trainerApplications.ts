@@ -1,6 +1,5 @@
 'use server'
 
-import { createProductNotification } from '@/lib/notifications/product'
 import {
   containsForbiddenTrainerIdentityFields,
   validateTrainerApplication,
@@ -37,6 +36,7 @@ type TransitionRpcResult = {
   transitioned: boolean
   event_id: string
 }
+type CleanupJob = { id: string; storage_path: string }
 
 function actionError(error: string, validation?: ValidationResult<unknown>): ActionError {
   return {
@@ -65,6 +65,67 @@ function isTransitionResult(value: unknown): value is TransitionRpcResult {
     && typeof row.status === 'string'
     && typeof row.transitioned === 'boolean'
     && typeof row.event_id === 'string'
+}
+
+function isCleanupJob(value: unknown): value is CleanupJob {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const job = value as Record<string, unknown>
+  return typeof job.id === 'string' && validUuid(job.id)
+    && typeof job.storage_path === 'string' && job.storage_path.length > 0
+}
+
+function storageFailureMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error
+    && typeof (error as { message?: unknown }).message === 'string') {
+    return (error as { message: string }).message
+  }
+  return 'Storage cleanup failed.'
+}
+
+async function cleanupStorageJob(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  job: CleanupJob,
+): Promise<boolean> {
+  if (!job.storage_path.startsWith(`${userId}/`)
+    || !/\.(?:pdf|jpg|png)$/.test(job.storage_path)) {
+    await (supabase.rpc as any)('record_trainer_credential_cleanup_failure', {
+      p_cleanup_id: job.id,
+      p_error: 'Cleanup path rejected by server action.',
+    })
+    return false
+  }
+
+  const service = createServiceClient()
+  const { error: storageError } = await service.storage
+    .from(TRAINER_CREDENTIAL_BUCKET)
+    .remove([job.storage_path])
+  if (storageError) {
+    await (supabase.rpc as any)('record_trainer_credential_cleanup_failure', {
+      p_cleanup_id: job.id,
+      p_error: storageFailureMessage(storageError),
+    })
+    return false
+  }
+
+  const { data, error } = await (supabase.rpc as any)('finalize_trainer_credential_cleanup', {
+    p_cleanup_id: job.id,
+  })
+  return !error && data === true
+}
+
+async function processPendingTrainerCredentialCleanup(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await (supabase.rpc as any)('list_trainer_credential_cleanup')
+  if (error || !Array.isArray(data)) return false
+
+  let clean = true
+  for (const value of data) {
+    if (!isCleanupJob(value) || !await cleanupStorageJob(supabase, userId, value)) clean = false
+  }
+  return clean
 }
 
 export function trainerCredentialPath(
@@ -165,7 +226,6 @@ export async function uploadTrainerCredential(formData: FormData): Promise<Crede
   if (!user) return actionError('Sesion no valida.')
 
   const applications = supabase.from('trainer_applications') as any
-  const credentials = supabase.from('trainer_application_credentials') as any
   const { data: application, error: applicationError } = await applications
     .select('id, user_id, status')
     .eq('id', applicationId)
@@ -175,16 +235,20 @@ export async function uploadTrainerCredential(formData: FormData): Promise<Crede
     return actionError('Solicitud no disponible.')
   }
 
+  if (!await processPendingTrainerCredentialCleanup(supabase, user.id)) {
+    return actionError('Hay una limpieza de credencial pendiente; intenta nuevamente.')
+  }
+
   const credentialId = crypto.randomUUID()
   const credential = credentialValidation.value
   let storagePath: string | null = null
-  let service: ReturnType<typeof createServiceClient> | null = null
+  let cleanupJob: CleanupJob | null = null
 
   if (credential.credentialType === 'document' && credential.file) {
     const extension = EXTENSION_BY_MIME_TYPE[credential.file.type]
     if (!extension) return actionError('Tipo de credencial no permitido.')
     storagePath = trainerCredentialPath(user.id, applicationId, credentialId, extension)
-    service = createServiceClient()
+    const service = createServiceClient()
     const { error: uploadError } = await service.storage
       .from(TRAINER_CREDENTIAL_BUCKET)
       .upload(storagePath, credential.file, {
@@ -192,32 +256,70 @@ export async function uploadTrainerCredential(formData: FormData): Promise<Crede
         upsert: false,
       })
     if (uploadError) return actionError('No se pudo cargar la credencial.')
+
+    const { data: queued, error: queueError } = await (supabase.rpc as any)(
+      'queue_trainer_credential_cleanup',
+      {
+        p_application_id: applicationId,
+        p_credential_id: credentialId,
+        p_storage_path: storagePath,
+      },
+    )
+    if (queueError || !isCleanupJob(queued)) {
+      const { error: cleanupError } = await service.storage
+        .from(TRAINER_CREDENTIAL_BUCKET)
+        .remove([storagePath])
+      return actionError(cleanupError
+        ? 'No se pudo registrar ni limpiar el archivo privado.'
+        : 'No se pudo registrar la carga privada.')
+    }
+    cleanupJob = queued
   }
 
-  const { data, error } = await credentials
-    .insert({
-      id: credentialId,
-      application_id: applicationId,
-      credential_type: credential.credentialType,
-      title: credential.title,
-      issuer: credential.issuer,
-      issued_on: credential.issuedOn,
-      expires_on: credential.expiresOn,
-      storage_path: storagePath,
-      external_url: credential.externalUrl,
-      mime_type: credential.file?.type as 'application/pdf' | 'image/jpeg' | 'image/png' | undefined ?? null,
-      size_bytes: credential.file?.size ?? null,
-    })
-    .select('id')
-    .single()
+  const credentialRpcArgs = {
+    p_credential_id: credentialId,
+    p_application_id: applicationId,
+    p_credential_type: credential.credentialType,
+    p_title: credential.title,
+    p_issuer: credential.issuer,
+    p_issued_on: credential.issuedOn,
+    p_expires_on: credential.expiresOn,
+    p_external_url: credential.externalUrl,
+    p_mime_type: credential.file?.type ?? null,
+    p_size_bytes: credential.file?.size ?? null,
+  }
+  let credentialResponse = await (supabase.rpc as any)(
+    'create_trainer_application_credential',
+    credentialRpcArgs,
+  )
+  if (credentialResponse.error) {
+    credentialResponse = await (supabase.rpc as any)(
+      'create_trainer_application_credential',
+      credentialRpcArgs,
+    )
+  }
 
-  if (error || !data) {
-    if (service && storagePath) {
-      await service.storage.from(TRAINER_CREDENTIAL_BUCKET).remove([storagePath])
+  const credentialCreated = !credentialResponse.error
+    && credentialResponse.data
+    && typeof credentialResponse.data === 'object'
+    && (credentialResponse.data as { id?: unknown }).id === credentialId
+  if (!credentialCreated) {
+    if (cleanupJob) {
+      const pendingResponse = await (supabase.rpc as any)('list_trainer_credential_cleanup')
+      if (pendingResponse.error || !Array.isArray(pendingResponse.data)) {
+        return actionError('No se pudo confirmar el estado de la credencial; intenta nuevamente.')
+      }
+      const pendingJob = pendingResponse.data.find((value: unknown) => (
+        isCleanupJob(value) && value.id === cleanupJob.id
+      ))
+      if (!pendingJob) return { ok: true, credentialId }
+      if (!await cleanupStorageJob(supabase, user.id, pendingJob)) {
+        return actionError('No se pudo guardar la credencial; la limpieza del archivo quedo pendiente.')
+      }
     }
     return actionError('No se pudo guardar la credencial.')
   }
-  return { ok: true, credentialId: data.id }
+  return { ok: true, credentialId }
 }
 
 export async function removeTrainerCredential(formData: FormData): Promise<SimpleActionResult> {
@@ -229,34 +331,26 @@ export async function removeTrainerCredential(formData: FormData): Promise<Simpl
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return actionError('Sesion no valida.')
 
-  const credentials = supabase.from('trainer_application_credentials') as any
-  const { data: credential, error: lookupError } = await credentials
-    .select('id, application_id, storage_path')
-    .eq('id', credentialId)
-    .eq('application_id', applicationId)
-    .maybeSingle()
-  if (lookupError) return actionError('No se pudo leer la credencial.')
-  if (!credential) return { ok: true }
-
-  if (credential.storage_path) {
-    const expectedPrefix = `${user.id}/${applicationId}/${credentialId}.`
-    const allowedPath = credential.storage_path.startsWith(expectedPrefix)
-      && ['pdf', 'jpg', 'png'].some(extension => credential.storage_path === `${expectedPrefix}${extension}`)
-    if (!allowedPath) return actionError('Ruta de credencial no valida.')
+  if (!await processPendingTrainerCredentialCleanup(supabase, user.id)) {
+    return actionError('No se pudo limpiar el archivo privado; la limpieza quedo pendiente.')
   }
 
-  const { error } = await credentials
-    .delete()
-    .eq('id', credentialId)
-    .eq('application_id', applicationId)
-  if (error) return actionError('No se pudo eliminar la credencial.')
-
-  if (credential.storage_path) {
-    const service = createServiceClient()
-    const { error: storageError } = await service.storage
-      .from(TRAINER_CREDENTIAL_BUCKET)
-      .remove([credential.storage_path])
-    if (storageError) return actionError('La credencial se elimino, pero no se pudo limpiar el archivo privado.')
+  const { data, error } = await (supabase.rpc as any)('prepare_trainer_credential_removal', {
+    p_application_id: applicationId,
+    p_credential_id: credentialId,
+  })
+  if (error) return actionError('No se pudo preparar la eliminacion de la credencial.')
+  if (data === null) return { ok: true }
+  if (!data || typeof data !== 'object') return actionError('Respuesta de eliminacion no valida.')
+  const cleanupId = (data as { cleanup_id?: unknown }).cleanup_id
+  const storagePath = (data as { storage_path?: unknown }).storage_path
+  if (cleanupId === null && storagePath === null) return { ok: true }
+  const cleanupJob = isCleanupJob({ id: cleanupId, storage_path: storagePath })
+    ? { id: cleanupId as string, storage_path: storagePath as string }
+    : null
+  if (!cleanupJob) return actionError('Respuesta de limpieza no valida.')
+  if (!await cleanupStorageJob(supabase, user.id, cleanupJob)) {
+    return actionError('No se pudo limpiar el archivo privado; la limpieza quedo pendiente.')
   }
   return { ok: true }
 }
@@ -290,25 +384,6 @@ async function executeApplicantTransition(
 export async function submitTrainerApplication(formData: FormData): Promise<ApplicationActionResult> {
   const result = await executeApplicantTransition(formData, 'submit_trainer_application')
   if (!result.ok) return result
-
-  const service = createServiceClient()
-  const { data: admins } = await service
-    .from('profiles')
-    .select('id')
-    .eq('is_admin', true)
-    .eq('account_status', 'active')
-
-  if (result.eventId) {
-    await Promise.allSettled((admins ?? []).map(admin => createProductNotification({
-      recipientUserId: admin.id,
-      type: 'trainer_application_status',
-      title: 'Nueva solicitud de entrenador',
-      body: 'Una solicitud de entrenador esta lista para revision.',
-      url: `/admin/trainers/${result.applicationId}`,
-      dedupeKey: `trainer-application:${result.applicationId}:submitted:${result.eventId}`,
-      payload: { applicationId: result.applicationId, status: 'submitted' },
-    })))
-  }
 
   const { eventId: _eventId, ...publicResult } = result
   return publicResult

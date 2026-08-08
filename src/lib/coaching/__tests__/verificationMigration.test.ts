@@ -83,7 +83,7 @@ describe('trainer verification migration', () => {
     expect(migration).toMatch(/GRANT UPDATE \([\s\S]+professional_name[\s\S]+interview_availability[\s\S]+\)[\s\S]+ON TABLE public\.trainer_applications TO authenticated/i)
     expect(migration).not.toMatch(/GRANT UPDATE \([\s\S]+status[\s\S]+\)[\s\S]+ON TABLE public\.trainer_applications TO authenticated/i)
     expect(migration).toMatch(/trainer_profiles: read own[\s\S]+auth\.uid\(\) = user_id/i)
-    expect(migration).not.toMatch(/trainer_profiles: read active|status = 'active'[\s\S]+TO authenticated/i)
+    expect(migration).not.toMatch(/trainer_profiles: read active/i)
   })
 
   it('requires completed onboarding at the SQL boundary before inserting a draft', () => {
