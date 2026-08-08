@@ -21,9 +21,9 @@ export default async function CoachingPage() {
     .from('coaching_relationships')
     .select('id, status')
     .eq('client_user_id', user.id)
-    .eq('status', 'active')
+    .in('status', ['active', 'paused_by_platform'])
     .limit(1)
-  const relationship = relationships?.[0] as { id: string } | undefined
+  const relationship = relationships?.[0] as { id: string; status: 'active' | 'paused_by_platform' } | undefined
   const { data: consents, error: consentsError } = relationship
     ? await (supabase as any)
       .from('coaching_consents')
@@ -36,8 +36,8 @@ export default async function CoachingPage() {
       <h1 className="text-2xl font-bold text-foreground">Acompañamiento</h1>
       <p className="mt-1 text-sm text-muted-foreground">Consulta el estado real de tus solicitudes. No se comparten datos de entrenamiento hasta que exista una relación aceptada.</p>
     </header>
-    <ClientCoachingStatus requests={requests} />
-    {relationshipsError || consentsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus consentimientos.</p> : relationship ? <ConsentManager relationshipId={relationship.id} consents={((consents ?? []) as Array<{ scope: CoachingConsentView['scope']; text_version: string; granted_at: string; revoked_at: string | null }>).map(consent => ({
+    <ClientCoachingStatus requests={requests} relationship={relationship} />
+    {relationshipsError || consentsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus consentimientos.</p> : relationship?.status === 'active' ? <ConsentManager relationshipId={relationship.id} consents={((consents ?? []) as Array<{ scope: CoachingConsentView['scope']; text_version: string; granted_at: string; revoked_at: string | null }>).map(consent => ({
       scope: consent.scope,
       textVersion: consent.text_version,
       grantedAt: consent.granted_at,

@@ -99,6 +99,63 @@ END;
 $$;
 `
 
+const resumeAcceptRaceFixtureSql = `
+INSERT INTO auth.users (id, email, raw_user_meta_data)
+VALUES ('93000000-0000-4000-8000-000000000004', 'resume-race-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status)
+VALUES ('93000000-0000-4000-8000-000000000004', 'https://example.test/resume-client.webp', TRUE, 'active');
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status, paused_at)
+VALUES ('97000000-0000-4000-8000-000000000004', '96000000-0000-4000-8000-000000000001',
+  '91000000-0000-4000-8000-000000000001', '93000000-0000-4000-8000-000000000004', 'paused_by_platform', NOW());
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by, revoked_at, revoked_by)
+VALUES ('97000000-0000-4000-8000-000000000004', 'training_profile', 'training-profile-v1',
+  '93000000-0000-4000-8000-000000000004', NOW(), '91000000-0000-4000-8000-000000000001');
+INSERT INTO public.coaching_requests (id, service_id, trainer_user_id, client_user_id, training_profile_consent_version, idempotency_key, status)
+VALUES ('97000000-0000-4000-8000-000000000005', '96000000-0000-4000-8000-000000000002',
+  '92000000-0000-4000-8000-000000000002', '93000000-0000-4000-8000-000000000004', 'training-profile-v1',
+  '98000000-0000-4000-8000-000000000005', 'pending');
+`
+
+const resumeAcceptRaceSql = `
+DO $$
+DECLARE
+  resume_result UUID;
+  accept_result UUID;
+  resume_error TEXT;
+  accept_error TEXT;
+BEGIN
+  PERFORM dblink_connect('resume_client', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_connect('resume_accept_trainer', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_exec('resume_client', $query$SET request.jwt.claim.sub = '93000000-0000-4000-8000-000000000004'$query$);
+  PERFORM dblink_exec('resume_client', $query$SET request.jwt.claim.role = 'authenticated'$query$);
+  PERFORM dblink_exec('resume_client', 'SET ROLE authenticated');
+  PERFORM dblink_exec('resume_accept_trainer', $query$SET request.jwt.claim.sub = '92000000-0000-4000-8000-000000000002'$query$);
+  PERFORM dblink_exec('resume_accept_trainer', $query$SET request.jwt.claim.role = 'authenticated'$query$);
+  PERFORM dblink_exec('resume_accept_trainer', 'SET ROLE authenticated');
+  PERFORM dblink_send_query('resume_client', $query$SELECT relationship_id FROM public.resume_paused_coaching_relationship('97000000-0000-4000-8000-000000000004', '99000000-0000-4000-8000-000000000004')$query$);
+  PERFORM dblink_send_query('resume_accept_trainer', $query$SELECT relationship_id FROM public.accept_coaching_request('97000000-0000-4000-8000-000000000005', '99000000-0000-4000-8000-000000000005')$query$);
+  SELECT relationship_id INTO resume_result FROM dblink_get_result('resume_client', false) AS result(relationship_id UUID);
+  SELECT relationship_id INTO accept_result FROM dblink_get_result('resume_accept_trainer', false) AS result(relationship_id UUID);
+  resume_error := dblink_error_message('resume_client');
+  accept_error := dblink_error_message('resume_accept_trainer');
+  IF (CASE WHEN resume_result IS NULL THEN 0 ELSE 1 END + CASE WHEN accept_result IS NULL THEN 0 ELSE 1 END) <> 1 THEN
+    RAISE EXCEPTION 'COACHING_RESUME_RACE_EXPECTED_ONE_SUCCESS: resume=% accept=% errors=%/%', resume_result, accept_result, resume_error, accept_error;
+  END IF;
+  IF resume_result IS NULL AND resume_error NOT LIKE '%COACHING_ACTIVE_RELATIONSHIP_EXISTS%' THEN
+    RAISE EXCEPTION 'COACHING_RESUME_RACE_WRONG_RESUME_LOSER_ERROR: %', resume_error;
+  END IF;
+  IF accept_result IS NULL AND accept_error NOT LIKE '%COACHING_ACTIVE_RELATIONSHIP_EXISTS%' THEN
+    RAISE EXCEPTION 'COACHING_RESUME_RACE_WRONG_ACCEPT_LOSER_ERROR: %', accept_error;
+  END IF;
+  IF (SELECT count(*) FROM public.coaching_relationships WHERE client_user_id = '93000000-0000-4000-8000-000000000004' AND status = 'active') <> 1 THEN
+    RAISE EXCEPTION 'COACHING_RESUME_RACE_PARTIAL_STATE';
+  END IF;
+  PERFORM dblink_disconnect('resume_client');
+  PERFORM dblink_disconnect('resume_accept_trainer');
+END;
+$$;
+`
+
 function docker(args, { input, print = true } = {}) {
   const result = spawnSync('docker', args, {
     cwd: repoRoot,
@@ -162,7 +219,9 @@ try {
   }
   runPsql(acceptanceRaceFixtureSql, 'creating committed two-trainer acceptance race fixture')
   runPsql(acceptanceRaceSql, 'running real dblink two-connection acceptance race')
-  process.stdout.write('\n[trainer-relationships-db] PASS: pgTAP assertions and real dblink race passed\n')
+  runPsql(resumeAcceptRaceFixtureSql, 'creating committed resume-versus-accept race fixture')
+  runPsql(resumeAcceptRaceSql, 'running real dblink resume-versus-accept race')
+  process.stdout.write('\n[trainer-relationships-db] PASS: pgTAP assertions and real dblink races passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

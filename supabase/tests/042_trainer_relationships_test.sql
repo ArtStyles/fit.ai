@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(101);
+SELECT plan(122);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -316,7 +316,7 @@ RESET ROLE;
 SET LOCAL ROLE service_role;
 UPDATE public.coaching_consents SET revoked_at = NULL, revoked_by = NULL
 WHERE relationship_id = '77777777-7777-4777-8777-777777777771' AND scope = 'training_profile';
-UPDATE public.coaching_relationships SET status = 'paused_by_platform'
+UPDATE public.coaching_relationships SET status = 'paused_by_platform', paused_at = NOW()
 WHERE id = '77777777-7777-4777-8777-777777777771';
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
@@ -330,7 +330,7 @@ RESET ROLE;
 
 SET LOCAL ROLE service_role;
 UPDATE public.coaching_relationships
-SET status = 'ended', ended_at = NOW(), ended_by = '33333333-3333-4333-8333-333333333333'
+SET status = 'ended', ended_at = NOW(), ended_by = '33333333-3333-4333-8333-333333333333', paused_at = NULL
 WHERE id = '77777777-7777-4777-8777-777777777771';
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
@@ -911,6 +911,101 @@ SELECT throws_ok(
   )$$,
   'COACHING_RELATIONSHIP_NOT_ACTIVE',
   'another account cannot grant consent after the relationship ended'
+);
+RESET ROLE;
+
+-- Ending and resuming are participant-controlled, atomic, and preserve consent history.
+SET LOCAL ROLE service_role;
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status)
+VALUES ('aaaaaaaa-0000-4000-8000-000000000010', '88888888-8888-4888-8888-888888888800',
+  '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
+VALUES
+  ('aaaaaaaa-0000-4000-8000-000000000010', 'training_profile', 'training-profile-v1', '33333333-3333-4333-8333-333333333333'),
+  ('aaaaaaaa-0000-4000-8000-000000000010', 'body_measurements', 'body-measurements-v1', '33333333-3333-4333-8333-333333333333');
+RESET ROLE;
+
+SELECT ok(
+  has_function_privilege('authenticated', 'public.end_coaching_relationship(uuid,text,uuid)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.resume_paused_coaching_relationship(uuid,uuid)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.end_coaching_relationship(uuid,text,uuid)', 'EXECUTE'),
+  'end and resume RPCs are authenticated-only entry points'
+);
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.end_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000010', '  Objetivo cumplido  ', 'aaaaaaaa-0000-4000-8000-000000000011')$$,
+  'a client can end their active relationship'
+);
+SELECT is((SELECT status FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000010'), 'ended', 'end persists a terminal relationship');
+SELECT is((SELECT end_reason FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000010'), 'Objetivo cumplido', 'end stores a normalized optional reason');
+SELECT is((SELECT ended_by FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000010'), '33333333-3333-4333-8333-333333333333'::uuid, 'end records the authenticated participant');
+SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = 'aaaaaaaa-0000-4000-8000-000000000010' AND revoked_at IS NULL), 0::bigint, 'end revokes every active grant in its transaction');
+SELECT is((SELECT changed FROM public.end_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000010', NULL, 'aaaaaaaa-0000-4000-8000-000000000011')), FALSE, 'end retry is terminal and does not duplicate work');
+SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = 'aaaaaaaa-0000-4000-8000-000000000010' AND action = 'ended'), 1::bigint, 'end retry does not duplicate its audit event');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-relationship-ended:aaaaaaaa-0000-4000-8000-000000000010:%'), 2::bigint, 'end notifies both participants without a reason payload');
+SELECT throws_ok(
+  $$SELECT * FROM public.end_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000010', repeat('x', 501), 'aaaaaaaa-0000-4000-8000-000000000013')$$,
+  'COACHING_RELATIONSHIP_END_INVALID', 'end rejects a reason longer than 500 characters before mutating state'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.end_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000010', NULL, 'aaaaaaaa-0000-4000-8000-000000000012')$$,
+  'COACHING_RELATIONSHIP_NOT_FOUND', 'a non-participant cannot end a relationship'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status, paused_at)
+VALUES ('aaaaaaaa-0000-4000-8000-000000000020', '88888888-8888-4888-8888-888888888800',
+  '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'paused_by_platform', NOW());
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by, revoked_at, revoked_by)
+VALUES
+  ('aaaaaaaa-0000-4000-8000-000000000020', 'training_profile', 'training-profile-v1', '33333333-3333-4333-8333-333333333333', NOW(), '11111111-1111-4111-8111-111111111111'),
+  ('aaaaaaaa-0000-4000-8000-000000000020', 'body_measurements', 'body-measurements-v1', '33333333-3333-4333-8333-333333333333', NOW(), '11111111-1111-4111-8111-111111111111');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.resume_paused_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000020', 'aaaaaaaa-0000-4000-8000-000000000021')$$,
+  'COACHING_RELATIONSHIP_NOT_FOUND', 'the trainer cannot resume without client confirmation'
+);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.resume_paused_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000020', 'aaaaaaaa-0000-4000-8000-000000000021')$$,
+  'the client can resume only a platform-paused relationship after the trainer is active'
+);
+SELECT is((SELECT status FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000020'), 'active', 'resume makes the paused relationship active');
+SELECT ok((SELECT paused_at IS NULL FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000020'), 'active relationships clear paused_at');
+SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = 'aaaaaaaa-0000-4000-8000-000000000020' AND scope = 'training_profile'), 2::bigint, 'resume creates a new versioned training consent');
+SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = 'aaaaaaaa-0000-4000-8000-000000000020' AND scope = 'body_measurements' AND revoked_at IS NULL), 0::bigint, 'resume does not silently restore optional body measurements');
+SELECT is((SELECT changed FROM public.resume_paused_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000020', 'aaaaaaaa-0000-4000-8000-000000000021')), FALSE, 'resume retry does not duplicate the new grant');
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.end_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000020', NULL, 'aaaaaaaa-0000-4000-8000-000000000022')$$,
+  'the relationship trainer can also end an active relationship'
+);
+SELECT is((SELECT ended_by FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000020'), '11111111-1111-4111-8111-111111111111'::uuid, 'trainer end records the authenticated trainer');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.resume_paused_coaching_relationship('aaaaaaaa-0000-4000-8000-000000000020', 'aaaaaaaa-0000-4000-8000-000000000023')$$,
+  'COACHING_RELATIONSHIP_NOT_PAUSED', 'an ended relationship can never be resumed'
 );
 RESET ROLE;
 

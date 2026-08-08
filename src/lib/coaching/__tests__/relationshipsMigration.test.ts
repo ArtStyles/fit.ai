@@ -60,14 +60,15 @@ describe('trainer relationships migration', () => {
     )
   })
 
-  it('records one revocable consent per relationship scope', () => {
+  it('keeps consent grants versioned while allowing only one active scope per relationship', () => {
     expect(migration).toMatch(/scope TEXT NOT NULL CHECK \(scope IN \('training_profile', 'body_measurements'\)\)/i)
     expect(migration).toMatch(/text_version TEXT NOT NULL/i)
     expect(migration).toMatch(/granted_at TIMESTAMPTZ NOT NULL/i)
     expect(migration).toMatch(/revoked_at TIMESTAMPTZ/i)
     expect(migration).toMatch(/granted_by UUID NOT NULL/i)
     expect(migration).toMatch(/revoked_by UUID/i)
-    expect(migration).toMatch(/UNIQUE \(relationship_id, scope\)/i)
+    expect(migration).toMatch(/CREATE UNIQUE INDEX coaching_consents_one_active_scope\s+ON public\.coaching_consents \(relationship_id, scope\)\s+WHERE revoked_at IS NULL/i)
+    expect(migration).toMatch(/DROP CONSTRAINT IF EXISTS coaching_consents_relationship_id_scope_key/i)
   })
 
   it('exposes the scope helper only to its authenticated trainer and otherwise denies access', () => {

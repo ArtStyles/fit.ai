@@ -36,6 +36,17 @@ describe('coaching request UI', () => {
     expect(html).toContain('No aceptada')
     expect(html.match(/Cancelar solicitud/g)).toHaveLength(1)
   })
+
+  it('shows a client-controlled accessible confirmation before ending or resuming a relationship', () => {
+    const active = renderToStaticMarkup(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-1', status: 'active' }} />)
+    const paused = renderToStaticMarkup(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-2', status: 'paused_by_platform' }} />)
+
+    expect(active).toContain('AcompaÃ±amiento activo')
+    expect(active).toContain('Finalizar acompaÃ±amiento')
+    expect(active).toContain('aria-controls="client-relationship-confirmation"')
+    expect(paused).toContain('AcompaÃ±amiento pausado')
+    expect(paused).toContain('Reanudar acompaÃ±amiento')
+  })
 })
 
 describe('coaching request interaction failures', () => {

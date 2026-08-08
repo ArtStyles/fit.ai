@@ -89,6 +89,10 @@ CREATE TABLE IF NOT EXISTS public.coaching_relationships (
   CONSTRAINT coaching_relationships_end_state_check CHECK (
     (status = 'ended' AND ended_at IS NOT NULL)
     OR (status <> 'ended' AND ended_at IS NULL AND ended_by IS NULL AND end_reason IS NULL)
+  ),
+  CONSTRAINT coaching_relationships_pause_state_check CHECK (
+    (status = 'paused_by_platform' AND paused_at IS NOT NULL)
+    OR (status <> 'paused_by_platform' AND paused_at IS NULL)
   )
 );
 
@@ -116,13 +120,28 @@ CREATE TABLE IF NOT EXISTS public.coaching_consents (
   CONSTRAINT coaching_consents_revocation_actor_check CHECK (
     (revoked_at IS NULL AND revoked_by IS NULL)
     OR (revoked_at IS NOT NULL AND revoked_by IS NOT NULL)
-  ),
-  UNIQUE (relationship_id, scope)
+  )
+  -- Consent records are immutable grants. A new grant after revocation receives
+  -- a new row so the historical decision remains auditable.
 );
 
 CREATE INDEX coaching_consents_active_scope_idx
   ON public.coaching_consents (relationship_id, scope)
   WHERE revoked_at IS NULL;
+
+CREATE UNIQUE INDEX coaching_consents_one_active_scope
+  ON public.coaching_consents (relationship_id, scope)
+  WHERE revoked_at IS NULL;
+
+ALTER TABLE public.coaching_consents
+  DROP CONSTRAINT IF EXISTS coaching_consents_relationship_id_scope_key;
+ALTER TABLE public.coaching_relationships
+  DROP CONSTRAINT IF EXISTS coaching_relationships_pause_state_check;
+ALTER TABLE public.coaching_relationships
+  ADD CONSTRAINT coaching_relationships_pause_state_check CHECK (
+    (status = 'paused_by_platform' AND paused_at IS NOT NULL)
+    OR (status <> 'paused_by_platform' AND paused_at IS NULL)
+  );
 
 ALTER TABLE public.trainer_service_offerings OWNER TO postgres;
 ALTER TABLE public.coaching_requests OWNER TO postgres;
@@ -798,15 +817,13 @@ BEGIN
       AND trainer_profile.status = 'active' AND trainer_account.account_status = 'active'
   ) THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_ACTIVE'; END IF;
   SELECT * INTO v_consent FROM public.coaching_consents consent
-  WHERE consent.relationship_id = v_relationship.id AND consent.scope = 'body_measurements' FOR UPDATE;
+  WHERE consent.relationship_id = v_relationship.id
+    AND consent.scope = 'body_measurements'
+    AND consent.revoked_at IS NULL
+  FOR UPDATE;
   IF FOUND AND v_consent.revoked_at IS NULL THEN RETURN QUERY SELECT v_relationship.id, FALSE; RETURN; END IF;
-  IF FOUND THEN
-    UPDATE public.coaching_consents SET text_version = v_version, granted_at = NOW(), granted_by = v_client_user_id,
-      revoked_at = NULL, revoked_by = NULL WHERE id = v_consent.id;
-  ELSE
-    INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
-    VALUES (v_relationship.id, 'body_measurements', v_version, v_client_user_id);
-  END IF;
+  INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
+  VALUES (v_relationship.id, 'body_measurements', v_version, v_client_user_id);
   INSERT INTO public.professional_audit_logs (actor_user_id, subject_user_id, entity_type, entity_id, action, metadata)
   VALUES (v_client_user_id, v_relationship.trainer_user_id, 'coaching_relationship', v_relationship.id,
     'body_measurements_consent_granted', jsonb_build_object('text_version', v_version, 'idempotency_key', $3));
@@ -835,7 +852,10 @@ BEGIN
   WHERE relationship.id = $1 AND relationship.client_user_id = v_client_user_id FOR UPDATE;
   IF NOT FOUND OR v_relationship.status <> 'active' THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_ACTIVE'; END IF;
   SELECT * INTO v_consent FROM public.coaching_consents consent
-  WHERE consent.relationship_id = v_relationship.id AND consent.scope = 'body_measurements' FOR UPDATE;
+  WHERE consent.relationship_id = v_relationship.id
+    AND consent.scope = 'body_measurements'
+    AND consent.revoked_at IS NULL
+  FOR UPDATE;
   IF NOT FOUND OR v_consent.revoked_at IS NOT NULL THEN RETURN QUERY SELECT v_relationship.id, FALSE; RETURN; END IF;
   UPDATE public.coaching_consents SET revoked_at = NOW(), revoked_by = v_client_user_id WHERE id = v_consent.id;
   INSERT INTO public.professional_audit_logs (actor_user_id, subject_user_id, entity_type, entity_id, action, metadata)
@@ -880,6 +900,129 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.end_coaching_relationship(
+  p_relationship_id UUID, p_reason TEXT, p_idempotency_key UUID
+)
+RETURNS TABLE (relationship_id UUID, changed BOOLEAN)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_user_id UUID := auth.uid();
+  v_relationship public.coaching_relationships%ROWTYPE;
+  v_reason TEXT := NULLIF(btrim(COALESCE(p_reason, '')), '');
+  v_other_user_id UUID;
+BEGIN
+  IF v_actor_user_id IS NULL THEN RAISE EXCEPTION 'COACHING_AUTH_REQUIRED'; END IF;
+  IF p_relationship_id IS NULL OR p_idempotency_key IS NULL OR char_length(COALESCE(v_reason, '')) > 500 THEN
+    RAISE EXCEPTION 'COACHING_RELATIONSHIP_END_INVALID';
+  END IF;
+
+  SELECT * INTO v_relationship
+  FROM public.coaching_relationships relationship
+  WHERE relationship.id = p_relationship_id
+  FOR UPDATE;
+  IF NOT FOUND OR (v_relationship.client_user_id <> v_actor_user_id AND v_relationship.trainer_user_id <> v_actor_user_id) THEN
+    RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_FOUND';
+  END IF;
+  IF v_relationship.status = 'ended' THEN
+    RETURN QUERY SELECT v_relationship.id, FALSE;
+    RETURN;
+  END IF;
+
+  v_other_user_id := CASE WHEN v_actor_user_id = v_relationship.client_user_id
+    THEN v_relationship.trainer_user_id ELSE v_relationship.client_user_id END;
+  UPDATE public.coaching_consents consent
+  SET revoked_at = NOW(), revoked_by = v_actor_user_id
+  WHERE consent.relationship_id = v_relationship.id AND consent.revoked_at IS NULL;
+  UPDATE public.coaching_relationships
+  SET status = 'ended', ended_at = NOW(), ended_by = v_actor_user_id, end_reason = v_reason, paused_at = NULL
+  WHERE id = v_relationship.id;
+  INSERT INTO public.professional_audit_logs (actor_user_id, subject_user_id, entity_type, entity_id, action, metadata)
+  VALUES (v_actor_user_id, v_other_user_id, 'coaching_relationship', v_relationship.id, 'ended',
+    jsonb_build_object('reason', v_reason, 'idempotency_key', p_idempotency_key));
+  PERFORM public.create_product_notification(
+    v_actor_user_id, 'coaching_relationship_ended', 'AcompaÃ±amiento finalizado',
+    'El acompaÃ±amiento fue finalizado.', '/coaching',
+    'coaching-relationship-ended:' || v_relationship.id::TEXT || ':' || v_actor_user_id::TEXT,
+    jsonb_build_object('relationship_id', v_relationship.id));
+  PERFORM public.create_product_notification(
+    v_other_user_id, 'coaching_relationship_ended', 'AcompaÃ±amiento finalizado',
+    'El acompaÃ±amiento fue finalizado.', '/coaching',
+    'coaching-relationship-ended:' || v_relationship.id::TEXT || ':' || v_other_user_id::TEXT,
+    jsonb_build_object('relationship_id', v_relationship.id));
+  RETURN QUERY SELECT v_relationship.id, TRUE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.resume_paused_coaching_relationship(
+  p_relationship_id UUID, p_idempotency_key UUID
+)
+RETURNS TABLE (relationship_id UUID, changed BOOLEAN)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_client_user_id UUID := auth.uid();
+  v_relationship public.coaching_relationships%ROWTYPE;
+  v_training_version TEXT;
+BEGIN
+  IF v_client_user_id IS NULL THEN RAISE EXCEPTION 'COACHING_AUTH_REQUIRED'; END IF;
+  IF p_relationship_id IS NULL OR p_idempotency_key IS NULL THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_RESUME_INVALID'; END IF;
+
+  -- Every operation that can create the sole active relationship takes this
+  -- client lock first, preventing an accept and a resume from interleaving.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
+  SELECT * INTO v_relationship
+  FROM public.coaching_relationships relationship
+  WHERE relationship.id = p_relationship_id AND relationship.client_user_id = v_client_user_id
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_FOUND'; END IF;
+  IF v_relationship.status <> 'paused_by_platform' THEN
+    IF v_relationship.status = 'active' THEN RETURN QUERY SELECT v_relationship.id, FALSE; RETURN; END IF;
+    RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_PAUSED';
+  END IF;
+  IF NOT public.is_account_active(v_client_user_id) OR NOT EXISTS (
+    SELECT 1 FROM public.trainer_profiles trainer_profile
+    JOIN public.profiles trainer_account ON trainer_account.id = trainer_profile.user_id
+    JOIN public.trainer_service_offerings service ON service.trainer_profile_id = trainer_profile.id
+    WHERE trainer_profile.user_id = v_relationship.trainer_user_id
+      AND trainer_profile.status = 'active' AND trainer_account.account_status = 'active'
+      AND service.id = v_relationship.service_id AND service.is_active = TRUE
+  ) THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.coaching_relationships relationship
+    WHERE relationship.client_user_id = v_client_user_id
+      AND relationship.status = 'active'
+      AND relationship.id <> v_relationship.id
+  ) THEN RAISE EXCEPTION 'COACHING_ACTIVE_RELATIONSHIP_EXISTS'; END IF;
+  SELECT consent.text_version INTO v_training_version
+  FROM public.coaching_consents consent
+  WHERE consent.relationship_id = v_relationship.id AND consent.scope = 'training_profile'
+  ORDER BY consent.granted_at DESC, consent.id DESC
+  LIMIT 1;
+  IF v_training_version IS NULL THEN RAISE EXCEPTION 'COACHING_TRAINING_CONSENT_REQUIRED'; END IF;
+
+  UPDATE public.coaching_relationships
+  SET status = 'active', paused_at = NULL
+  WHERE id = v_relationship.id;
+  INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
+  VALUES (v_relationship.id, 'training_profile', v_training_version, v_client_user_id);
+  INSERT INTO public.professional_audit_logs (actor_user_id, subject_user_id, entity_type, entity_id, action, metadata)
+  VALUES (v_client_user_id, v_relationship.trainer_user_id, 'coaching_relationship', v_relationship.id, 'resumed',
+    jsonb_build_object('idempotency_key', p_idempotency_key));
+  PERFORM public.create_product_notification(
+    v_client_user_id, 'coaching_relationship_resumed', 'AcompaÃ±amiento reanudado',
+    'Confirmaste la reanudaciÃ³n del acompaÃ±amiento.', '/coaching',
+    'coaching-relationship-resumed:' || v_relationship.id::TEXT || ':' || v_client_user_id::TEXT,
+    jsonb_build_object('relationship_id', v_relationship.id));
+  PERFORM public.create_product_notification(
+    v_relationship.trainer_user_id, 'coaching_relationship_resumed', 'AcompaÃ±amiento reanudado',
+    'La persona confirmÃ³ la reanudaciÃ³n del acompaÃ±amiento.', '/coach/requests',
+    'coaching-relationship-resumed:' || v_relationship.id::TEXT || ':' || v_relationship.trainer_user_id::TEXT,
+    jsonb_build_object('relationship_id', v_relationship.id));
+  RETURN QUERY SELECT v_relationship.id, TRUE;
+END;
+$$;
+
 ALTER FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) OWNER TO postgres;
 ALTER FUNCTION public.cancel_coaching_request(UUID) OWNER TO postgres;
 ALTER FUNCTION public.accept_coaching_request(UUID, UUID) OWNER TO postgres;
@@ -887,6 +1030,8 @@ ALTER FUNCTION public.decline_coaching_request(UUID, TEXT) OWNER TO postgres;
 ALTER FUNCTION public.grant_body_measurements_consent(UUID, TEXT, UUID) OWNER TO postgres;
 ALTER FUNCTION public.revoke_body_measurements_consent(UUID, UUID) OWNER TO postgres;
 ALTER FUNCTION public.revoke_training_profile_consent(UUID, UUID) OWNER TO postgres;
+ALTER FUNCTION public.end_coaching_relationship(UUID, TEXT, UUID) OWNER TO postgres;
+ALTER FUNCTION public.resume_paused_coaching_relationship(UUID, UUID) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.cancel_coaching_request(UUID) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.accept_coaching_request(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
@@ -894,6 +1039,8 @@ REVOKE ALL ON FUNCTION public.decline_coaching_request(UUID, TEXT) FROM PUBLIC, 
 REVOKE ALL ON FUNCTION public.grant_body_measurements_consent(UUID, TEXT, UUID) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.revoke_body_measurements_consent(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.revoke_training_profile_consent(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.end_coaching_relationship(UUID, TEXT, UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.resume_paused_coaching_relationship(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.cancel_coaching_request(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.accept_coaching_request(UUID, UUID) TO authenticated;
@@ -901,6 +1048,8 @@ GRANT EXECUTE ON FUNCTION public.decline_coaching_request(UUID, TEXT) TO authent
 GRANT EXECUTE ON FUNCTION public.grant_body_measurements_consent(UUID, TEXT, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.revoke_body_measurements_consent(UUID, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.revoke_training_profile_consent(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.end_coaching_relationship(UUID, TEXT, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.resume_paused_coaching_relationship(UUID, UUID) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.get_requestable_trainer_services(trainer_slug TEXT)
 RETURNS TABLE (

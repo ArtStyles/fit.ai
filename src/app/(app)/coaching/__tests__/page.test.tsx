@@ -14,8 +14,8 @@ function requestQuery(result: { data: unknown; error: unknown }) {
   const requestEq = vi.fn(() => ({ order }))
   const requestSelect = vi.fn(() => ({ eq: requestEq }))
   const relationshipLimit = vi.fn(async () => ({ data: [], error: null }))
-  const relationshipStatusEq = vi.fn(() => ({ limit: relationshipLimit }))
-  const relationshipClientEq = vi.fn(() => ({ eq: relationshipStatusEq }))
+  const relationshipStatusIn = vi.fn(() => ({ limit: relationshipLimit }))
+  const relationshipClientEq = vi.fn(() => ({ in: relationshipStatusIn }))
   const relationshipSelect = vi.fn(() => ({ eq: relationshipClientEq }))
   const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : requestSelect }))
   return { from, order }
