@@ -447,6 +447,8 @@ export interface Database {
           message: string
           training_profile_consent_version: string
           idempotency_key: string
+          acceptance_idempotency_key: string | null
+          acceptance_cancelled_request_ids: string[]
           status: 'pending' | 'accepted' | 'declined' | 'cancelled'
           decided_at: string | null
           created_at: string
@@ -460,6 +462,8 @@ export interface Database {
           message?: string
           training_profile_consent_version: string
           idempotency_key?: string
+          acceptance_idempotency_key?: string | null
+          acceptance_cancelled_request_ids?: string[]
           status?: 'pending' | 'accepted' | 'declined' | 'cancelled'
           decided_at?: string | null
           created_at?: string
@@ -1440,6 +1444,14 @@ export interface Database {
       cancel_coaching_request: {
         Args: { p_request_id: string }
         Returns: { request_id: string }[]
+      }
+      accept_coaching_request: {
+        Args: { request_id: string; idempotency_key: string }
+        Returns: { relationship_id: string; accepted_request_id: string; cancelled_request_ids: string[] }[]
+      }
+      decline_coaching_request: {
+        Args: { request_id: string; reason?: string }
+        Returns: { declined_request_id: string }[]
       }
       get_requestable_trainer_services: {
         Args: { trainer_slug: string }

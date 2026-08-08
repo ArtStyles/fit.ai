@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { requireAppUserContext, revalidatePath } = vi.hoisted(() => ({
+const { requireAppUserContext, requireActiveTrainerContext, revalidatePath } = vi.hoisted(() => ({
   requireAppUserContext: vi.fn(),
+  requireActiveTrainerContext: vi.fn(),
   revalidatePath: vi.fn(),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/auth/server', () => ({ requireAppUserContext }))
+vi.mock('@/lib/coaching/access', () => ({ requireActiveTrainerContext }))
 vi.mock('next/cache', () => ({ revalidatePath }))
 
 function validRequestForm(): FormData {
@@ -19,10 +21,19 @@ function validRequestForm(): FormData {
   return formData
 }
 
-function requestSupabase(options: { create?: { data: unknown; error: unknown }; cancel?: { data: unknown; error: unknown } } = {}) {
-  const rpc = vi.fn((name: string) => Promise.resolve(name === 'cancel_coaching_request'
-    ? options.cancel ?? { data: { request_id: 'request-1' }, error: null }
-    : options.create ?? { data: { request_id: 'request-1', created: true }, error: null }))
+function requestSupabase(options: {
+  create?: { data: unknown; error: unknown }
+  cancel?: { data: unknown; error: unknown }
+  accept?: { data: unknown; error: unknown }
+  decline?: { data: unknown; error: unknown }
+} = {}) {
+  const responses = {
+    create_coaching_request: options.create ?? { data: { request_id: 'request-1', created: true }, error: null },
+    cancel_coaching_request: options.cancel ?? { data: { request_id: 'request-1' }, error: null },
+    accept_coaching_request: options.accept ?? { data: { relationship_id: 'relationship-1', accepted_request_id: 'request-1', cancelled_request_ids: [] }, error: null },
+    decline_coaching_request: options.decline ?? { data: { declined_request_id: 'request-1' }, error: null },
+  }
+  const rpc = vi.fn((name: keyof typeof responses) => Promise.resolve(responses[name]))
   return { rpc }
 }
 
@@ -103,5 +114,51 @@ describe('coaching request actions', () => {
     const { cancelCoachingRequest } = await import('../coachingRequests')
 
     await expect(cancelCoachingRequest(formData)).resolves.toEqual({ ok: false, error: 'La solicitud ya no se puede cancelar.' })
+  })
+
+  it('accepts only through the trainer-owned RPC and returns the refreshed relationship state', async () => {
+    const supabase = requestSupabase({ accept: { data: {
+      relationship_id: 'relationship-9', accepted_request_id: 'request-9', cancelled_request_ids: ['request-10'],
+    }, error: null } })
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
+    const formData = new FormData()
+    formData.set('requestId', '33333333-3333-4333-8333-333333333333')
+    formData.set('idempotencyKey', '44444444-4444-4444-8444-444444444444')
+    formData.set('trainerUserId', 'attacker')
+    const { acceptCoachingRequest } = await import('../coachingRequests')
+
+    await expect(acceptCoachingRequest(formData)).resolves.toEqual({
+      ok: true, relationshipId: 'relationship-9', acceptedRequestId: 'request-9', cancelledRequestIds: ['request-10'],
+    })
+    expect(supabase.rpc).toHaveBeenCalledWith('accept_coaching_request', {
+      request_id: '33333333-3333-4333-8333-333333333333',
+      idempotency_key: '44444444-4444-4444-8444-444444444444',
+    })
+    expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+  })
+
+  it('maps an acceptance race conflict to a refreshed state instead of a generic failure', async () => {
+    const supabase = requestSupabase({ accept: { data: null, error: { message: 'COACHING_ACTIVE_RELATIONSHIP_EXISTS' } } })
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
+    const formData = new FormData()
+    formData.set('requestId', '33333333-3333-4333-8333-333333333333')
+    formData.set('idempotencyKey', '44444444-4444-4444-8444-444444444444')
+    const { acceptCoachingRequest } = await import('../coachingRequests')
+
+    await expect(acceptCoachingRequest(formData)).resolves.toEqual({ ok: false, error: 'La solicitud se actualizÃ³. Recarga la bandeja.', refreshed: true })
+  })
+
+  it('declines only a pending request owned by the authenticated trainer', async () => {
+    const supabase = requestSupabase()
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
+    const formData = new FormData()
+    formData.set('requestId', '33333333-3333-4333-8333-333333333333')
+    formData.set('reason', 'No tengo disponibilidad esta semana.')
+    const { declineCoachingRequest } = await import('../coachingRequests')
+
+    await expect(declineCoachingRequest(formData)).resolves.toEqual({ ok: true, requestId: 'request-1' })
+    expect(supabase.rpc).toHaveBeenCalledWith('decline_coaching_request', {
+      request_id: '33333333-3333-4333-8333-333333333333', reason: 'No tengo disponibilidad esta semana.',
+    })
   })
 })

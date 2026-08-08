@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS public.coaching_requests (
   message TEXT NOT NULL DEFAULT '' CHECK (char_length(message) <= 1000),
   training_profile_consent_version TEXT NOT NULL,
   idempotency_key UUID NOT NULL DEFAULT gen_random_uuid(),
+  acceptance_idempotency_key UUID,
+  acceptance_cancelled_request_ids UUID[] NOT NULL DEFAULT '{}'::UUID[],
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'accepted', 'declined', 'cancelled')),
   decided_at TIMESTAMPTZ,
@@ -544,12 +546,236 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.accept_coaching_request(
+  request_id UUID,
+  idempotency_key UUID
+)
+RETURNS TABLE (
+  relationship_id UUID,
+  accepted_request_id UUID,
+  cancelled_request_ids UUID[]
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_trainer_user_id UUID := auth.uid();
+  v_client_user_id UUID;
+  v_request public.coaching_requests%ROWTYPE;
+  v_service public.trainer_service_offerings%ROWTYPE;
+  v_relationship public.coaching_relationships%ROWTYPE;
+  v_cancelled_request_ids UUID[] := '{}'::UUID[];
+BEGIN
+  IF v_trainer_user_id IS NULL THEN
+    RAISE EXCEPTION 'COACHING_AUTH_REQUIRED';
+  END IF;
+  IF $1 IS NULL OR $2 IS NULL THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_INVALID';
+  END IF;
+
+  -- This read intentionally reveals only the lock key; ownership is checked after locking.
+  SELECT request.client_user_id INTO v_client_user_id
+  FROM public.coaching_requests request
+  WHERE request.id = $1;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_NOT_PENDING';
+  END IF;
+
+  -- All acceptors for a client serialize here before they can lock a request row.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
+
+  SELECT * INTO v_request
+  FROM public.coaching_requests request
+  WHERE request.id = $1
+    AND request.trainer_user_id = v_trainer_user_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_NOT_PENDING';
+  END IF;
+
+  IF v_request.status = 'accepted'
+    AND v_request.acceptance_idempotency_key = $2 THEN
+    SELECT * INTO v_relationship
+    FROM public.coaching_relationships relationship
+    WHERE relationship.source_request_id = v_request.id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'COACHING_REQUEST_NOT_PENDING';
+    END IF;
+    RETURN QUERY SELECT v_relationship.id, v_request.id, v_request.acceptance_cancelled_request_ids;
+    RETURN;
+  END IF;
+  IF v_request.status <> 'pending' THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_NOT_PENDING';
+  END IF;
+
+  SELECT service.* INTO v_service
+  FROM public.trainer_service_offerings service
+  WHERE service.id = v_request.service_id
+    AND service.is_active = TRUE
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COACHING_SERVICE_NOT_AVAILABLE';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.trainer_profiles trainer_profile
+    JOIN public.profiles trainer_account ON trainer_account.id = trainer_profile.user_id
+    WHERE trainer_profile.id = v_service.trainer_profile_id
+      AND trainer_profile.user_id = v_trainer_user_id
+      AND trainer_profile.status = 'active'
+      AND trainer_account.account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles client_account
+    WHERE client_account.id = v_request.client_user_id
+      AND client_account.account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_CLIENT_NOT_ACTIVE';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.coaching_relationships relationship
+    WHERE relationship.client_user_id = v_request.client_user_id
+      AND relationship.status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_ACTIVE_RELATIONSHIP_EXISTS';
+  END IF;
+
+  INSERT INTO public.coaching_relationships (
+    source_request_id, service_id, trainer_user_id, client_user_id, status
+  ) VALUES (
+    v_request.id, v_request.service_id, v_trainer_user_id, v_request.client_user_id, 'active'
+  ) RETURNING * INTO v_relationship;
+
+  UPDATE public.coaching_requests
+  SET status = 'accepted', decided_at = NOW(), acceptance_idempotency_key = $2
+  WHERE id = v_request.id;
+
+  WITH cancelled AS (
+    UPDATE public.coaching_requests request
+    SET status = 'cancelled', decided_at = NOW()
+    WHERE request.client_user_id = v_request.client_user_id
+      AND request.id <> v_request.id
+      AND request.status = 'pending'
+    RETURNING request.id, request.trainer_user_id, request.service_id
+  ), captured AS (
+    SELECT COALESCE(array_agg(id ORDER BY id), '{}'::UUID[]) AS ids FROM cancelled
+  )
+  SELECT ids INTO v_cancelled_request_ids FROM captured;
+
+  UPDATE public.coaching_requests
+  SET acceptance_cancelled_request_ids = v_cancelled_request_ids
+  WHERE id = v_request.id;
+
+  INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
+  VALUES (v_relationship.id, 'training_profile', v_request.training_profile_consent_version, v_request.client_user_id);
+
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+  ) VALUES (
+    v_trainer_user_id, v_request.client_user_id, 'coaching_request', v_request.id,
+    'accepted', jsonb_build_object('relationship_id', v_relationship.id, 'service_id', v_request.service_id, 'cancelled_request_ids', v_cancelled_request_ids)
+  );
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+  )
+  SELECT v_trainer_user_id, cancelled.trainer_user_id, 'coaching_request', cancelled.id,
+    'cancelled_after_acceptance', jsonb_build_object('accepted_request_id', v_request.id, 'service_id', cancelled.service_id)
+  FROM public.coaching_requests cancelled
+  WHERE cancelled.id = ANY(v_cancelled_request_ids);
+
+  PERFORM public.create_product_notification(
+    v_request.client_user_id, 'coaching_request_accepted', 'Solicitud aceptada',
+    'Tu solicitud de acompaÃ±amiento fue aceptada.', '/coaching',
+    'coaching-request-accepted:' || v_request.id::TEXT,
+    jsonb_build_object('request_id', v_request.id, 'relationship_id', v_relationship.id)
+  );
+  PERFORM public.create_product_notification(
+    cancelled.trainer_user_id, 'coaching_request_cancelled_after_acceptance', 'Solicitud cancelada',
+    'La persona ya iniciÃ³ otro acompaÃ±amiento.', '/coach/requests',
+    'coaching-request-cancelled-after-acceptance:' || cancelled.id::TEXT,
+    jsonb_build_object('request_id', cancelled.id)
+  )
+  FROM public.coaching_requests cancelled
+  WHERE cancelled.id = ANY(v_cancelled_request_ids);
+
+  RETURN QUERY SELECT v_relationship.id, v_request.id, v_cancelled_request_ids;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.decline_coaching_request(
+  request_id UUID,
+  reason TEXT DEFAULT ''
+)
+RETURNS TABLE (declined_request_id UUID)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_trainer_user_id UUID := auth.uid();
+  v_request public.coaching_requests%ROWTYPE;
+  v_reason TEXT := COALESCE(btrim($2), '');
+BEGIN
+  IF v_trainer_user_id IS NULL THEN
+    RAISE EXCEPTION 'COACHING_AUTH_REQUIRED';
+  END IF;
+  IF $1 IS NULL OR char_length(v_reason) > 500 THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_INVALID';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.trainer_profiles trainer_profile
+    JOIN public.profiles trainer_account ON trainer_account.id = trainer_profile.user_id
+    WHERE trainer_profile.user_id = v_trainer_user_id
+      AND trainer_profile.status = 'active'
+      AND trainer_account.account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.coaching_requests request
+  WHERE request.id = $1
+    AND request.trainer_user_id = v_trainer_user_id
+    AND request.status = 'pending'
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_NOT_PENDING';
+  END IF;
+
+  UPDATE public.coaching_requests
+  SET status = 'declined', decided_at = NOW()
+  WHERE id = v_request.id;
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+  ) VALUES (
+    v_trainer_user_id, v_request.client_user_id, 'coaching_request', v_request.id,
+    'declined', jsonb_build_object('reason', v_reason, 'service_id', v_request.service_id)
+  );
+  PERFORM public.create_product_notification(
+    v_request.client_user_id, 'coaching_request_declined', 'Solicitud no aceptada',
+    'Esta solicitud no pudo ser aceptada en este momento.', '/coaching',
+    'coaching-request-declined:' || v_request.id::TEXT,
+    jsonb_build_object('request_id', v_request.id)
+  );
+  RETURN QUERY SELECT v_request.id;
+END;
+$$;
+
 ALTER FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) OWNER TO postgres;
 ALTER FUNCTION public.cancel_coaching_request(UUID) OWNER TO postgres;
+ALTER FUNCTION public.accept_coaching_request(UUID, UUID) OWNER TO postgres;
+ALTER FUNCTION public.decline_coaching_request(UUID, TEXT) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.cancel_coaching_request(UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.accept_coaching_request(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.decline_coaching_request(UUID, TEXT) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.cancel_coaching_request(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.accept_coaching_request(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.decline_coaching_request(UUID, TEXT) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.get_requestable_trainer_services(trainer_slug TEXT)
 RETURNS TABLE (

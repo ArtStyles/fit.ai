@@ -2,11 +2,19 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireAppUserContext } from '@/lib/auth/server'
+import { requireActiveTrainerContext } from '@/lib/coaching/access'
 import { validateCoachingRequest } from '@/lib/coaching/requestValidation'
 
 type CoachingRequestFailure = { ok: false; error: string; fieldErrors?: Record<string, string> }
 type CoachingRequestResult = { ok: true; requestId: string; created: boolean } | CoachingRequestFailure
 type CancelCoachingRequestResult = { ok: true; requestId: string } | CoachingRequestFailure
+type AcceptCoachingRequestResult = {
+  ok: true
+  relationshipId: string
+  acceptedRequestId: string
+  cancelledRequestIds: string[]
+} | (CoachingRequestFailure & { refreshed?: boolean })
+type DeclineCoachingRequestResult = { ok: true; requestId: string } | CoachingRequestFailure
 
 const requestErrors: Record<string, string> = {
   COACHING_SERVICE_NOT_AVAILABLE: 'Este servicio ya no está disponible.',
@@ -26,6 +34,12 @@ function rpcError(error: unknown, fallback: string) {
 function revalidateCoachingPaths() {
   revalidatePath('/coaching')
   revalidatePath('/trainers')
+  revalidatePath('/coach/requests')
+}
+
+function formString(formData: FormData, name: string) {
+  const value = formData.get(name)
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 export async function createCoachingRequest(formData: FormData): Promise<CoachingRequestResult> {
@@ -48,7 +62,7 @@ export async function createCoachingRequest(formData: FormData): Promise<Coachin
 
 export async function cancelCoachingRequest(formData: FormData): Promise<CancelCoachingRequestResult> {
   const { supabase } = await requireAppUserContext()
-  const requestId = typeof formData.get('requestId') === 'string' ? String(formData.get('requestId')).trim() : ''
+  const requestId = formString(formData, 'requestId')
   if (!requestId) return { ok: false, error: 'No se encontró la solicitud.' }
 
   const { data, error } = await (supabase as any).rpc('cancel_coaching_request', { p_request_id: requestId })
@@ -62,4 +76,50 @@ export async function cancelCoachingRequest(formData: FormData): Promise<CancelC
 
   revalidateCoachingPaths()
   return { ok: true, requestId: result.request_id }
+}
+
+export async function acceptCoachingRequest(formData: FormData): Promise<AcceptCoachingRequestResult> {
+  const { supabase } = await requireActiveTrainerContext()
+  const requestId = formString(formData, 'requestId')
+  const idempotencyKey = formString(formData, 'idempotencyKey')
+  if (!requestId || !idempotencyKey) return { ok: false, error: 'No se encontrÃ³ la solicitud.' }
+
+  const { data, error } = await (supabase as any).rpc('accept_coaching_request', {
+    request_id: requestId,
+    idempotency_key: idempotencyKey,
+  })
+  const result = Array.isArray(data) ? data[0] : data
+  if (error || !result?.relationship_id || !result?.accepted_request_id) {
+    const message = typeof (error as { message?: unknown } | null)?.message === 'string'
+      ? (error as { message: string }).message
+      : ''
+    if (message === 'COACHING_ACTIVE_RELATIONSHIP_EXISTS' || message === 'COACHING_REQUEST_NOT_PENDING') {
+      revalidateCoachingPaths()
+      return { ok: false, error: 'La solicitud se actualizÃ³. Recarga la bandeja.', refreshed: true }
+    }
+    return { ok: false, error: 'No se pudo aceptar la solicitud.' }
+  }
+
+  revalidateCoachingPaths()
+  return {
+    ok: true,
+    relationshipId: result.relationship_id,
+    acceptedRequestId: result.accepted_request_id,
+    cancelledRequestIds: Array.isArray(result.cancelled_request_ids) ? result.cancelled_request_ids : [],
+  }
+}
+
+export async function declineCoachingRequest(formData: FormData): Promise<DeclineCoachingRequestResult> {
+  const { supabase } = await requireActiveTrainerContext()
+  const requestId = formString(formData, 'requestId')
+  const reason = formString(formData, 'reason')
+  if (!requestId) return { ok: false, error: 'No se encontrÃ³ la solicitud.' }
+  if (reason.length > 500) return { ok: false, error: 'El motivo es demasiado largo.' }
+
+  const { data, error } = await (supabase as any).rpc('decline_coaching_request', { request_id: requestId, reason })
+  const result = Array.isArray(data) ? data[0] : data
+  if (error || !result?.declined_request_id) return { ok: false, error: 'La solicitud ya no estÃ¡ pendiente.' }
+
+  revalidateCoachingPaths()
+  return { ok: true, requestId: result.declined_request_id }
 }

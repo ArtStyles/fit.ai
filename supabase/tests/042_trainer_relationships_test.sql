@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(68);
+SELECT plan(85);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -633,6 +633,110 @@ SELECT is(
   'pending',
   'failed cancellation leaves the request pending'
 );
+RESET ROLE;
+
+SELECT ok(
+  has_function_privilege('authenticated', 'public.accept_coaching_request(uuid,uuid)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.decline_coaching_request(uuid,text)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.accept_coaching_request(uuid,uuid)', 'EXECUTE'),
+  'accept and decline RPCs are authenticated-only'
+);
+
+SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.decline_coaching_request(
+    (SELECT id FROM public.coaching_requests WHERE trainer_user_id = '22222222-2222-4222-8222-222222222222' AND status = 'pending'),
+    'Sin disponibilidad'
+  )$$,
+  'the owning active trainer can decline a pending request'
+);
+SELECT is(
+  (SELECT status FROM public.coaching_requests WHERE trainer_user_id = '22222222-2222-4222-8222-222222222222'),
+  'declined',
+  'decline changes only the owned pending request'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_relationships), 0::bigint,
+  'decline creates no relationship'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_consents), 0::bigint,
+  'decline creates no consent'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE action = 'declined' AND entity_type = 'coaching_request'), 1::bigint,
+  'decline writes one audit row'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_declined'), 1::bigint,
+  'decline writes one safe client notification'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+INSERT INTO public.coaching_requests (
+  id, service_id, trainer_user_id, client_user_id, message, training_profile_consent_version, idempotency_key, status
+) VALUES
+  ('99999999-9999-4999-8999-999999999993', '88888888-8888-4888-8888-888888888800', '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'mensaje privado', 'training-profile-v1', '99999999-9999-4999-8999-999999999994', 'pending'),
+  ('99999999-9999-4999-8999-999999999995', '88888888-8888-4888-8888-888888888801', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333', 'otro mensaje privado', 'training-profile-v1', '99999999-9999-4999-8999-999999999996', 'pending');
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT accepted_request_id FROM public.accept_coaching_request(
+    '99999999-9999-4999-8999-999999999993', '99999999-9999-4999-8999-999999999997'
+  )),
+  '99999999-9999-4999-8999-999999999993'::uuid,
+  'accept returns the accepted request id'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_relationships WHERE status = 'active'), 1::bigint,
+  'accept creates exactly one active relationship'
+);
+SELECT is(
+  (SELECT status FROM public.coaching_requests WHERE id = '99999999-9999-4999-8999-999999999993'), 'accepted',
+  'accept marks the winner accepted'
+);
+SELECT is(
+  (SELECT acceptance_cancelled_request_ids FROM public.coaching_requests WHERE id = '99999999-9999-4999-8999-999999999993'), ARRAY['99999999-9999-4999-8999-999999999995'::uuid],
+  'accept atomically cancels every other pending request for the client'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_consents WHERE scope = 'training_profile' AND text_version = 'training-profile-v1' AND granted_by = '33333333-3333-4333-8333-333333333333'), 1::bigint,
+  'accept grants exactly one captured training profile consent'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE action = 'accepted' AND entity_id = '99999999-9999-4999-8999-999999999993'), 1::bigint,
+  'accept writes one audit record'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_accepted' AND body NOT LIKE '%privado%'), 1::bigint,
+  'accept notification does not leak the request message'
+);
+SELECT is(
+  (SELECT cancelled_request_ids FROM public.accept_coaching_request(
+    '99999999-9999-4999-8999-999999999993', '99999999-9999-4999-8999-999999999997'
+  )),
+  ARRAY['99999999-9999-4999-8999-999999999995'::uuid],
+  'same acceptance key retries with the original cancellation result'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_relationships WHERE status = 'active'), 1::bigint,
+  'accept retry creates no duplicate relationship'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_consents WHERE scope = 'training_profile'), 1::bigint,
+  'accept retry creates no duplicate consent'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+DELETE FROM public.coaching_consents;
+DELETE FROM public.coaching_relationships;
 RESET ROLE;
 
 CREATE FUNCTION public.fail_coaching_request_notification_test()
