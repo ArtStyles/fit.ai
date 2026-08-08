@@ -4,13 +4,28 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(58);
+SELECT plan(97);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
 SELECT has_function('public', 'list_trainer_credential_cleanup', ARRAY[]::text[], 'cleanup outbox listing RPC exists');
 SELECT has_function('public', 'finalize_trainer_credential_cleanup', ARRAY['uuid'], 'cleanup finalization RPC exists');
 SELECT has_table('public', 'trainer_credential_storage_cleanup', 'durable storage cleanup outbox exists');
+SELECT has_function('public', 'transition_trainer_application', ARRAY['uuid', 'uuid', 'text', 'jsonb'], 'atomic administrative transition RPC exists');
+SELECT ok(
+  CASE WHEN to_regprocedure('public.transition_trainer_application(uuid,uuid,text,jsonb)') IS NULL
+    THEN FALSE
+    ELSE has_function_privilege('service_role', 'public.transition_trainer_application(uuid,uuid,text,jsonb)', 'EXECUTE')
+  END,
+  'service role can execute administrative transitions'
+);
+SELECT ok(
+  CASE WHEN to_regprocedure('public.transition_trainer_application(uuid,uuid,text,jsonb)') IS NULL
+    THEN FALSE
+    ELSE NOT has_function_privilege('authenticated', 'public.transition_trainer_application(uuid,uuid,text,jsonb)', 'EXECUTE')
+  END,
+  'authenticated users cannot execute administrative transitions directly'
+);
 
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_credentials', 'INSERT'), 'authenticated cannot bypass credential creation RPC');
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_credentials', 'UPDATE'), 'authenticated cannot forge credential metadata');
@@ -36,6 +51,10 @@ VALUES
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'verification-c@example.test', '{}'::jsonb),
   ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'verification-notification-rollback@example.test', '{}'::jsonb),
   ('ffffffff-ffff-4fff-8fff-ffffffffffff', 'verification-null-avatar@example.test', '{}'::jsonb),
+  ('66666666-6666-4666-8666-666666666666', 'verification-approve@example.test', '{}'::jsonb),
+  ('77777777-7777-4777-8777-777777777777', 'verification-reject@example.test', '{}'::jsonb),
+  ('88888888-8888-4888-8888-888888888888', 'verification-admin-rollback@example.test', '{}'::jsonb),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'verification-interview@example.test', '{}'::jsonb),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'verification-admin@example.test', '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -46,6 +65,10 @@ VALUES
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'https://cdn.example.test/c.jpg', true, false, 'active'),
   ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'https://cdn.example.test/e.jpg', true, false, 'active'),
   ('ffffffff-ffff-4fff-8fff-ffffffffffff', NULL, true, false, 'active'),
+  ('66666666-6666-4666-8666-666666666666', 'https://cdn.example.test/approve.jpg', true, false, 'active'),
+  ('77777777-7777-4777-8777-777777777777', 'https://cdn.example.test/reject.jpg', true, false, 'active'),
+  ('88888888-8888-4888-8888-888888888888', 'https://cdn.example.test/admin-rollback.jpg', true, false, 'active'),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'https://cdn.example.test/interview.jpg', true, false, 'active'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'https://cdn.example.test/admin.jpg', true, true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   avatar_url = EXCLUDED.avatar_url,
@@ -87,7 +110,40 @@ INSERT INTO public.trainer_applications (
     'Null Avatar', NULL, repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
     repeat('experience ', 4), NULL, ARRAY['es'], 'null-avatar@example.test', NULL,
     'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '36666666-6666-4666-8666-666666666666', '66666666-6666-4666-8666-666666666666',
+    'Approved Trainer', 'https://cdn.example.test/approve.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+    repeat('experience ', 4), NULL, ARRAY['es'], 'approve@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '37777777-7777-4777-8777-777777777777', '77777777-7777-4777-8777-777777777777',
+    'Rejected Trainer', 'https://cdn.example.test/reject.jpg', repeat('bio ', 20), ARRAY['mobility'], ARRAY['online'],
+    repeat('experience ', 4), NULL, ARRAY['es'], 'reject@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '38888888-8888-4888-8888-888888888888', '88888888-8888-4888-8888-888888888888',
+    'Rollback Trainer', 'https://cdn.example.test/admin-rollback.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+    repeat('experience ', 4), NULL, ARRAY['es'], 'admin-rollback@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    'Interview Trainer', 'https://cdn.example.test/interview.jpg', repeat('bio ', 20), ARRAY['mobility'], ARRAY['online'],
+    repeat('experience ', 4), NULL, ARRAY['es'], 'interview@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
   );
+
+UPDATE public.trainer_applications
+SET status = 'under_review', submitted_at = NOW()
+WHERE id IN (
+  '36666666-6666-4666-8666-666666666666',
+  '37777777-7777-4777-8777-777777777777',
+  '38888888-8888-4888-8888-888888888888',
+  '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+);
 
 INSERT INTO public.trainer_application_credentials (
   id, application_id, credential_type, title, external_url
@@ -330,6 +386,49 @@ SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'ap
 SELECT dblink_disconnect('verification_c1');
 SELECT dblink_disconnect('verification_c2');
 
+SELECT dblink_connect('verification_admin_c1', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('verification_admin_c2', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('verification_admin_c1', 'SET ROLE service_role');
+SELECT dblink_exec('verification_admin_c2', 'SET ROLE service_role');
+SELECT dblink_send_query('verification_admin_c1', $$SELECT public.transition_trainer_application(
+  '3ddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'start_review',
+  '{}'::jsonb
+)$$);
+CREATE TEMP TABLE admin_start_review_result (result JSONB);
+INSERT INTO admin_start_review_result
+SELECT result FROM dblink_get_result('verification_admin_c1') AS response(result JSONB);
+SELECT dblink_disconnect('verification_admin_c1');
+SELECT dblink_disconnect('verification_admin_c2');
+SELECT dblink_connect('verification_admin_c1', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('verification_admin_c2', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('verification_admin_c1', 'SET ROLE service_role');
+SELECT dblink_exec('verification_admin_c2', 'SET ROLE service_role');
+SELECT dblink_send_query('verification_admin_c1', $$SELECT public.transition_trainer_application(
+  '3ddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'approve',
+  '{"public_note":"Aprobacion concurrente."}'::jsonb
+)$$);
+SELECT dblink_send_query('verification_admin_c2', $$SELECT public.transition_trainer_application(
+  '3ddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'approve',
+  '{"public_note":"Aprobacion concurrente."}'::jsonb
+)$$);
+CREATE TEMP TABLE concurrent_approval_results (result JSONB);
+INSERT INTO concurrent_approval_results SELECT result FROM dblink_get_result('verification_admin_c1') AS response(result JSONB);
+INSERT INTO concurrent_approval_results SELECT result FROM dblink_get_result('verification_admin_c2') AS response(result JSONB);
+SELECT is((SELECT count(*) FROM concurrent_approval_results), 2::bigint, 'both concurrent approval commands return a result');
+SELECT is((SELECT count(*) FROM concurrent_approval_results WHERE (result->>'transitioned')::boolean), 1::bigint, 'concurrent approval has exactly one effective transition');
+SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND status = 'active'), 1::bigint, 'concurrent approval creates one active profile');
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '3ddddddd-dddd-4ddd-8ddd-dddddddddddd' AND to_status = 'approved'), 1::bigint, 'concurrent approval creates one decision event');
+SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '3ddddddd-dddd-4ddd-8ddd-dddddddddddd' AND action = 'trainer_application_approved'), 1::bigint, 'concurrent approval creates one audit row');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND dedupe_key = 'trainer-application:3ddddddd-dddd-4ddd-8ddd-dddddddddddd:approved'), 1::bigint, 'concurrent approval creates one notification');
+SELECT dblink_disconnect('verification_admin_c1');
+SELECT dblink_disconnect('verification_admin_c2');
+
 CREATE OR REPLACE FUNCTION public.fail_notification_after_submission_mutations()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -358,6 +457,212 @@ SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE applicat
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'applicationId' = '3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'), 0::bigint, 'notification failure leaves no partial notification');
 DROP TRIGGER fail_notification_after_submission_mutations ON public.product_notifications;
 DROP FUNCTION public.fail_notification_after_submission_mutations();
+
+SELECT set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+      '36666666-6666-4666-8666-666666666666',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'approve',
+      '{"public_note":"Aprobada."}'::jsonb
+    )$$,
+  '42501', NULL, 'even an authenticated admin cannot invoke the service-only transition RPC'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+      '36666666-6666-4666-8666-666666666666',
+      '66666666-6666-4666-8666-666666666666',
+      'approve',
+      '{"public_note":"Forged actor."}'::jsonb
+    )$$,
+  '42501', NULL, 'RPC rejects a non-admin actor even from the service boundary'
+);
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+      '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'request_changes',
+      '{}'::jsonb
+    )$$,
+  'P0001', NULL, 'requesting changes requires a public note in the RPC'
+);
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), 'under_review', 'invalid change request leaves application status unchanged');
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+      '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'schedule_interview',
+      jsonb_build_object(
+        'interview_id', '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'proposed_at', NOW() - INTERVAL '1 minute',
+        'timezone', 'America/Havana',
+        'medium', 'video_call'
+      )
+    )$$,
+  'P0001', NULL, 'RPC rejects an interview that is not in the future'
+);
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+      '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'schedule_interview',
+      jsonb_build_object(
+        'interview_id', '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'proposed_at', NOW() + INTERVAL '1 day',
+        'timezone', 'America/Havana',
+        'medium', 'video_call',
+        'external_url', 'http://meet.example.test/insecure'
+      )
+    )$$,
+  'P0001', NULL, 'RPC rejects a non-HTTPS external interview URL'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'schedule_interview',
+      jsonb_build_object(
+        'interview_id', '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'proposed_at', NOW() + INTERVAL '1 day',
+        'timezone', 'America/Havana',
+        'medium', 'video_call',
+        'external_url', 'https://meet.example.test/interview',
+        'public_note', 'Usaremos coordinacion externa.',
+        'internal_note', 'Contexto solo administrativo.'
+      )
+    )$$,
+  'administrator can schedule an external interview'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'schedule_interview',
+      jsonb_build_object(
+        'interview_id', '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'proposed_at', NOW() + INTERVAL '1 day',
+        'timezone', 'America/Havana',
+        'medium', 'video_call',
+        'external_url', 'https://meet.example.test/interview',
+        'public_note', 'Usaremos coordinacion externa.',
+        'internal_note', 'Contexto solo administrativo.'
+      )
+    )$$,
+  'scheduling retry with the same interview ID is idempotent'
+);
+RESET ROLE;
+SELECT is((SELECT count(*) FROM public.trainer_interviews WHERE id = '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), 1::bigint, 'interview retry creates exactly one interview');
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), 'interview_required', 'scheduling marks the application as interview required');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' AND dedupe_key = 'trainer-interview:5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:scheduled'), 1::bigint, 'interview scheduling notification is deduplicated by interview ID');
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'record_interview_outcome',
+      jsonb_build_object(
+        'interview_id', '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'interview_status', 'completed',
+        'outcome', 'La experiencia declarada fue confirmada.',
+        'public_note', 'Entrevista completada.'
+      )
+    )$$,
+  'administrator can record an interview outcome'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'record_interview_outcome',
+      jsonb_build_object(
+        'interview_id', '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'interview_status', 'completed',
+        'outcome', 'La experiencia declarada fue confirmada.',
+        'public_note', 'Entrevista completada.'
+      )
+    )$$,
+  'interview outcome retry is idempotent'
+);
+RESET ROLE;
+SELECT is((SELECT status || '|' || outcome FROM public.trainer_interviews WHERE id = '5bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), 'completed|La experiencia declarada fue confirmada.', 'interview result persists once');
+
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '36666666-6666-4666-8666-666666666666',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'approve',
+      '{"public_note":"Solicitud aprobada."}'::jsonb
+    )$$,
+  'administrator can approve an application'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '36666666-6666-4666-8666-666666666666',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'approve',
+      '{"public_note":"Solicitud aprobada."}'::jsonb
+    )$$,
+  'approval retry is idempotent'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '36666666-6666-4666-8666-666666666666'), 'approved', 'approval persists terminal status');
+SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = '66666666-6666-4666-8666-666666666666' AND status = 'active'), 1::bigint, 'approval creates exactly one active trainer profile');
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '36666666-6666-4666-8666-666666666666' AND to_status = 'approved'), 1::bigint, 'approval appends exactly one event');
+SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '36666666-6666-4666-8666-666666666666' AND action = 'trainer_application_approved'), 1::bigint, 'approval appends exactly one audit row');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = '66666666-6666-4666-8666-666666666666' AND dedupe_key = 'trainer-application:36666666-6666-4666-8666-666666666666:approved'), 1::bigint, 'approval persists one deduplicated applicant notification');
+
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '37777777-7777-4777-8777-777777777777',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'reject',
+      '{"public_note":"No cumple los requisitos publicados."}'::jsonb
+    )$$,
+  'administrator can reject with a public reason'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '37777777-7777-4777-8777-777777777777'), 'rejected', 'rejection persists terminal status');
+SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = '77777777-7777-4777-8777-777777777777'), 0::bigint, 'rejection never creates a trainer profile');
+
+CREATE OR REPLACE FUNCTION public.fail_admin_decision_notification()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.dedupe_key = 'trainer-application:38888888-8888-4888-8888-888888888888:approved' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Injected administrative notification failure.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER fail_admin_decision_notification
+  BEFORE INSERT ON public.product_notifications
+  FOR EACH ROW EXECUTE FUNCTION public.fail_admin_decision_notification();
+SET LOCAL ROLE service_role;
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+      '38888888-8888-4888-8888-888888888888',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'approve',
+      '{"public_note":"Rollback completo."}'::jsonb
+    )$$,
+  'P0001', NULL, 'notification failure aborts the entire administrative decision'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '38888888-8888-4888-8888-888888888888'), 'under_review', 'failed approval rolls back application status');
+SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = '88888888-8888-4888-8888-888888888888'), 0::bigint, 'failed approval rolls back trainer profile');
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '38888888-8888-4888-8888-888888888888'), 0::bigint, 'failed approval rolls back event');
+SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '38888888-8888-4888-8888-888888888888'), 0::bigint, 'failed approval rolls back audit');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'applicationId' = '38888888-8888-4888-8888-888888888888'), 0::bigint, 'failed approval leaves no notification');
+DROP TRIGGER fail_admin_decision_notification ON public.product_notifications;
+DROP FUNCTION public.fail_admin_decision_notification();
 
 SELECT * FROM finish();
 ROLLBACK;

@@ -853,6 +853,455 @@ REVOKE ALL ON FUNCTION public.withdraw_trainer_application(UUID) FROM PUBLIC, an
 GRANT EXECUTE ON FUNCTION public.submit_trainer_application(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.withdraw_trainer_application(UUID) TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.transition_trainer_application(
+  p_application_id UUID,
+  p_actor_user_id UUID,
+  p_action TEXT,
+  p_payload JSONB DEFAULT '{}'::JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_application public.trainer_applications%ROWTYPE;
+  v_interview public.trainer_interviews%ROWTYPE;
+  v_event_id UUID;
+  v_profile_id UUID;
+  v_target_status TEXT;
+  v_public_note TEXT := NULLIF(btrim(COALESCE(p_payload->>'public_note', '')), '');
+  v_internal_note TEXT := NULLIF(btrim(COALESCE(p_payload->>'internal_note', '')), '');
+  v_interview_id UUID;
+  v_proposed_at TIMESTAMPTZ;
+  v_timezone TEXT;
+  v_medium TEXT;
+  v_external_url TEXT;
+  v_interview_status TEXT;
+  v_outcome TEXT;
+  v_notification_title TEXT;
+  v_notification_body TEXT;
+  v_dedupe_key TEXT;
+BEGIN
+  IF p_actor_user_id IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM public.profiles profile
+    WHERE profile.id = p_actor_user_id
+      AND profile.is_admin = TRUE
+      AND profile.account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Active administrator required.';
+  END IF;
+
+  IF p_action NOT IN (
+    'start_review',
+    'request_changes',
+    'schedule_interview',
+    'record_interview_outcome',
+    'approve',
+    'reject'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Unsupported administrative transition.';
+  END IF;
+
+  IF char_length(COALESCE(v_public_note, '')) > 1000
+    OR char_length(COALESCE(v_internal_note, '')) > 2000
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Administrative note is too long.';
+  END IF;
+
+  SELECT application.*
+  INTO v_application
+  FROM public.trainer_applications application
+  WHERE application.id = p_application_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application unavailable.';
+  END IF;
+
+  IF p_action = 'schedule_interview' THEN
+    IF COALESCE(p_payload->>'interview_id', '') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview identifier is invalid.';
+    END IF;
+    v_interview_id := (p_payload->>'interview_id')::UUID;
+    v_proposed_at := (p_payload->>'proposed_at')::TIMESTAMPTZ;
+    v_timezone := NULLIF(btrim(COALESCE(p_payload->>'timezone', '')), '');
+    v_medium := NULLIF(btrim(COALESCE(p_payload->>'medium', '')), '');
+    v_external_url := NULLIF(btrim(COALESCE(p_payload->>'external_url', '')), '');
+
+    IF v_application.status = 'interview_required' THEN
+      SELECT interview.*
+      INTO v_interview
+      FROM public.trainer_interviews interview
+      WHERE interview.id = v_interview_id
+        AND interview.application_id = v_application.id
+      FOR UPDATE;
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview retry does not match the application.';
+      END IF;
+      IF v_interview.proposed_at <> v_proposed_at
+        OR v_interview.timezone <> v_timezone
+        OR v_interview.medium <> v_medium
+        OR v_interview.external_url IS DISTINCT FROM v_external_url
+      THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview idempotency conflict.';
+      END IF;
+
+      SELECT event.id
+      INTO v_event_id
+      FROM public.trainer_application_events event
+      WHERE event.application_id = v_application.id
+        AND event.to_status = 'interview_required'
+        AND event.actor_role = 'admin'
+      ORDER BY event.created_at DESC, event.id DESC
+      LIMIT 1;
+
+      RETURN jsonb_build_object(
+        'application_id', v_application.id,
+        'status', v_application.status,
+        'transitioned', FALSE,
+        'event_id', v_event_id,
+        'interview_id', v_interview.id
+      );
+    END IF;
+
+    IF v_application.status <> 'under_review' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Invalid administrative transition.';
+    END IF;
+    IF v_proposed_at IS NULL OR v_proposed_at <= NOW() THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview must be scheduled in the future.';
+    END IF;
+    IF v_timezone IS NULL OR NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_timezone_names timezone_name
+      WHERE timezone_name.name = v_timezone
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview timezone is invalid.';
+    END IF;
+    IF v_medium NOT IN ('video_call', 'phone', 'in_person') THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview medium is invalid.';
+    END IF;
+    IF v_external_url IS NOT NULL AND (
+      char_length(v_external_url) > 2048
+      OR v_external_url !~ '^https://[^/[:space:]]+(?:/[^[:space:]]*)?$'
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview URL must use HTTPS.';
+    END IF;
+
+    INSERT INTO public.trainer_interviews (
+      id,
+      application_id,
+      proposed_at,
+      timezone,
+      medium,
+      external_url,
+      status,
+      public_note,
+      internal_note,
+      created_by
+    ) VALUES (
+      v_interview_id,
+      v_application.id,
+      v_proposed_at,
+      v_timezone,
+      v_medium,
+      v_external_url,
+      'scheduled',
+      v_public_note,
+      v_internal_note,
+      p_actor_user_id
+    );
+
+    UPDATE public.trainer_applications
+    SET status = 'interview_required', decided_at = NULL
+    WHERE id = v_application.id;
+
+    INSERT INTO public.trainer_application_events (
+      application_id, from_status, to_status, public_note, internal_note, actor_user_id, actor_role
+    ) VALUES (
+      v_application.id, v_application.status, 'interview_required', v_public_note, v_internal_note,
+      p_actor_user_id, 'admin'
+    ) RETURNING id INTO v_event_id;
+
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+    ) VALUES (
+      p_actor_user_id, v_application.user_id, 'trainer_application', v_application.id,
+      'trainer_interview_scheduled', jsonb_build_object('interviewId', v_interview_id)
+    );
+
+    PERFORM public.create_product_notification(
+      v_application.user_id,
+      'trainer_application_status',
+      'Entrevista programada',
+      'Se ha programado una entrevista externa para tu solicitud.',
+      '/coach/apply',
+      'trainer-interview:' || v_interview_id::TEXT || ':scheduled',
+      jsonb_build_object(
+        'applicationId', v_application.id,
+        'status', 'interview_required',
+        'interviewId', v_interview_id
+      )
+    );
+
+    RETURN jsonb_build_object(
+      'application_id', v_application.id,
+      'status', 'interview_required',
+      'transitioned', TRUE,
+      'event_id', v_event_id,
+      'interview_id', v_interview_id
+    );
+  END IF;
+
+  IF p_action = 'record_interview_outcome' THEN
+    IF v_application.status <> 'interview_required' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application has no interview awaiting outcome.';
+    END IF;
+    IF COALESCE(p_payload->>'interview_id', '') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview identifier is invalid.';
+    END IF;
+    v_interview_id := (p_payload->>'interview_id')::UUID;
+    v_interview_status := NULLIF(btrim(COALESCE(p_payload->>'interview_status', '')), '');
+    v_outcome := NULLIF(btrim(COALESCE(p_payload->>'outcome', '')), '');
+    IF v_interview_status NOT IN ('completed', 'cancelled')
+      OR char_length(COALESCE(v_outcome, '')) NOT BETWEEN 3 AND 1000
+    THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview outcome is invalid.';
+    END IF;
+
+    SELECT interview.*
+    INTO v_interview
+    FROM public.trainer_interviews interview
+    WHERE interview.id = v_interview_id
+      AND interview.application_id = v_application.id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview unavailable.';
+    END IF;
+
+    IF v_interview.status = v_interview_status AND v_interview.outcome = v_outcome THEN
+      SELECT event.id
+      INTO v_event_id
+      FROM public.trainer_application_events event
+      WHERE event.application_id = v_application.id
+        AND event.from_status = 'interview_required'
+        AND event.to_status = 'interview_required'
+        AND event.actor_role = 'admin'
+      ORDER BY event.created_at DESC, event.id DESC
+      LIMIT 1;
+      RETURN jsonb_build_object(
+        'application_id', v_application.id,
+        'status', v_application.status,
+        'transitioned', FALSE,
+        'event_id', v_event_id,
+        'interview_id', v_interview.id
+      );
+    END IF;
+    IF v_interview.status IN ('completed', 'cancelled') THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Interview outcome is already final.';
+    END IF;
+
+    UPDATE public.trainer_interviews
+    SET status = v_interview_status,
+        outcome = v_outcome,
+        public_note = COALESCE(v_public_note, public_note),
+        internal_note = COALESCE(v_internal_note, internal_note)
+    WHERE id = v_interview.id;
+
+    INSERT INTO public.trainer_application_events (
+      application_id, from_status, to_status, public_note, internal_note, actor_user_id, actor_role
+    ) VALUES (
+      v_application.id, 'interview_required', 'interview_required', v_public_note, v_internal_note,
+      p_actor_user_id, 'admin'
+    ) RETURNING id INTO v_event_id;
+
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+    ) VALUES (
+      p_actor_user_id, v_application.user_id, 'trainer_interview', v_interview.id,
+      'trainer_interview_outcome_recorded',
+      jsonb_build_object('applicationId', v_application.id, 'status', v_interview_status)
+    );
+
+    PERFORM public.create_product_notification(
+      v_application.user_id,
+      'trainer_application_status',
+      'Entrevista actualizada',
+      CASE WHEN v_interview_status = 'completed'
+        THEN 'El resultado de tu entrevista ha sido registrado.'
+        ELSE 'La entrevista de tu solicitud ha sido cancelada.'
+      END,
+      '/coach/apply',
+      'trainer-interview:' || v_interview.id::TEXT || ':' || v_interview_status,
+      jsonb_build_object(
+        'applicationId', v_application.id,
+        'status', 'interview_required',
+        'interviewId', v_interview.id,
+        'interviewStatus', v_interview_status
+      )
+    );
+
+    RETURN jsonb_build_object(
+      'application_id', v_application.id,
+      'status', v_application.status,
+      'transitioned', TRUE,
+      'event_id', v_event_id,
+      'interview_id', v_interview.id
+    );
+  END IF;
+
+  v_target_status := CASE p_action
+    WHEN 'start_review' THEN 'under_review'
+    WHEN 'request_changes' THEN 'changes_requested'
+    WHEN 'approve' THEN 'approved'
+    WHEN 'reject' THEN 'rejected'
+  END;
+
+  IF p_action IN ('request_changes', 'reject')
+    AND char_length(COALESCE(v_public_note, '')) NOT BETWEEN 3 AND 1000
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'A public note is required.';
+  END IF;
+
+  IF v_application.status = v_target_status THEN
+    SELECT event.id
+    INTO v_event_id
+    FROM public.trainer_application_events event
+    WHERE event.application_id = v_application.id
+      AND event.to_status = v_target_status
+      AND event.actor_role = 'admin'
+    ORDER BY event.created_at DESC, event.id DESC
+    LIMIT 1;
+    IF v_target_status = 'approved' THEN
+      SELECT profile.id INTO v_profile_id
+      FROM public.trainer_profiles profile
+      WHERE profile.user_id = v_application.user_id
+        AND profile.status = 'active';
+    END IF;
+    RETURN jsonb_build_object(
+      'application_id', v_application.id,
+      'status', v_application.status,
+      'transitioned', FALSE,
+      'event_id', v_event_id,
+      'profile_id', v_profile_id
+    );
+  END IF;
+
+  IF (p_action = 'start_review' AND v_application.status <> 'submitted')
+    OR (p_action IN ('request_changes', 'approve', 'reject')
+      AND v_application.status NOT IN ('under_review', 'interview_required'))
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Invalid administrative transition.';
+  END IF;
+
+  UPDATE public.trainer_applications
+  SET status = v_target_status,
+      decided_at = CASE WHEN v_target_status IN ('approved', 'rejected') THEN NOW() ELSE NULL END
+  WHERE id = v_application.id;
+
+  IF v_target_status = 'approved' THEN
+    INSERT INTO public.trainer_profiles (
+      user_id,
+      source_application_id,
+      slug,
+      status,
+      professional_name,
+      professional_photo_url,
+      bio,
+      specialties,
+      modalities,
+      experience_summary,
+      general_location,
+      languages,
+      verified_at
+    ) VALUES (
+      v_application.user_id,
+      v_application.id,
+      'trainer-' || replace(v_application.user_id::TEXT, '-', ''),
+      'active',
+      v_application.professional_name,
+      v_application.professional_photo_url,
+      v_application.bio,
+      v_application.specialties,
+      v_application.modalities,
+      v_application.experience_summary,
+      v_application.general_location,
+      v_application.languages,
+      NOW()
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+      source_application_id = EXCLUDED.source_application_id,
+      status = 'active',
+      professional_name = EXCLUDED.professional_name,
+      professional_photo_url = EXCLUDED.professional_photo_url,
+      bio = EXCLUDED.bio,
+      specialties = EXCLUDED.specialties,
+      modalities = EXCLUDED.modalities,
+      experience_summary = EXCLUDED.experience_summary,
+      general_location = EXCLUDED.general_location,
+      languages = EXCLUDED.languages,
+      verified_at = NOW()
+    RETURNING id INTO v_profile_id;
+  END IF;
+
+  INSERT INTO public.trainer_application_events (
+    application_id, from_status, to_status, public_note, internal_note, actor_user_id, actor_role
+  ) VALUES (
+    v_application.id, v_application.status, v_target_status, v_public_note, v_internal_note,
+    p_actor_user_id, 'admin'
+  ) RETURNING id INTO v_event_id;
+
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+  ) VALUES (
+    p_actor_user_id,
+    v_application.user_id,
+    'trainer_application',
+    v_application.id,
+    'trainer_application_' || v_target_status,
+    jsonb_build_object('fromStatus', v_application.status, 'toStatus', v_target_status)
+  );
+
+  v_notification_title := CASE v_target_status
+    WHEN 'under_review' THEN 'Solicitud en revision'
+    WHEN 'changes_requested' THEN 'Cambios solicitados'
+    WHEN 'approved' THEN 'Solicitud aprobada'
+    WHEN 'rejected' THEN 'Solicitud rechazada'
+  END;
+  v_notification_body := CASE v_target_status
+    WHEN 'under_review' THEN 'La revision administrativa de tu solicitud ha comenzado.'
+    WHEN 'changes_requested' THEN 'Tu solicitud necesita cambios antes de continuar.'
+    WHEN 'approved' THEN 'Tu perfil profesional ha sido aprobado.'
+    WHEN 'rejected' THEN 'Tu solicitud profesional no ha sido aprobada.'
+  END;
+  v_dedupe_key := 'trainer-application:' || v_application.id::TEXT || ':' || v_target_status;
+  PERFORM public.create_product_notification(
+    v_application.user_id,
+    'trainer_application_status',
+    v_notification_title,
+    v_notification_body,
+    '/coach/apply',
+    v_dedupe_key,
+    jsonb_build_object('applicationId', v_application.id, 'status', v_target_status)
+  );
+
+  RETURN jsonb_build_object(
+    'application_id', v_application.id,
+    'status', v_target_status,
+    'transitioned', TRUE,
+    'event_id', v_event_id,
+    'profile_id', v_profile_id
+  );
+END;
+$$;
+
+ALTER FUNCTION public.transition_trainer_application(UUID, UUID, TEXT, JSONB) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.transition_trainer_application(UUID, UUID, TEXT, JSONB)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.transition_trainer_application(UUID, UUID, TEXT, JSONB)
+  TO service_role;
+
 ALTER TABLE public.trainer_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trainer_application_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trainer_credential_storage_cleanup ENABLE ROW LEVEL SECURITY;

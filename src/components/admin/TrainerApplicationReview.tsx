@@ -1,19 +1,16 @@
 import { CalendarClock, ExternalLink, FileCheck2, History, Inbox, Mail, MapPin, Phone, UserRoundSearch } from 'lucide-react'
+import {
+  approveTrainerApplication,
+  recordTrainerInterviewOutcome,
+  rejectTrainerApplication,
+  requestTrainerChanges,
+  scheduleTrainerInterview,
+  startTrainerReview,
+} from '@/app/actions/adminTrainers'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import {
   ADMIN_TRAINER_STATUSES,
   type AdminTrainerApplicationDetail,
@@ -53,6 +50,39 @@ function formatDate(value: string | null): string {
 
 function statusBadge(status: AdminTrainerApplicationStatus) {
   return <Badge variant="outline" className="border-violet-500/30 text-violet-200">{STATUS_LABELS[status]}</Badge>
+}
+
+const fieldClass = 'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-violet-500'
+const noteClass = 'w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500'
+
+async function submitStartTrainerReview(formData: FormData): Promise<void> {
+  'use server'
+  await startTrainerReview(formData)
+}
+
+async function submitTrainerChanges(formData: FormData): Promise<void> {
+  'use server'
+  await requestTrainerChanges(formData)
+}
+
+async function submitTrainerInterview(formData: FormData): Promise<void> {
+  'use server'
+  await scheduleTrainerInterview(formData)
+}
+
+async function submitTrainerInterviewOutcome(formData: FormData): Promise<void> {
+  'use server'
+  await recordTrainerInterviewOutcome(formData)
+}
+
+async function submitTrainerApproval(formData: FormData): Promise<void> {
+  'use server'
+  await approveTrainerApplication(formData)
+}
+
+async function submitTrainerRejection(formData: FormData): Promise<void> {
+  'use server'
+  await rejectTrainerApplication(formData)
 }
 
 export function TrainerApplicationQueue({
@@ -130,6 +160,14 @@ export function TrainerApplicationReview({
 }: {
   application: AdminTrainerApplicationDetail
 }) {
+  const canStartReview = application.status === 'submitted'
+  const canDecide = application.status === 'under_review' || application.status === 'interview_required'
+  const canScheduleInterview = application.status === 'under_review'
+  const pendingInterview = application.interviews.find(interview => (
+    interview.status === 'proposed' || interview.status === 'scheduled'
+  ))
+  const interviewId = crypto.randomUUID()
+
   return (
     <div className="space-y-5">
       <Card className="border-violet-500/20 bg-violet-500/5">
@@ -141,23 +179,143 @@ export function TrainerApplicationReview({
             </div>
             <p className="mt-2 text-sm text-muted-foreground">Enviada: {formatDate(application.submittedAt)}</p>
           </div>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button type="button" variant="outline" className="border-violet-500/30">Preparar revisión</Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md rounded-2xl">
-              <DialogHeader>
-                <DialogTitle>Decisión administrativa</DialogTitle>
-                <DialogDescription>
-                  Las transiciones, notas y entrevistas se habilitarán en la siguiente etapa. Este expediente es de solo lectura por ahora.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <DialogClose asChild><Button type="button" variant="ghost">Cerrar</Button></DialogClose>
-                <SubmitButton label="Guardar decisión" disabled />
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <details className="w-full max-w-3xl sm:w-auto">
+            <summary className="ml-auto flex h-10 w-fit cursor-pointer list-none items-center rounded-md border border-violet-500/30 bg-background px-4 text-sm font-medium hover:bg-accent">
+              Gestionar revisión
+            </summary>
+            <div className="mt-4 max-h-[75vh] overflow-y-auto rounded-2xl border border-border/60 bg-background p-5 sm:w-[min(48rem,calc(100vw-2.5rem))]">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold">Decisión administrativa</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Registra cambios, entrevistas y decisiones. Las notas internas solo aparecen en este expediente.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <form action={submitStartTrainerReview} className="rounded-xl border border-border/60 p-4">
+                  <input type="hidden" name="applicationId" value={application.id} />
+                  <h3 className="font-semibold">Iniciar revisión</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Marca la solicitud enviada como revisión activa.</p>
+                  <SubmitButton label="Iniciar revisión" pendingLabel="Iniciando" disabled={!canStartReview} className="mt-3 w-full" />
+                </form>
+
+                <form action={submitTrainerChanges} className="space-y-3 rounded-xl border border-border/60 p-4">
+                  <input type="hidden" name="applicationId" value={application.id} />
+                  <h3 className="font-semibold">Solicitar cambios</h3>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">Nota pública obligatoria</span>
+                    <textarea name="publicNote" required minLength={3} maxLength={1000} rows={3} className={noteClass} />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
+                    <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
+                  </label>
+                  <SubmitButton label="Solicitar cambios" pendingLabel="Guardando" disabled={!canDecide} className="w-full" />
+                </form>
+
+                <form action={submitTrainerInterview} className="space-y-3 rounded-xl border border-border/60 p-4 sm:col-span-2">
+                  <input type="hidden" name="applicationId" value={application.id} />
+                  <input type="hidden" name="interviewId" value={interviewId} />
+                  <div>
+                    <h3 className="font-semibold">Programar entrevista</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">Coordina por los datos de contacto del expediente. Vekira no envía correo ni crea la videollamada.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Fecha futura</span>
+                      <input name="proposedAt" type="datetime-local" required className={fieldClass} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Zona horaria</span>
+                      <input name="timezone" required maxLength={100} defaultValue={application.timezone} className={fieldClass} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Medio</span>
+                      <select name="medium" defaultValue="video_call" className={fieldClass}>
+                        <option value="video_call">Videollamada externa</option>
+                        <option value="phone">Teléfono</option>
+                        <option value="in_person">Presencial</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">URL HTTPS opcional</span>
+                    <input name="externalUrl" type="url" inputMode="url" placeholder="https://meet.example.com/..." className={fieldClass} />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Nota pública</span>
+                      <textarea name="publicNote" maxLength={1000} rows={2} className={noteClass} />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
+                      <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
+                    </label>
+                  </div>
+                  <SubmitButton label="Programar entrevista" pendingLabel="Programando" disabled={!canScheduleInterview} className="w-full" />
+                </form>
+
+                <form action={submitTrainerInterviewOutcome} className="space-y-3 rounded-xl border border-border/60 p-4 sm:col-span-2">
+                  <input type="hidden" name="applicationId" value={application.id} />
+                  <input type="hidden" name="interviewId" value={pendingInterview?.id ?? ''} />
+                  <h3 className="font-semibold">Registrar resultado</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Estado</span>
+                      <select name="interviewStatus" defaultValue="completed" className={fieldClass}>
+                        <option value="completed">Completada</option>
+                        <option value="cancelled">Cancelada</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Resultado</span>
+                      <input name="outcome" required minLength={3} maxLength={1000} className={fieldClass} />
+                    </label>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Nota pública</span>
+                      <textarea name="publicNote" maxLength={1000} rows={2} className={noteClass} />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
+                      <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
+                    </label>
+                  </div>
+                  <SubmitButton label="Registrar resultado" pendingLabel="Registrando" disabled={!pendingInterview || application.status !== 'interview_required'} className="w-full" />
+                </form>
+
+                <form action={submitTrainerApproval} className="space-y-3 rounded-xl border border-emerald-500/25 p-4">
+                  <input type="hidden" name="applicationId" value={application.id} />
+                  <h3 className="font-semibold text-emerald-200">Aprobar solicitud</h3>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">Nota pública</span>
+                    <textarea name="publicNote" maxLength={1000} rows={2} className={noteClass} />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
+                    <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
+                  </label>
+                  <SubmitButton label="Aprobar solicitud" pendingLabel="Aprobando" disabled={!canDecide} className="w-full bg-emerald-600 text-white hover:bg-emerald-500" />
+                </form>
+
+                <form action={submitTrainerRejection} className="space-y-3 rounded-xl border border-red-500/25 p-4">
+                  <input type="hidden" name="applicationId" value={application.id} />
+                  <h3 className="font-semibold text-red-200">Rechazar solicitud</h3>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">Nota pública obligatoria</span>
+                    <textarea name="publicNote" required minLength={3} maxLength={1000} rows={3} className={noteClass} />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
+                    <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
+                  </label>
+                  <SubmitButton label="Rechazar solicitud" pendingLabel="Rechazando" disabled={!canDecide} className="w-full" />
+                </form>
+              </div>
+
+            </div>
+          </details>
         </CardContent>
       </Card>
 

@@ -221,4 +221,24 @@ describe('trainer administration privacy', () => {
     expect(html).toContain(`href="${application.credentials[0].url?.replaceAll('&', '&amp;')}"`)
     expect(html).not.toMatch(/peso|medidas corporales|plan de entrenamiento|progreso|precio|clientes/i)
   })
+
+  it('renders only the real review, correction, interview and decision controls', async () => {
+    adminContext.service = detailService()
+    const application = await getAdminTrainerApplication(APPLICATION_ID)
+    if (!application) throw new Error('Expected the application expediente.')
+
+    const html = renderToStaticMarkup(<TrainerApplicationReview application={application} />)
+
+    expect(html).toContain('Iniciar revisi')
+    expect(html).toContain('Solicitar cambios')
+    expect(html).toContain('Programar entrevista')
+    expect(html).toContain('Registrar resultado')
+    expect(html).toContain('Aprobar solicitud')
+    expect(html).toContain('Rechazar solicitud')
+    expect(html).toContain('name="publicNote"')
+    expect(html).toContain('name="internalNote"')
+    expect(html).toContain('name="proposedAt"')
+    expect(html).toContain('name="externalUrl"')
+    expect(html).not.toMatch(/enviar correo|chat privado|crear videollamada/i)
+  })
 })

@@ -72,6 +72,18 @@ CREATE TABLE public.product_notifications (
   CHECK (url IS NULL OR url LIKE '/%')
 );
 
+CREATE TABLE public.professional_audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_user_id UUID,
+  subject_user_id UUID,
+  entity_type TEXT NOT NULL CHECK (entity_type <> ''),
+  entity_id UUID,
+  action TEXT NOT NULL CHECK (action <> ''),
+  metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+GRANT ALL ON TABLE public.professional_audit_logs TO service_role;
+
 CREATE OR REPLACE FUNCTION public.create_product_notification(
   p_user_id UUID, p_type TEXT, p_title TEXT, p_body TEXT, p_url TEXT,
   p_dedupe_key TEXT, p_payload JSONB DEFAULT '{}'::JSONB
