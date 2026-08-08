@@ -27,10 +27,14 @@ import {
 } from '../TrainerApplicationReview'
 
 const APPLICATION_ID = '11111111-1111-4111-8111-111111111111'
+const CREDENTIAL_SOURCE_APPLICATION_ID = '19999999-9999-4999-8999-999999999999'
 
 const privateApplicationRow = {
   id: APPLICATION_ID,
   user_id: '22222222-2222-4222-8222-222222222222',
+  application_kind: 'initial',
+  source_profile_id: null,
+  credential_source_application_id: null,
   status: 'submitted',
   professional_name: 'Ada Entrenadora',
   professional_photo_url: 'https://cdn.example.test/ada.jpg',
@@ -96,10 +100,21 @@ function queueService() {
   }
 }
 
-function detailService() {
+function detailService(options: {
+  applicationKind?: 'initial' | 'profile_update'
+  credentialSourceApplicationId?: string | null
+  credentialFilters?: Array<[string, string]>
+} = {}) {
+  const applicationRow = {
+    ...privateApplicationRow,
+    application_kind: options.applicationKind ?? 'initial',
+    source_profile_id: options.applicationKind === 'profile_update' ? 'trainer-profile-1' : null,
+    credential_source_application_id: options.credentialSourceApplicationId ?? null,
+  }
+  const credentialApplicationId = options.credentialSourceApplicationId ?? APPLICATION_ID
   const credentials = [{
     id: '33333333-3333-4333-8333-333333333333',
-    application_id: APPLICATION_ID,
+    application_id: credentialApplicationId,
     credential_type: 'document',
     title: 'Certificación privada',
     issuer: 'Academia Ejemplo',
@@ -139,7 +154,7 @@ function detailService() {
   return {
     from(table: string) {
       const rows = table === 'trainer_applications'
-        ? [privateApplicationRow]
+        ? [applicationRow]
         : table === 'trainer_application_credentials'
           ? credentials
           : table === 'trainer_application_events'
@@ -150,7 +165,10 @@ function detailService() {
       const query = {
         data: rows,
         error: null,
-        eq() { return query },
+        eq(column: string, value: string) {
+          if (table === 'trainer_application_credentials') options.credentialFilters?.push([column, value])
+          return query
+        },
         order() { return query },
         async maybeSingle() { return { data: rows[0] ?? null, error: null } },
       }
@@ -194,13 +212,32 @@ describe('trainer administration privacy', () => {
       applicationDate: '2026-08-07T14:00:00.000Z',
       status: 'submitted',
       specialties: ['Fuerza', 'Movilidad'],
+      applicationKind: 'initial',
     }])
     expect(html).toContain('Ada Entrenadora')
     expect(html).toContain('Fuerza')
     expect(html).toContain('Enviada')
+    expect(html).toContain('Solicitud inicial')
     expect(html).not.toContain('ada.private@example.test')
     expect(html).not.toContain('Revisar la vigencia')
     expect(html).not.toContain('storage.example.test')
+  })
+
+  it('identifies profile updates and resolves credentials from their approved source application', async () => {
+    const credentialFilters: Array<[string, string]> = []
+    adminContext.service = detailService({
+      applicationKind: 'profile_update',
+      credentialSourceApplicationId: CREDENTIAL_SOURCE_APPLICATION_ID,
+      credentialFilters,
+    })
+
+    const application = await getAdminTrainerApplication(APPLICATION_ID)
+
+    expect(application?.applicationKind).toBe('profile_update')
+    expect(credentialFilters).toContainEqual(['application_id', CREDENTIAL_SOURCE_APPLICATION_ID])
+    const html = renderToStaticMarkup(<TrainerApplicationReview application={application!} />)
+    expect(html).toContain('Actualización de perfil')
+    expect(html).toContain('Credenciales verificadas en la solicitud aprobada')
   })
 
   it('reveals private fields only in the expediente and signs documents for at most five minutes', async () => {

@@ -91,6 +91,7 @@ export function TrainerApplicationQueue({
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold text-foreground">{application.professionalName || 'Sin nombre profesional'}</h2>
                     {statusBadge(application.status)}
+                    <Badge variant="outline">{application.applicationKind === 'profile_update' ? 'Actualización de perfil' : 'Solicitud inicial'}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{formatDate(application.applicationDate)}</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
@@ -132,6 +133,7 @@ export function TrainerApplicationReview({
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-display text-2xl font-bold">{application.professionalName || 'Sin nombre profesional'}</h2>
               {statusBadge(application.status)}
+              <Badge variant="outline">{application.applicationKind === 'profile_update' ? 'Actualización de perfil' : 'Solicitud inicial'}</Badge>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">Enviada: {formatDate(application.submittedAt)}</p>
           </div>
@@ -175,7 +177,10 @@ export function TrainerApplicationReview({
       </div>
 
       <Card className="border-border/60 bg-card/50">
-        <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><FileCheck2 className="h-5 w-5" />Credenciales privadas</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg"><FileCheck2 className="h-5 w-5" />Credenciales privadas</CardTitle>
+          {application.applicationKind === 'profile_update' ? <p className="text-sm text-muted-foreground">Credenciales verificadas en la solicitud aprobada; no se duplicaron archivos.</p> : null}
+        </CardHeader>
         <CardContent className="space-y-3">
           {application.credentials.length === 0 ? <p className="text-sm text-muted-foreground">No hay credenciales.</p> : application.credentials.map(credential => (
             <div key={credential.id} className="flex flex-col gap-3 rounded-xl border border-border/60 p-4 sm:flex-row sm:items-center">

@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(113);
+SELECT plan(157);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
@@ -25,6 +25,24 @@ SELECT ok(
     ELSE NOT has_function_privilege('authenticated', 'public.transition_trainer_application(uuid,uuid,text,jsonb)', 'EXECUTE')
   END,
   'authenticated users cannot execute administrative transitions directly'
+);
+SELECT has_column('public', 'trainer_applications', 'application_kind', 'applications identify initial and profile-update reviews');
+SELECT has_column('public', 'trainer_applications', 'source_profile_id', 'profile updates reference the approved profile');
+SELECT has_column('public', 'trainer_applications', 'credential_source_application_id', 'profile updates reference approved credentials without duplication');
+SELECT has_function('public', 'save_trainer_profile_changes', ARRAY['jsonb'], 'owner-safe trainer profile save RPC exists');
+SELECT ok(
+  CASE WHEN to_regprocedure('public.save_trainer_profile_changes(jsonb)') IS NULL
+    THEN FALSE
+    ELSE has_function_privilege('authenticated', 'public.save_trainer_profile_changes(jsonb)', 'EXECUTE')
+  END,
+  'authenticated owners can execute trainer profile save'
+);
+SELECT ok(
+  CASE WHEN to_regprocedure('public.save_trainer_profile_changes(jsonb)') IS NULL
+    THEN FALSE
+    ELSE NOT has_function_privilege('anon', 'public.save_trainer_profile_changes(jsonb)', 'EXECUTE')
+  END,
+  'anonymous users cannot execute trainer profile save'
 );
 
 SELECT ok(NOT has_table_privilege('authenticated', 'public.trainer_application_credentials', 'INSERT'), 'authenticated cannot bypass credential creation RPC');
@@ -56,6 +74,8 @@ VALUES
   ('88888888-8888-4888-8888-888888888888', 'verification-admin-rollback@example.test', '{}'::jsonb),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'verification-interview@example.test', '{}'::jsonb),
   ('12121212-1212-4121-8121-121212121212', 'verification-review-cycle@example.test', '{}'::jsonb),
+  ('99999999-9999-4999-8999-999999999999', 'verification-profile-update@example.test', '{}'::jsonb),
+  ('90909090-9090-4090-8090-909090909090', 'verification-profile-source-other@example.test', '{}'::jsonb),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'verification-admin@example.test', '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -71,6 +91,8 @@ VALUES
   ('88888888-8888-4888-8888-888888888888', 'https://cdn.example.test/admin-rollback.jpg', true, false, 'active'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'https://cdn.example.test/interview.jpg', true, false, 'active'),
   ('12121212-1212-4121-8121-121212121212', 'https://cdn.example.test/review-cycle.jpg', true, false, 'active'),
+  ('99999999-9999-4999-8999-999999999999', 'https://cdn.example.test/profile-update.jpg', true, false, 'active'),
+  ('90909090-9090-4090-8090-909090909090', 'https://cdn.example.test/profile-source-other.jpg', true, false, 'active'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'https://cdn.example.test/admin.jpg', true, true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   avatar_url = EXCLUDED.avatar_url,
@@ -142,6 +164,18 @@ INSERT INTO public.trainer_applications (
     'Review Cycle Trainer', 'https://cdn.example.test/review-cycle.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
     repeat('experience ', 4), NULL, ARRAY['es'], 'review-cycle@example.test', NULL,
     'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '39999999-9999-4999-8999-999999999999', '99999999-9999-4999-8999-999999999999',
+    'Approved Profile Trainer', 'https://cdn.example.test/profile-update.jpg', repeat('approved bio ', 8), ARRAY['strength'], ARRAY['online'],
+    'Eight years of approved experience.', 'Old location', ARRAY['es'], 'profile-update@example.test', '+53 5555 9999',
+    'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '39090909-0909-4090-8090-909090909090', '90909090-9090-4090-8090-909090909090',
+    'Other Approved Trainer', 'https://cdn.example.test/profile-source-other.jpg', repeat('other bio ', 8), ARRAY['mobility'], ARRAY['online'],
+    'Other trainer approved experience.', 'Other location', ARRAY['en'], 'other-source@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
   );
 
 UPDATE public.trainer_applications
@@ -156,6 +190,13 @@ WHERE id IN (
 UPDATE public.trainer_applications
 SET status = 'submitted', submitted_at = NOW()
 WHERE id = '31212121-1212-4121-8121-121212121212';
+
+UPDATE public.trainer_applications
+SET status = 'approved', submitted_at = NOW(), decided_at = NOW()
+WHERE id IN (
+  '39999999-9999-4999-8999-999999999999',
+  '39090909-0909-4090-8090-909090909090'
+);
 
 INSERT INTO public.trainer_application_credentials (
   id, application_id, credential_type, title, external_url
@@ -179,7 +220,31 @@ INSERT INTO public.trainer_application_credentials (
     '41212121-1212-4121-8121-121212121212',
     '31212121-1212-4121-8121-121212121212',
     'link', 'Review cycle certificate', 'https://issuer.example.test/cert/review-cycle'
+  ),
+  (
+    '49999999-9999-4999-8999-999999999999',
+    '39999999-9999-4999-8999-999999999999',
+    'link', 'Approved profile certificate', 'https://issuer.example.test/cert/profile-update'
+  ),
+  (
+    '49090909-0909-4090-8090-909090909090',
+    '39090909-0909-4090-8090-909090909090',
+    'link', 'Other approved certificate', 'https://issuer.example.test/cert/other-source'
   );
+
+INSERT INTO public.trainer_profiles (
+  id, user_id, source_application_id, slug, status, professional_name,
+  professional_photo_url, bio, specialties, modalities, experience_summary,
+  general_location, languages
+) VALUES (
+  '59999999-9999-4999-8999-999999999999',
+  '99999999-9999-4999-8999-999999999999',
+  '39999999-9999-4999-8999-999999999999',
+  'approved-profile-trainer', 'active', 'Approved Profile Trainer',
+  'https://cdn.example.test/profile-update.jpg', repeat('approved bio ', 8),
+  ARRAY['strength'], ARRAY['online'], 'Eight years of approved experience.',
+  'Old location', ARRAY['es']
+);
 
 INSERT INTO public.trainer_interviews (
   id, application_id, proposed_at, timezone, medium, external_url, status,
@@ -445,6 +510,120 @@ SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id =
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND dedupe_key = 'trainer-application:3ddddddd-dddd-4ddd-8ddd-dddddddddddd:approved'), 1::bigint, 'concurrent approval creates one notification');
 SELECT dblink_disconnect('verification_admin_c1');
 SELECT dblink_disconnect('verification_admin_c2');
+
+SELECT dblink_connect('profile_update_c1', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('profile_update_c2', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('profile_update_c1', $$SET request.jwt.claim.sub = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'$$);
+SELECT dblink_exec('profile_update_c2', $$SET request.jwt.claim.sub = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'$$);
+SELECT dblink_exec('profile_update_c1', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('profile_update_c2', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('profile_update_c1', 'SET ROLE authenticated');
+SELECT dblink_exec('profile_update_c2', 'SET ROLE authenticated');
+SELECT dblink_send_query('profile_update_c1', $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+  'professionalName', 'Concurrent Reviewed Name',
+  'professionalPhotoUrl', 'https://cdn.example.test/concurrent-direct.jpg',
+  'bio', repeat('concurrent direct bio ', 4),
+  'specialties', jsonb_build_array('strength'),
+  'modalities', jsonb_build_array('online'),
+  'experienceSummary', 'Concurrent reviewed experience remains pending.',
+  'generalLocation', 'Concurrent location',
+  'languages', jsonb_build_array('es')
+))$$);
+SELECT dblink_send_query('profile_update_c2', $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+  'professionalName', 'Concurrent Reviewed Name',
+  'professionalPhotoUrl', 'https://cdn.example.test/concurrent-direct.jpg',
+  'bio', repeat('concurrent direct bio ', 4),
+  'specialties', jsonb_build_array('strength'),
+  'modalities', jsonb_build_array('online'),
+  'experienceSummary', 'Concurrent reviewed experience remains pending.',
+  'generalLocation', 'Concurrent location',
+  'languages', jsonb_build_array('es')
+))$$);
+CREATE TEMP TABLE concurrent_profile_update_results (result JSONB);
+INSERT INTO concurrent_profile_update_results SELECT result FROM dblink_get_result('profile_update_c1') AS response(result JSONB);
+INSERT INTO concurrent_profile_update_results SELECT result FROM dblink_get_result('profile_update_c2') AS response(result JSONB);
+SELECT is((SELECT count(*) FROM concurrent_profile_update_results), 2::bigint, 'both concurrent profile saves return a result');
+SELECT is((SELECT count(*) FROM concurrent_profile_update_results WHERE (result->>'review_created')::boolean), 1::bigint, 'exactly one concurrent profile save creates the review');
+SELECT is(
+  (SELECT count(*) FROM public.trainer_applications
+   WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+     AND application_kind = 'profile_update'
+     AND status = 'submitted'),
+  1::bigint,
+  'concurrent profile saves create one open review'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications notification
+   JOIN public.trainer_applications application
+     ON notification.payload->>'applicationId' = application.id::text
+   WHERE application.user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+     AND application.application_kind = 'profile_update'),
+  1::bigint,
+  'concurrent profile saves create one deduplicated administrative notification'
+);
+SELECT dblink_disconnect('profile_update_c1');
+SELECT dblink_disconnect('profile_update_c2');
+
+SELECT dblink_connect('mixed_profile_admin', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('mixed_profile_admin', 'SET ROLE service_role');
+SELECT dblink_send_query('mixed_profile_admin', $$SELECT public.transition_trainer_application(
+  (SELECT id FROM public.trainer_applications
+   WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+     AND application_kind = 'profile_update'
+     AND status = 'submitted'),
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'start_review',
+  '{}'::jsonb
+)$$);
+CREATE TEMP TABLE mixed_profile_start_result (result JSONB);
+INSERT INTO mixed_profile_start_result
+SELECT result FROM dblink_get_result('mixed_profile_admin') AS response(result JSONB);
+SELECT dblink_disconnect('mixed_profile_admin');
+
+SELECT dblink_connect('mixed_profile_save', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('mixed_profile_approve', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('mixed_profile_save', $$SET request.jwt.claim.sub = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'$$);
+SELECT dblink_exec('mixed_profile_save', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('mixed_profile_save', 'SET ROLE authenticated');
+SELECT dblink_exec('mixed_profile_approve', 'SET ROLE service_role');
+SELECT dblink_send_query('mixed_profile_save', $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+  'professionalName', 'Concurrent Reviewed Name',
+  'professionalPhotoUrl', 'https://cdn.example.test/mixed-concurrent-direct.jpg',
+  'bio', repeat('mixed concurrent direct bio ', 3),
+  'specialties', jsonb_build_array('strength'),
+  'modalities', jsonb_build_array('online'),
+  'experienceSummary', 'Concurrent reviewed experience remains pending.',
+  'generalLocation', 'Mixed concurrent location',
+  'languages', jsonb_build_array('es', 'en')
+))$$);
+SELECT dblink_send_query('mixed_profile_approve', $$SELECT public.transition_trainer_application(
+  (SELECT id FROM public.trainer_applications
+   WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+     AND application_kind = 'profile_update'
+     AND status = 'under_review'),
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'approve',
+  '{"public_note":"Aprobacion concurrente con guardado directo."}'::jsonb
+)$$);
+CREATE TEMP TABLE mixed_profile_results (operation TEXT, result JSONB);
+INSERT INTO mixed_profile_results SELECT 'save', result FROM dblink_get_result('mixed_profile_save') AS response(result JSONB);
+INSERT INTO mixed_profile_results SELECT 'approve', result FROM dblink_get_result('mixed_profile_approve') AS response(result JSONB);
+SELECT is((SELECT count(*) FROM mixed_profile_results), 2::bigint, 'concurrent direct save and profile approval both complete without deadlock');
+SELECT is(
+  (SELECT status FROM public.trainer_applications
+   WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+     AND application_kind = 'profile_update'),
+  'approved',
+  'mixed save and approval leaves the reviewed application approved'
+);
+SELECT is(
+  (SELECT concat_ws('|', professional_name, professional_photo_url, array_to_string(languages, ','))
+   FROM public.trainer_profiles WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
+  'Concurrent Reviewed Name|https://cdn.example.test/mixed-concurrent-direct.jpg|es,en',
+  'mixed save and approval applies reviewed fields and preserves direct fields'
+);
+SELECT dblink_disconnect('mixed_profile_save');
+SELECT dblink_disconnect('mixed_profile_approve');
 
 CREATE OR REPLACE FUNCTION public.fail_notification_after_submission_mutations()
 RETURNS TRIGGER
@@ -782,6 +961,386 @@ SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id =
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'applicationId' = '38888888-8888-4888-8888-888888888888'), 0::bigint, 'failed approval leaves no notification');
 DROP TRIGGER fail_admin_decision_notification ON public.product_notifications;
 DROP FUNCTION public.fail_admin_decision_notification();
+
+SELECT set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Updated Name Pending Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'bio', repeat('direct bio ', 8),
+    'specialties', jsonb_build_array('strength', 'mobility'),
+    'modalities', jsonb_build_array('online', 'hybrid'),
+    'experienceSummary', 'Updated experience pending administrative review.',
+    'generalLocation', 'New location',
+    'languages', jsonb_build_array('es', 'en')
+  ))$$,
+  'active trainer can save direct fields and submit reviewed changes'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT concat_ws('|', professional_photo_url, bio, general_location, array_to_string(languages, ','))
+   FROM public.trainer_profiles WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'https://cdn.example.test/profile-update-new.jpg|' || btrim(repeat('direct bio ', 8)) || '|New location|es,en',
+  'direct profile fields update immediately'
+);
+SELECT is(
+  (SELECT concat_ws('|', professional_name, array_to_string(specialties, ','), array_to_string(modalities, ','), experience_summary)
+   FROM public.trainer_profiles WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'Approved Profile Trainer|strength|online|Eight years of approved experience.',
+  'reviewed profile fields remain approved while review is pending'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'
+     AND status = 'submitted'),
+  1::bigint,
+  'profile change creates one submitted profile-update review'
+);
+SELECT is(
+  (SELECT concat_ws('|', source_profile_id, credential_source_application_id, application_kind, status)
+   FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'),
+  '59999999-9999-4999-8999-999999999999|39999999-9999-4999-8999-999999999999|profile_update|submitted',
+  'profile-update review references its active profile and approved credential source'
+);
+SELECT is(
+  (SELECT concat_ws('|', professional_name, professional_photo_url, bio, contact_email, contact_phone, timezone)
+   FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'),
+  'Updated Name Pending Review|https://cdn.example.test/profile-update-new.jpg|' || btrim(repeat('direct bio ', 8)) || '|profile-update@example.test|+53 5555 9999|America/Havana',
+  'review stores a complete profile snapshot with contact copied from the approved source'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_application_credentials credential
+   JOIN public.trainer_applications application ON application.id = credential.application_id
+   WHERE application.user_id = '99999999-9999-4999-8999-999999999999'
+     AND application.application_kind = 'profile_update'),
+  0::bigint,
+  'profile review does not duplicate credential metadata'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_application_credentials credential
+   JOIN public.trainer_applications review
+     ON review.credential_source_application_id = credential.application_id
+   WHERE review.user_id = '99999999-9999-4999-8999-999999999999'
+     AND review.application_kind = 'profile_update'),
+  1::bigint,
+  'profile review resolves the approved source credential by reference'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_application_events event
+   JOIN public.trainer_applications application ON application.id = event.application_id
+   WHERE application.user_id = '99999999-9999-4999-8999-999999999999'
+     AND application.application_kind = 'profile_update'
+     AND event.to_status = 'submitted'),
+  1::bigint,
+  'profile review appends one submitted event'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications notification
+   JOIN public.trainer_applications application
+     ON notification.payload->>'applicationId' = application.id::text
+   WHERE application.user_id = '99999999-9999-4999-8999-999999999999'
+     AND application.application_kind = 'profile_update'),
+  1::bigint,
+  'profile review creates one deduplicated administrative notification'
+);
+
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Updated Name Reused Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'bio', repeat('direct bio ', 8),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Updated experience in the same submitted review.',
+    'generalLocation', 'New location',
+    'languages', jsonb_build_array('es', 'en')
+  ))$$,
+  'a submitted profile-update review is safely reused'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT count(*) FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'
+     AND status = 'submitted'),
+  1::bigint,
+  'reuse preserves the single open profile review'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications notification
+   JOIN public.trainer_applications application
+     ON notification.payload->>'applicationId' = application.id::text
+   WHERE application.user_id = '99999999-9999-4999-8999-999999999999'
+     AND application.application_kind = 'profile_update'),
+  1::bigint,
+  'reuse keeps the administrative notification deduplicated'
+);
+
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Approved Profile Trainer',
+    'professionalPhotoUrl', 'https://cdn.example.test/reverted-direct.jpg',
+    'bio', repeat('reverted direct bio ', 5),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Eight years of approved experience.',
+    'generalLocation', 'Reverted direct location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  'owner can revert an editable reviewed proposal to approved values'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT status FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'
+     AND status = 'withdrawn'),
+  'withdrawn',
+  'reverting reviewed fields withdraws the stale proposal'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'
+     AND status IN ('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required')),
+  0::bigint,
+  'reverting reviewed fields leaves no open profile review'
+);
+
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Updated Name Recreated Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/reverted-direct.jpg',
+    'bio', repeat('reverted direct bio ', 5),
+    'specialties', jsonb_build_array('strength', 'mobility'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Recreated reviewed experience after reverting the prior proposal.',
+    'generalLocation', 'Reverted direct location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  'a later reviewed change creates a fresh profile review'
+);
+RESET ROLE;
+
+UPDATE public.trainer_applications SET status = 'changes_requested'
+WHERE user_id = '99999999-9999-4999-8999-999999999999'
+  AND application_kind = 'profile_update'
+  AND status = 'submitted';
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.queue_trainer_credential_cleanup(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update' AND status = 'changes_requested'),
+    '40999999-9999-4999-8999-999999999999',
+    '99999999-9999-4999-8999-999999999999/40999999-9999-4999-8999-999999999999/40999999-9999-4999-8999-999999999999.pdf'
+  )$$,
+  '42501', NULL, 'profile updates cannot queue new credential storage objects'
+);
+SELECT throws_ok(
+  $$SELECT public.create_trainer_application_credential(
+    '40999999-9999-4999-8999-999999999999',
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update' AND status = 'changes_requested'),
+    'link', 'Forbidden duplicate credential', NULL, NULL, NULL,
+    'https://issuer.example.test/forbidden-duplicate', NULL, NULL
+  )$$,
+  '42501', NULL, 'profile updates cannot create duplicate credential metadata'
+);
+SELECT throws_ok(
+  $$SELECT public.prepare_trainer_credential_removal(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update' AND status = 'changes_requested'),
+    '49999999-9999-4999-8999-999999999999'
+  )$$,
+  '42501', NULL, 'profile updates cannot remove referenced credential metadata'
+);
+RESET ROLE;
+UPDATE public.trainer_applications SET status = 'submitted'
+WHERE user_id = '99999999-9999-4999-8999-999999999999'
+  AND application_kind = 'profile_update'
+  AND status = 'changes_requested';
+
+UPDATE public.trainer_profiles SET status = 'suspended'
+WHERE id = '59999999-9999-4999-8999-999999999999';
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Invalid Source Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'bio', repeat('valid direct bio ', 6),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'A valid changed experience for source validation.',
+    'generalLocation', 'New location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  '42501', NULL, 'profile save rejects a trainer profile that is not active'
+);
+RESET ROLE;
+UPDATE public.trainer_profiles SET status = 'active'
+WHERE id = '59999999-9999-4999-8999-999999999999';
+
+UPDATE public.trainer_profiles
+SET source_application_id = '39090909-0909-4090-8090-909090909090'
+WHERE id = '59999999-9999-4999-8999-999999999999';
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Invalid Approved Source Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'bio', repeat('valid direct bio ', 6),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'A valid changed experience for approval validation.',
+    'generalLocation', 'New location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  '42501', NULL, 'profile save rejects an approved source owned by another trainer'
+);
+RESET ROLE;
+UPDATE public.trainer_profiles
+SET source_application_id = '39999999-9999-4999-8999-999999999999'
+WHERE id = '59999999-9999-4999-8999-999999999999';
+
+UPDATE public.trainer_applications SET status = 'rejected'
+WHERE id = '39999999-9999-4999-8999-999999999999';
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Invalid Credential Source Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'bio', repeat('valid direct bio ', 6),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'A valid changed experience for credential validation.',
+    'generalLocation', 'New location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  '42501', NULL, 'profile save rejects a credential source that is no longer approved'
+);
+RESET ROLE;
+UPDATE public.trainer_applications SET status = 'approved'
+WHERE id = '39999999-9999-4999-8999-999999999999';
+
+DELETE FROM public.trainer_application_credentials
+WHERE id = '49999999-9999-4999-8999-999999999999';
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Invalid Missing Credential Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'bio', repeat('valid direct bio ', 6),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'A valid changed experience for missing credential validation.',
+    'generalLocation', 'New location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  '42501', NULL, 'profile save rejects an approved source without credentials'
+);
+RESET ROLE;
+INSERT INTO public.trainer_application_credentials (
+  id, application_id, credential_type, title, external_url
+) VALUES (
+  '49999999-9999-4999-8999-999999999999',
+  '39999999-9999-4999-8999-999999999999',
+  'link', 'Approved profile certificate', 'https://issuer.example.test/cert/profile-update'
+);
+
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Updated Name Recreated Review',
+    'professionalPhotoUrl', 'https://cdn.example.test/latest-direct.jpg',
+    'bio', repeat('latest direct bio ', 6),
+    'specialties', jsonb_build_array('strength', 'mobility'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Recreated reviewed experience after reverting the prior proposal.',
+    'generalLocation', 'Latest direct location',
+    'languages', jsonb_build_array('es', 'fr')
+  ))$$,
+  'direct fields can change again while a sensitive review remains pending'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'submitted'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'start_review',
+    '{}'::jsonb
+  )$$,
+  'administrator can start review of a profile update'
+);
+UPDATE public.trainer_profiles SET status = 'suspended'
+WHERE id = '59999999-9999-4999-8999-999999999999';
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'under_review'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'approve',
+    '{"public_note":"No debe reactivar un perfil suspendido."}'::jsonb
+  )$$,
+  '42501', NULL, 'profile-update approval rejects a source profile that is no longer active'
+);
+SELECT is(
+  (SELECT status FROM public.trainer_profiles WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'suspended',
+  'failed profile-update approval preserves professional suspension'
+);
+SELECT is(
+  (SELECT status FROM public.trainer_applications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND application_kind = 'profile_update'
+     AND status = 'under_review'),
+  'under_review',
+  'failed profile-update approval leaves review state unchanged'
+);
+UPDATE public.trainer_profiles SET status = 'active'
+WHERE id = '59999999-9999-4999-8999-999999999999';
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'under_review'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'approve',
+    '{"public_note":"Actualizacion de perfil aprobada."}'::jsonb
+  )$$,
+  'administrator can approve a profile update through the existing transition flow'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT concat_ws('|', professional_name, array_to_string(specialties, ','),
+    array_to_string(modalities, ','), experience_summary, professional_photo_url,
+    bio, general_location, array_to_string(languages, ','))
+   FROM public.trainer_profiles
+   WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'Updated Name Recreated Review|strength,mobility|online|Recreated reviewed experience after reverting the prior proposal.|https://cdn.example.test/latest-direct.jpg|'
+    || btrim(repeat('latest direct bio ', 6)) || '|Latest direct location|es,fr',
+  'profile-update approval applies reviewed fields without reverting newer direct fields'
+);
 
 SELECT * FROM finish();
 ROLLBACK;

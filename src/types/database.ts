@@ -181,6 +181,9 @@ export interface Database {
         Row: {
           id: string
           user_id: string
+          application_kind: 'initial' | 'profile_update'
+          source_profile_id: string | null
+          credential_source_application_id: string | null
           status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
           professional_name: string
           professional_photo_url: string | null
@@ -203,6 +206,9 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
+          application_kind?: 'initial' | 'profile_update'
+          source_profile_id?: string | null
+          credential_source_application_id?: string | null
           status?: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
           professional_name?: string
           professional_photo_url?: string | null
@@ -1303,6 +1309,12 @@ export interface Database {
       submit_trainer_application: {
         Args: {
           p_application_id: string
+        }
+        Returns: Json
+      }
+      save_trainer_profile_changes: {
+        Args: {
+          p_payload: Json
         }
         Returns: Json
       }

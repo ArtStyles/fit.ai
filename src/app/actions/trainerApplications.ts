@@ -148,6 +148,7 @@ export async function saveTrainerApplicationDraft(formData: FormData): Promise<A
     applications
       .select('id, status, professional_photo_url')
       .eq('user_id', user.id)
+      .eq('application_kind', 'initial')
       .in('status', ['draft', 'changes_requested'])
       .maybeSingle(),
   ])
@@ -219,11 +220,12 @@ export async function uploadTrainerCredential(formData: FormData): Promise<Crede
 
   const applications = supabase.from('trainer_applications') as any
   const { data: application, error: applicationError } = await applications
-    .select('id, user_id, status')
+    .select('id, user_id, status, application_kind')
     .eq('id', applicationId)
     .eq('user_id', user.id)
     .maybeSingle()
-  if (applicationError || !application || !['draft', 'changes_requested'].includes(application.status)) {
+  if (applicationError || !application || application.application_kind !== 'initial'
+    || !['draft', 'changes_requested'].includes(application.status)) {
     return actionError('Solicitud no disponible.')
   }
 

@@ -58,13 +58,23 @@ describe('trainer application actions', () => {
 
   it('derives draft ownership from the authenticated user and ignores a forged userId', async () => {
     let inserted: Record<string, unknown> | undefined
+    const applicationFilters: Array<[string, unknown]> = []
     const client = authClient({
       from: vi.fn((table: string) => {
         if (table === 'profiles') return {
           select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { avatar_url: 'https://cdn.example/avatar.jpg', onboarding_done: true }, error: null }) }) }),
         }
         if (table === 'trainer_applications') return {
-          select: () => ({ eq: () => ({ in: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+          select: () => {
+            const query = {
+              eq: (column: string, value: unknown) => {
+                applicationFilters.push([column, value])
+                return query
+              },
+              in: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+            }
+            return query
+          },
           insert: (value: Record<string, unknown>) => {
             inserted = value
             return { select: () => ({ single: async () => ({ data: { id: applicationId, status: 'draft' }, error: null }) }) }
@@ -83,6 +93,8 @@ describe('trainer application actions', () => {
       status: 'draft',
     })
     expect(inserted).toMatchObject({ user_id: userId, professional_name: 'Alex Entrenador' })
+    expect(inserted).not.toHaveProperty('application_kind')
+    expect(applicationFilters).toContainEqual(['application_kind', 'initial'])
     expect(inserted).not.toHaveProperty('userId')
     expect(inserted).not.toHaveProperty('government_id')
   })
@@ -115,7 +127,7 @@ describe('trainer application actions', () => {
       rpc,
       from: vi.fn((table: string) => {
         if (table === 'trainer_applications') return {
-          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft', application_kind: 'initial' }, error: null }) }) }) }),
         }
         throw new Error(`Unexpected table ${table}`)
       }),
@@ -204,7 +216,7 @@ describe('trainer application actions', () => {
     const client = authClient({
       rpc,
       from: vi.fn(() => ({
-        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft', application_kind: 'initial' }, error: null }) }) }) }),
       })),
     })
     const bucket = {
@@ -256,7 +268,7 @@ describe('trainer application actions', () => {
     const client = authClient({
       rpc,
       from: vi.fn(() => ({
-        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft', application_kind: 'initial' }, error: null }) }) }) }),
       })),
     })
     const bucket = {
@@ -357,7 +369,7 @@ describe('trainer application actions', () => {
     const client = authClient({
       rpc,
       from: vi.fn(() => ({
-        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft', application_kind: 'initial' }, error: null }) }) }) }),
       })),
     })
     const bucket = {
@@ -403,7 +415,7 @@ describe('trainer application actions', () => {
     const client = authClient({
       rpc,
       from: vi.fn(() => ({
-        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft', application_kind: 'initial' }, error: null }) }) }) }),
       })),
     })
     const bucket = {
@@ -470,6 +482,10 @@ describe('trainer application database boundary', () => {
     new URL('../../../../supabase/migrations/041_trainer_verification.sql', import.meta.url),
     'utf8',
   )
+  const applyPage = readFileSync(
+    new URL('../../(app)/coach/apply/page.tsx', import.meta.url),
+    'utf8',
+  )
 
   it('exposes applicant-only transactional submit and withdraw RPCs', () => {
     for (const fn of ['submit_trainer_application', 'withdraw_trainer_application']) {
@@ -479,6 +495,13 @@ describe('trainer application database boundary', () => {
     }
     expect(migration).toMatch(/submit_trainer_application[\s\S]+auth\.uid\(\)[\s\S]+FOR UPDATE[\s\S]+trainer_application_events/i)
     expect(migration).toMatch(/withdraw_trainer_application[\s\S]+auth\.uid\(\)[\s\S]+FOR UPDATE[\s\S]+trainer_application_events/i)
+  })
+
+  it('keeps the initial-application workflow isolated from profile updates', () => {
+    expect(applyPage).toMatch(/from\('trainer_applications'\)[\s\S]+\.eq\('application_kind', 'initial'\)/)
+    expect(migration).toMatch(/create_trainer_application_credential[\s\S]+application_kind <> 'initial'/i)
+    expect(migration).toMatch(/queue_trainer_credential_cleanup[\s\S]+application_kind <> 'initial'/i)
+    expect(migration).toMatch(/prepare_trainer_credential_removal[\s\S]+application_kind <> 'initial'/i)
   })
 })
 

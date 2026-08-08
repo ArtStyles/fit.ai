@@ -6,7 +6,7 @@ import type { Database } from '@/types/database'
 const TRAINER_CREDENTIAL_BUCKET = 'trainer-credentials'
 const SIGNED_CREDENTIAL_TTL_SECONDS = 300
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const APPLICATION_DETAIL_COLUMNS = 'id, status, professional_name, professional_photo_url, bio, specialties, modalities, experience_summary, general_location, languages, contact_email, contact_phone, preferred_contact, timezone, interview_availability, submitted_at, decided_at, created_at, updated_at' as const
+const APPLICATION_DETAIL_COLUMNS = 'id, application_kind, source_profile_id, credential_source_application_id, status, professional_name, professional_photo_url, bio, specialties, modalities, experience_summary, general_location, languages, contact_email, contact_phone, preferred_contact, timezone, interview_availability, submitted_at, decided_at, created_at, updated_at' as const
 
 export const ADMIN_TRAINER_STATUSES = [
   'draft',
@@ -27,6 +27,7 @@ export type AdminTrainerQueueItem = {
   applicationDate: string
   status: AdminTrainerApplicationStatus
   specialties: string[]
+  applicationKind: 'initial' | 'profile_update'
 }
 
 export type AdminTrainerCredential = {
@@ -69,6 +70,7 @@ export type AdminTrainerInterview = {
 export type AdminTrainerApplicationDetail = {
   id: string
   status: AdminTrainerApplicationStatus
+  applicationKind: 'initial' | 'profile_update'
   professionalName: string
   professionalPhotoUrl: string | null
   bio: string
@@ -120,7 +122,7 @@ export async function listAdminTrainerApplications(
   const selectedStatus = normalizeAdminTrainerStatus(status)
   let query = service
     .from('trainer_applications')
-    .select('id, professional_name, submitted_at, created_at, status, specialties')
+    .select('id, professional_name, submitted_at, created_at, status, specialties, application_kind')
 
   if (selectedStatus) query = query.eq('status', selectedStatus)
 
@@ -136,6 +138,7 @@ export async function listAdminTrainerApplications(
     applicationDate: row.submitted_at ?? row.created_at,
     status: row.status,
     specialties: [...row.specialties],
+    applicationKind: row.application_kind,
   }))
 }
 
@@ -184,11 +187,12 @@ export async function getAdminTrainerApplication(
   if (applicationError) throw new Error(applicationError.message || 'No se pudo cargar la solicitud.')
   if (!application) return null
 
+  const credentialApplicationId = application.credential_source_application_id ?? applicationId
   const [credentialsResult, eventsResult, interviewsResult] = await Promise.all([
     service
       .from('trainer_application_credentials')
       .select('id, application_id, credential_type, title, issuer, issued_on, expires_on, storage_path, external_url, mime_type, size_bytes, created_at')
-      .eq('application_id', applicationId)
+      .eq('application_id', credentialApplicationId)
       .order('created_at', { ascending: true }),
     service
       .from('trainer_application_events')
@@ -232,6 +236,7 @@ export async function getAdminTrainerApplication(
   return {
     id: application.id,
     status: application.status,
+    applicationKind: application.application_kind,
     professionalName: application.professional_name,
     professionalPhotoUrl: safeHttpsUrl(application.professional_photo_url),
     bio: application.bio,

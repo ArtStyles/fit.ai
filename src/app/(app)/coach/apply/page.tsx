@@ -72,6 +72,7 @@ export default async function TrainerApplicationPage() {
   const { data: applicationRow, error: applicationError } = await supabase.from('trainer_applications')
     .select('id, status, professional_name, professional_photo_url, bio, specialties, modalities, experience_summary, general_location, languages, contact_email, contact_phone, preferred_contact, timezone, interview_availability')
     .eq('user_id', user.id)
+    .eq('application_kind', 'initial')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle() as { data: ApplicationRow | null; error: unknown }

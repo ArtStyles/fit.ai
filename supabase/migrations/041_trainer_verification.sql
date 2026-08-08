@@ -5,6 +5,10 @@
 CREATE TABLE IF NOT EXISTS public.trainer_applications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  application_kind TEXT NOT NULL DEFAULT 'initial'
+    CHECK (application_kind IN ('initial', 'profile_update')),
+  source_profile_id UUID,
+  credential_source_application_id UUID REFERENCES public.trainer_applications(id) ON DELETE RESTRICT,
   status TEXT NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required', 'approved', 'rejected', 'withdrawn')),
   professional_name TEXT NOT NULL DEFAULT '',
@@ -25,7 +29,12 @@ CREATE TABLE IF NOT EXISTS public.trainer_applications (
   submitted_at TIMESTAMPTZ,
   decided_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT trainer_applications_profile_update_references_check CHECK (
+    (application_kind = 'initial' AND source_profile_id IS NULL AND credential_source_application_id IS NULL)
+    OR
+    (application_kind = 'profile_update' AND source_profile_id IS NOT NULL AND credential_source_application_id IS NOT NULL)
+  )
 );
 
 CREATE UNIQUE INDEX trainer_applications_one_open_per_user_idx
@@ -152,6 +161,10 @@ CREATE TABLE IF NOT EXISTS public.trainer_profiles (
 CREATE INDEX trainer_profiles_status_created_idx
   ON public.trainer_profiles (status, created_at DESC, id DESC);
 
+ALTER TABLE public.trainer_applications
+  ADD CONSTRAINT trainer_applications_source_profile_fk
+  FOREIGN KEY (source_profile_id) REFERENCES public.trainer_profiles(id) ON DELETE RESTRICT;
+
 ALTER TABLE public.trainer_applications OWNER TO postgres;
 ALTER TABLE public.trainer_application_credentials OWNER TO postgres;
 ALTER TABLE public.trainer_credential_storage_cleanup OWNER TO postgres;
@@ -223,7 +236,8 @@ BEGIN
     AND application.user_id = v_user_id
   FOR UPDATE;
 
-  IF NOT FOUND OR v_application.status NOT IN ('draft', 'changes_requested')
+  IF NOT FOUND OR v_application.application_kind <> 'initial'
+    OR v_application.status NOT IN ('draft', 'changes_requested')
     OR NOT public.is_account_active(v_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Application unavailable.';
   END IF;
@@ -288,7 +302,8 @@ BEGIN
     AND application.user_id = v_user_id
   FOR UPDATE;
 
-  IF NOT FOUND OR v_application.status NOT IN ('draft', 'changes_requested')
+  IF NOT FOUND OR v_application.application_kind <> 'initial'
+    OR v_application.status NOT IN ('draft', 'changes_requested')
     OR NOT public.is_account_active(v_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Application unavailable.';
   END IF;
@@ -395,7 +410,8 @@ BEGIN
   WHERE application.id = p_application_id
     AND application.user_id = v_user_id
   FOR UPDATE;
-  IF NOT FOUND OR v_application.status NOT IN ('draft', 'changes_requested')
+  IF NOT FOUND OR v_application.application_kind <> 'initial'
+    OR v_application.status NOT IN ('draft', 'changes_requested')
     OR NOT public.is_account_active(v_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Application unavailable.';
   END IF;
@@ -570,6 +586,292 @@ $$;
 ALTER FUNCTION public.notify_trainer_application_admins(UUID, UUID) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.notify_trainer_application_admins(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
 
+CREATE OR REPLACE FUNCTION public.save_trainer_profile_changes(p_payload JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_profile public.trainer_profiles%ROWTYPE;
+  v_source_application public.trainer_applications%ROWTYPE;
+  v_credential_source public.trainer_applications%ROWTYPE;
+  v_review public.trainer_applications%ROWTYPE;
+  v_event_id UUID;
+  v_professional_name TEXT;
+  v_professional_photo_url TEXT;
+  v_bio TEXT;
+  v_specialties TEXT[];
+  v_modalities TEXT[];
+  v_experience_summary TEXT;
+  v_general_location TEXT;
+  v_languages TEXT[];
+  v_review_changed BOOLEAN;
+  v_review_created BOOLEAN := FALSE;
+  v_previous_status TEXT;
+BEGIN
+  IF v_user_id IS NULL OR auth.role() <> 'authenticated' THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Authentication required.';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('trainer-profile:' || v_user_id::TEXT, 0));
+
+  SELECT profile.* INTO v_profile
+  FROM public.trainer_profiles profile
+  WHERE profile.user_id = v_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_profile.status <> 'active' OR NOT public.is_account_active(v_user_id) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Active trainer profile required.';
+  END IF;
+
+  IF jsonb_typeof(p_payload) <> 'object'
+    OR NOT (p_payload ?& ARRAY[
+      'professionalName', 'professionalPhotoUrl', 'bio', 'specialties',
+      'modalities', 'experienceSummary', 'generalLocation', 'languages'
+    ])
+    OR jsonb_typeof(p_payload->'specialties') <> 'array'
+    OR jsonb_typeof(p_payload->'modalities') <> 'array'
+    OR jsonb_typeof(p_payload->'languages') <> 'array'
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Trainer profile payload invalid.';
+  END IF;
+
+  v_professional_name := btrim(COALESCE(p_payload->>'professionalName', ''));
+  v_professional_photo_url := NULLIF(btrim(COALESCE(p_payload->>'professionalPhotoUrl', '')), '');
+  v_bio := btrim(COALESCE(p_payload->>'bio', ''));
+  v_specialties := ARRAY(
+    SELECT btrim(item.value)
+    FROM jsonb_array_elements_text(p_payload->'specialties') WITH ORDINALITY AS item(value, position)
+    ORDER BY item.position
+  );
+  v_modalities := ARRAY(
+    SELECT btrim(item.value)
+    FROM jsonb_array_elements_text(p_payload->'modalities') WITH ORDINALITY AS item(value, position)
+    ORDER BY item.position
+  );
+  v_experience_summary := btrim(COALESCE(p_payload->>'experienceSummary', ''));
+  v_general_location := NULLIF(btrim(COALESCE(p_payload->>'generalLocation', '')), '');
+  v_languages := ARRAY(
+    SELECT btrim(item.value)
+    FROM jsonb_array_elements_text(p_payload->'languages') WITH ORDINALITY AS item(value, position)
+    ORDER BY item.position
+  );
+
+  IF char_length(v_professional_name) NOT BETWEEN 2 AND 100
+    OR (
+      v_professional_photo_url IS NOT NULL
+      AND (
+        v_professional_photo_url !~ '^https://[^/[:space:]]+(?:/[^[:space:]]*)?$'
+        OR char_length(v_professional_photo_url) > 2048
+      )
+    )
+    OR char_length(v_bio) NOT BETWEEN 50 AND 2000
+    OR cardinality(v_specialties) NOT BETWEEN 1 AND 10
+    OR EXISTS (
+      SELECT 1 FROM unnest(v_specialties) specialty
+      WHERE char_length(specialty) NOT BETWEEN 1 AND 80
+    )
+    OR cardinality(v_modalities) NOT BETWEEN 1 AND 3
+    OR NOT (v_modalities <@ ARRAY['online', 'in_person', 'hybrid']::TEXT[])
+    OR char_length(v_experience_summary) NOT BETWEEN 20 AND 2000
+    OR char_length(COALESCE(v_general_location, '')) > 120
+    OR (
+      v_modalities && ARRAY['in_person', 'hybrid']::TEXT[]
+      AND v_general_location IS NULL
+    )
+    OR cardinality(v_languages) NOT BETWEEN 1 AND 10
+    OR EXISTS (
+      SELECT 1 FROM unnest(v_languages) language
+      WHERE char_length(language) NOT BETWEEN 1 AND 80
+    )
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Trainer profile fields invalid.';
+  END IF;
+
+  v_review_changed := v_professional_name IS DISTINCT FROM v_profile.professional_name
+    OR v_specialties IS DISTINCT FROM v_profile.specialties
+    OR v_modalities IS DISTINCT FROM v_profile.modalities
+    OR v_experience_summary IS DISTINCT FROM v_profile.experience_summary;
+
+  UPDATE public.trainer_profiles
+  SET professional_photo_url = v_professional_photo_url,
+      bio = v_bio,
+      general_location = v_general_location,
+      languages = v_languages
+  WHERE id = v_profile.id
+  RETURNING * INTO v_profile;
+
+  SELECT application.* INTO v_review
+  FROM public.trainer_applications application
+  WHERE application.user_id = v_user_id
+    AND application.status IN ('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required')
+  ORDER BY application.created_at DESC, application.id DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF NOT v_review_changed
+    AND v_review.id IS NOT NULL
+    AND v_review.application_kind = 'profile_update'
+    AND v_review.status IN ('draft', 'submitted', 'changes_requested')
+    AND (
+      v_review.professional_name IS DISTINCT FROM v_profile.professional_name
+      OR v_review.specialties IS DISTINCT FROM v_profile.specialties
+      OR v_review.modalities IS DISTINCT FROM v_profile.modalities
+      OR v_review.experience_summary IS DISTINCT FROM v_profile.experience_summary
+    )
+  THEN
+    UPDATE public.trainer_applications
+    SET status = 'withdrawn',
+        decided_at = NOW()
+    WHERE id = v_review.id;
+
+    INSERT INTO public.trainer_application_events (
+      application_id, from_status, to_status, public_note, actor_user_id, actor_role
+    ) VALUES (
+      v_review.id, v_review.status, 'withdrawn',
+      'Actualizacion de perfil retirada por el entrenador.', v_user_id, 'applicant'
+    );
+
+    RETURN jsonb_build_object(
+      'profile_updated', TRUE,
+      'review_application_id', NULL,
+      'review_status', NULL,
+      'review_created', FALSE
+    );
+  END IF;
+
+  IF NOT v_review_changed THEN
+    RETURN jsonb_build_object(
+      'profile_updated', TRUE,
+      'review_application_id', v_review.id,
+      'review_status', v_review.status,
+      'review_created', FALSE
+    );
+  END IF;
+
+  SELECT application.* INTO v_source_application
+  FROM public.trainer_applications application
+  WHERE application.id = v_profile.source_application_id
+    AND application.user_id = v_user_id
+    AND application.status = 'approved'
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Approved trainer source unavailable.';
+  END IF;
+
+  SELECT application.* INTO v_credential_source
+  FROM public.trainer_applications application
+  WHERE application.id = COALESCE(
+      v_source_application.credential_source_application_id,
+      v_source_application.id
+    )
+    AND application.user_id = v_user_id
+    AND application.status = 'approved'
+    AND EXISTS (
+      SELECT 1
+      FROM public.trainer_application_credentials credential
+      WHERE credential.application_id = application.id
+    )
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Approved credential source unavailable.';
+  END IF;
+
+  IF v_review.id IS NOT NULL THEN
+    IF v_review.application_kind <> 'profile_update'
+      OR v_review.source_profile_id IS DISTINCT FROM v_profile.id
+      OR v_review.credential_source_application_id IS DISTINCT FROM v_credential_source.id
+    THEN
+      RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Open trainer review conflicts with approved profile.';
+    END IF;
+
+    IF v_review.status IN ('under_review', 'interview_required') THEN
+      RETURN jsonb_build_object(
+        'profile_updated', TRUE,
+        'review_application_id', v_review.id,
+        'review_status', v_review.status,
+        'review_created', FALSE
+      );
+    END IF;
+
+    v_previous_status := v_review.status;
+    UPDATE public.trainer_applications
+    SET status = 'submitted',
+        professional_name = v_professional_name,
+        professional_photo_url = v_professional_photo_url,
+        bio = v_bio,
+        specialties = v_specialties,
+        modalities = v_modalities,
+        experience_summary = v_experience_summary,
+        general_location = v_general_location,
+        languages = v_languages,
+        contact_email = v_source_application.contact_email,
+        contact_phone = v_source_application.contact_phone,
+        preferred_contact = v_source_application.preferred_contact,
+        timezone = v_source_application.timezone,
+        interview_availability = v_source_application.interview_availability,
+        submitted_at = COALESCE(submitted_at, NOW()),
+        decided_at = NULL
+    WHERE id = v_review.id
+    RETURNING * INTO v_review;
+
+    SELECT event.id INTO v_event_id
+    FROM public.trainer_application_events event
+    WHERE event.application_id = v_review.id
+      AND event.to_status = 'submitted'
+      AND event.actor_role = 'applicant'
+    ORDER BY event.created_at DESC, event.id DESC
+    LIMIT 1;
+
+    IF v_event_id IS NULL OR v_previous_status = 'changes_requested' THEN
+      INSERT INTO public.trainer_application_events (
+        application_id, from_status, to_status, public_note, actor_user_id, actor_role
+      ) VALUES (
+        v_review.id, v_previous_status, 'submitted',
+        'Actualizacion de perfil enviada para revision.', v_user_id, 'applicant'
+      ) RETURNING id INTO v_event_id;
+    END IF;
+  ELSE
+    INSERT INTO public.trainer_applications (
+      user_id, application_kind, source_profile_id, credential_source_application_id,
+      status, professional_name, professional_photo_url, bio, specialties, modalities,
+      experience_summary, general_location, languages, contact_email, contact_phone,
+      preferred_contact, timezone, interview_availability, submitted_at
+    ) VALUES (
+      v_user_id, 'profile_update', v_profile.id, v_credential_source.id,
+      'submitted', v_professional_name, v_professional_photo_url, v_bio,
+      v_specialties, v_modalities, v_experience_summary, v_general_location,
+      v_languages, v_source_application.contact_email, v_source_application.contact_phone,
+      v_source_application.preferred_contact, v_source_application.timezone,
+      v_source_application.interview_availability, NOW()
+    ) RETURNING * INTO v_review;
+
+    INSERT INTO public.trainer_application_events (
+      application_id, from_status, to_status, public_note, actor_user_id, actor_role
+    ) VALUES (
+      v_review.id, NULL, 'submitted',
+      'Actualizacion de perfil enviada para revision.', v_user_id, 'applicant'
+    ) RETURNING id INTO v_event_id;
+    v_review_created := TRUE;
+  END IF;
+
+  PERFORM public.notify_trainer_application_admins(v_review.id, v_event_id);
+
+  RETURN jsonb_build_object(
+    'profile_updated', TRUE,
+    'review_application_id', v_review.id,
+    'review_status', v_review.status,
+    'review_created', v_review_created
+  );
+END;
+$$;
+
+ALTER FUNCTION public.save_trainer_profile_changes(JSONB) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.save_trainer_profile_changes(JSONB) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.save_trainer_profile_changes(JSONB) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.submit_trainer_application(p_application_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -593,7 +895,8 @@ BEGIN
     AND application.user_id = v_user_id
   FOR UPDATE;
 
-  IF NOT FOUND OR NOT public.is_account_active(v_user_id) THEN
+  IF NOT FOUND OR v_application.application_kind <> 'initial'
+    OR NOT public.is_account_active(v_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Application unavailable.';
   END IF;
 
@@ -780,7 +1083,8 @@ BEGIN
     AND application.user_id = v_user_id
   FOR UPDATE;
 
-  IF NOT FOUND OR NOT public.is_account_active(v_user_id) THEN
+  IF NOT FOUND OR v_application.application_kind <> 'initial'
+    OR NOT public.is_account_active(v_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Application unavailable.';
   END IF;
 
@@ -866,6 +1170,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_application public.trainer_applications%ROWTYPE;
+  v_application_user_id UUID;
   v_interview public.trainer_interviews%ROWTYPE;
   v_event_id UUID;
   v_profile_id UUID;
@@ -909,6 +1214,17 @@ BEGIN
   THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Administrative note is too long.';
   END IF;
+
+  SELECT application.user_id
+  INTO v_application_user_id
+  FROM public.trainer_applications application
+  WHERE application.id = p_application_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application unavailable.';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('trainer-profile:' || v_application_user_id::TEXT, 0));
 
   SELECT application.*
   INTO v_application
@@ -1195,6 +1511,19 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Invalid administrative transition.';
   END IF;
 
+  IF v_target_status = 'approved' AND v_application.application_kind = 'profile_update' THEN
+    SELECT profile.id INTO v_profile_id
+    FROM public.trainer_profiles profile
+    WHERE profile.id = v_application.source_profile_id
+      AND profile.user_id = v_application.user_id
+      AND profile.status = 'active'
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Active trainer profile required for profile update approval.';
+    END IF;
+  END IF;
+
   UPDATE public.trainer_applications
   SET status = v_target_status,
       decided_at = CASE WHEN v_target_status IN ('approved', 'rejected') THEN NOW() ELSE NULL END
@@ -1232,15 +1561,35 @@ BEGIN
     )
     ON CONFLICT (user_id) DO UPDATE SET
       source_application_id = EXCLUDED.source_application_id,
-      status = 'active',
+      status = CASE
+        WHEN v_application.application_kind = 'profile_update'
+          THEN trainer_profiles.status
+        ELSE 'active'
+      END,
       professional_name = EXCLUDED.professional_name,
-      professional_photo_url = EXCLUDED.professional_photo_url,
-      bio = EXCLUDED.bio,
+      professional_photo_url = CASE
+        WHEN v_application.application_kind = 'profile_update'
+          THEN trainer_profiles.professional_photo_url
+        ELSE EXCLUDED.professional_photo_url
+      END,
+      bio = CASE
+        WHEN v_application.application_kind = 'profile_update'
+          THEN trainer_profiles.bio
+        ELSE EXCLUDED.bio
+      END,
       specialties = EXCLUDED.specialties,
       modalities = EXCLUDED.modalities,
       experience_summary = EXCLUDED.experience_summary,
-      general_location = EXCLUDED.general_location,
-      languages = EXCLUDED.languages,
+      general_location = CASE
+        WHEN v_application.application_kind = 'profile_update'
+          THEN trainer_profiles.general_location
+        ELSE EXCLUDED.general_location
+      END,
+      languages = CASE
+        WHEN v_application.application_kind = 'profile_update'
+          THEN trainer_profiles.languages
+        ELSE EXCLUDED.languages
+      END,
       verified_at = NOW()
     RETURNING id INTO v_profile_id;
   END IF;
@@ -1325,6 +1674,7 @@ CREATE POLICY "trainer_applications: insert own draft"
   FOR INSERT TO authenticated
   WITH CHECK (
     auth.uid() = user_id
+    AND application_kind = 'initial'
     AND status = 'draft'
     AND EXISTS (
       SELECT 1
@@ -1338,14 +1688,14 @@ DROP POLICY IF EXISTS "trainer_applications: update own editable" ON public.trai
 CREATE POLICY "trainer_applications: update own editable"
   ON public.trainer_applications
   FOR UPDATE TO authenticated
-  USING (auth.uid() = user_id AND status IN ('draft', 'changes_requested'))
-  WITH CHECK (auth.uid() = user_id AND status IN ('draft', 'changes_requested'));
+  USING (auth.uid() = user_id AND application_kind = 'initial' AND status IN ('draft', 'changes_requested'))
+  WITH CHECK (auth.uid() = user_id AND application_kind = 'initial' AND status IN ('draft', 'changes_requested'));
 
 DROP POLICY IF EXISTS "trainer_applications: delete own editable" ON public.trainer_applications;
 CREATE POLICY "trainer_applications: delete own editable"
   ON public.trainer_applications
   FOR DELETE TO authenticated
-  USING (auth.uid() = user_id AND status IN ('draft', 'changes_requested'));
+  USING (auth.uid() = user_id AND application_kind = 'initial' AND status IN ('draft', 'changes_requested'));
 
 DROP POLICY IF EXISTS "trainer_applications: active account" ON public.trainer_applications;
 CREATE POLICY "trainer_applications: active account"
@@ -1374,6 +1724,7 @@ CREATE POLICY "trainer_application_credentials: insert own editable"
     FROM public.trainer_applications application
     WHERE application.id = application_id
       AND application.user_id = auth.uid()
+      AND application.application_kind = 'initial'
       AND application.status IN ('draft', 'changes_requested')
   ));
 
@@ -1386,6 +1737,7 @@ CREATE POLICY "trainer_application_credentials: update own editable"
     FROM public.trainer_applications application
     WHERE application.id = application_id
       AND application.user_id = auth.uid()
+      AND application.application_kind = 'initial'
       AND application.status IN ('draft', 'changes_requested')
   ))
   WITH CHECK (EXISTS (
@@ -1393,6 +1745,7 @@ CREATE POLICY "trainer_application_credentials: update own editable"
     FROM public.trainer_applications application
     WHERE application.id = application_id
       AND application.user_id = auth.uid()
+      AND application.application_kind = 'initial'
       AND application.status IN ('draft', 'changes_requested')
   ));
 
@@ -1405,6 +1758,7 @@ CREATE POLICY "trainer_application_credentials: delete own editable"
     FROM public.trainer_applications application
     WHERE application.id = application_id
       AND application.user_id = auth.uid()
+      AND application.application_kind = 'initial'
       AND application.status IN ('draft', 'changes_requested')
   ));
 
