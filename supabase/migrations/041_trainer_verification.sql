@@ -4,11 +4,11 @@
 
 CREATE TABLE IF NOT EXISTS public.trainer_applications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
   application_kind TEXT NOT NULL DEFAULT 'initial'
     CHECK (application_kind IN ('initial', 'profile_update')),
   source_profile_id UUID,
-  credential_source_application_id UUID REFERENCES public.trainer_applications(id) ON DELETE RESTRICT,
+  credential_source_application_id UUID REFERENCES public.trainer_applications(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,
   status TEXT NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required', 'approved', 'rejected', 'withdrawn')),
   professional_name TEXT NOT NULL DEFAULT '',
@@ -46,7 +46,7 @@ CREATE INDEX trainer_applications_status_created_idx
 
 CREATE TABLE IF NOT EXISTS public.trainer_application_credentials (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE,
+  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
   credential_type TEXT NOT NULL CHECK (credential_type IN ('document', 'link')),
   title TEXT NOT NULL CHECK (char_length(title) BETWEEN 1 AND 160),
   issuer TEXT,
@@ -84,8 +84,8 @@ CREATE INDEX trainer_application_credentials_application_created_idx
 
 CREATE TABLE IF NOT EXISTS public.trainer_credential_storage_cleanup (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
   credential_id UUID NOT NULL,
   storage_path TEXT NOT NULL UNIQUE,
   reason TEXT NOT NULL CHECK (reason IN ('upload_rollback', 'user_removal')),
@@ -102,14 +102,14 @@ CREATE INDEX trainer_credential_storage_cleanup_user_created_idx
 
 CREATE TABLE IF NOT EXISTS public.trainer_application_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE,
+  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
   from_status TEXT
     CHECK (from_status IS NULL OR from_status IN ('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required', 'approved', 'rejected', 'withdrawn')),
   to_status TEXT NOT NULL
     CHECK (to_status IN ('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required', 'approved', 'rejected', 'withdrawn')),
   public_note TEXT,
   internal_note TEXT,
-  actor_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  actor_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
   actor_role TEXT NOT NULL CHECK (actor_role IN ('applicant', 'admin', 'system')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -119,7 +119,7 @@ CREATE INDEX trainer_application_events_application_created_idx
 
 CREATE TABLE IF NOT EXISTS public.trainer_interviews (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE,
+  application_id UUID NOT NULL REFERENCES public.trainer_applications(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
   proposed_at TIMESTAMPTZ NOT NULL,
   timezone TEXT NOT NULL,
   medium TEXT NOT NULL CHECK (medium IN ('video_call', 'phone', 'in_person')),
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS public.trainer_interviews (
   outcome TEXT,
   public_note TEXT,
   internal_note TEXT,
-  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -139,8 +139,8 @@ CREATE INDEX trainer_interviews_application_proposed_idx
 
 CREATE TABLE IF NOT EXISTS public.trainer_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE,
-  source_application_id UUID NOT NULL UNIQUE REFERENCES public.trainer_applications(id) ON DELETE RESTRICT,
+  user_id UUID NOT NULL UNIQUE REFERENCES public.profiles(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+  source_application_id UUID NOT NULL UNIQUE REFERENCES public.trainer_applications(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,
   slug TEXT NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
   status TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'suspended', 'inactive')),
@@ -163,7 +163,8 @@ CREATE INDEX trainer_profiles_status_created_idx
 
 ALTER TABLE public.trainer_applications
   ADD CONSTRAINT trainer_applications_source_profile_fk
-  FOREIGN KEY (source_profile_id) REFERENCES public.trainer_profiles(id) ON DELETE RESTRICT;
+  FOREIGN KEY (source_profile_id) REFERENCES public.trainer_profiles(id)
+  ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE public.trainer_applications OWNER TO postgres;
 ALTER TABLE public.trainer_application_credentials OWNER TO postgres;
@@ -211,6 +212,131 @@ CREATE TRIGGER trg_trainer_profiles_updated_at
 ALTER FUNCTION public.touch_trainer_verification_updated_at() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.touch_trainer_verification_updated_at() FROM PUBLIC, anon, authenticated;
 
+CREATE OR REPLACE FUNCTION public.trainer_application_has_eligible_credentials(
+  p_application_id UUID,
+  p_user_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, storage, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.trainer_application_credentials credential
+    JOIN public.trainer_applications application
+      ON application.id = credential.application_id
+    WHERE credential.application_id = p_application_id
+      AND application.user_id = p_user_id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.trainer_application_credentials credential
+    JOIN public.trainer_credential_storage_cleanup cleanup
+      ON cleanup.application_id = credential.application_id
+      AND cleanup.credential_id = credential.id
+      AND cleanup.reason = 'user_removal'
+    WHERE credential.application_id = p_application_id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.trainer_application_credentials credential
+    WHERE credential.application_id = p_application_id
+      AND (
+        char_length(btrim(credential.title)) NOT BETWEEN 1 AND 160
+        OR (
+          credential.credential_type = 'link'
+          AND (
+            credential.external_url IS NULL
+            OR credential.external_url !~ '^https://[^/[:space:]]+(?:/[^[:space:]]*)?$'
+            OR char_length(credential.external_url) > 2048
+            OR credential.storage_path IS NOT NULL
+            OR credential.mime_type IS NOT NULL
+            OR credential.size_bytes IS NOT NULL
+          )
+        )
+        OR (
+          credential.credential_type = 'document'
+          AND (
+            credential.external_url IS NOT NULL
+            OR credential.storage_path <> (
+              p_user_id::TEXT || '/' || p_application_id::TEXT || '/' || credential.id::TEXT || '.' ||
+              CASE credential.mime_type
+                WHEN 'application/pdf' THEN 'pdf'
+                WHEN 'image/jpeg' THEN 'jpg'
+                WHEN 'image/png' THEN 'png'
+                ELSE 'invalid'
+              END
+            )
+            OR credential.size_bytes NOT BETWEEN 1 AND 10485760
+            OR NOT EXISTS (
+              SELECT 1
+              FROM storage.objects object
+              WHERE object.bucket_id = 'trainer-credentials'
+                AND object.name = credential.storage_path
+                AND object.metadata->>'mimetype' = credential.mime_type
+                AND COALESCE(object.metadata->>'size', '') ~ '^[0-9]+$'
+                AND (object.metadata->>'size')::BIGINT = credential.size_bytes
+            )
+          )
+        )
+      )
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION public.trainer_photo_url_is_owned(
+  p_user_id UUID,
+  p_photo_url TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, storage, pg_temp
+AS $$
+DECLARE
+  v_claims JSONB;
+  v_issuer TEXT;
+  v_origin TEXT;
+  v_expected_url TEXT;
+BEGIN
+  IF p_photo_url IS NULL THEN RETURN TRUE; END IF;
+
+  BEGIN
+    v_claims := NULLIF(current_setting('request.jwt.claims', true), '')::JSONB;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN FALSE;
+  END;
+  v_issuer := NULLIF(v_claims->>'iss', '');
+
+  IF auth.uid() IS DISTINCT FROM p_user_id
+    OR v_issuer IS NULL
+    OR v_issuer !~ '^https://[^/[:space:]]+/auth/v1/?$'
+  THEN
+    RETURN FALSE;
+  END IF;
+
+  v_origin := regexp_replace(v_issuer, '/auth/v1/?$', '');
+  v_expected_url := v_origin || '/storage/v1/object/public/avatars/'
+    || p_user_id::TEXT || '/avatar.webp';
+
+  RETURN regexp_replace(p_photo_url, '\?v=[0-9]+$', '') = v_expected_url
+    AND (p_photo_url = v_expected_url OR p_photo_url ~ '\?v=[0-9]+$')
+    AND EXISTS (
+      SELECT 1
+      FROM storage.objects object
+      WHERE object.bucket_id = 'avatars'
+        AND object.name = p_user_id::TEXT || '/avatar.webp'
+    );
+END;
+$$;
+
+ALTER FUNCTION public.trainer_application_has_eligible_credentials(UUID, UUID) OWNER TO postgres;
+ALTER FUNCTION public.trainer_photo_url_is_owned(UUID, TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.trainer_application_has_eligible_credentials(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.trainer_photo_url_is_owned(UUID, TEXT) FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.queue_trainer_credential_cleanup(
   p_application_id UUID,
   p_credential_id UUID,
@@ -229,6 +355,8 @@ BEGIN
   IF v_user_id IS NULL OR auth.role() <> 'authenticated' THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Authentication required.';
   END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('trainer-profile:' || v_user_id::TEXT, 0));
 
   SELECT application.* INTO v_application
   FROM public.trainer_applications application
@@ -405,6 +533,8 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Authentication required.';
   END IF;
 
+  PERFORM pg_advisory_xact_lock(hashtextextended('trainer-profile:' || v_user_id::TEXT, 0));
+
   SELECT application.* INTO v_application
   FROM public.trainer_applications application
   WHERE application.id = p_application_id
@@ -491,16 +621,42 @@ SECURITY DEFINER
 SET search_path = public, storage, pg_temp
 AS $$
 DECLARE
+  v_user_id UUID := auth.uid();
   v_cleanup public.trainer_credential_storage_cleanup%ROWTYPE;
+  v_application public.trainer_applications%ROWTYPE;
 BEGIN
-  IF auth.uid() IS NULL OR auth.role() <> 'authenticated' THEN
+  IF v_user_id IS NULL OR auth.role() <> 'authenticated' THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Authentication required.';
   END IF;
+
   SELECT cleanup.* INTO v_cleanup
   FROM public.trainer_credential_storage_cleanup cleanup
-  WHERE cleanup.id = p_cleanup_id AND cleanup.user_id = auth.uid()
+  WHERE cleanup.id = p_cleanup_id AND cleanup.user_id = v_user_id;
+  IF NOT FOUND THEN RETURN TRUE; END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('trainer-profile:' || v_user_id::TEXT, 0));
+
+  SELECT application.* INTO v_application
+  FROM public.trainer_applications application
+  WHERE application.id = v_cleanup.application_id
+    AND application.user_id = v_user_id
   FOR UPDATE;
   IF NOT FOUND THEN RETURN TRUE; END IF;
+
+  SELECT cleanup.* INTO v_cleanup
+  FROM public.trainer_credential_storage_cleanup cleanup
+  WHERE cleanup.id = p_cleanup_id
+    AND cleanup.user_id = v_user_id
+    AND cleanup.application_id = v_application.id
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN TRUE; END IF;
+
+  IF v_cleanup.reason = 'user_removal'
+    AND (v_application.application_kind <> 'initial'
+      OR v_application.status NOT IN ('draft', 'changes_requested'))
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application is no longer editable.';
+  END IF;
 
   IF EXISTS (
     SELECT 1 FROM storage.objects object
@@ -893,6 +1049,13 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Trainer profile fields invalid.';
   END IF;
 
+  IF v_professional_photo_url IS DISTINCT FROM v_profile.professional_photo_url
+    AND v_professional_photo_url IS NOT NULL
+    AND NOT public.trainer_photo_url_is_owned(v_user_id, v_professional_photo_url)
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Professional photo must come from the owner avatar storage path.';
+  END IF;
+
   IF v_effective_modalities && ARRAY['in_person', 'hybrid']::TEXT[]
     AND v_general_location IS NULL
   THEN
@@ -1188,54 +1351,7 @@ BEGIN
       WHERE timezone_name.name = v_application.timezone
     )
     OR char_length(btrim(v_application.interview_availability)) NOT BETWEEN 10 AND 1000
-    OR NOT EXISTS (
-      SELECT 1
-      FROM public.trainer_application_credentials credential
-      WHERE credential.application_id = v_application.id
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM public.trainer_application_credentials credential
-      WHERE credential.application_id = v_application.id
-        AND (
-          char_length(btrim(credential.title)) NOT BETWEEN 1 AND 160
-          OR (
-            credential.credential_type = 'link'
-            AND (
-              credential.external_url IS NULL
-              OR credential.external_url !~ '^https://[^/[:space:]]+(?:/[^[:space:]]*)?$'
-              OR char_length(credential.external_url) > 2048
-              OR credential.storage_path IS NOT NULL
-              OR credential.mime_type IS NOT NULL
-              OR credential.size_bytes IS NOT NULL
-            )
-          )
-          OR (
-            credential.credential_type = 'document'
-            AND (
-              credential.external_url IS NOT NULL
-              OR credential.storage_path <> (
-                v_user_id::TEXT || '/' || v_application.id::TEXT || '/' || credential.id::TEXT || '.' ||
-                CASE credential.mime_type
-                  WHEN 'application/pdf' THEN 'pdf'
-                  WHEN 'image/jpeg' THEN 'jpg'
-                  WHEN 'image/png' THEN 'png'
-                  ELSE 'invalid'
-                END
-              )
-              OR credential.size_bytes NOT BETWEEN 1 AND 10485760
-              OR NOT EXISTS (
-                SELECT 1 FROM storage.objects object
-                WHERE object.bucket_id = 'trainer-credentials'
-                  AND object.name = credential.storage_path
-                  AND object.metadata->>'mimetype' = credential.mime_type
-                  AND COALESCE(object.metadata->>'size', '') ~ '^[0-9]+$'
-                  AND (object.metadata->>'size')::BIGINT = credential.size_bytes
-              )
-            )
-          )
-        )
-    )
+    OR NOT public.trainer_application_has_eligible_credentials(v_application.id, v_user_id)
   THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application is incomplete.';
   END IF;
@@ -1401,6 +1517,7 @@ DECLARE
   v_outcome TEXT;
   v_notification_title TEXT;
   v_notification_body TEXT;
+  v_notification_url TEXT;
   v_dedupe_key TEXT;
 BEGIN
   IF p_actor_user_id IS NULL OR NOT EXISTS (
@@ -1450,6 +1567,11 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application unavailable.';
   END IF;
+
+  v_notification_url := CASE v_application.application_kind
+    WHEN 'profile_update' THEN '/coach/profile'
+    ELSE '/coach/apply'
+  END;
 
   IF p_action = 'schedule_interview' THEN
     IF COALESCE(p_payload->>'interview_id', '') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' THEN
@@ -1567,7 +1689,7 @@ BEGIN
       'trainer_application_status',
       'Entrevista programada',
       'Se ha programado una entrevista externa para tu solicitud.',
-      '/coach/apply',
+      v_notification_url,
       'trainer-interview:' || v_interview_id::TEXT || ':scheduled',
       jsonb_build_object(
         'applicationId', v_application.id,
@@ -1663,7 +1785,7 @@ BEGIN
         THEN 'El resultado de tu entrevista ha sido registrado.'
         ELSE 'La entrevista de tu solicitud ha sido cancelada.'
       END,
-      '/coach/apply',
+      v_notification_url,
       'trainer-interview:' || v_interview.id::TEXT || ':' || v_interview_status,
       jsonb_build_object(
         'applicationId', v_application.id,
@@ -1724,6 +1846,37 @@ BEGIN
       AND v_application.status NOT IN ('under_review', 'interview_required'))
   THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Invalid administrative transition.';
+  END IF;
+
+  IF v_target_status = 'approved'
+    AND (
+      (
+        v_application.application_kind = 'initial'
+        AND NOT public.trainer_application_has_eligible_credentials(
+          v_application.id,
+          v_application.user_id
+        )
+      )
+      OR (
+        v_application.application_kind = 'profile_update'
+        AND (
+          v_application.credential_source_application_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1
+            FROM public.trainer_applications credential_source
+            WHERE credential_source.id = v_application.credential_source_application_id
+              AND credential_source.user_id = v_application.user_id
+              AND credential_source.status = 'approved'
+          )
+          OR NOT public.trainer_application_has_eligible_credentials(
+            v_application.credential_source_application_id,
+            v_application.user_id
+          )
+        )
+      )
+    )
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application credentials are unavailable.';
   END IF;
 
   IF v_target_status = 'approved' AND v_application.application_kind = 'profile_update' THEN
@@ -1878,7 +2031,7 @@ BEGIN
     'trainer_application_status',
     v_notification_title,
     v_notification_body,
-    '/coach/apply',
+    v_notification_url,
     v_dedupe_key,
     jsonb_build_object('applicationId', v_application.id, 'status', v_target_status)
   );

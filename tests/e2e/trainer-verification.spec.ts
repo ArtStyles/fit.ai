@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { signInAsE2EUser } from './helpers/auth'
 import { seedCoreProductFixture } from './helpers/core-product'
@@ -30,15 +30,25 @@ async function createAdminFixture(service: SupabaseClient, password: string): Pr
   assertNoError(error, 'Creating trainer verification admin')
   if (!data.user) throw new Error('Creating trainer verification admin did not return a user')
 
-  const { error: profileError } = await (service.from('profiles') as any).upsert({
-    id: data.user.id,
-    onboarding_done: true,
-    is_admin: true,
-    account_status: 'active',
-    language: 'es',
-    timezone: 'America/Havana',
-  })
-  assertNoError(profileError, 'Granting trainer verification admin access')
+  try {
+    const { error: profileError } = await (service.from('profiles') as any).upsert({
+      id: data.user.id,
+      onboarding_done: true,
+      is_admin: true,
+      account_status: 'active',
+      language: 'es',
+      timezone: 'America/Havana',
+    })
+    assertNoError(profileError, 'Granting trainer verification admin access')
+  } catch (fixtureError) {
+    const { error: cleanupError } = await service.auth.admin.deleteUser(data.user.id)
+    if (cleanupError) {
+      const message = fixtureError instanceof Error ? fixtureError.message : String(fixtureError)
+      throw new Error(`${message}; deleting the partial admin fixture also failed: ${cleanupError.message}`)
+    }
+    throw fixtureError
+  }
+
   return { id: data.user.id, email }
 }
 
@@ -87,7 +97,7 @@ async function submitTrainerApplication(page: Page): Promise<void> {
   await expect(page.getByText('Borrador guardado.', { exact: true })).toBeVisible()
 
   await page.getByLabel('Título de la credencial', { exact: true }).fill('Certificación E2E')
-  await page.getByLabel('Enlace HTTPS', { exact: true }).fill('https://credentials.example.test/e2e')
+  await page.getByRole('textbox', { name: 'Enlace HTTPS', exact: true }).fill('https://credentials.example.test/e2e')
   await page.getByRole('button', { name: 'Agregar credencial', exact: true }).click()
   await expect(page.getByText('Certificación E2E', { exact: true })).toBeVisible()
 
@@ -97,30 +107,57 @@ async function submitTrainerApplication(page: Page): Promise<void> {
   await expect(page.getByText('Solicitud enviada.', { exact: false })).toBeVisible()
 }
 
+async function openTrainerReviewActions(adminPage: Page): Promise<Locator> {
+  const actions = adminPage.locator('details', {
+    has: adminPage.getByText('Gestionar revisión', { exact: true }),
+  })
+  await expect(actions).toBeVisible()
+  if ((await actions.getAttribute('open')) === null) {
+    await actions.locator('summary').click()
+  }
+  await expect(actions).toHaveAttribute('open', '')
+  return actions
+}
+
 async function requestCorrection(adminPage: Page): Promise<void> {
-  await adminPage.getByRole('button', { name: 'Iniciar revisión', exact: true }).click()
+  let actions = await openTrainerReviewActions(adminPage)
+  const startReview = actions.getByRole('button', { name: 'Iniciar revisión', exact: true })
+  await expect(startReview).toBeEnabled()
+  await startReview.click()
   await expect(adminPage.getByText('Revision iniciada.', { exact: true })).toBeVisible()
   await adminPage.reload()
-  const form = adminPage.locator('form').filter({ hasText: 'Solicitar cambios' })
+  actions = await openTrainerReviewActions(adminPage)
+  const form = actions.locator('form').filter({ hasText: 'Solicitar cambios' })
   await form.getByLabel('Nota pública obligatoria', { exact: true }).fill('Amplía el detalle de la experiencia profesional.')
-  await form.getByRole('button', { name: 'Solicitar cambios', exact: true }).click()
+  const requestChanges = form.getByRole('button', { name: 'Solicitar cambios', exact: true })
+  await expect(requestChanges).toBeEnabled()
+  await requestChanges.click()
   await expect(adminPage.getByText('Cambios solicitados.', { exact: true })).toBeVisible()
 }
 
 async function scheduleInterviewAndApprove(adminPage: Page): Promise<void> {
   await adminPage.reload()
-  await adminPage.getByRole('button', { name: 'Iniciar revisión', exact: true }).click()
+  let actions = await openTrainerReviewActions(adminPage)
+  const startReview = actions.getByRole('button', { name: 'Iniciar revisión', exact: true })
+  await expect(startReview).toBeEnabled()
+  await startReview.click()
   await expect(adminPage.getByText('Revision iniciada.', { exact: true })).toBeVisible()
   await adminPage.reload()
 
-  const interviewForm = adminPage.locator('form').filter({ hasText: 'Programar entrevista' })
+  actions = await openTrainerReviewActions(adminPage)
+  const interviewForm = actions.locator('form').filter({ hasText: 'Programar entrevista' })
   await interviewForm.locator('input[name="proposedAt"]').fill('2030-01-15T15:00')
   await interviewForm.locator('input[name="externalUrl"]').fill('https://meet.example.test/trainer-e2e')
-  await interviewForm.getByRole('button', { name: 'Programar entrevista', exact: true }).click()
+  const scheduleInterview = interviewForm.getByRole('button', { name: 'Programar entrevista', exact: true })
+  await expect(scheduleInterview).toBeEnabled()
+  await scheduleInterview.click()
   await expect(adminPage.getByText('Entrevista programada.', { exact: true })).toBeVisible()
   await adminPage.reload()
 
-  await adminPage.getByRole('button', { name: 'Aprobar solicitud', exact: true }).click()
+  actions = await openTrainerReviewActions(adminPage)
+  const approve = actions.getByRole('button', { name: 'Aprobar solicitud', exact: true })
+  await expect(approve).toBeEnabled()
+  await approve.click()
   await expect(adminPage.getByText('Aprobacion guardada.', { exact: true })).toBeVisible()
 }
 
@@ -150,7 +187,6 @@ test('verifies a trainer, acknowledges approval, and opens the coach workspace',
     const adminPage = await adminContext.newPage()
     await signIn(adminPage, admin.email, config.password)
     await adminPage.goto(`/admin/trainers/${application.id}`)
-    await adminPage.getByText('Gestionar revisión', { exact: true }).click()
     await requestCorrection(adminPage)
 
     await page.reload()

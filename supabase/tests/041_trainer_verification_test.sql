@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(177);
+SELECT plan(206);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
@@ -224,6 +224,16 @@ INSERT INTO public.trainer_application_credentials (
     '4fffffff-ffff-4fff-8fff-ffffffffffff',
     '3fffffff-ffff-4fff-8fff-ffffffffffff',
     'link', 'Null avatar certificate', 'https://issuer.example.test/cert/f'
+  ),
+  (
+    '46666666-6666-4666-8666-666666666661',
+    '36666666-6666-4666-8666-666666666666',
+    'link', 'Approval certificate', 'https://issuer.example.test/cert/approve'
+  ),
+  (
+    '48888888-8888-4888-8888-888888888888',
+    '38888888-8888-4888-8888-888888888888',
+    'link', 'Rollback approval certificate', 'https://issuer.example.test/cert/rollback-approval'
   ),
   (
     '41212121-1212-4121-8121-121212121212',
@@ -477,6 +487,121 @@ SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'ap
 SELECT dblink_disconnect('verification_c1');
 SELECT dblink_disconnect('verification_c2');
 
+-- Reproduce document removal winning against submit while both commands are live.
+-- The session-level gate is only a rendezvous: each assertion waits on actual
+-- PostgreSQL lock state, so the test does not guess with an arbitrary sleep.
+SELECT pg_advisory_lock(81421041);
+SELECT dblink_connect('credential_remove_race', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('credential_submit_race', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('credential_remove_race', $$SET request.jwt.claim.sub = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd'$$);
+SELECT dblink_exec('credential_remove_race', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('credential_remove_race', 'SET ROLE authenticated');
+SELECT dblink_exec('credential_submit_race', $$SET request.jwt.claim.sub = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd'$$);
+SELECT dblink_exec('credential_submit_race', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('credential_submit_race', 'SET ROLE authenticated');
+CREATE TEMP TABLE credential_race_pids (operation TEXT PRIMARY KEY, pid INTEGER NOT NULL);
+INSERT INTO credential_race_pids
+SELECT 'remove', pid FROM dblink('credential_remove_race', 'SELECT pg_backend_pid()') AS response(pid INTEGER);
+INSERT INTO credential_race_pids
+SELECT 'submit', pid FROM dblink('credential_submit_race', 'SELECT pg_backend_pid()') AS response(pid INTEGER);
+SELECT dblink_send_query('credential_remove_race', $$
+  WITH prepared AS MATERIALIZED (
+    SELECT public.prepare_trainer_credential_removal(
+      '3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd',
+      '4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd'
+    ) AS result
+  )
+  SELECT prepared.result
+  FROM prepared
+  CROSS JOIN LATERAL (
+    SELECT pg_advisory_lock(81421041)
+    WHERE prepared.result IS NOT NULL
+  ) AS gate
+$$);
+DO $$
+DECLARE
+  deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (
+      SELECT 1 FROM pg_stat_activity activity
+      JOIN credential_race_pids race ON race.pid = activity.pid AND race.operation = 'remove'
+      WHERE activity.wait_event_type = 'Lock'
+    );
+    IF clock_timestamp() >= deadline THEN
+      RAISE EXCEPTION 'credential removal did not reach the synchronization lock';
+    END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT dblink_send_query('credential_submit_race', $$
+  SELECT public.submit_trainer_application('3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd')
+$$);
+DO $$
+DECLARE
+  deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (
+      SELECT 1 FROM pg_stat_activity activity
+      JOIN credential_race_pids race ON race.pid = activity.pid AND race.operation = 'submit'
+      WHERE activity.wait_event_type = 'Lock'
+    );
+    IF clock_timestamp() >= deadline THEN
+      RAISE EXCEPTION 'credential submit did not block behind removal';
+    END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT pg_advisory_unlock(81421041);
+CREATE TEMP TABLE credential_remove_race_result (result JSONB);
+INSERT INTO credential_remove_race_result
+SELECT result FROM dblink_get_result('credential_remove_race') AS response(result JSONB);
+SELECT throws_ok(
+  $$SELECT * FROM dblink_get_result('credential_submit_race') AS response(result JSONB)$$,
+  'P0001', NULL,
+  'submit loses safely when credential removal has already been prepared'
+);
+SELECT is((SELECT count(*) FROM credential_remove_race_result), 1::bigint, 'concurrent credential removal preparation completes once');
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd'), 'draft', 'removal-winning race never submits the application');
+SELECT is((SELECT count(*) FROM public.trainer_credential_storage_cleanup WHERE credential_id = '4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd' AND reason = 'user_removal'), 1::bigint, 'removal-winning race preserves durable cleanup state');
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd'), 0::bigint, 'removal-winning race creates no submitted event');
+SELECT dblink_disconnect('credential_remove_race');
+SELECT dblink_disconnect('credential_submit_race');
+RESET ROLE;
+DELETE FROM storage.objects
+WHERE bucket_id = 'trainer-credentials'
+  AND name = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd/3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd/4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd.pdf';
+SELECT set_config('request.jwt.claim.sub', 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.finalize_trainer_credential_cleanup((
+    SELECT id FROM public.list_trainer_credential_cleanup()
+    WHERE storage_path LIKE '%/4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd.pdf'
+  ))$$,
+  'removal-winning race can finalize after storage deletion'
+);
+RESET ROLE;
+SELECT is((SELECT count(*) FROM public.trainer_application_credentials WHERE id = '4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd'), 0::bigint, 'finalized race leaves no credential metadata');
+
+SET LOCAL ROLE service_role;
+SELECT throws_ok(
+  $$SELECT public.transition_trainer_application(
+    '3efefefe-efef-4efe-8efe-efefefefefef',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'approve',
+    '{"public_note":"No debe aprobar sin credenciales."}'::jsonb
+  )$$,
+  'P0001', NULL,
+  'approval revalidates that the application still has an eligible credential'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '3efefefe-efef-4efe-8efe-efefefefefef'), 'under_review', 'failed credential revalidation preserves review state');
+SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = 'efefefef-efef-4efe-8efe-efefefefefef'), 0::bigint, 'failed credential revalidation creates no trainer profile');
+
 SELECT dblink_connect('initial_draft_race', 'dbname=postgres user=supabase_admin');
 SELECT dblink_connect('initial_approve_race', 'dbname=postgres user=supabase_admin');
 SELECT dblink_exec('initial_draft_race', $$SET request.jwt.claim.sub = 'abababab-abab-4bab-8bab-abababababab'$$);
@@ -572,6 +697,7 @@ SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = 'ddddddd
 SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '3ddddddd-dddd-4ddd-8ddd-dddddddddddd' AND to_status = 'approved'), 1::bigint, 'concurrent approval creates one decision event');
 SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '3ddddddd-dddd-4ddd-8ddd-dddddddddddd' AND action = 'trainer_application_approved'), 1::bigint, 'concurrent approval creates one audit row');
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND dedupe_key = 'trainer-application:3ddddddd-dddd-4ddd-8ddd-dddddddddddd:approved'), 1::bigint, 'concurrent approval creates one notification');
+SELECT is((SELECT url FROM public.product_notifications WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' AND dedupe_key = 'trainer-application:3ddddddd-dddd-4ddd-8ddd-dddddddddddd:approved'), '/coach/apply', 'initial approval notification still returns the applicant to the application page');
 SELECT dblink_disconnect('verification_admin_c1');
 SELECT dblink_disconnect('verification_admin_c2');
 
@@ -581,11 +707,13 @@ SELECT dblink_exec('profile_update_c1', $$SET request.jwt.claim.sub = 'dddddddd-
 SELECT dblink_exec('profile_update_c2', $$SET request.jwt.claim.sub = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'$$);
 SELECT dblink_exec('profile_update_c1', $$SET request.jwt.claim.role = 'authenticated'$$);
 SELECT dblink_exec('profile_update_c2', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('profile_update_c1', $$SET request.jwt.claims = '{"sub":"dddddddd-dddd-4ddd-8ddd-dddddddddddd","role":"authenticated","iss":"https://verification.supabase.co/auth/v1"}'$$);
+SELECT dblink_exec('profile_update_c2', $$SET request.jwt.claims = '{"sub":"dddddddd-dddd-4ddd-8ddd-dddddddddddd","role":"authenticated","iss":"https://verification.supabase.co/auth/v1"}'$$);
 SELECT dblink_exec('profile_update_c1', 'SET ROLE authenticated');
 SELECT dblink_exec('profile_update_c2', 'SET ROLE authenticated');
 SELECT dblink_send_query('profile_update_c1', $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
   'professionalName', 'Concurrent Reviewed Name',
-  'professionalPhotoUrl', 'https://cdn.example.test/concurrent-direct.jpg',
+  'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/dddddddd-dddd-4ddd-8ddd-dddddddddddd/avatar.webp?v=123',
   'bio', repeat('concurrent direct bio ', 4),
   'specialties', jsonb_build_array('strength'),
   'modalities', jsonb_build_array('online'),
@@ -595,7 +723,7 @@ SELECT dblink_send_query('profile_update_c1', $$SELECT public.save_trainer_profi
 ))$$);
 SELECT dblink_send_query('profile_update_c2', $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
   'professionalName', 'Concurrent Reviewed Name',
-  'professionalPhotoUrl', 'https://cdn.example.test/concurrent-direct.jpg',
+  'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/dddddddd-dddd-4ddd-8ddd-dddddddddddd/avatar.webp?v=123',
   'bio', repeat('concurrent direct bio ', 4),
   'specialties', jsonb_build_array('strength'),
   'modalities', jsonb_build_array('online'),
@@ -648,11 +776,12 @@ SELECT dblink_connect('mixed_profile_save', 'dbname=postgres user=supabase_admin
 SELECT dblink_connect('mixed_profile_approve', 'dbname=postgres user=supabase_admin');
 SELECT dblink_exec('mixed_profile_save', $$SET request.jwt.claim.sub = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'$$);
 SELECT dblink_exec('mixed_profile_save', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('mixed_profile_save', $$SET request.jwt.claims = '{"sub":"dddddddd-dddd-4ddd-8ddd-dddddddddddd","role":"authenticated","iss":"https://verification.supabase.co/auth/v1"}'$$);
 SELECT dblink_exec('mixed_profile_save', 'SET ROLE authenticated');
 SELECT dblink_exec('mixed_profile_approve', 'SET ROLE service_role');
 SELECT dblink_send_query('mixed_profile_save', $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
   'professionalName', 'Concurrent Reviewed Name',
-  'professionalPhotoUrl', 'https://cdn.example.test/mixed-concurrent-direct.jpg',
+  'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/dddddddd-dddd-4ddd-8ddd-dddddddddddd/avatar.webp?v=123',
   'bio', repeat('mixed concurrent direct bio ', 3),
   'specialties', jsonb_build_array('strength'),
   'modalities', jsonb_build_array('online'),
@@ -683,7 +812,7 @@ SELECT is(
 SELECT is(
   (SELECT concat_ws('|', professional_name, professional_photo_url, array_to_string(languages, ','))
    FROM public.trainer_profiles WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'),
-  'Concurrent Reviewed Name|https://cdn.example.test/mixed-concurrent-direct.jpg|es,en',
+  'Concurrent Reviewed Name|https://verification.supabase.co/storage/v1/object/public/avatars/dddddddd-dddd-4ddd-8ddd-dddddddddddd/avatar.webp?v=123|es,en',
   'mixed save and approval applies reviewed fields and preserves direct fields'
 );
 SELECT dblink_disconnect('mixed_profile_save');
@@ -1104,11 +1233,62 @@ DROP FUNCTION public.fail_admin_decision_notification();
 
 SELECT set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"99999999-9999-4999-8999-999999999999","role":"authenticated","iss":"https://verification.supabase.co/auth/v1"}',
+  true
+);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Approved Profile Trainer',
+    'professionalPhotoUrl', 'https://attacker.example.test/profile-update.jpg',
+    'bio', repeat('approved bio ', 8),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Eight years of approved experience.',
+    'generalLocation', 'Old location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  'P0001', NULL,
+  'profile save rejects a changed external HTTPS photo at the SQL boundary'
+);
+RESET ROLE;
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', TRUE)
+ON CONFLICT (id) DO UPDATE SET public = TRUE;
+INSERT INTO storage.objects (bucket_id, name, owner, metadata)
+VALUES (
+  'avatars',
+  '99999999-9999-4999-8999-999999999999/avatar.webp',
+  '99999999-9999-4999-8999-999999999999',
+  '{"mimetype":"image/webp","size":1024}'::jsonb
+);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Approved Profile Trainer',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
+    'bio', repeat('approved bio ', 8),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experienceSummary', 'Eight years of approved experience.',
+    'generalLocation', 'Old location',
+    'languages', jsonb_build_array('es')
+  ))$$,
+  'profile save accepts the owner avatar from this project storage bucket'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT professional_photo_url FROM public.trainer_profiles WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
+  'valid owned storage photo updates directly'
+);
 SET LOCAL ROLE authenticated;
 SELECT lives_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Updated Name Pending Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('direct bio ', 8),
     'specialties', jsonb_build_array('strength', 'mobility'),
     'modalities', jsonb_build_array('online', 'hybrid'),
@@ -1122,7 +1302,7 @@ RESET ROLE;
 SELECT is(
   (SELECT concat_ws('|', professional_photo_url, bio, general_location, array_to_string(languages, ','))
    FROM public.trainer_profiles WHERE id = '59999999-9999-4999-8999-999999999999'),
-  'https://cdn.example.test/profile-update-new.jpg|' || btrim(repeat('direct bio ', 8)) || '|New location|es,en',
+  'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123|' || btrim(repeat('direct bio ', 8)) || '|New location|es,en',
   'direct profile fields update immediately'
 );
 SELECT is(
@@ -1152,7 +1332,7 @@ SELECT is(
    FROM public.trainer_applications
    WHERE user_id = '99999999-9999-4999-8999-999999999999'
      AND application_kind = 'profile_update'),
-  'Updated Name Pending Review|https://cdn.example.test/profile-update-new.jpg|' || btrim(repeat('direct bio ', 8)) || '|profile-update@example.test|+53 5555 9999|America/Havana',
+  'Updated Name Pending Review|https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123|' || btrim(repeat('direct bio ', 8)) || '|profile-update@example.test|+53 5555 9999|America/Havana',
   'review stores a complete profile snapshot with contact copied from the approved source'
 );
 SELECT is(
@@ -1195,7 +1375,7 @@ SET LOCAL ROLE authenticated;
 SELECT lives_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Updated Name Reused Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('direct bio ', 8),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('hybrid'),
@@ -1228,7 +1408,7 @@ SET LOCAL ROLE authenticated;
 SELECT lives_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Approved Profile Trainer',
-    'professionalPhotoUrl', 'https://cdn.example.test/reverted-direct.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('reverted direct bio ', 5),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('online'),
@@ -1260,7 +1440,7 @@ SET LOCAL ROLE authenticated;
 SELECT lives_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Updated Name Recreated Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/reverted-direct.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('reverted direct bio ', 5),
     'specialties', jsonb_build_array('strength', 'mobility'),
     'modalities', jsonb_build_array('hybrid'),
@@ -1319,7 +1499,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Invalid Source Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('valid direct bio ', 6),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('online'),
@@ -1340,7 +1520,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Invalid Approved Source Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('valid direct bio ', 6),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('online'),
@@ -1361,7 +1541,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Invalid Credential Source Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('valid direct bio ', 6),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('online'),
@@ -1381,7 +1561,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Invalid Missing Credential Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/profile-update-new.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('valid direct bio ', 6),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('online'),
@@ -1404,7 +1584,7 @@ SET LOCAL ROLE authenticated;
 SELECT lives_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Updated Name Recreated Review',
-    'professionalPhotoUrl', 'https://cdn.example.test/latest-direct.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('latest direct bio ', 6),
     'specialties', jsonb_build_array('strength', 'mobility'),
     'modalities', jsonb_build_array('hybrid'),
@@ -1435,7 +1615,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Approved Profile Trainer',
-    'professionalPhotoUrl', 'https://cdn.example.test/latest-direct.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('latest direct bio ', 6),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('online'),
@@ -1465,7 +1645,7 @@ SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
     'professionalName', 'Approved Profile Trainer',
-    'professionalPhotoUrl', 'https://cdn.example.test/latest-direct.jpg',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
     'bio', repeat('latest direct bio ', 6),
     'specialties', jsonb_build_array('strength'),
     'modalities', jsonb_build_array('online'),
@@ -1490,6 +1670,91 @@ UPDATE public.trainer_applications SET modalities = ARRAY['hybrid']
 WHERE user_id = '99999999-9999-4999-8999-999999999999'
   AND application_kind = 'profile_update'
   AND status = 'under_review';
+
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'under_review'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'schedule_interview',
+    jsonb_build_object(
+      'interview_id', '5f999999-9999-4999-8999-999999999999',
+      'proposed_at', '2030-01-15T15:00:00Z',
+      'timezone', 'America/Havana',
+      'medium', 'video_call',
+      'external_url', 'https://meet.example.test/profile-update',
+      'public_note', 'Entrevista para revisar la actualización.',
+      'internal_note', 'Contexto interno que no ve el propietario.'
+    )
+  )$$,
+  'administrator can schedule an interview for a profile update'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT url FROM public.product_notifications
+   WHERE user_id = '99999999-9999-4999-8999-999999999999'
+     AND dedupe_key = 'trainer-interview:5f999999-9999-4999-8999-999999999999:scheduled'),
+  '/coach/profile',
+  'profile-update interview notification returns the owner to the profile page'
+);
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'interview_required'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'request_changes',
+    '{"public_note":"Amplia la experiencia propuesta.","internal_note":"Seguimiento interno."}'::jsonb
+  )$$,
+  'administrator can request changes after a profile-update interview'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT url FROM public.product_notifications notification
+   JOIN public.trainer_applications application
+     ON notification.payload->>'applicationId' = application.id::text
+   WHERE application.user_id = '99999999-9999-4999-8999-999999999999'
+     AND application.application_kind = 'profile_update'
+     AND notification.payload->>'status' = 'changes_requested'
+   ORDER BY notification.created_at DESC, notification.id DESC
+   LIMIT 1),
+  '/coach/profile',
+  'profile-update change request notification returns the owner to the profile page'
+);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Updated Name Recreated Review',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
+    'bio', repeat('latest direct bio ', 6),
+    'specialties', jsonb_build_array('strength', 'mobility'),
+    'modalities', jsonb_build_array('hybrid'),
+    'experienceSummary', 'Recreated reviewed experience after reverting the prior proposal.',
+    'generalLocation', 'Latest direct location',
+    'languages', jsonb_build_array('es', 'fr')
+  ))$$,
+  'owner can resubmit a requested profile update from the profile page'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'submitted'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'start_review',
+    '{}'::jsonb
+  )$$,
+  'administrator can restart review after profile-update corrections'
+);
+RESET ROLE;
 
 UPDATE public.trainer_profiles SET general_location = ''
 WHERE id = '59999999-9999-4999-8999-999999999999';
@@ -1573,10 +1838,90 @@ SELECT is(
     bio, general_location, array_to_string(languages, ','))
    FROM public.trainer_profiles
    WHERE id = '59999999-9999-4999-8999-999999999999'),
-  'Updated Name Recreated Review|strength,mobility|hybrid|Recreated reviewed experience after reverting the prior proposal.|https://cdn.example.test/latest-direct.jpg|'
+  'Updated Name Recreated Review|strength,mobility|hybrid|Recreated reviewed experience after reverting the prior proposal.|https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123|'
     || btrim(repeat('latest direct bio ', 6)) || '|Restored final location|es,fr',
   'profile-update approval applies reviewed fields without reverting newer direct fields'
 );
+SELECT is(
+  (SELECT url FROM public.product_notifications notification
+   JOIN public.trainer_applications application
+     ON notification.payload->>'applicationId' = application.id::text
+   WHERE application.user_id = '99999999-9999-4999-8999-999999999999'
+     AND application.application_kind = 'profile_update'
+     AND notification.payload->>'status' = 'approved'
+   ORDER BY notification.created_at DESC, notification.id DESC
+   LIMIT 1),
+  '/coach/profile',
+  'profile-update approval notification returns the owner to the profile page'
+);
+
+SELECT set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_profile_changes(jsonb_build_object(
+    'professionalName', 'Name Destined For Rejection',
+    'professionalPhotoUrl', 'https://verification.supabase.co/storage/v1/object/public/avatars/99999999-9999-4999-8999-999999999999/avatar.webp?v=123',
+    'bio', repeat('latest direct bio ', 6),
+    'specialties', jsonb_build_array('strength', 'mobility'),
+    'modalities', jsonb_build_array('hybrid'),
+    'experienceSummary', 'A changed experience that will be rejected safely.',
+    'generalLocation', 'Restored final location',
+    'languages', jsonb_build_array('es', 'fr')
+  ))$$,
+  'owner can submit a later profile update for rejection coverage'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'submitted'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'start_review',
+    '{}'::jsonb
+  )$$,
+  'administrator can start the later profile update review'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+    (SELECT id FROM public.trainer_applications
+     WHERE user_id = '99999999-9999-4999-8999-999999999999'
+       AND application_kind = 'profile_update'
+       AND status = 'under_review'),
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'reject',
+    '{"public_note":"La actualizacion no cumple los criterios.","internal_note":"Nota interna privada."}'::jsonb
+  )$$,
+  'administrator can reject a profile update without changing the approved profile'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT url FROM public.product_notifications notification
+   JOIN public.trainer_applications application
+     ON notification.payload->>'applicationId' = application.id::text
+   WHERE application.user_id = '99999999-9999-4999-8999-999999999999'
+     AND application.application_kind = 'profile_update'
+     AND notification.payload->>'status' = 'rejected'
+   ORDER BY notification.created_at DESC, notification.id DESC
+   LIMIT 1),
+  '/coach/profile',
+  'profile-update rejection notification returns the owner to the profile page'
+);
+SELECT is(
+  (SELECT professional_name FROM public.trainer_profiles WHERE id = '59999999-9999-4999-8999-999999999999'),
+  'Updated Name Recreated Review',
+  'rejected profile update preserves the last approved professional name'
+);
+
+SELECT lives_ok(
+  $$DELETE FROM auth.users WHERE id = '99999999-9999-4999-8999-999999999999'$$,
+  'account deletion succeeds after an approved profile update created a reference cycle'
+);
+SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = '99999999-9999-4999-8999-999999999999'), 0::bigint, 'account deletion removes the trainer profile without an orphan');
+SELECT is((SELECT count(*) FROM public.trainer_applications WHERE user_id = '99999999-9999-4999-8999-999999999999'), 0::bigint, 'account deletion removes initial and profile-update applications without orphans');
 
 SELECT * FROM finish();
 ROLLBACK;

@@ -1,18 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { requireActiveTrainerContext, revalidatePath } = vi.hoisted(() => ({
+const { createServiceClient, requireActiveTrainerContext, revalidatePath } = vi.hoisted(() => ({
+  createServiceClient: vi.fn(),
   requireActiveTrainerContext: vi.fn(),
   revalidatePath: vi.fn(),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/coaching/access', () => ({ requireActiveTrainerContext }))
+vi.mock('@/lib/supabase/service', () => ({ createServiceClient }))
 vi.mock('next/cache', () => ({ revalidatePath }))
+
+const OWNED_PHOTO_URL = 'https://project-ref.supabase.co/storage/v1/object/public/avatars/owner-user-1/avatar.webp?v=123'
+
+function photoStorageService() {
+  return {
+    storage: {
+      from: vi.fn(() => ({
+        getPublicUrl: vi.fn(() => ({
+          data: {
+            publicUrl: 'https://project-ref.supabase.co/storage/v1/object/public/avatars/owner-user-1/avatar.webp',
+          },
+        })),
+        list: vi.fn().mockResolvedValue({ data: [{ name: 'avatar.webp' }], error: null }),
+      })),
+    },
+  }
+}
 
 function validProfileForm(): FormData {
   const formData = new FormData()
   formData.set('professionalName', 'Ada Entrenadora')
-  formData.set('professionalPhotoUrl', 'https://cdn.example.test/ada-new.jpg')
+  formData.set('professionalPhotoUrl', OWNED_PHOTO_URL)
   formData.set('bio', 'Entrenadora de fuerza con un enfoque progresivo, seguro y adaptado a cada persona.')
   formData.set('specialties', 'Fuerza, Movilidad')
   formData.append('modalities', 'online')
@@ -43,7 +62,10 @@ function profileSupabase(rpc: ReturnType<typeof vi.fn>) {
 }
 
 describe('updateTrainerProfile', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    createServiceClient.mockReturnValue(photoStorageService())
+  })
 
   it('uses the active trainer context and sends no client-supplied owner identity', async () => {
     const rpc = vi.fn().mockResolvedValue({
@@ -57,7 +79,11 @@ describe('updateTrainerProfile', () => {
     requireActiveTrainerContext.mockResolvedValue({
       user: { id: 'owner-user-1' },
       supabase: profileSupabase(rpc),
-      trainerProfile: { id: 'trainer-profile-1', status: 'active' },
+      trainerProfile: {
+        id: 'trainer-profile-1',
+        status: 'active',
+        professional_photo_url: 'https://legacy.example.test/ada.jpg',
+      },
     })
     const formData = validProfileForm()
     formData.set('userId', 'attacker-user')
@@ -74,7 +100,7 @@ describe('updateTrainerProfile', () => {
     expect(rpc).toHaveBeenCalledWith('save_trainer_profile_changes', {
       p_payload: {
         professionalName: 'Ada Entrenadora',
-        professionalPhotoUrl: 'https://cdn.example.test/ada-new.jpg',
+        professionalPhotoUrl: OWNED_PHOTO_URL,
         bio: 'Entrenadora de fuerza con un enfoque progresivo, seguro y adaptado a cada persona.',
         specialties: ['Fuerza', 'Movilidad'],
         modalities: ['online', 'hybrid'],
@@ -85,6 +111,40 @@ describe('updateTrainerProfile', () => {
     })
     expect(JSON.stringify(rpc.mock.calls)).not.toContain('attacker')
     expect(revalidatePath).toHaveBeenCalledWith('/coach/profile')
+  })
+
+  it('rejects a changed external HTTPS photo before invoking the profile RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        profile_updated: true,
+        review_application_id: null,
+        review_status: null,
+      },
+      error: null,
+    })
+    requireActiveTrainerContext.mockResolvedValue({
+      user: { id: 'owner-user-1' },
+      supabase: profileSupabase(rpc),
+      trainerProfile: {
+        id: 'trainer-profile-1',
+        status: 'active',
+        professional_photo_url: 'https://legacy.example.test/ada.jpg',
+      },
+    })
+    const formData = validProfileForm()
+    formData.set('professionalPhotoUrl', 'https://attacker.example.test/ada.jpg')
+    const { updateTrainerProfile } = await import('../trainerProfile')
+
+    const result = await updateTrainerProfile(formData)
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Revisa los campos del perfil profesional.',
+      fieldErrors: {
+        professionalPhotoUrl: 'Selecciona una foto subida por tu cuenta.',
+      },
+    })
+    expect(rpc).not.toHaveBeenCalled()
   })
 
   it('rejects malformed direct and reviewed fields before invoking the RPC', async () => {

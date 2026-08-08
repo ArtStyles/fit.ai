@@ -111,6 +111,8 @@ INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
   ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'verification-concurrent@example.test', '{}'::jsonb),
   ('abababab-abab-4bab-8bab-abababababab', 'verification-draft-race@example.test', '{}'::jsonb),
+  ('cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd', 'verification-remove-race@example.test', '{}'::jsonb),
+  ('efefefef-efef-4efe-8efe-efefefefefef', 'verification-approval-revalidation@example.test', '{}'::jsonb),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'verification-admin@example.test', '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -118,6 +120,8 @@ INSERT INTO public.profiles (id, avatar_url, onboarding_done, is_admin, account_
 VALUES
   ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'https://cdn.example.test/d.jpg', true, false, 'active'),
   ('abababab-abab-4bab-8bab-abababababab', 'https://cdn.example.test/ab.jpg', true, false, 'active'),
+  ('cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd', 'https://cdn.example.test/cd.jpg', true, false, 'active'),
+  ('efefefef-efef-4efe-8efe-efefefefefef', 'https://cdn.example.test/ef.jpg', true, false, 'active'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'https://cdn.example.test/admin.jpg', true, true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   avatar_url = EXCLUDED.avatar_url,
@@ -139,20 +143,58 @@ INSERT INTO public.trainer_applications (
   'Draft Race Trainer', 'https://cdn.example.test/ab.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
   repeat('experience ', 4), NULL, ARRAY['es'], 'ab@example.test', 'email',
   'America/Havana', 'Weekdays after 14:00'
+), (
+  '3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd', 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd',
+  'Removal Race Trainer', 'https://cdn.example.test/cd.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+  repeat('experience ', 4), NULL, ARRAY['es'], 'cd@example.test', 'email',
+  'America/Havana', 'Weekdays after 14:00'
+), (
+  '3efefefe-efef-4efe-8efe-efefefefefef', 'efefefef-efef-4efe-8efe-efefefefefef',
+  'Approval Revalidation Trainer', 'https://cdn.example.test/ef.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+  repeat('experience ', 4), NULL, ARRAY['es'], 'ef@example.test', 'email',
+  'America/Havana', 'Weekdays after 14:00'
 );
 
 UPDATE public.trainer_applications
 SET status = 'under_review', submitted_at = NOW()
 WHERE id = '3abababa-abab-4aba-8aba-abababababab';
 
+UPDATE public.trainer_applications
+SET status = 'under_review', submitted_at = NOW()
+WHERE id = '3efefefe-efef-4efe-8efe-efefefefefef';
+
 INSERT INTO public.trainer_application_credentials (
-  id, application_id, credential_type, title, external_url
+  id, application_id, credential_type, title, storage_path, external_url, mime_type, size_bytes
 ) VALUES (
   '4ddddddd-dddd-4ddd-8ddd-dddddddddddd', '3ddddddd-dddd-4ddd-8ddd-dddddddddddd',
-  'link', 'Concurrent certificate', 'https://issuer.example.test/cert/d'
+  'link', 'Concurrent certificate', NULL, 'https://issuer.example.test/cert/d', NULL, NULL
 ), (
   '4abababa-abab-4aba-8aba-abababababab', '3abababa-abab-4aba-8aba-abababababab',
-  'link', 'Draft race certificate', 'https://issuer.example.test/cert/ab'
+  'link', 'Draft race certificate', NULL, 'https://issuer.example.test/cert/ab', NULL, NULL
+), (
+  '4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd', '3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd',
+  'document', 'Removal race certificate',
+  'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd/3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd/4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd.pdf',
+  NULL, 'application/pdf', 3
+);
+
+INSERT INTO storage.objects (bucket_id, name, metadata)
+VALUES (
+  'trainer-credentials',
+  'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd/3cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd/4cdcdcdc-cdcd-4dcd-8dcd-cdcdcdcdcdcd.pdf',
+  '{"mimetype":"application/pdf","size":3}'::jsonb
+);
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', TRUE)
+ON CONFLICT (id) DO UPDATE SET public = TRUE;
+
+INSERT INTO storage.objects (bucket_id, name, owner, metadata)
+VALUES (
+  'avatars',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd/avatar.webp',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  '{"mimetype":"image/webp","size":1024}'::jsonb
 );
 `
 
