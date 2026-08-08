@@ -1365,6 +1365,26 @@ export interface Database {
     }
 
     Views: {
+      active_trainer_directory: {
+        Row: {
+          user_id: string
+          slug: string
+          professional_name: string
+          professional_photo_url: string | null
+          bio: string
+          specialties: string[]
+          modalities: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location: string | null
+          languages: string[]
+          verified_at: string
+          directory_search: string
+          specialties_search: string
+          languages_search: string
+          active_services: Json
+        }
+        Relationships: []
+      }
       trainer_application_events_public: {
         Row: {
           id: string

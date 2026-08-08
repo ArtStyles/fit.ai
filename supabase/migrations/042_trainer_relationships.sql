@@ -369,3 +369,71 @@ GRANT ALL ON TABLE public.trainer_service_offerings TO service_role;
 GRANT ALL ON TABLE public.coaching_requests TO service_role;
 GRANT ALL ON TABLE public.coaching_relationships TO service_role;
 GRANT ALL ON TABLE public.coaching_consents TO service_role;
+
+-- The directory is the only discovery projection. It deliberately runs with its
+-- owner privileges so callers do not need (and must not receive) direct access
+-- to trainer_profiles or trainer_service_offerings.
+DROP VIEW IF EXISTS public.active_trainer_directory;
+CREATE VIEW public.active_trainer_directory
+WITH (security_barrier = true)
+AS
+SELECT
+  trainer_profile.user_id,
+  trainer_profile.slug,
+  trainer_profile.professional_name,
+  trainer_profile.professional_photo_url,
+  trainer_profile.bio,
+  trainer_profile.specialties,
+  trainer_profile.modalities,
+  trainer_profile.experience_summary,
+  trainer_profile.general_location,
+  trainer_profile.languages,
+  trainer_profile.verified_at,
+  lower(concat_ws(' ',
+    trainer_profile.professional_name,
+    trainer_profile.bio,
+    trainer_profile.experience_summary,
+    trainer_profile.general_location,
+    array_to_string(trainer_profile.specialties, ' '),
+    array_to_string(trainer_profile.languages, ' ')
+  )) AS directory_search,
+  lower(array_to_string(trainer_profile.specialties, ' ')) AS specialties_search,
+  lower(array_to_string(trainer_profile.languages, ' ')) AS languages_search,
+  COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'name', service.name,
+        'description', service.description,
+        'modality', service.modality,
+        'duration_minutes', service.duration_minutes,
+        'content', service.content
+      )
+      ORDER BY service.created_at ASC, service.id ASC
+    ) FILTER (WHERE service.id IS NOT NULL),
+    '[]'::jsonb
+  ) AS active_services
+FROM public.trainer_profiles AS trainer_profile
+LEFT JOIN public.trainer_service_offerings AS service
+  ON service.trainer_profile_id = trainer_profile.id
+  AND service.is_active = TRUE
+WHERE trainer_profile.status = 'active'
+GROUP BY
+  trainer_profile.user_id,
+  trainer_profile.slug,
+  trainer_profile.professional_name,
+  trainer_profile.professional_photo_url,
+  trainer_profile.bio,
+  trainer_profile.specialties,
+  trainer_profile.modalities,
+  trainer_profile.experience_summary,
+  trainer_profile.general_location,
+  trainer_profile.languages,
+  trainer_profile.verified_at;
+
+ALTER VIEW public.active_trainer_directory OWNER TO postgres;
+REVOKE ALL ON TABLE public.active_trainer_directory FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.active_trainer_directory TO authenticated;
+GRANT SELECT ON TABLE public.active_trainer_directory TO service_role;
+
+COMMENT ON VIEW public.active_trainer_directory IS
+  'Authenticated discovery projection of active trainer profiles and their active non-commercial services only.';
