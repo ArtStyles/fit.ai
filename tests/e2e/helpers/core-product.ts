@@ -34,8 +34,8 @@ export function isTrainerRelationshipsE2EEnabled(env: NodeJS.ProcessEnv): boolea
 
 export type TrainerRelationshipsFixture = {
   client: { id: string; email: string; client: SupabaseClient }
-  trainerA: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string }
-  trainerB: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string }
+  trainerA: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string; professionalName: string }
+  trainerB: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string; professionalName: string }
   admin: { id: string; email: string }
   service: SupabaseClient
   runId: string
@@ -93,6 +93,21 @@ export function deriveTrainerRelationshipIdentity(
   return { email: `${localPart}@example.test`, username: localPart.replace(/-/g, '_') }
 }
 
+export function deriveTrainerFixtureIdentity(
+  runId: string,
+  scope: string,
+  suffix: 'a' | 'b',
+): { slug: string; professionalName: string } {
+  const runPart = cleanScopePart(runId, 'run').slice(0, 18).replace(/-+$/, '')
+  const scopePart = cleanScopePart(scope, 'scope').slice(0, 16).replace(/-+$/, '')
+  const hash = createHash('sha256').update(`${runId}:${scope}:trainer:${suffix}`).digest('hex').slice(0, 8)
+  const coach = suffix.toUpperCase()
+  return {
+    slug: `e2e-${runPart}-${scopePart}-${hash}-coach-${suffix}`,
+    professionalName: `E2E Coach ${coach} ${runPart} ${scopePart} ${hash}`,
+  }
+}
+
 function fixtureClient(config: E2ESeedConfig): SupabaseClient {
   return createClient(config.supabaseUrl, requireTrainerRelationshipsAnonKey(process.env), {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -145,13 +160,14 @@ async function createVerifiedTrainerFixture(
   service: SupabaseClient,
   account: { id: string; email: string },
   config: E2ESeedConfig,
+  scope: string,
   suffix: 'a' | 'b',
-): Promise<{ applicationId: string; profileId: string; serviceId: string; slug: string }> {
+): Promise<{ applicationId: string; profileId: string; serviceId: string; slug: string; professionalName: string }> {
   const applicationId = randomUUID()
   const profileId = randomUUID()
   const serviceId = randomUUID()
-  const slug = `e2e-${config.runId}-coach-${suffix}`
-  const name = `E2E Coach ${suffix.toUpperCase()} ${config.runId}`
+  const trainerIdentity = deriveTrainerFixtureIdentity(config.runId, scope, suffix)
+  const { slug, professionalName: name } = trainerIdentity
   const { error: applicationError } = await (service.from('trainer_applications') as any).insert({
     id: applicationId,
     user_id: account.id,
@@ -198,7 +214,7 @@ async function createVerifiedTrainerFixture(
     billing_interval: null,
   })
   assertNoError(serviceError, `Creating non-commercial trainer ${suffix} service`)
-  return { applicationId, profileId, serviceId, slug }
+  return { applicationId, profileId, serviceId, slug, professionalName: name }
 }
 
 /** Performs read-only migration probes before any relationship fixture write. */
@@ -256,8 +272,8 @@ export async function seedTrainerRelationshipsFixture(scope: string): Promise<Tr
     signInFixtureClient(trainerAClient, trainerAAccount.email, config.password),
     signInFixtureClient(trainerBClient, trainerBAccount.email, config.password),
   ])
-  const trainerA = await createVerifiedTrainerFixture(service, trainerAAccount, config, 'a')
-  const trainerB = await createVerifiedTrainerFixture(service, trainerBAccount, config, 'b')
+  const trainerA = await createVerifiedTrainerFixture(service, trainerAAccount, config, scope, 'a')
+  const trainerB = await createVerifiedTrainerFixture(service, trainerBAccount, config, scope, 'b')
   created.applicationIds.push(trainerA.applicationId, trainerB.applicationId)
   created.profileIds.push(trainerA.profileId, trainerB.profileId)
   created.serviceIds.push(trainerA.serviceId, trainerB.serviceId)

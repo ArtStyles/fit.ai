@@ -27,7 +27,7 @@ test('trainer relationships keep requests, consent, suspension, and resume isola
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 })
     await page.goto('/trainers')
     await expect(page.getByRole('heading', { name: 'Entrenadores verificados', exact: true })).toBeVisible()
-    await expect(page.getByRole('link', { name: new RegExp(`E2E Coach A ${fixture.runId}`, 'i') })).toBeVisible()
+    await expect(page.getByText(fixture.trainerA.professionalName, { exact: true })).toBeVisible()
     await expect(page.getByText(/precio|moneda|suscripciÃ³n/i)).toHaveCount(0)
 
     const first = await exerciseTrainerRelationshipLifecycle(fixture)
