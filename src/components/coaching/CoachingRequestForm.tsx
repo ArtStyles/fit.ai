@@ -12,13 +12,17 @@ function newIdempotencyKey() {
 
 type CreateRequestAction = typeof createCoachingRequest
 
+export function CoachingActionAnnouncement({ message, isError }: { message: string; isError: boolean }) {
+  return <p {...(isError ? { role: 'alert' } : { 'aria-live': 'polite' })} className="mt-3 text-sm text-muted-foreground">{message}</p>
+}
+
 export async function performCoachingRequestSubmit(
   formData: FormData,
   action: CreateRequestAction,
   update: {
     setPending: (pending: boolean) => void
     setFieldErrors: (errors: Record<string, string>) => void
-    setAnnouncement: (message: string) => void
+    setAnnouncement: (message: string, isError?: boolean) => void
     rotateIdempotencyKey: () => void
   },
 ) {
@@ -28,13 +32,13 @@ export async function performCoachingRequestSubmit(
     const result = await action(formData)
     if (!result.ok) {
       update.setFieldErrors(result.fieldErrors ?? {})
-      update.setAnnouncement(result.error)
+      update.setAnnouncement(result.error, true)
       return
     }
-    update.setAnnouncement(result.created ? 'Tu solicitud quedó pendiente de respuesta.' : 'Tu solicitud ya estaba registrada.')
+    update.setAnnouncement(result.created ? 'Tu solicitud quedó pendiente de respuesta.' : 'Tu solicitud ya estaba registrada.', false)
     update.rotateIdempotencyKey()
   } catch {
-    update.setAnnouncement('No se pudo enviar la solicitud.')
+    update.setAnnouncement('No se pudo enviar la solicitud.', true)
   } finally {
     update.setPending(false)
   }
@@ -42,7 +46,7 @@ export async function performCoachingRequestSubmit(
 
 export function CoachingRequestForm({ service }: { service: { id: string; name: string } }) {
   const [pending, setPending] = useState(false)
-  const [announcement, setAnnouncement] = useState('')
+  const [announcement, setAnnouncement] = useState({ message: '', isError: false })
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey)
 
@@ -51,7 +55,7 @@ export function CoachingRequestForm({ service }: { service: { id: string; name: 
     await performCoachingRequestSubmit(formData, createCoachingRequest, {
       setPending,
       setFieldErrors,
-      setAnnouncement,
+      setAnnouncement: (message, isError = false) => setAnnouncement({ message, isError }),
       rotateIdempotencyKey: () => setIdempotencyKey(newIdempotencyKey()),
     })
   }
@@ -76,7 +80,7 @@ export function CoachingRequestForm({ service }: { service: { id: string; name: 
       <button type="submit" disabled={pending} className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:opacity-50">
         {pending ? 'Enviando…' : 'Enviar solicitud'}
       </button>
-      <p aria-live="polite" className="mt-3 text-sm text-muted-foreground">{announcement}</p>
+      <CoachingActionAnnouncement message={announcement.message} isError={announcement.isError} />
     </form>
   )
 }

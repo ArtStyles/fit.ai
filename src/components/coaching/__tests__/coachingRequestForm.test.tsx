@@ -5,7 +5,7 @@ vi.mock('@/app/actions/coachingRequests', () => ({
   createCoachingRequest: async () => ({ ok: true, requestId: 'request-1', created: true }),
   cancelCoachingRequest: async () => ({ ok: true, requestId: 'request-1' }),
 }))
-import { CoachingRequestForm, performCoachingRequestSubmit } from '../CoachingRequestForm'
+import { CoachingRequestForm, CoachingActionAnnouncement, performCoachingRequestSubmit } from '../CoachingRequestForm'
 import { ClientCoachingStatus, performCoachingRequestCancellation } from '../ClientCoachingStatus'
 
 describe('coaching request UI', () => {
@@ -56,8 +56,21 @@ describe('coaching request interaction failures', () => {
 
     expect(requestPending.mock.calls.map(([value]) => value)).toEqual([true, false])
     expect(requestErrors).toHaveBeenCalledWith({})
-    expect(requestAnnouncement).toHaveBeenCalledWith('No se pudo enviar la solicitud.')
+    expect(requestAnnouncement).toHaveBeenCalledWith('No se pudo enviar la solicitud.', true)
     expect(cancelPending.mock.calls.map(([value]) => value)).toEqual(['request-1', null])
-    expect(cancelAnnouncement).toHaveBeenCalledWith('No se pudo cancelar la solicitud.')
+    expect(cancelAnnouncement).toHaveBeenCalledWith('No se pudo cancelar la solicitud.', true)
+  })
+
+  it('renders rejected request and cancellation failures as safe alerts, while success remains polite', () => {
+    const requestFailure = renderToStaticMarkup(<CoachingActionAnnouncement message="No se pudo enviar la solicitud." isError />)
+    const cancellationFailure = renderToStaticMarkup(<CoachingActionAnnouncement message="No se pudo cancelar la solicitud." isError />)
+    const success = renderToStaticMarkup(<CoachingActionAnnouncement message="La solicitud fue cancelada." isError={false} />)
+
+    expect(requestFailure).toContain('role="alert"')
+    expect(requestFailure).toContain('No se pudo enviar la solicitud.')
+    expect(cancellationFailure).toContain('role="alert"')
+    expect(cancellationFailure).toContain('No se pudo cancelar la solicitud.')
+    expect(success).not.toContain('role="alert"')
+    expect(success).toContain('aria-live="polite"')
   })
 })
