@@ -89,12 +89,45 @@ describe('trainer administrative actions', () => {
 
     const result = await scheduleTrainerInterview(validApplicationForm({
       interviewId: INTERVIEW_ID,
-      proposedAt: '2020-01-01T10:00:00.000Z',
+      proposedAt: '2020-01-01T10:00',
       timezone: 'America/Havana',
       medium: 'video_call',
     }))
 
     expect(result).toMatchObject({ ok: false, fieldErrors: { proposedAt: expect.any(String) } })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['2027-03-14T02:30', 'America/New_York', 'nonexistent DST wall clock'],
+    ['2026-11-01T01:30', 'America/New_York', 'ambiguous DST wall clock'],
+  ])('rejects %s in %s as a %s', async (proposedAt, timezone) => {
+    const { service, rpc } = serviceFor('under_review')
+    requireAdminUserContextMock.mockResolvedValue({ user: { id: ADMIN_ID }, service })
+
+    const result = await scheduleTrainerInterview(validApplicationForm({
+      interviewId: INTERVIEW_ID,
+      proposedAt,
+      timezone,
+      medium: 'video_call',
+    }))
+
+    expect(result).toMatchObject({ ok: false, fieldErrors: { proposedAt: expect.any(String) } })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invalid IANA timezone before calling the RPC', async () => {
+    const { service, rpc } = serviceFor('under_review')
+    requireAdminUserContextMock.mockResolvedValue({ user: { id: ADMIN_ID }, service })
+
+    const result = await scheduleTrainerInterview(validApplicationForm({
+      interviewId: INTERVIEW_ID,
+      proposedAt: '2099-01-01T10:00',
+      timezone: 'Mars/Olympus_Mons',
+      medium: 'video_call',
+    }))
+
+    expect(result).toMatchObject({ ok: false, fieldErrors: { timezone: expect.any(String) } })
     expect(rpc).not.toHaveBeenCalled()
   })
 
@@ -104,8 +137,8 @@ describe('trainer administrative actions', () => {
 
     const result = await scheduleTrainerInterview(validApplicationForm({
       interviewId: INTERVIEW_ID,
-      proposedAt: '2099-01-01T10:00:00.000Z',
-      timezone: 'America/Havana',
+      proposedAt: '2099-01-01T10:00',
+      timezone: 'Asia/Tokyo',
       medium: 'video_call',
       externalUrl,
     }))
@@ -114,20 +147,22 @@ describe('trainer administrative actions', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 
-  it('passes a stable interview ID and the trusted admin ID to the atomic RPC', async () => {
+  it('resolves the submitted IANA zone instead of the server zone and passes UTC plus the original zone', async () => {
     const { service, rpc } = serviceFor('interview_required', { interview_id: INTERVIEW_ID })
     requireAdminUserContextMock.mockResolvedValue({ user: { id: ADMIN_ID }, service })
+    vi.stubEnv('TZ', 'America/Los_Angeles')
 
     const result = await scheduleTrainerInterview(validApplicationForm({
       interviewId: INTERVIEW_ID,
-      proposedAt: '2099-01-01T10:00:00.000Z',
-      timezone: 'America/Havana',
+      proposedAt: '2099-01-01T10:00',
+      timezone: 'Asia/Tokyo',
       medium: 'video_call',
       externalUrl: 'https://meet.example.test/room',
       publicNote: 'Usaremos el enlace externo indicado.',
       internalNote: 'Confirmar cinco minutos antes.',
       actorUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     }))
+    vi.unstubAllEnvs()
 
     expect(result).toMatchObject({ ok: true, interviewId: INTERVIEW_ID })
     expect(rpc).toHaveBeenCalledWith('transition_trainer_application', {
@@ -139,9 +174,9 @@ describe('trainer administrative actions', () => {
         internal_note: 'Confirmar cinco minutos antes.',
         interview_id: INTERVIEW_ID,
         medium: 'video_call',
-        proposed_at: '2099-01-01T10:00:00.000Z',
+        proposed_at: '2099-01-01T01:00:00.000Z',
         public_note: 'Usaremos el enlace externo indicado.',
-        timezone: 'America/Havana',
+        timezone: 'Asia/Tokyo',
       },
     })
   })

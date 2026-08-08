@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import { createElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const adminContext = vi.hoisted(() => ({ service: undefined as unknown }))
@@ -240,5 +241,44 @@ describe('trainer administration privacy', () => {
     expect(html).toContain('name="proposedAt"')
     expect(html).toContain('name="externalUrl"')
     expect(html).not.toMatch(/enviar correo|chat privado|crear videollamada/i)
+  })
+
+  it('keeps the review panel open and exposes local field validation in an aria-live region', async () => {
+    adminContext.service = detailService()
+    const application = await getAdminTrainerApplication(APPLICATION_ID)
+    if (!application) throw new Error('Expected the application expediente.')
+
+    const html = renderToStaticMarkup(createElement(TrainerApplicationReview as any, {
+      application: { ...application, status: 'under_review' },
+      initialActionStates: {
+        scheduleInterview: {
+          ok: false,
+          error: 'Revisa los datos de la entrevista.',
+          fieldErrors: { proposedAt: 'La fecha local no existe o es ambigua.' },
+        },
+      },
+    }))
+
+    expect(html).toContain('<details open=""')
+    expect(html).toContain('aria-live="assertive"')
+    expect(html).toContain('Revisa los datos de la entrevista.')
+    expect(html).toContain('La fecha local no existe o es ambigua.')
+    expect(html).toMatch(/name="proposedAt"[^>]*aria-invalid="true"/)
+  })
+
+  it('renders an RPC conflict as an error instead of a successful approval', async () => {
+    adminContext.service = detailService()
+    const application = await getAdminTrainerApplication(APPLICATION_ID)
+    if (!application) throw new Error('Expected the application expediente.')
+
+    const html = renderToStaticMarkup(createElement(TrainerApplicationReview as any, {
+      application: { ...application, status: 'under_review' },
+      initialActionStates: {
+        approve: { ok: false, error: 'La solicitud cambio mientras la revisabas.' },
+      },
+    }))
+
+    expect(html).toContain('La solicitud cambio mientras la revisabas.')
+    expect(html).not.toContain('Aprobacion guardada')
   })
 })

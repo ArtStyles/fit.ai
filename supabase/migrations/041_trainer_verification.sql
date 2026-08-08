@@ -1275,7 +1275,11 @@ BEGIN
     WHEN 'approved' THEN 'Tu perfil profesional ha sido aprobado.'
     WHEN 'rejected' THEN 'Tu solicitud profesional no ha sido aprobada.'
   END;
-  v_dedupe_key := 'trainer-application:' || v_application.id::TEXT || ':' || v_target_status;
+  v_dedupe_key := CASE
+    WHEN v_target_status IN ('approved', 'rejected')
+      THEN 'trainer-application:' || v_application.id::TEXT || ':' || v_target_status
+    ELSE 'trainer-application:' || v_application.id::TEXT || ':' || v_target_status || ':' || v_event_id::TEXT
+  END;
   PERFORM public.create_product_notification(
     v_application.user_id,
     'trainer_application_status',

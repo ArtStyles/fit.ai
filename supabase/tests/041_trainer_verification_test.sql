@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(97);
+SELECT plan(113);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
@@ -55,6 +55,7 @@ VALUES
   ('77777777-7777-4777-8777-777777777777', 'verification-reject@example.test', '{}'::jsonb),
   ('88888888-8888-4888-8888-888888888888', 'verification-admin-rollback@example.test', '{}'::jsonb),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'verification-interview@example.test', '{}'::jsonb),
+  ('12121212-1212-4121-8121-121212121212', 'verification-review-cycle@example.test', '{}'::jsonb),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'verification-admin@example.test', '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -69,6 +70,7 @@ VALUES
   ('77777777-7777-4777-8777-777777777777', 'https://cdn.example.test/reject.jpg', true, false, 'active'),
   ('88888888-8888-4888-8888-888888888888', 'https://cdn.example.test/admin-rollback.jpg', true, false, 'active'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'https://cdn.example.test/interview.jpg', true, false, 'active'),
+  ('12121212-1212-4121-8121-121212121212', 'https://cdn.example.test/review-cycle.jpg', true, false, 'active'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'https://cdn.example.test/admin.jpg', true, true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   avatar_url = EXCLUDED.avatar_url,
@@ -134,6 +136,12 @@ INSERT INTO public.trainer_applications (
     'Interview Trainer', 'https://cdn.example.test/interview.jpg', repeat('bio ', 20), ARRAY['mobility'], ARRAY['online'],
     repeat('experience ', 4), NULL, ARRAY['es'], 'interview@example.test', NULL,
     'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '31212121-1212-4121-8121-121212121212', '12121212-1212-4121-8121-121212121212',
+    'Review Cycle Trainer', 'https://cdn.example.test/review-cycle.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+    repeat('experience ', 4), NULL, ARRAY['es'], 'review-cycle@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
   );
 
 UPDATE public.trainer_applications
@@ -144,6 +152,10 @@ WHERE id IN (
   '38888888-8888-4888-8888-888888888888',
   '3bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 );
+
+UPDATE public.trainer_applications
+SET status = 'submitted', submitted_at = NOW()
+WHERE id = '31212121-1212-4121-8121-121212121212';
 
 INSERT INTO public.trainer_application_credentials (
   id, application_id, credential_type, title, external_url
@@ -162,6 +174,11 @@ INSERT INTO public.trainer_application_credentials (
     '4fffffff-ffff-4fff-8fff-ffffffffffff',
     '3fffffff-ffff-4fff-8fff-ffffffffffff',
     'link', 'Null avatar certificate', 'https://issuer.example.test/cert/f'
+  ),
+  (
+    '41212121-1212-4121-8121-121212121212',
+    '31212121-1212-4121-8121-121212121212',
+    'link', 'Review cycle certificate', 'https://issuer.example.test/cert/review-cycle'
   );
 
 INSERT INTO public.trainer_interviews (
@@ -594,6 +611,107 @@ SELECT is((SELECT status || '|' || outcome FROM public.trainer_interviews WHERE 
 SET LOCAL ROLE service_role;
 SELECT lives_ok(
   $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'start_review',
+      '{}'::jsonb
+    )$$,
+  'administrator can start the first review cycle'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'start_review',
+      '{}'::jsonb
+    )$$,
+  'first review start retry is idempotent'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'request_changes',
+      '{"public_note":"Aclara la experiencia del primer ciclo."}'::jsonb
+    )$$,
+  'administrator can request changes in the first cycle'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'request_changes',
+      '{"public_note":"Aclara la experiencia del primer ciclo."}'::jsonb
+    )$$,
+  'first change request retry is idempotent'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '12121212-1212-4121-8121-121212121212', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.submit_trainer_application('31212121-1212-4121-8121-121212121212')$$,
+  'applicant can resubmit between review cycles'
+);
+SELECT lives_ok(
+  $$SELECT public.submit_trainer_application('31212121-1212-4121-8121-121212121212')$$,
+  'resubmission retry is idempotent'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'start_review',
+      '{}'::jsonb
+    )$$,
+  'administrator can start the second review cycle'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'start_review',
+      '{}'::jsonb
+    )$$,
+  'second review start retry is idempotent'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'request_changes',
+      '{"public_note":"Aclara la experiencia del segundo ciclo."}'::jsonb
+    )$$,
+  'administrator can request changes in the second cycle'
+);
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
+      '31212121-1212-4121-8121-121212121212',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'request_changes',
+      '{"public_note":"Aclara la experiencia del segundo ciclo."}'::jsonb
+    )$$,
+  'second change request retry is idempotent'
+);
+RESET ROLE;
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '31212121-1212-4121-8121-121212121212' AND to_status = 'under_review'), 2::bigint, 'two review cycles append two under-review events');
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '31212121-1212-4121-8121-121212121212' AND to_status = 'changes_requested'), 2::bigint, 'two review cycles append two change-request events');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = '12121212-1212-4121-8121-121212121212' AND payload->>'status' = 'under_review'), 2::bigint, 'two legitimate review starts create two applicant notifications');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = '12121212-1212-4121-8121-121212121212' AND payload->>'status' = 'changes_requested'), 2::bigint, 'two legitimate change requests create two applicant notifications');
+SELECT is((
+  SELECT count(DISTINCT dedupe_key)
+  FROM public.product_notifications
+  WHERE user_id = '12121212-1212-4121-8121-121212121212'
+    AND payload->>'status' IN ('under_review', 'changes_requested')
+), 4::bigint, 'repeatable transitions use one distinct notification key per event without retry duplicates');
+
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.transition_trainer_application(
       '36666666-6666-4666-8666-666666666666',
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       'approve',
@@ -630,6 +748,7 @@ SELECT lives_ok(
 RESET ROLE;
 SELECT is((SELECT status FROM public.trainer_applications WHERE id = '37777777-7777-4777-8777-777777777777'), 'rejected', 'rejection persists terminal status');
 SELECT is((SELECT count(*) FROM public.trainer_profiles WHERE user_id = '77777777-7777-4777-8777-777777777777'), 0::bigint, 'rejection never creates a trainer profile');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE user_id = '77777777-7777-4777-8777-777777777777' AND dedupe_key = 'trainer-application:37777777-7777-4777-8777-777777777777:rejected'), 1::bigint, 'rejection preserves the exact terminal dedupe key');
 
 CREATE OR REPLACE FUNCTION public.fail_admin_decision_notification()
 RETURNS TRIGGER

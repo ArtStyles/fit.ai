@@ -22,7 +22,7 @@ const APPLICATION_STATUSES = new Set<TrainerApplicationStatus>([
 ])
 
 type FieldErrors = Record<string, string>
-type AdminTrainerActionResult = {
+export type AdminTrainerActionResult = {
   ok: true
   applicationId: string
   status: TrainerApplicationStatus
@@ -83,6 +83,92 @@ function isTimezone(value: string): boolean {
   } catch {
     return false
   }
+}
+
+type WallClockParts = {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+}
+
+function parseWallClock(value: string): WallClockParts | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return null
+  const parts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  }
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+  return date.getUTCFullYear() === parts.year
+    && date.getUTCMonth() === parts.month - 1
+    && date.getUTCDate() === parts.day
+    && date.getUTCHours() === parts.hour
+    && date.getUTCMinutes() === parts.minute
+    ? parts
+    : null
+}
+
+function zonedParts(timestamp: number, timezone: string): WallClockParts {
+  const values = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    calendar: 'iso8601',
+    numberingSystem: 'latn',
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(new Date(timestamp)).map(part => [part.type, part.value]))
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+  }
+}
+
+function sameWallClock(left: WallClockParts, right: WallClockParts): boolean {
+  return left.year === right.year
+    && left.month === right.month
+    && left.day === right.day
+    && left.hour === right.hour
+    && left.minute === right.minute
+}
+
+function wallClockToUtc(value: string, timezone: string): string | null {
+  const wallClock = parseWallClock(value)
+  if (!wallClock) return null
+  const wallAsUtc = Date.UTC(
+    wallClock.year,
+    wallClock.month - 1,
+    wallClock.day,
+    wallClock.hour,
+    wallClock.minute,
+  )
+  const offsets = new Set<number>()
+  for (let hours = -36; hours <= 36; hours += 6) {
+    const sample = wallAsUtc + hours * 60 * 60 * 1000
+    const sampleParts = zonedParts(sample, timezone)
+    offsets.add(Date.UTC(
+      sampleParts.year,
+      sampleParts.month - 1,
+      sampleParts.day,
+      sampleParts.hour,
+      sampleParts.minute,
+    ) - sample)
+  }
+
+  const candidates = Array.from(offsets)
+    .map(offset => wallAsUtc - offset)
+    .filter(candidate => sameWallClock(zonedParts(candidate, timezone), wallClock))
+  return new Set(candidates).size === 1 ? new Date(candidates[0]).toISOString() : null
 }
 
 function notePayload(formData: FormData): { payload: Record<string, string | null>; errors: FieldErrors } {
@@ -198,11 +284,13 @@ export async function scheduleTrainerInterview(formData: FormData): Promise<Admi
 
   const { payload: notes, errors } = notePayload(formData)
   if (!isValidUuid(interviewId)) errors.interviewId = 'El identificador de entrevista no es valido.'
-  const proposedTime = new Date(proposedAt).getTime()
-  if (!Number.isFinite(proposedTime) || proposedTime <= Date.now()) {
+  if (!isTimezone(timezone)) errors.timezone = 'Selecciona una zona horaria valida.'
+  const proposedInstant = errors.timezone ? null : wallClockToUtc(proposedAt, timezone)
+  if (!proposedInstant) {
+    errors.proposedAt = 'La fecha local no existe o es ambigua en esa zona horaria.'
+  } else if (new Date(proposedInstant).getTime() <= Date.now()) {
     errors.proposedAt = 'La entrevista debe programarse para una fecha futura.'
   }
-  if (!isTimezone(timezone)) errors.timezone = 'Selecciona una zona horaria valida.'
   if (!INTERVIEW_MEDIA.has(medium)) errors.medium = 'Selecciona un medio de entrevista valido.'
   if (externalUrl && (!isHttpsUrl(externalUrl) || externalUrl.length > 2048)) {
     errors.externalUrl = 'El enlace externo debe usar HTTPS.'
@@ -215,7 +303,7 @@ export async function scheduleTrainerInterview(formData: FormData): Promise<Admi
     targetStatus: 'interview_required',
     payload: {
       interview_id: interviewId,
-      proposed_at: new Date(proposedTime).toISOString(),
+      proposed_at: proposedInstant,
       timezone,
       medium,
       external_url: externalUrl,
