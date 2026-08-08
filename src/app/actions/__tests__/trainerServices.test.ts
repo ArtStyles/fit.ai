@@ -96,6 +96,17 @@ describe('trainer service actions', () => {
     expect(supabase.insert).not.toHaveBeenCalled()
   })
 
+  it('runs the active trainer guard before validation or queries on update', async () => {
+    const formData = validServiceForm()
+    formData.set('serviceId', 'service-1')
+    formData.set('price_minor', '1000')
+    requireActiveTrainerContext.mockRejectedValue(new Error('ACTIVE_TRAINER_REQUIRED'))
+    const { updateTrainerService } = await import('../trainerServices')
+
+    await expect(updateTrainerService(formData)).rejects.toThrow('ACTIVE_TRAINER_REQUIRED')
+    expect(requireActiveTrainerContext).toHaveBeenCalledTimes(1)
+  })
+
   it('updates only an offering owned by the active trainer and keeps its id stable', async () => {
     const supabase = servicesSupabase({ existing: { id: 'service-1' } })
     requireActiveTrainerContext.mockResolvedValue({ trainerProfile: { id: 'trainer-profile-1' }, supabase })
@@ -107,12 +118,18 @@ describe('trainer service actions', () => {
     await expect(updateTrainerService(formData)).resolves.toEqual({ ok: true, serviceId: 'service-1' })
     expect(supabase.chain.eq).toHaveBeenCalledWith('id', 'service-1')
     expect(supabase.chain.eq).toHaveBeenCalledWith('trainer_profile_id', 'trainer-profile-1')
-    expect(supabase.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(supabase.update).toHaveBeenCalledWith({
+      name: 'Acompañamiento de fuerza',
+      description: 'Sesiones semanales enfocadas en progreso sostenible.',
+      modality: 'online',
+      duration_minutes: 60,
+      content: 'Evaluación inicial, rutina y seguimiento.',
+      capacity: 12,
       billing_mode: 'free_preview',
       price_minor: null,
       currency: null,
       billing_interval: null,
-    }))
+    })
     expect(JSON.stringify(supabase.update.mock.calls)).not.toContain('attacker-service')
   })
 
@@ -128,6 +145,42 @@ describe('trainer service actions', () => {
       error: 'No tienes permiso para modificar este servicio.',
     })
     expect(supabase.update).not.toHaveBeenCalled()
+  })
+
+  it.each(['priceMinor', 'price_minor', 'billingInterval', 'billing_interval'])('rejects injected %s on update before the ownership query', async field => {
+    const supabase = servicesSupabase({})
+    requireActiveTrainerContext.mockResolvedValue({ trainerProfile: { id: 'trainer-profile-1' }, supabase })
+    const formData = validServiceForm()
+    formData.set('serviceId', 'service-1')
+    formData.set(field, '1000')
+    const { updateTrainerService } = await import('../trainerServices')
+
+    await expect(updateTrainerService(formData)).resolves.toEqual({
+      ok: false,
+      error: 'Revisa los campos del servicio.',
+      fieldErrors: { commercial: 'Los servicios no admiten precios ni facturación.' },
+    })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('returns a safe error when the service write fails in Supabase', async () => {
+    const update = vi.fn(() => ({
+      eq: () => ({
+        eq: () => ({
+          select: () => ({ single: async () => ({ data: null, error: { message: 'write failed' } }) }),
+        }),
+      }),
+    }))
+    const supabase = servicesSupabase({ update })
+    requireActiveTrainerContext.mockResolvedValue({ trainerProfile: { id: 'trainer-profile-1' }, supabase })
+    const formData = validServiceForm()
+    formData.set('serviceId', 'service-1')
+    const { updateTrainerService } = await import('../trainerServices')
+
+    await expect(updateTrainerService(formData)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo guardar el servicio.',
+    })
   })
 
   it('changes active state only for an owned service while keeping it free preview', async () => {
@@ -147,5 +200,37 @@ describe('trainer service actions', () => {
       billing_interval: null,
     })
     expect(revalidatePath).toHaveBeenCalledWith('/coach/services')
+  })
+
+  it('does not toggle a service outside the active trainer ownership boundary', async () => {
+    const supabase = servicesSupabase({ existing: null })
+    requireActiveTrainerContext.mockResolvedValue({ trainerProfile: { id: 'trainer-profile-1' }, supabase })
+    const formData = new FormData()
+    formData.set('serviceId', 'other-service')
+    formData.set('isActive', 'false')
+    const { setTrainerServiceActive } = await import('../trainerServices')
+
+    await expect(setTrainerServiceActive(formData)).resolves.toEqual({
+      ok: false,
+      error: 'No tienes permiso para modificar este servicio.',
+    })
+    expect(supabase.update).not.toHaveBeenCalled()
+  })
+
+  it.each(['price', 'price_minor', 'billingInterval', 'billing_interval'])('rejects injected %s before toggle ownership or writes', async field => {
+    const supabase = servicesSupabase({})
+    requireActiveTrainerContext.mockResolvedValue({ trainerProfile: { id: 'trainer-profile-1' }, supabase })
+    const formData = new FormData()
+    formData.set('serviceId', 'service-1')
+    formData.set('isActive', 'false')
+    formData.set(field, '1000')
+    const { setTrainerServiceActive } = await import('../trainerServices')
+
+    await expect(setTrainerServiceActive(formData)).resolves.toEqual({
+      ok: false,
+      error: 'Revisa los campos del servicio.',
+      fieldErrors: { commercial: 'Los servicios no admiten precios ni facturación.' },
+    })
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 })
