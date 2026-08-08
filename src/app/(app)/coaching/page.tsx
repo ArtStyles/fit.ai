@@ -22,8 +22,9 @@ export default async function CoachingPage() {
     .select('id, status')
     .eq('client_user_id', user.id)
     .in('status', ['active', 'paused_by_platform'])
-    .limit(1)
-  const relationship = relationships?.[0] as { id: string; status: 'active' | 'paused_by_platform' } | undefined
+  const relationship = (relationships as Array<{ id: string; status: 'active' | 'paused_by_platform' }> | null | undefined)
+    ?.find(candidate => candidate.status === 'active')
+    ?? (relationships as Array<{ id: string; status: 'active' | 'paused_by_platform' }> | null | undefined)?.find(candidate => candidate.status === 'paused_by_platform')
   const { data: consents, error: consentsError } = relationship
     ? await (supabase as any)
       .from('coaching_consents')

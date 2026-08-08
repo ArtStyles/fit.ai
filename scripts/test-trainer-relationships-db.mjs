@@ -159,6 +159,139 @@ END;
 $$;
 `
 
+const suspensionAcceptRaceFixtureSql = `
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('a1000000-0000-4000-8000-000000000001', 'suspend-accept-trainer@example.test', '{}'::jsonb),
+  ('a2000000-0000-4000-8000-000000000002', 'suspend-accept-client@example.test', '{}'::jsonb),
+  ('a3000000-0000-4000-8000-000000000003', 'suspend-accept-admin@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status, is_admin) VALUES
+  ('a1000000-0000-4000-8000-000000000001', 'https://example.test/trainer.webp', TRUE, 'active', FALSE),
+  ('a2000000-0000-4000-8000-000000000002', 'https://example.test/client.webp', TRUE, 'active', FALSE),
+  ('a3000000-0000-4000-8000-000000000003', 'https://example.test/admin.webp', TRUE, 'active', TRUE);
+INSERT INTO public.trainer_applications (id, user_id)
+VALUES ('a4000000-0000-4000-8000-000000000004', 'a1000000-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary)
+VALUES ('a5000000-0000-4000-8000-000000000005', 'a1000000-0000-4000-8000-000000000001',
+  'a4000000-0000-4000-8000-000000000004', 'suspend-accept-trainer', 'active', 'Suspend accept trainer', 'Bio', 'Experience');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes)
+VALUES ('a6000000-0000-4000-8000-000000000006', 'a5000000-0000-4000-8000-000000000005', 'Suspend accept service', 'online', 60);
+INSERT INTO public.coaching_requests (id, service_id, trainer_user_id, client_user_id, training_profile_consent_version, idempotency_key, status)
+VALUES ('a7000000-0000-4000-8000-000000000007', 'a6000000-0000-4000-8000-000000000006',
+  'a1000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000002', 'training-profile-v1',
+  'a8000000-0000-4000-8000-000000000008', 'pending');
+`
+
+const suspensionAcceptRaceSql = `
+DO $$
+DECLARE
+  accept_result UUID;
+  suspension_result BOOLEAN;
+  accept_error TEXT;
+  suspension_error TEXT;
+BEGIN
+  PERFORM dblink_connect('suspend_accept_trainer', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_connect('suspend_accept_admin', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_exec('suspend_accept_trainer', $query$SET request.jwt.claim.sub = 'a1000000-0000-4000-8000-000000000001'$query$);
+  PERFORM dblink_exec('suspend_accept_trainer', $query$SET request.jwt.claim.role = 'authenticated'$query$);
+  PERFORM dblink_exec('suspend_accept_trainer', 'SET ROLE authenticated');
+  PERFORM dblink_exec('suspend_accept_admin', $query$SET request.jwt.claim.sub = ''$query$);
+  PERFORM dblink_exec('suspend_accept_admin', $query$SET request.jwt.claim.role = 'service_role'$query$);
+  PERFORM dblink_exec('suspend_accept_admin', 'SET ROLE service_role');
+  PERFORM dblink_send_query('suspend_accept_trainer', $query$SELECT relationship_id FROM public.accept_coaching_request('a7000000-0000-4000-8000-000000000007', 'a9000000-0000-4000-8000-000000000009')$query$);
+  PERFORM dblink_send_query('suspend_accept_admin', $query$SELECT account_suspended FROM public.suspend_account_and_professional('a1000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000003', 'Administrative race suspension', NULL)$query$);
+  SELECT relationship_id INTO accept_result FROM dblink_get_result('suspend_accept_trainer', false) AS result(relationship_id UUID);
+  SELECT account_suspended INTO suspension_result FROM dblink_get_result('suspend_accept_admin', false) AS result(account_suspended BOOLEAN);
+  accept_error := dblink_error_message('suspend_accept_trainer');
+  suspension_error := dblink_error_message('suspend_accept_admin');
+  IF suspension_result IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_ACCEPT_SUSPENSION_FAILED: result=% error=%', suspension_result, suspension_error;
+  END IF;
+  IF accept_result IS NULL AND accept_error NOT LIKE '%COACHING_TRAINER_NOT_ACTIVE%' THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_ACCEPT_WRONG_LOSER_ERROR: %', accept_error;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.coaching_relationships relationship
+    WHERE relationship.client_user_id = 'a2000000-0000-4000-8000-000000000002' AND relationship.status = 'active'
+  ) OR EXISTS (
+    SELECT 1 FROM public.coaching_consents consent
+    JOIN public.coaching_relationships relationship ON relationship.id = consent.relationship_id
+    WHERE relationship.client_user_id = 'a2000000-0000-4000-8000-000000000002' AND consent.revoked_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_ACCEPT_ACTIVE_STATE: result=% error=%', accept_result, accept_error;
+  END IF;
+  PERFORM dblink_disconnect('suspend_accept_trainer');
+  PERFORM dblink_disconnect('suspend_accept_admin');
+END;
+$$;
+`
+
+const suspensionResumeRaceFixtureSql = `
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('b1000000-0000-4000-8000-000000000001', 'suspend-resume-trainer@example.test', '{}'::jsonb),
+  ('b2000000-0000-4000-8000-000000000002', 'suspend-resume-client@example.test', '{}'::jsonb),
+  ('b3000000-0000-4000-8000-000000000003', 'suspend-resume-admin@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status, is_admin) VALUES
+  ('b1000000-0000-4000-8000-000000000001', 'https://example.test/trainer.webp', TRUE, 'active', FALSE),
+  ('b2000000-0000-4000-8000-000000000002', 'https://example.test/client.webp', TRUE, 'active', FALSE),
+  ('b3000000-0000-4000-8000-000000000003', 'https://example.test/admin.webp', TRUE, 'active', TRUE);
+INSERT INTO public.trainer_applications (id, user_id)
+VALUES ('b4000000-0000-4000-8000-000000000004', 'b1000000-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary)
+VALUES ('b5000000-0000-4000-8000-000000000005', 'b1000000-0000-4000-8000-000000000001',
+  'b4000000-0000-4000-8000-000000000004', 'suspend-resume-trainer', 'active', 'Suspend resume trainer', 'Bio', 'Experience');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes)
+VALUES ('b6000000-0000-4000-8000-000000000006', 'b5000000-0000-4000-8000-000000000005', 'Suspend resume service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status, paused_at)
+VALUES ('b7000000-0000-4000-8000-000000000007', 'b6000000-0000-4000-8000-000000000006',
+  'b1000000-0000-4000-8000-000000000001', 'b2000000-0000-4000-8000-000000000002', 'paused_by_platform', NOW());
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by, revoked_at, revoked_by)
+VALUES ('b7000000-0000-4000-8000-000000000007', 'training_profile', 'training-profile-v1',
+  'b2000000-0000-4000-8000-000000000002', NOW(), 'b1000000-0000-4000-8000-000000000001');
+`
+
+const suspensionResumeRaceSql = `
+DO $$
+DECLARE
+  resume_result UUID;
+  suspension_result BOOLEAN;
+  resume_error TEXT;
+  suspension_error TEXT;
+BEGIN
+  PERFORM dblink_connect('suspend_resume_client', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_connect('suspend_resume_admin', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_exec('suspend_resume_client', $query$SET request.jwt.claim.sub = 'b2000000-0000-4000-8000-000000000002'$query$);
+  PERFORM dblink_exec('suspend_resume_client', $query$SET request.jwt.claim.role = 'authenticated'$query$);
+  PERFORM dblink_exec('suspend_resume_client', 'SET ROLE authenticated');
+  PERFORM dblink_exec('suspend_resume_admin', $query$SET request.jwt.claim.sub = ''$query$);
+  PERFORM dblink_exec('suspend_resume_admin', $query$SET request.jwt.claim.role = 'service_role'$query$);
+  PERFORM dblink_exec('suspend_resume_admin', 'SET ROLE service_role');
+  PERFORM dblink_send_query('suspend_resume_client', $query$SELECT relationship_id FROM public.resume_paused_coaching_relationship('b7000000-0000-4000-8000-000000000007', 'b9000000-0000-4000-8000-000000000009')$query$);
+  PERFORM dblink_send_query('suspend_resume_admin', $query$SELECT account_suspended FROM public.suspend_account_and_professional('b1000000-0000-4000-8000-000000000001', 'b3000000-0000-4000-8000-000000000003', 'Administrative race suspension', NULL)$query$);
+  SELECT relationship_id INTO resume_result FROM dblink_get_result('suspend_resume_client', false) AS result(relationship_id UUID);
+  SELECT account_suspended INTO suspension_result FROM dblink_get_result('suspend_resume_admin', false) AS result(account_suspended BOOLEAN);
+  resume_error := dblink_error_message('suspend_resume_client');
+  suspension_error := dblink_error_message('suspend_resume_admin');
+  IF suspension_result IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_SUSPENSION_FAILED: result=% error=%', suspension_result, suspension_error;
+  END IF;
+  IF resume_result IS NULL AND resume_error NOT LIKE '%COACHING_TRAINER_NOT_ACTIVE%' THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_WRONG_LOSER_ERROR: %', resume_error;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.coaching_relationships relationship
+    WHERE relationship.id = 'b7000000-0000-4000-8000-000000000007' AND relationship.status = 'active'
+  ) OR EXISTS (
+    SELECT 1 FROM public.coaching_consents consent
+    WHERE consent.relationship_id = 'b7000000-0000-4000-8000-000000000007' AND consent.revoked_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'COACHING_SUSPEND_RESUME_ACTIVE_STATE: result=% error=%', resume_result, resume_error;
+  END IF;
+  PERFORM dblink_disconnect('suspend_resume_client');
+  PERFORM dblink_disconnect('suspend_resume_admin');
+END;
+$$;
+`
+
 function docker(args, { input, print = true } = {}) {
   const result = spawnSync('docker', args, {
     cwd: repoRoot,
@@ -224,7 +357,11 @@ try {
   runPsql(acceptanceRaceSql, 'running real dblink two-connection acceptance race')
   runPsql(resumeAcceptRaceFixtureSql, 'creating committed resume-versus-accept race fixture')
   runPsql(resumeAcceptRaceSql, 'running real dblink resume-versus-accept race')
-  process.stdout.write('\n[trainer-relationships-db] PASS: pgTAP assertions and real dblink races passed\n')
+  runPsql(suspensionAcceptRaceFixtureSql, 'creating committed suspension-versus-accept race fixture')
+  runPsql(suspensionAcceptRaceSql, 'running real dblink suspension-versus-accept race')
+  runPsql(suspensionResumeRaceFixtureSql, 'creating committed suspension-versus-resume race fixture')
+  runPsql(suspensionResumeRaceSql, 'running real dblink suspension-versus-resume race')
+  process.stdout.write('\n[trainer-relationships-db] PASS: pgTAP assertions and four real dblink races passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

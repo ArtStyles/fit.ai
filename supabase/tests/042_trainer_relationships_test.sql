@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(139);
+SELECT plan(147);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -1096,6 +1096,36 @@ RESET ROLE;
 SELECT is((SELECT status FROM public.trainer_profiles WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2'), 'active', 'reinstatement restores only the trainer profile');
 SELECT is((SELECT status FROM public.coaching_relationships WHERE id = '14141414-1414-4141-8141-141414141417'), 'paused_by_platform', 'reinstatement never reactivates a client relationship');
 SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = '14141414-1414-4141-8141-141414141417' AND revoked_at IS NULL), 0::bigint, 'reinstatement never restores coaching grants');
+
+-- Suspending a client has the same immediate revocation effect as suspending a trainer.
+SET LOCAL ROLE service_role;
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status)
+VALUES ('15151515-1515-4151-8151-151515151518', '88888888-8888-4888-8888-888888888800',
+  '11111111-1111-4111-8111-111111111111', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
+VALUES ('15151515-1515-4151-8151-151515151518', 'training_profile', 'training-profile-v1', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3');
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+SELECT lives_ok(
+  $$SELECT * FROM public.suspend_account_and_professional('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Client policy breach', NULL)$$,
+  'an active admin can suspend a client and revoke the client relationship'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.coaching_relationships WHERE id = '15151515-1515-4151-8151-151515151518'), 'paused_by_platform', 'client suspension pauses every active client relationship');
+SELECT ok((SELECT paused_at IS NOT NULL FROM public.coaching_relationships WHERE id = '15151515-1515-4151-8151-151515151518'), 'client suspension timestamps the paused relationship');
+SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = '15151515-1515-4151-8151-151515151518' AND revoked_at IS NULL), 0::bigint, 'client suspension revokes every active client scope');
+SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT ok(NOT public.has_active_coaching_scope('11111111-1111-4111-8111-111111111111', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'training_profile'), 'a suspended client cannot retain an active coaching scope');
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+SELECT is((SELECT account_suspended FROM public.suspend_account_and_professional('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Client policy breach', NULL)), FALSE, 'client suspension retry is idempotent');
+RESET ROLE;
+SELECT is((SELECT count(*) FROM public.admin_audit_logs WHERE target_user_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3' AND action = 'account_suspended'), 1::bigint, 'client suspension retry does not duplicate the audit record');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-account-suspended:15151515-1515-4151-8151-151515151518:%'), 2::bigint, 'client suspension notifies both participants without duplicate recipients');
 
 SELECT * FROM finish();
 ROLLBACK;

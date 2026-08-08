@@ -306,6 +306,8 @@ AS $$
       FROM public.trainer_profiles trainer_profile
       JOIN public.profiles trainer_account
         ON trainer_account.id = trainer_profile.user_id
+      JOIN public.profiles client_account
+        ON client_account.id = p_client_id
       JOIN public.coaching_relationships relationship
         ON relationship.trainer_user_id = trainer_profile.user_id
       JOIN public.coaching_consents training_consent
@@ -315,6 +317,7 @@ AS $$
       WHERE trainer_profile.user_id = p_trainer_id
         AND trainer_profile.status = 'active'
         AND trainer_account.account_status = 'active'
+        AND client_account.account_status = 'active'
         AND relationship.client_user_id = p_client_id
         AND relationship.status = 'active'
         AND training_consent.scope = 'training_profile'
@@ -586,6 +589,8 @@ DECLARE
   v_client_user_id UUID;
   v_request public.coaching_requests%ROWTYPE;
   v_service public.trainer_service_offerings%ROWTYPE;
+  v_trainer_account public.profiles%ROWTYPE;
+  v_trainer_profile public.trainer_profiles%ROWTYPE;
   v_relationship public.coaching_relationships%ROWTYPE;
   v_cancelled_request_ids UUID[] := '{}'::UUID[];
 BEGIN
@@ -646,15 +651,21 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'COACHING_SERVICE_NOT_AVAILABLE';
   END IF;
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.trainer_profiles trainer_profile
-    JOIN public.profiles trainer_account ON trainer_account.id = trainer_profile.user_id
-    WHERE trainer_profile.id = v_service.trainer_profile_id
-      AND trainer_profile.user_id = v_trainer_user_id
-      AND trainer_profile.status = 'active'
-      AND trainer_account.account_status = 'active'
-  ) THEN
+  -- Keep the account -> professional-profile lock order used by administrative
+  -- suspension. If an admin wins this lock race, the accept revalidates and fails.
+  SELECT * INTO v_trainer_account
+  FROM public.profiles account
+  WHERE account.id = v_trainer_user_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_trainer_account.account_status <> 'active' THEN
+    RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE';
+  END IF;
+  SELECT * INTO v_trainer_profile
+  FROM public.trainer_profiles trainer_profile
+  WHERE trainer_profile.id = v_service.trainer_profile_id
+    AND trainer_profile.user_id = v_trainer_user_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_trainer_profile.status <> 'active' THEN
     RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE';
   END IF;
   IF NOT EXISTS (
@@ -963,6 +974,9 @@ AS $$
 DECLARE
   v_client_user_id UUID := auth.uid();
   v_relationship public.coaching_relationships%ROWTYPE;
+  v_trainer_account public.profiles%ROWTYPE;
+  v_trainer_profile public.trainer_profiles%ROWTYPE;
+  v_service public.trainer_service_offerings%ROWTYPE;
   v_training_version TEXT;
 BEGIN
   IF v_client_user_id IS NULL THEN RAISE EXCEPTION 'COACHING_AUTH_REQUIRED'; END IF;
@@ -980,14 +994,18 @@ BEGIN
     IF v_relationship.status = 'active' THEN RETURN QUERY SELECT v_relationship.id, FALSE; RETURN; END IF;
     RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_PAUSED';
   END IF;
-  IF NOT public.is_account_active(v_client_user_id) OR NOT EXISTS (
-    SELECT 1 FROM public.trainer_profiles trainer_profile
-    JOIN public.profiles trainer_account ON trainer_account.id = trainer_profile.user_id
-    JOIN public.trainer_service_offerings service ON service.trainer_profile_id = trainer_profile.id
-    WHERE trainer_profile.user_id = v_relationship.trainer_user_id
-      AND trainer_profile.status = 'active' AND trainer_account.account_status = 'active'
-      AND service.id = v_relationship.service_id AND service.is_active = TRUE
-  ) THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+  IF NOT public.is_account_active(v_client_user_id) THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+  -- Match suspension's account -> profile order before checking resumability.
+  SELECT * INTO v_trainer_account FROM public.profiles account
+  WHERE account.id = v_relationship.trainer_user_id FOR UPDATE;
+  IF NOT FOUND OR v_trainer_account.account_status <> 'active' THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+  SELECT * INTO v_trainer_profile FROM public.trainer_profiles trainer_profile
+  WHERE trainer_profile.user_id = v_relationship.trainer_user_id FOR UPDATE;
+  IF NOT FOUND OR v_trainer_profile.status <> 'active' THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
+  SELECT * INTO v_service FROM public.trainer_service_offerings service
+  WHERE service.id = v_relationship.service_id
+    AND service.trainer_profile_id = v_trainer_profile.id FOR UPDATE;
+  IF NOT FOUND OR v_service.is_active <> TRUE THEN RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE'; END IF;
   IF EXISTS (
     SELECT 1 FROM public.coaching_relationships relationship
     WHERE relationship.client_user_id = v_client_user_id
@@ -1216,6 +1234,9 @@ BEGIN
     RAISE EXCEPTION 'COACHING_SUSPENSION_INVALID';
   END IF;
 
+  -- Coordinate with any client-side activation operation before reading account state.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::TEXT, 0));
+
   SELECT * INTO v_target_account FROM public.profiles profile
   WHERE profile.id = p_user_id FOR UPDATE;
   IF NOT FOUND THEN
@@ -1231,6 +1252,11 @@ BEGIN
       suspended_at = NOW(), suspended_until = p_until, suspended_by = v_admin_user_id
   WHERE id = p_user_id;
 
+  -- Always take the profile row lock after the account lock, even for a client
+  -- with no professional profile, to match accept/resume's trainer lock order.
+  PERFORM 1 FROM public.trainer_profiles profile
+  WHERE profile.user_id = p_user_id
+  FOR UPDATE;
   UPDATE public.trainer_profiles
   SET status = 'suspended'
   WHERE user_id = p_user_id AND status <> 'suspended';
@@ -1241,24 +1267,50 @@ BEGIN
   FOR v_relationship IN
     UPDATE public.coaching_relationships relationship
     SET status = 'paused_by_platform', paused_at = NOW()
-    WHERE relationship.trainer_user_id = p_user_id
+    WHERE (relationship.trainer_user_id = p_user_id OR relationship.client_user_id = p_user_id)
       AND relationship.status = 'active'
-    RETURNING relationship.id, relationship.client_user_id
+    RETURNING relationship.id, relationship.trainer_user_id, relationship.client_user_id
   LOOP
     UPDATE public.coaching_consents consent
     SET revoked_at = NOW(), revoked_by = v_admin_user_id
     WHERE consent.relationship_id = v_relationship.id
       AND consent.revoked_at IS NULL;
-    PERFORM public.create_product_notification(
-      p_user_id, 'coaching_trainer_suspended', 'Perfil profesional suspendido',
-      'El acceso profesional fue suspendido por administraciÃ³n.', '/coach',
-      'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || p_user_id::TEXT,
-      jsonb_build_object('relationship_id', v_relationship.id));
-    PERFORM public.create_product_notification(
-      v_relationship.client_user_id, 'coaching_trainer_suspended', 'AcompaÃ±amiento pausado',
-      'Tu acompaÃ±amiento fue pausado por una revisiÃ³n administrativa.', '/coaching',
-      'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || v_relationship.client_user_id::TEXT,
-      jsonb_build_object('relationship_id', v_relationship.id));
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+    ) VALUES (
+      v_admin_user_id, p_user_id, 'coaching_relationship', v_relationship.id,
+      'paused_due_to_account_suspension', jsonb_build_object(
+        'trainer_user_id', v_relationship.trainer_user_id,
+        'client_user_id', v_relationship.client_user_id
+      )
+    );
+    IF v_relationship.trainer_user_id = p_user_id THEN
+      PERFORM public.create_product_notification(
+        p_user_id, 'coaching_trainer_suspended', 'Perfil profesional suspendido',
+        'El acceso profesional fue suspendido por administraciÃ³n.', '/coach',
+        'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || p_user_id::TEXT,
+        jsonb_build_object('relationship_id', v_relationship.id));
+      IF v_relationship.client_user_id <> p_user_id THEN
+        PERFORM public.create_product_notification(
+          v_relationship.client_user_id, 'coaching_trainer_suspended', 'AcompaÃ±amiento pausado',
+          'Tu acompaÃ±amiento fue pausado por una revisiÃ³n administrativa.', '/coaching',
+          'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || v_relationship.client_user_id::TEXT,
+          jsonb_build_object('relationship_id', v_relationship.id));
+      END IF;
+    ELSE
+      PERFORM public.create_product_notification(
+        p_user_id, 'coaching_account_suspended', 'Cuenta suspendida',
+        'Tu acceso fue suspendido por administraciÃ³n y el acompaÃ±amiento quedó pausado.', '/coaching',
+        'coaching-account-suspended:' || v_relationship.id::TEXT || ':' || p_user_id::TEXT,
+        jsonb_build_object('relationship_id', v_relationship.id));
+      IF v_relationship.trainer_user_id <> p_user_id THEN
+        PERFORM public.create_product_notification(
+          v_relationship.trainer_user_id, 'coaching_client_suspended', 'AcompaÃ±amiento pausado',
+          'El acompañamiento fue pausado por una revisión administrativa.', '/coach/requests',
+          'coaching-account-suspended:' || v_relationship.id::TEXT || ':' || v_relationship.trainer_user_id::TEXT,
+          jsonb_build_object('relationship_id', v_relationship.id));
+      END IF;
+    END IF;
   END LOOP;
 
   INSERT INTO public.admin_audit_logs (admin_user_id, target_user_id, action, reason, metadata)
