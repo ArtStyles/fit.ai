@@ -11,7 +11,15 @@ async function renderLayout(communityEnabled: boolean): Promise<string> {
   vi.doMock('@/lib/auth/server', () => ({
     requireAppUserContext: vi.fn(() => Promise.resolve({
       profile: { language: 'es', timezone: 'America/Havana' },
+      user: { id: 'layout-test-user' },
+      supabase: {},
     })),
+  }))
+  vi.doMock('@/lib/coaching/access', () => ({
+    getTrainerAccess: vi.fn(() => Promise.resolve({ granted: false, reason: 'missing_profile' })),
+  }))
+  vi.doMock('next/headers', () => ({
+    cookies: () => ({ get: () => undefined }),
   }))
   vi.doMock('@/lib/features/community', () => ({
     isCommunityEnabled: vi.fn(() => communityEnabled),
@@ -19,6 +27,7 @@ async function renderLayout(communityEnabled: boolean): Promise<string> {
   vi.doMock('@/lib/i18n', () => ({ normalizeLanguage: () => 'es' }))
   vi.doMock('@/components/navigation/appNavigation', () => ({
     getPersonalNavItems: () => [],
+    getCoachNavItems: () => [],
   }))
   vi.doMock('@/components/i18n/I18nProvider', () => ({
     I18nProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
