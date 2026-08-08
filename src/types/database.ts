@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 041_trainer_verification
+ * Last updated: migration 042_trainer_relationships
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -396,6 +396,138 @@ export interface Database {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['trainer_profiles']['Insert']>
+        Relationships: []
+      }
+
+      trainer_service_offerings: {
+        Row: {
+          id: string
+          trainer_profile_id: string
+          name: string
+          description: string
+          modality: 'online' | 'in_person' | 'hybrid'
+          duration_minutes: number
+          content: string
+          capacity: number
+          is_active: boolean
+          billing_mode: 'free_preview'
+          price_minor: number | null
+          currency: string | null
+          billing_interval: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          trainer_profile_id: string
+          name: string
+          description?: string
+          modality: 'online' | 'in_person' | 'hybrid'
+          duration_minutes: number
+          content?: string
+          capacity?: number
+          is_active?: boolean
+          billing_mode?: 'free_preview'
+          price_minor?: null
+          currency?: null
+          billing_interval?: null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_service_offerings']['Insert']>
+        Relationships: []
+      }
+
+      coaching_requests: {
+        Row: {
+          id: string
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          message: string
+          training_profile_consent_version: string
+          status: 'pending' | 'accepted' | 'declined' | 'cancelled'
+          decided_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          message?: string
+          training_profile_consent_version: string
+          status?: 'pending' | 'accepted' | 'declined' | 'cancelled'
+          decided_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['coaching_requests']['Insert']>
+        Relationships: []
+      }
+
+      coaching_relationships: {
+        Row: {
+          id: string
+          source_request_id: string | null
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          status: 'active' | 'paused_by_platform' | 'ended'
+          started_at: string
+          paused_at: string | null
+          ended_at: string | null
+          ended_by: string | null
+          end_reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          source_request_id?: string | null
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          status?: 'active' | 'paused_by_platform' | 'ended'
+          started_at?: string
+          paused_at?: string | null
+          ended_at?: string | null
+          ended_by?: string | null
+          end_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['coaching_relationships']['Insert']>
+        Relationships: []
+      }
+
+      coaching_consents: {
+        Row: {
+          id: string
+          relationship_id: string
+          scope: 'training_profile' | 'body_measurements'
+          text_version: string
+          granted_at: string
+          revoked_at: string | null
+          granted_by: string
+          revoked_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          relationship_id: string
+          scope: 'training_profile' | 'body_measurements'
+          text_version: string
+          granted_at?: string
+          revoked_at?: string | null
+          granted_by: string
+          revoked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['coaching_consents']['Insert']>
         Relationships: []
       }
 
@@ -1271,6 +1403,14 @@ export interface Database {
         Args: Record<string, unknown>
         Returns: unknown
       }
+      has_active_coaching_scope: {
+        Args: {
+          p_trainer_id: string
+          p_client_id: string
+          p_scope: string
+        }
+        Returns: boolean
+      }
       create_engine_plan_v2: {
         Args: {
           p_plan: Json
@@ -1606,6 +1746,10 @@ export type TrainerApplicationCredential = Database['public']['Tables']['trainer
 export type TrainerApplicationEvent = Database['public']['Tables']['trainer_application_events']['Row']
 export type TrainerInterview = Database['public']['Tables']['trainer_interviews']['Row']
 export type TrainerProfile = Database['public']['Tables']['trainer_profiles']['Row']
+export type TrainerServiceOffering = Database['public']['Tables']['trainer_service_offerings']['Row']
+export type CoachingRequest = Database['public']['Tables']['coaching_requests']['Row']
+export type CoachingRelationship = Database['public']['Tables']['coaching_relationships']['Row']
+export type CoachingConsent = Database['public']['Tables']['coaching_consents']['Row']
 
 // ─── Enum convenience types (migrations 004–005) ──────────────────────────────
 
