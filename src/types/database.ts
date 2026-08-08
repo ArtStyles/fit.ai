@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 040_trainer_foundations
+ * Last updated: migration 041_trainer_verification
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -174,6 +174,193 @@ export interface Database {
           metadata: Json
           created_at: string
         }>
+        Relationships: []
+      }
+
+      trainer_applications: {
+        Row: {
+          id: string
+          user_id: string
+          status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          professional_name: string
+          professional_photo_url: string | null
+          bio: string
+          specialties: string[]
+          modalities: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location: string | null
+          languages: string[]
+          contact_email: string
+          contact_phone: string | null
+          preferred_contact: 'email' | 'phone' | 'whatsapp'
+          timezone: string
+          interview_availability: string
+          submitted_at: string | null
+          decided_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          status?: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          professional_name?: string
+          professional_photo_url?: string | null
+          bio?: string
+          specialties?: string[]
+          modalities?: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary?: string
+          general_location?: string | null
+          languages?: string[]
+          contact_email?: string
+          contact_phone?: string | null
+          preferred_contact?: 'email' | 'phone' | 'whatsapp'
+          timezone?: string
+          interview_availability?: string
+          submitted_at?: string | null
+          decided_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_applications']['Insert']>
+        Relationships: []
+      }
+
+      trainer_application_credentials: {
+        Row: {
+          id: string
+          application_id: string
+          credential_type: 'document' | 'link'
+          title: string
+          issuer: string | null
+          issued_on: string | null
+          expires_on: string | null
+          storage_path: string | null
+          external_url: string | null
+          mime_type: 'application/pdf' | 'image/jpeg' | 'image/png' | null
+          size_bytes: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          application_id: string
+          credential_type: 'document' | 'link'
+          title: string
+          issuer?: string | null
+          issued_on?: string | null
+          expires_on?: string | null
+          storage_path?: string | null
+          external_url?: string | null
+          mime_type?: 'application/pdf' | 'image/jpeg' | 'image/png' | null
+          size_bytes?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_application_credentials']['Insert']>
+        Relationships: []
+      }
+
+      trainer_application_events: {
+        Row: {
+          id: string
+          application_id: string
+          from_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn' | null
+          to_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          public_note: string | null
+          internal_note: string | null
+          actor_user_id: string | null
+          actor_role: 'applicant' | 'admin' | 'system'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          application_id: string
+          from_status?: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn' | null
+          to_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          public_note?: string | null
+          internal_note?: string | null
+          actor_user_id?: string | null
+          actor_role: 'applicant' | 'admin' | 'system'
+          created_at?: string
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      trainer_interviews: {
+        Row: {
+          id: string
+          application_id: string
+          proposed_at: string
+          timezone: string
+          medium: 'video_call' | 'phone' | 'in_person'
+          external_url: string | null
+          status: 'proposed' | 'scheduled' | 'completed' | 'cancelled'
+          outcome: string | null
+          public_note: string | null
+          internal_note: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          application_id: string
+          proposed_at: string
+          timezone: string
+          medium: 'video_call' | 'phone' | 'in_person'
+          external_url?: string | null
+          status?: 'proposed' | 'scheduled' | 'completed' | 'cancelled'
+          outcome?: string | null
+          public_note?: string | null
+          internal_note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_interviews']['Insert']>
+        Relationships: []
+      }
+
+      trainer_profiles: {
+        Row: {
+          id: string
+          user_id: string
+          source_application_id: string
+          slug: string
+          status: 'active' | 'suspended' | 'inactive'
+          professional_name: string
+          professional_photo_url: string | null
+          bio: string
+          specialties: string[]
+          modalities: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location: string | null
+          languages: string[]
+          verified_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          source_application_id: string
+          slug: string
+          status?: 'active' | 'suspended' | 'inactive'
+          professional_name: string
+          professional_photo_url?: string | null
+          bio: string
+          specialties?: string[]
+          modalities?: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location?: string | null
+          languages?: string[]
+          verified_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_profiles']['Insert']>
         Relationships: []
       }
 
@@ -1011,6 +1198,19 @@ export interface Database {
     }
 
     Views: {
+      trainer_application_events_public: {
+        Row: {
+          id: string
+          application_id: string
+          from_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn' | null
+          to_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          public_note: string | null
+          actor_user_id: string | null
+          actor_role: 'applicant' | 'admin' | 'system'
+          created_at: string
+        }
+        Relationships: []
+      }
       [name: string]: {
         Row: Record<string, unknown>
         Relationships: []
@@ -1285,6 +1485,11 @@ export type Measurement     = Database['public']['Tables']['measurements']['Row'
 export type AiConversation  = Database['public']['Tables']['ai_conversations']['Row']
 export type AiMessage       = Database['public']['Tables']['ai_messages']['Row']
 export type AiUsageLog      = Database['public']['Tables']['ai_usage_logs']['Row']
+export type TrainerApplication = Database['public']['Tables']['trainer_applications']['Row']
+export type TrainerApplicationCredential = Database['public']['Tables']['trainer_application_credentials']['Row']
+export type TrainerApplicationEvent = Database['public']['Tables']['trainer_application_events']['Row']
+export type TrainerInterview = Database['public']['Tables']['trainer_interviews']['Row']
+export type TrainerProfile = Database['public']['Tables']['trainer_profiles']['Row']
 
 // ─── Enum convenience types (migrations 004–005) ──────────────────────────────
 
