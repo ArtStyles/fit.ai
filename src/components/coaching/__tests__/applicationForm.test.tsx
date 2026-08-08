@@ -1,5 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { chromium, type Browser } from '@playwright/test'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   ApplicationForm,
   buildTrainerContactSummary,
@@ -188,6 +191,31 @@ describe('ApplicationTimeline', () => {
     expect(html).toContain('no existe mensajería privada en esta versión')
   })
 
+  it.each([
+    ['scheduled', 'Programada', true],
+    ['completed', 'Completada', false],
+    ['cancelled', 'Cancelada', false],
+  ] as const)('represents a %s interview and exposes an action only while scheduled', (status, label, actionable) => {
+    const html = renderToStaticMarkup(
+      <ApplicationTimeline
+        applicantTimezone="America/Havana"
+        events={[]}
+        interview={{
+          proposedAt: '2026-08-10T18:30:00.000Z',
+          timezone: 'America/Havana',
+          medium: 'video_call',
+          externalUrl: 'https://meet.example.test/interview/ada',
+          status,
+          publicNote: null,
+        }}
+      />,
+    )
+
+    expect(html).toContain(label)
+    expect(html.includes('Abrir enlace seguro')).toBe(actionable)
+    expect(html.includes('href="https://meet.example.test/interview/ada"')).toBe(actionable)
+  })
+
   it('never renders a non-HTTPS interview destination as a link', () => {
     const html = renderToStaticMarkup(
       <ApplicationTimeline
@@ -206,5 +234,79 @@ describe('ApplicationTimeline', () => {
 
     expect(html).not.toContain('href=')
     expect(html).toContain('El enlace de la entrevista no está disponible de forma segura.')
+  })
+})
+
+describe('ApplicationForm DOM accessibility', () => {
+  let browser: Browser
+  let viteServer: {
+    listen: () => Promise<void>
+    close: () => Promise<void>
+    httpServer: { address: () => string | { port: number } | null }
+  }
+  let baseUrl = ''
+
+  beforeAll(async () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
+    const viteEntry = path.join(repoRoot, 'node_modules/.pnpm/node_modules/vite/dist/node/index.js')
+    const { createServer } = await import(pathToFileURL(viteEntry).href)
+    viteServer = await createServer({
+      configFile: false,
+      root: repoRoot,
+      appType: 'spa',
+      oxc: { jsx: { runtime: 'automatic' } },
+      resolve: {
+        alias: [
+          {
+            find: '@/app/actions/trainerApplications',
+            replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerApplications.fixture.ts'),
+          },
+          { find: '@', replacement: path.join(repoRoot, 'src') },
+        ],
+      },
+      server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false },
+    })
+    await viteServer.listen()
+    const address = viteServer.httpServer.address()
+    if (!address || typeof address === 'string') throw new Error('Vite DOM fixture did not bind a TCP port.')
+    baseUrl = `http://127.0.0.1:${address.port}`
+    browser = await chromium.launch({ headless: true })
+  }, 30_000)
+
+  afterAll(async () => {
+    await browser?.close()
+    await viteServer?.close()
+  })
+
+  it.each([
+    ['photo', 'professionalPhotoUrl'],
+    ['modalities', 'modalities'],
+    ['credentials', 'credentials'],
+  ] as const)('focuses the visible %s error target and associates its message', async (testCase, targetId) => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=${testCase}`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+      await page.getByRole('button', { name: 'Revisar y enviar' }).click()
+      await page.waitForTimeout(50)
+
+      const state = await page.evaluate(id => {
+        const target = document.getElementById(id)
+        const errorId = `${id}-error`
+        return {
+          activeId: document.activeElement?.id ?? null,
+          describedBy: target?.getAttribute('aria-describedby') ?? null,
+          errorText: document.getElementById(errorId)?.textContent?.trim() ?? null,
+          hidden: target instanceof HTMLInputElement && target.type === 'hidden',
+        }
+      }, targetId)
+
+      expect(state.activeId).toBe(targetId)
+      expect(state.describedBy?.split(/\s+/)).toContain(`${targetId}-error`)
+      expect(state.errorText).toBeTruthy()
+      expect(state.hidden).toBe(false)
+    } finally {
+      await page.close()
+    }
   })
 })

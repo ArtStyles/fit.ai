@@ -245,9 +245,17 @@ export function ApplicationForm({
         </div>
 
         <fieldset disabled={!editable || saving || submitting || phase === 'confirming'} className="mt-6 space-y-6">
-          <input type="hidden" id="professionalPhotoUrl" name="professionalPhotoUrl" value={values.professionalPhotoUrl ?? ''} />
-          <div className="rounded-2xl border border-border/60 bg-background/40 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <input type="hidden" name="professionalPhotoUrl" value={values.professionalPhotoUrl ?? ''} />
+          <div
+            id="professionalPhotoUrl"
+            role="group"
+            tabIndex={-1}
+            aria-labelledby="professional-photo-title"
+            aria-invalid={Boolean(fieldErrors.professionalPhotoUrl)}
+            aria-describedby={describedBy('professionalPhotoUrl', fieldErrors.professionalPhotoUrl)}
+            className="rounded-2xl border border-border/60 bg-background/40 p-4 focus:outline-none focus:ring-2 focus:ring-red-400"
+          >
+            <div id="professional-photo-title" className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" /> Foto profesional
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -290,7 +298,13 @@ export function ApplicationForm({
             </label>
           </div>
 
-          <fieldset>
+          <fieldset
+            id="modalities"
+            tabIndex={-1}
+            aria-invalid={Boolean(fieldErrors.modalities)}
+            aria-describedby={describedBy('modalities', fieldErrors.modalities)}
+            className="rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400"
+          >
             <legend className="text-sm font-semibold text-foreground">Modalidades</legend>
             <div className="mt-2 grid gap-3 sm:grid-cols-3">
               {([
@@ -299,7 +313,14 @@ export function ApplicationForm({
                 ['hybrid', 'Híbrida'],
               ] as const).map(([value, label]) => (
                 <label key={value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-3 text-sm font-normal">
-                  <input type="checkbox" name="modalities" value={value} defaultChecked={values.modalities.includes(value)} /> {label}
+                  <input
+                    type="checkbox"
+                    name="modalities"
+                    value={value}
+                    defaultChecked={values.modalities.includes(value)}
+                    aria-invalid={Boolean(fieldErrors.modalities)}
+                    aria-describedby={describedBy('modalities', fieldErrors.modalities)}
+                  /> {label}
                 </label>
               ))}
             </div>
@@ -367,6 +388,9 @@ export function ApplicationForm({
         applicationId={applicationId}
         status={status}
         initialCredentials={initialCredentials}
+        focusTargetId="credentials"
+        errorId={describedBy('credentials', fieldErrors.credentials)}
+        invalid={Boolean(fieldErrors.credentials)}
         onCountChange={count => {
           setCredentialCount(count)
           if (count > 0) {

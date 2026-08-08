@@ -35,6 +35,13 @@ const MEDIUM_COPY: Record<TrainerInterviewView['medium'], string> = {
   in_person: 'Presencial',
 }
 
+const INTERVIEW_STATUS_COPY: Record<TrainerInterviewView['status'], string> = {
+  proposed: 'Propuesta',
+  scheduled: 'Programada',
+  completed: 'Completada',
+  cancelled: 'Cancelada',
+}
+
 function safeTimezone(value: string): string {
   try {
     new Intl.DateTimeFormat('es-ES', { timeZone: value }).format()
@@ -86,6 +93,7 @@ export function ApplicationTimeline({
     Date.parse(left.createdAt) - Date.parse(right.createdAt)
   ))
   const interviewUrl = safeHttpsUrl(interview?.externalUrl ?? null)
+  const actionableInterviewUrl = interview?.status === 'scheduled' ? interviewUrl : null
 
   if (orderedEvents.length === 0 && !interview) return null
 
@@ -119,17 +127,20 @@ export function ApplicationTimeline({
               <p className="mt-1 text-sm text-muted-foreground">
                 {formatDate(interview.proposedAt, applicantTimezone)}
               </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                Estado: {INTERVIEW_STATUS_COPY[interview.status]}
+              </p>
               {interview.publicNote ? <p className="mt-2 text-sm leading-relaxed text-foreground/90">{interview.publicNote}</p> : null}
-              {interviewUrl ? (
+              {actionableInterviewUrl ? (
                 <a
-                  href={interviewUrl}
+                  href={actionableInterviewUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
                 >
                   Abrir enlace seguro <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 </a>
-              ) : interview.externalUrl ? (
+              ) : interview.status === 'scheduled' && interview.externalUrl ? (
                 <p role="alert" className="mt-3 text-sm text-amber-200">
                   El enlace de la entrevista no está disponible de forma segura.
                 </p>

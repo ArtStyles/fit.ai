@@ -38,11 +38,17 @@ export function CredentialFields({
   status,
   initialCredentials,
   onCountChange,
+  focusTargetId,
+  errorId,
+  invalid = false,
 }: {
   applicationId: string | null
   status: TrainerApplicationStatus
   initialCredentials: TrainerCredentialView[]
   onCountChange: (count: number) => void
+  focusTargetId?: string
+  errorId?: string
+  invalid?: boolean
 }) {
   const editable = status === 'draft' || status === 'changes_requested'
   const [credentials, setCredentials] = useState(initialCredentials)
@@ -137,7 +143,14 @@ export function CredentialFields({
   }
 
   return (
-    <section aria-labelledby="credentials-title" className="rounded-3xl border border-border/60 bg-muted/10 p-5 sm:p-6">
+    <section
+      id={focusTargetId}
+      tabIndex={focusTargetId ? -1 : undefined}
+      aria-labelledby="credentials-title"
+      aria-invalid={invalid}
+      aria-describedby={errorId}
+      className="rounded-3xl border border-border/60 bg-muted/10 p-5 focus:outline-none focus:ring-2 focus:ring-red-400 sm:p-6"
+    >
       <h2 id="credentials-title" className="text-lg font-bold text-foreground">Credenciales profesionales</h2>
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
         Añade un documento privado (PDF, JPEG o PNG, hasta 10 MB) o un enlace HTTPS verificable.
