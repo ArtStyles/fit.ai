@@ -1453,6 +1453,18 @@ export interface Database {
         Args: { request_id: string; reason?: string }
         Returns: { declined_request_id: string }[]
       }
+      grant_body_measurements_consent: {
+        Args: { relationship_id: string; consent_version: string; idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
+      revoke_body_measurements_consent: {
+        Args: { relationship_id: string; idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
+      revoke_training_profile_consent: {
+        Args: { relationship_id: string; idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
       get_requestable_trainer_services: {
         Args: { trainer_slug: string }
         Returns: Array<{ service_id: string; name: string; description: string; modality: string; duration_minutes: number; content: string }>

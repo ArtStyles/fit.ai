@@ -7,12 +7,18 @@ vi.mock('@/lib/auth/server', () => ({ requireAppUserContext }))
 vi.mock('@/components/coaching/ClientCoachingStatus', () => ({
   ClientCoachingStatus: ({ requests }: { requests: unknown[] }) => <p>{requests.length ? 'requests' : 'No tienes solicitudes de acompañamiento.'}</p>,
 }))
+vi.mock('@/components/coaching/ConsentManager', () => ({ ConsentManager: () => <p>consents</p> }))
 
 function requestQuery(result: { data: unknown; error: unknown }) {
   const order = vi.fn(async () => result)
-  const eq = vi.fn(() => ({ order }))
-  const select = vi.fn(() => ({ eq }))
-  return { from: vi.fn(() => ({ select })), order }
+  const requestEq = vi.fn(() => ({ order }))
+  const requestSelect = vi.fn(() => ({ eq: requestEq }))
+  const relationshipLimit = vi.fn(async () => ({ data: [], error: null }))
+  const relationshipStatusEq = vi.fn(() => ({ limit: relationshipLimit }))
+  const relationshipClientEq = vi.fn(() => ({ eq: relationshipStatusEq }))
+  const relationshipSelect = vi.fn(() => ({ eq: relationshipClientEq }))
+  const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : requestSelect }))
+  return { from, order }
 }
 
 describe('CoachingPage', () => {

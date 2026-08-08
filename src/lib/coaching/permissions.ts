@@ -19,6 +19,8 @@ export async function hasActiveCoachingScope(
   scope: CoachingConsentScope,
   rpcClient?: CoachingScopeRpcClient,
 ): Promise<boolean> {
+  // Consent and trainer status are revocable, so every caller performs a new
+  // database authorization check. This module intentionally keeps no cache.
   const args: HasActiveCoachingScopeArgs = {
     p_trainer_id: trainerId,
     p_client_id: clientId,

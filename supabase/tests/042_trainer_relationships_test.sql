@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(85);
+SELECT plan(101);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -778,6 +778,139 @@ SELECT is(
   (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_created'),
   2::bigint,
   'a failed notification leaves no partial notification'
+);
+RESET ROLE;
+
+-- Scoped consent changes must be client-owned, atomic, and retry-safe.
+SET LOCAL ROLE service_role;
+DELETE FROM public.coaching_consents;
+DELETE FROM public.coaching_relationships;
+DELETE FROM public.coaching_requests;
+INSERT INTO public.coaching_requests (
+  id, service_id, trainer_user_id, client_user_id, training_profile_consent_version, idempotency_key, status
+) VALUES (
+  'aaaaaaaa-0000-4000-8000-000000000001', '88888888-8888-4888-8888-888888888800',
+  '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333',
+  'training-profile-v1', 'aaaaaaaa-0000-4000-8000-000000000002', 'accepted'
+);
+INSERT INTO public.coaching_relationships (
+  id, source_request_id, service_id, trainer_user_id, client_user_id, status
+) VALUES (
+  'aaaaaaaa-0000-4000-8000-000000000003', 'aaaaaaaa-0000-4000-8000-000000000001',
+  '88888888-8888-4888-8888-888888888800', '11111111-1111-4111-8111-111111111111',
+  '33333333-3333-4333-8333-333333333333', 'active'
+);
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
+VALUES ('aaaaaaaa-0000-4000-8000-000000000003', 'training_profile', 'training-profile-v1', '33333333-3333-4333-8333-333333333333');
+RESET ROLE;
+
+SELECT ok(
+  has_function_privilege('authenticated', 'public.grant_body_measurements_consent(uuid,text,uuid)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.revoke_body_measurements_consent(uuid,uuid)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.revoke_training_profile_consent(uuid,uuid)', 'EXECUTE'),
+  'scoped consent RPCs are authenticated-only entry points'
+);
+
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.grant_body_measurements_consent(
+    'aaaaaaaa-0000-4000-8000-000000000003', 'body-measurements-v1', 'aaaaaaaa-0000-4000-8000-000000000004'
+  )$$,
+  'client can grant body measurements on their own active relationship'
+);
+SELECT is(
+  (SELECT status FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000003'), 'active',
+  'granting body measurements does not end the relationship'
+);
+SELECT ok(
+  public.has_active_coaching_scope('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'body_measurements') IS FALSE,
+  'client cannot impersonate the trainer through the scope helper'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT ok(
+  public.has_active_coaching_scope('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'body_measurements'),
+  'granted body measurements authorize the correct active trainer'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT changed FROM public.grant_body_measurements_consent(
+    'aaaaaaaa-0000-4000-8000-000000000003', 'body-measurements-v1', 'aaaaaaaa-0000-4000-8000-000000000004'
+  )), FALSE,
+  'grant retry with the same key does not perform duplicate work'
+);
+SELECT lives_ok(
+  $$SELECT * FROM public.revoke_body_measurements_consent(
+    'aaaaaaaa-0000-4000-8000-000000000003', 'aaaaaaaa-0000-4000-8000-000000000005'
+  )$$,
+  'client can revoke only body measurements while keeping the relationship'
+);
+SELECT is(
+  (SELECT status FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000003'), 'active',
+  'revoking body measurements does not end the relationship'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT ok(
+  NOT public.has_active_coaching_scope('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'body_measurements'),
+  'body revocation immediately denies only that scope'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.revoke_training_profile_consent(
+    'aaaaaaaa-0000-4000-8000-000000000003', 'aaaaaaaa-0000-4000-8000-000000000006'
+  )$$,
+  'revoking training data atomically ends the active relationship'
+);
+SELECT is(
+  (SELECT status FROM public.coaching_relationships WHERE id = 'aaaaaaaa-0000-4000-8000-000000000003'), 'ended',
+  'training profile revocation persists the ended relationship state'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_consents WHERE relationship_id = 'aaaaaaaa-0000-4000-8000-000000000003' AND revoked_at IS NULL), 0::bigint,
+  'ending revokes every remaining scoped grant in the same transaction'
+);
+SELECT is(
+  (SELECT changed FROM public.revoke_training_profile_consent(
+    'aaaaaaaa-0000-4000-8000-000000000003', 'aaaaaaaa-0000-4000-8000-000000000006'
+  )), FALSE,
+  'training revocation retry with the same key does not perform duplicate work'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = 'aaaaaaaa-0000-4000-8000-000000000003' AND action = 'training_profile_consent_revoked'), 1::bigint,
+  'training revocation retry does not duplicate its audit event'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE dedupe_key = 'coaching-training-profile-revoked:aaaaaaaa-0000-4000-8000-000000000003'), 1::bigint,
+  'training revocation retry does not duplicate its notification'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.grant_body_measurements_consent(
+    'aaaaaaaa-0000-4000-8000-000000000003', 'body-measurements-v1', 'aaaaaaaa-0000-4000-8000-000000000007'
+  )$$,
+  'COACHING_RELATIONSHIP_NOT_ACTIVE',
+  'another account cannot grant consent after the relationship ended'
 );
 RESET ROLE;
 

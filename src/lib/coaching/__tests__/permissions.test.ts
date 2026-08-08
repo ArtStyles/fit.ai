@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   hasActiveCoachingScope,
   type CoachingScopeRpcClient,
@@ -34,5 +34,16 @@ describe('hasActiveCoachingScope', () => {
       'training_profile',
       rpcClient({ data: null, error: { message: 'permission denied' } }),
     )).resolves.toBe(false)
+  })
+
+  it('queries the authorization RPC on each invocation without retaining a previous user decision', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({ data: false, error: null })
+    const client: CoachingScopeRpcClient = { rpc }
+
+    await expect(hasActiveCoachingScope('trainer-1', 'client-1', 'body_measurements', client)).resolves.toBe(true)
+    await expect(hasActiveCoachingScope('trainer-1', 'client-1', 'body_measurements', client)).resolves.toBe(false)
+    expect(rpc).toHaveBeenCalledTimes(2)
   })
 })
