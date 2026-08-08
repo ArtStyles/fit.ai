@@ -108,4 +108,9 @@ describe('trainer relationships migration', () => {
     expect(migration).toMatch(/GRANT SELECT ON TABLE public\.coaching_consents TO authenticated/i)
     expect(migration).not.toMatch(/GRANT (?:INSERT|UPDATE|DELETE|ALL) ON TABLE public\.coaching_(?:requests|relationships|consents) TO authenticated/i)
   })
+
+  it('keeps service offerings owner-only until the safe directory projection exists', () => {
+    expect(migration).not.toMatch(/trainer_service_offerings: read active trainer services/i)
+    expect(migration).not.toMatch(/CREATE POLICY "trainer_service_offerings: public/i)
+  })
 })

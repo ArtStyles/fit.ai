@@ -308,17 +308,6 @@ ALTER TABLE public.coaching_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.coaching_relationships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.coaching_consents ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "trainer_service_offerings: read active trainer services" ON public.trainer_service_offerings;
-CREATE POLICY "trainer_service_offerings: read active trainer services"
-  ON public.trainer_service_offerings
-  FOR SELECT TO authenticated
-  USING (EXISTS (
-    SELECT 1
-    FROM public.trainer_profiles trainer_profile
-    WHERE trainer_profile.id = trainer_profile_id
-      AND trainer_profile.status = 'active'
-  ));
-
 DROP POLICY IF EXISTS "trainer_service_offerings: manage own active profile" ON public.trainer_service_offerings;
 CREATE POLICY "trainer_service_offerings: manage own active profile"
   ON public.trainer_service_offerings
