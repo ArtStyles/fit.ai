@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(60);
+SELECT plan(68);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -465,6 +465,73 @@ SELECT throws_ok(
   'COACHING_REQUEST_INVALID',
   'request RPC rejects a message beyond 1000 characters'
 );
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+UPDATE public.profiles SET account_status = 'suspended'
+WHERE id = '33333333-3333-4333-8333-333333333333';
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800', '', 'training-profile-v1', '88888888-8888-4888-8888-888888888889'
+  )$$,
+  'COACHING_CLIENT_NOT_ACTIVE',
+  'an inactive client account cannot create a request'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_requests WHERE idempotency_key = '88888888-8888-4888-8888-888888888889'),
+  0::bigint,
+  'inactive client rejection writes no request'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE metadata ->> 'idempotency_key' = '88888888-8888-4888-8888-888888888889'),
+  0::bigint,
+  'inactive client rejection writes no audit row'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_created'),
+  2::bigint,
+  'inactive client rejection writes no notification'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.profiles SET account_status = 'active'
+WHERE id = '33333333-3333-4333-8333-333333333333';
+UPDATE public.profiles SET account_status = 'suspended'
+WHERE id = '11111111-1111-4111-8111-111111111111';
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800', '', 'training-profile-v1', '88888888-8888-4888-8888-888888888890'
+  )$$,
+  'COACHING_TRAINER_NOT_ACTIVE',
+  'a globally suspended trainer account cannot receive a request despite an active profile'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_requests WHERE idempotency_key = '88888888-8888-4888-8888-888888888890'),
+  0::bigint,
+  'globally suspended trainer rejection writes no request'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE metadata ->> 'idempotency_key' = '88888888-8888-4888-8888-888888888890'),
+  0::bigint,
+  'globally suspended trainer rejection writes no audit row'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_created'),
+  2::bigint,
+  'globally suspended trainer rejection writes no notification'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.profiles SET account_status = 'active'
+WHERE id = '11111111-1111-4111-8111-111111111111';
 RESET ROLE;
 
 SET LOCAL ROLE service_role;

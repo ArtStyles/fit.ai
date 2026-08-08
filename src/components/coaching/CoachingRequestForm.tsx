@@ -10,6 +10,36 @@ function newIdempotencyKey() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4000-8000-${hex.slice(12, 24)}`
 }
 
+type CreateRequestAction = typeof createCoachingRequest
+
+export async function performCoachingRequestSubmit(
+  formData: FormData,
+  action: CreateRequestAction,
+  update: {
+    setPending: (pending: boolean) => void
+    setFieldErrors: (errors: Record<string, string>) => void
+    setAnnouncement: (message: string) => void
+    rotateIdempotencyKey: () => void
+  },
+) {
+  update.setPending(true)
+  update.setFieldErrors({})
+  try {
+    const result = await action(formData)
+    if (!result.ok) {
+      update.setFieldErrors(result.fieldErrors ?? {})
+      update.setAnnouncement(result.error)
+      return
+    }
+    update.setAnnouncement(result.created ? 'Tu solicitud quedó pendiente de respuesta.' : 'Tu solicitud ya estaba registrada.')
+    update.rotateIdempotencyKey()
+  } catch {
+    update.setAnnouncement('No se pudo enviar la solicitud.')
+  } finally {
+    update.setPending(false)
+  }
+}
+
 export function CoachingRequestForm({ service }: { service: { id: string; name: string } }) {
   const [pending, setPending] = useState(false)
   const [announcement, setAnnouncement] = useState('')
@@ -18,21 +48,16 @@ export function CoachingRequestForm({ service }: { service: { id: string; name: 
 
   async function submit(formData: FormData) {
     if (pending) return
-    setPending(true)
-    setFieldErrors({})
-    const result = await createCoachingRequest(formData)
-    setPending(false)
-    if (!result.ok) {
-      setFieldErrors(result.fieldErrors ?? {})
-      setAnnouncement(result.error)
-      return
-    }
-    setAnnouncement(result.created ? 'Tu solicitud quedó pendiente de respuesta.' : 'Tu solicitud ya estaba registrada.')
-    setIdempotencyKey(newIdempotencyKey())
+    await performCoachingRequestSubmit(formData, createCoachingRequest, {
+      setPending,
+      setFieldErrors,
+      setAnnouncement,
+      rotateIdempotencyKey: () => setIdempotencyKey(newIdempotencyKey()),
+    })
   }
 
   return (
-    <form action={submit} className="mt-4 rounded-2xl border border-violet-500/30 bg-violet-500/[0.04] p-4" noValidate>
+    <form onSubmit={event => { event.preventDefault(); void submit(new FormData(event.currentTarget)) }} className="mt-4 rounded-2xl border border-violet-500/30 bg-violet-500/[0.04] p-4" noValidate>
       <input type="hidden" name="serviceId" value={service.id} />
       <input type="hidden" name="consentVersion" value={TRAINING_PROFILE_CONSENT_VERSION} />
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />

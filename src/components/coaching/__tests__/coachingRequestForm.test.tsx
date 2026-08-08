@@ -5,8 +5,8 @@ vi.mock('@/app/actions/coachingRequests', () => ({
   createCoachingRequest: async () => ({ ok: true, requestId: 'request-1', created: true }),
   cancelCoachingRequest: async () => ({ ok: true, requestId: 'request-1' }),
 }))
-import { CoachingRequestForm } from '../CoachingRequestForm'
-import { ClientCoachingStatus } from '../ClientCoachingStatus'
+import { CoachingRequestForm, performCoachingRequestSubmit } from '../CoachingRequestForm'
+import { ClientCoachingStatus, performCoachingRequestCancellation } from '../ClientCoachingStatus'
 
 describe('coaching request UI', () => {
   it('renders an accessible versioned consent request form without contact or chat fields', () => {
@@ -32,5 +32,32 @@ describe('coaching request UI', () => {
     expect(html).toContain('Pendiente')
     expect(html).toContain('No aceptada')
     expect(html.match(/Cancelar solicitud/g)).toHaveLength(1)
+  })
+})
+
+describe('coaching request interaction failures', () => {
+  it('recovers pending controls and communicates safe errors when either server action rejects', async () => {
+    const requestPending = vi.fn()
+    const requestErrors = vi.fn()
+    const requestAnnouncement = vi.fn()
+    const cancelPending = vi.fn()
+    const cancelAnnouncement = vi.fn()
+
+    await performCoachingRequestSubmit(new FormData(), async () => { throw new Error('transport failed') }, {
+      setPending: requestPending,
+      setFieldErrors: requestErrors,
+      setAnnouncement: requestAnnouncement,
+      rotateIdempotencyKey: vi.fn(),
+    })
+    await performCoachingRequestCancellation('request-1', async () => { throw new Error('transport failed') }, {
+      setCancellingId: cancelPending,
+      setMessage: cancelAnnouncement,
+    })
+
+    expect(requestPending.mock.calls.map(([value]) => value)).toEqual([true, false])
+    expect(requestErrors).toHaveBeenCalledWith({})
+    expect(requestAnnouncement).toHaveBeenCalledWith('No se pudo enviar la solicitud.')
+    expect(cancelPending.mock.calls.map(([value]) => value)).toEqual(['request-1', null])
+    expect(cancelAnnouncement).toHaveBeenCalledWith('No se pudo cancelar la solicitud.')
   })
 })

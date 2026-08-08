@@ -8,17 +8,32 @@ const statusLabels: Record<CoachingRequestStatus, string> = { pending: 'Pendient
 
 export type ClientCoachingRequestView = { id: string; status: CoachingRequestStatus; createdAt: string }
 
+type CancelRequestAction = typeof cancelCoachingRequest
+
+export async function performCoachingRequestCancellation(
+  requestId: string,
+  action: CancelRequestAction,
+  update: { setCancellingId: (id: string | null) => void; setMessage: (message: string) => void },
+) {
+  update.setCancellingId(requestId)
+  const formData = new FormData()
+  formData.set('requestId', requestId)
+  try {
+    const result = await action(formData)
+    update.setMessage(result.ok ? 'La solicitud fue cancelada.' : result.error)
+  } catch {
+    update.setMessage('No se pudo cancelar la solicitud.')
+  } finally {
+    update.setCancellingId(null)
+  }
+}
+
 export function ClientCoachingStatus({ requests }: { requests: ClientCoachingRequestView[] }) {
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
 
   async function cancel(requestId: string) {
-    setCancellingId(requestId)
-    const formData = new FormData()
-    formData.set('requestId', requestId)
-    const result = await cancelCoachingRequest(formData)
-    setCancellingId(null)
-    setMessage(result.ok ? 'La solicitud fue cancelada.' : result.error)
+    await performCoachingRequestCancellation(requestId, cancelCoachingRequest, { setCancellingId, setMessage })
   }
 
   if (!requests.length) return <p className="rounded-2xl border border-border/70 p-4 text-sm text-muted-foreground">No tienes solicitudes de acompañamiento.</p>
