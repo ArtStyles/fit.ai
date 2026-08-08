@@ -32,7 +32,7 @@ export async function performCoachingRequestSubmit(
     const result = await action(formData)
     if (!result.ok) {
       update.setFieldErrors(result.fieldErrors ?? {})
-      update.setAnnouncement(result.error, true)
+      update.setAnnouncement('No se pudo enviar la solicitud.', true)
       return
     }
     update.setAnnouncement(result.created ? 'Tu solicitud quedó pendiente de respuesta.' : 'Tu solicitud ya estaba registrada.', false)

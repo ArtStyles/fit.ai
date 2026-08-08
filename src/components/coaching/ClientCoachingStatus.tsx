@@ -21,7 +21,7 @@ export async function performCoachingRequestCancellation(
   formData.set('requestId', requestId)
   try {
     const result = await action(formData)
-    update.setMessage(result.ok ? 'La solicitud fue cancelada.' : result.error, !result.ok)
+    update.setMessage(result.ok ? 'La solicitud fue cancelada.' : 'No se pudo cancelar la solicitud.', !result.ok)
   } catch {
     update.setMessage('No se pudo cancelar la solicitud.', true)
   } finally {
