@@ -303,6 +303,20 @@ describe('trainer administration privacy', () => {
     expect(html).toMatch(/name="proposedAt"[^>]*aria-invalid="true"/)
   })
 
+  it('offers an explicit profile reinstatement action for an approved trainer without implying client reactivation', async () => {
+    adminContext.service = detailService()
+    const application = await getAdminTrainerApplication(APPLICATION_ID)
+    if (!application) throw new Error('Expected the application expediente.')
+
+    const html = renderToStaticMarkup(createElement(TrainerApplicationReview as any, {
+      application: { ...application, status: 'approved' },
+    }))
+
+    expect(html).toContain('Restablecer perfil profesional')
+    expect(html).toContain('name="applicationId"')
+    expect(html).toContain('No reanuda acompa')
+  })
+
   it('renders an RPC conflict as an error instead of a successful approval', async () => {
     adminContext.service = detailService()
     const application = await getAdminTrainerApplication(APPLICATION_ID)

@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(122);
+SELECT plan(139);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -1008,6 +1008,83 @@ SELECT throws_ok(
   'COACHING_RELATIONSHIP_NOT_PAUSED', 'an ended relationship can never be resumed'
 );
 RESET ROLE;
+
+-- Administrative suspension is a single transaction: it pauses each active
+-- client relationship, revokes every scope, and leaves the history intact.
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'relationship-admin@example.test', '{}'::jsonb),
+  ('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'suspension-trainer@example.test', '{}'::jsonb),
+  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'suspension-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status, is_admin) VALUES
+  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'https://example.test/admin.webp', TRUE, 'active', TRUE),
+  ('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'https://example.test/trainer.webp', TRUE, 'active', FALSE),
+  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'https://example.test/client.webp', TRUE, 'active', FALSE);
+INSERT INTO public.trainer_applications (id, user_id)
+VALUES ('ffffffff-ffff-4fff-8fff-fffffffffff4', 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary)
+VALUES ('12121212-1212-4121-8121-121212121215', 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2',
+  'ffffffff-ffff-4fff-8fff-fffffffffff4', 'suspension-trainer', 'active', 'Suspension trainer', 'Visible only while active', 'Suspension evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes)
+VALUES ('13131313-1313-4131-8131-131313131316', '12121212-1212-4121-8121-121212121215', 'Suspension service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status)
+VALUES ('14141414-1414-4141-8141-141414141417', '13131313-1313-4131-8131-131313131316',
+  'dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('14141414-1414-4141-8141-141414141417', 'training_profile', 'training-profile-v1', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3'),
+  ('14141414-1414-4141-8141-141414141417', 'body_measurements', 'body-measurements-v1', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3');
+
+SELECT ok(
+  has_function_privilege('authenticated', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.reinstate_trainer_profile(uuid,uuid)', 'EXECUTE'),
+  'administrative coaching RPCs require a callable authenticated boundary'
+);
+SELECT set_config('request.jwt.claim.sub', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)$$,
+  'COACHING_ADMIN_ACTOR_MISMATCH', 'a non-admin cannot forge a different admin id to suspend a trainer'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)$$,
+  'an authenticated active admin can suspend a trainer atomically'
+);
+RESET ROLE;
+SELECT is((SELECT account_status FROM public.profiles WHERE id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2'), 'suspended', 'suspension updates the global account state');
+SELECT is((SELECT status FROM public.trainer_profiles WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2'), 'suspended', 'suspension updates the trainer profile state');
+SELECT is((SELECT count(*) FROM public.active_trainer_directory WHERE slug = 'suspension-trainer'), 0::bigint, 'suspension removes trainer services from public discovery');
+SELECT is((SELECT status FROM public.coaching_relationships WHERE id = '14141414-1414-4141-8141-141414141417'), 'paused_by_platform', 'suspension pauses active coaching relationships');
+SELECT ok((SELECT paused_at IS NOT NULL FROM public.coaching_relationships WHERE id = '14141414-1414-4141-8141-141414141417'), 'suspension timestamps the platform pause');
+SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = '14141414-1414-4141-8141-141414141417' AND revoked_at IS NULL), 0::bigint, 'suspension revokes every active coaching scope');
+SELECT is((SELECT count(*) FROM public.admin_audit_logs WHERE target_user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2' AND action = 'account_suspended'), 1::bigint, 'suspension writes one administrative audit record');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-trainer-suspended:14141414-1414-4141-8141-141414141417:%'), 2::bigint, 'suspension notifies the trainer and client without leaking request messages');
+SELECT set_config('request.jwt.claim.sub', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT is((SELECT account_suspended FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)), FALSE, 'repeated suspension is idempotent');
+RESET ROLE;
+SELECT is((SELECT count(*) FROM public.admin_audit_logs WHERE target_user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2' AND action = 'account_suspended'), 1::bigint, 'repeated suspension does not duplicate the audit record');
+
+SET LOCAL ROLE service_role;
+UPDATE public.profiles SET account_status = 'active', suspension_reason = NULL, suspended_at = NULL, suspended_until = NULL, suspended_by = NULL
+WHERE id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.reinstate_trainer_profile('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1')$$,
+  'an active admin can explicitly reinstate the trainer profile'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.trainer_profiles WHERE user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2'), 'active', 'reinstatement restores only the trainer profile');
+SELECT is((SELECT status FROM public.coaching_relationships WHERE id = '14141414-1414-4141-8141-141414141417'), 'paused_by_platform', 'reinstatement never reactivates a client relationship');
+SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = '14141414-1414-4141-8141-141414141417' AND revoked_at IS NULL), 0::bigint, 'reinstatement never restores coaching grants');
 
 SELECT * FROM finish();
 ROLLBACK;

@@ -272,6 +272,41 @@ export async function rejectTrainerApplication(formData: FormData): Promise<Admi
   return applicationTransition(formData, 'reject', 'rejected', true)
 }
 
+export async function reinstateTrainerProfile(formData: FormData): Promise<AdminTrainerActionResult> {
+  const context = await requireAdminUserContext()
+  const applicationId = text(formData, 'applicationId')
+  if (!isValidUuid(applicationId)) return actionError('Solicitud no valida.')
+
+  const { data: application, error: applicationError } = await context.service
+    .from('trainer_applications')
+    .select('id, user_id, status')
+    .eq('id', applicationId)
+    .maybeSingle()
+  if (applicationError || !application || !isValidUuid(application.user_id) || !APPLICATION_STATUSES.has(application.status)) {
+    return actionError('Solicitud no disponible.')
+  }
+
+  const { data, error } = await (context.service.rpc as any)('reinstate_trainer_profile', {
+    p_user_id: application.user_id,
+    p_admin_id: context.user.id,
+  })
+  const result = Array.isArray(data) ? data[0] : data
+  if (error || typeof result?.profile_reinstated !== 'boolean') {
+    return actionError('No se pudo restablecer el perfil profesional.')
+  }
+
+  revalidatePath('/admin')
+  revalidatePath('/admin/trainers')
+  revalidatePath(`/admin/trainers/${applicationId}`)
+  revalidatePath('/trainers')
+  return {
+    ok: true,
+    applicationId,
+    status: application.status,
+    transitioned: result.profile_reinstated,
+  }
+}
+
 export async function scheduleTrainerInterview(formData: FormData): Promise<AdminTrainerActionResult> {
   const context = await requireAdminUserContext()
   const applicationId = text(formData, 'applicationId')

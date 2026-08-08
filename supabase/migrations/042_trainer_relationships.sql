@@ -1135,7 +1135,10 @@ FROM public.trainer_profiles AS trainer_profile
 LEFT JOIN public.trainer_service_offerings AS service
   ON service.trainer_profile_id = trainer_profile.id
   AND service.is_active = TRUE
+JOIN public.profiles AS trainer_account
+  ON trainer_account.id = trainer_profile.user_id
 WHERE trainer_profile.status = 'active'
+  AND public.is_account_active(trainer_profile.user_id)
 GROUP BY
   trainer_profile.user_id,
   trainer_profile.slug,
@@ -1156,3 +1159,161 @@ GRANT SELECT ON TABLE public.active_trainer_directory TO service_role;
 
 COMMENT ON VIEW public.active_trainer_directory IS
   'Authenticated discovery projection of active trainer profiles and their active non-commercial services only.';
+
+-- Administrative requests arrive either from an authenticated admin directly
+-- or through the server-side service client after requireAdminUserContext has
+-- already validated the session. Never let an authenticated caller nominate a
+-- different administrator in the legacy p_admin_id parameter.
+CREATE OR REPLACE FUNCTION public.require_active_coaching_admin(p_admin_id UUID)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_authenticated_user_id UUID := auth.uid();
+  v_is_admin BOOLEAN;
+BEGIN
+  IF p_admin_id IS NULL THEN
+    RAISE EXCEPTION 'COACHING_ADMIN_REQUIRED';
+  END IF;
+  IF v_authenticated_user_id IS NOT NULL AND v_authenticated_user_id <> p_admin_id THEN
+    RAISE EXCEPTION 'COACHING_ADMIN_ACTOR_MISMATCH';
+  END IF;
+  IF v_authenticated_user_id IS NULL AND COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'COACHING_ADMIN_REQUIRED';
+  END IF;
+
+  SELECT profile.is_admin AND public.is_account_active(profile.id)
+  INTO v_is_admin
+  FROM public.profiles profile
+  WHERE profile.id = p_admin_id;
+  IF NOT COALESCE(v_is_admin, FALSE) THEN
+    RAISE EXCEPTION 'COACHING_ADMIN_REQUIRED';
+  END IF;
+  RETURN p_admin_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.suspend_account_and_professional(
+  p_user_id UUID, p_admin_id UUID, p_reason TEXT, p_until TIMESTAMPTZ
+)
+RETURNS TABLE (account_suspended BOOLEAN, trainer_profile_suspended BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_admin_user_id UUID;
+  v_target_account public.profiles%ROWTYPE;
+  v_reason TEXT := NULLIF(btrim(COALESCE(p_reason, '')), '');
+  v_relationship RECORD;
+  v_profile_changed BOOLEAN := FALSE;
+BEGIN
+  v_admin_user_id := public.require_active_coaching_admin(p_admin_id);
+  IF p_user_id IS NULL OR v_reason IS NULL OR char_length(v_reason) < 4 OR char_length(v_reason) > 500 THEN
+    RAISE EXCEPTION 'COACHING_SUSPENSION_INVALID';
+  END IF;
+  IF p_until IS NOT NULL AND p_until <= NOW() THEN
+    RAISE EXCEPTION 'COACHING_SUSPENSION_INVALID';
+  END IF;
+
+  SELECT * INTO v_target_account FROM public.profiles profile
+  WHERE profile.id = p_user_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COACHING_ACCOUNT_NOT_FOUND';
+  END IF;
+  IF v_target_account.account_status = 'suspended' THEN
+    RETURN QUERY SELECT FALSE, FALSE;
+    RETURN;
+  END IF;
+
+  UPDATE public.profiles
+  SET account_status = 'suspended', suspension_reason = v_reason,
+      suspended_at = NOW(), suspended_until = p_until, suspended_by = v_admin_user_id
+  WHERE id = p_user_id;
+
+  UPDATE public.trainer_profiles
+  SET status = 'suspended'
+  WHERE user_id = p_user_id AND status <> 'suspended';
+  v_profile_changed := FOUND;
+
+  -- A suspended professional must immediately lose all live client scopes.
+  -- Returning the changed rows keeps notifications scoped to this operation.
+  FOR v_relationship IN
+    UPDATE public.coaching_relationships relationship
+    SET status = 'paused_by_platform', paused_at = NOW()
+    WHERE relationship.trainer_user_id = p_user_id
+      AND relationship.status = 'active'
+    RETURNING relationship.id, relationship.client_user_id
+  LOOP
+    UPDATE public.coaching_consents consent
+    SET revoked_at = NOW(), revoked_by = v_admin_user_id
+    WHERE consent.relationship_id = v_relationship.id
+      AND consent.revoked_at IS NULL;
+    PERFORM public.create_product_notification(
+      p_user_id, 'coaching_trainer_suspended', 'Perfil profesional suspendido',
+      'El acceso profesional fue suspendido por administraciÃ³n.', '/coach',
+      'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || p_user_id::TEXT,
+      jsonb_build_object('relationship_id', v_relationship.id));
+    PERFORM public.create_product_notification(
+      v_relationship.client_user_id, 'coaching_trainer_suspended', 'AcompaÃ±amiento pausado',
+      'Tu acompaÃ±amiento fue pausado por una revisiÃ³n administrativa.', '/coaching',
+      'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || v_relationship.client_user_id::TEXT,
+      jsonb_build_object('relationship_id', v_relationship.id));
+  END LOOP;
+
+  INSERT INTO public.admin_audit_logs (admin_user_id, target_user_id, action, reason, metadata)
+  VALUES (v_admin_user_id, p_user_id, 'account_suspended', v_reason,
+    jsonb_build_object('suspended_until', p_until, 'trainer_profile_suspended', v_profile_changed));
+  INSERT INTO public.professional_audit_logs (actor_user_id, subject_user_id, entity_type, entity_id, action, metadata)
+  VALUES (v_admin_user_id, p_user_id, 'trainer_account', p_user_id, 'suspended',
+    jsonb_build_object('trainer_profile_suspended', v_profile_changed));
+  RETURN QUERY SELECT TRUE, v_profile_changed;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reinstate_trainer_profile(p_user_id UUID, p_admin_id UUID)
+RETURNS TABLE (profile_reinstated BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_admin_user_id UUID;
+  v_profile public.trainer_profiles%ROWTYPE;
+BEGIN
+  v_admin_user_id := public.require_active_coaching_admin(p_admin_id);
+  IF p_user_id IS NULL OR NOT public.is_account_active(p_user_id) THEN
+    RAISE EXCEPTION 'COACHING_ACCOUNT_NOT_ACTIVE';
+  END IF;
+  SELECT * INTO v_profile FROM public.trainer_profiles profile
+  WHERE profile.user_id = p_user_id FOR UPDATE;
+  IF NOT FOUND OR v_profile.status = 'active' THEN
+    RETURN QUERY SELECT FALSE;
+    RETURN;
+  END IF;
+
+  UPDATE public.trainer_profiles SET status = 'active' WHERE id = v_profile.id;
+  INSERT INTO public.admin_audit_logs (admin_user_id, target_user_id, action, metadata)
+  VALUES (v_admin_user_id, p_user_id, 'trainer_profile_reinstated',
+    jsonb_build_object('trainer_profile_id', v_profile.id));
+  INSERT INTO public.professional_audit_logs (actor_user_id, subject_user_id, entity_type, entity_id, action)
+  VALUES (v_admin_user_id, p_user_id, 'trainer_profile', v_profile.id, 'reinstated');
+  PERFORM public.create_product_notification(
+    p_user_id, 'trainer_profile_reinstated', 'Perfil profesional restablecido',
+    'Tu perfil profesional fue restablecido. Los acompaÃ±amientos pausados requieren confirmaciÃ³n del cliente.', '/coach',
+    'trainer-profile-reinstated:' || p_user_id::TEXT,
+    jsonb_build_object('trainer_profile_id', v_profile.id));
+  RETURN QUERY SELECT TRUE;
+END;
+$$;
+
+ALTER FUNCTION public.require_active_coaching_admin(UUID) OWNER TO postgres;
+ALTER FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) OWNER TO postgres;
+ALTER FUNCTION public.reinstate_trainer_profile(UUID, UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.require_active_coaching_admin(UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.reinstate_trainer_profile(UUID, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.reinstate_trainer_profile(UUID, UUID) TO authenticated, service_role;

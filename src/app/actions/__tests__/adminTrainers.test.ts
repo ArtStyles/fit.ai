@@ -6,6 +6,7 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 import {
   approveTrainerApplication,
+  reinstateTrainerProfile,
   recordTrainerInterviewOutcome,
   rejectTrainerApplication,
   requestTrainerChanges,
@@ -221,5 +222,32 @@ describe('trainer administrative actions', () => {
       p_actor_user_id: ADMIN_ID,
       p_action: 'approve',
     }))
+  })
+
+  it('derives the trainer account from the reviewed application before reinstating its profile', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ profile_reinstated: true }], error: null })
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { id: APPLICATION_ID, user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', status: 'approved' },
+        error: null,
+      }),
+    }
+    query.select.mockReturnValue(query)
+    query.eq.mockReturnValue(query)
+    const service = { from: vi.fn().mockReturnValue(query), rpc }
+    requireAdminUserContextMock.mockResolvedValue({ user: { id: ADMIN_ID }, service })
+
+    await expect(reinstateTrainerProfile(validApplicationForm({ userId: 'forged-user-id' }))).resolves.toEqual({
+      ok: true,
+      applicationId: APPLICATION_ID,
+      status: 'approved',
+      transitioned: true,
+    })
+    expect(rpc).toHaveBeenCalledWith('reinstate_trainer_profile', {
+      p_user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      p_admin_id: ADMIN_ID,
+    })
   })
 })

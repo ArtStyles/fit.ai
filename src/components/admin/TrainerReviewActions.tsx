@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import {
   approveTrainerApplication,
+  reinstateTrainerProfile,
   recordTrainerInterviewOutcome,
   rejectTrainerApplication,
   requestTrainerChanges,
@@ -20,6 +21,7 @@ type ActionKey =
   | 'recordOutcome'
   | 'approve'
   | 'reject'
+  | 'reinstateProfile'
 
 export type TrainerReviewActionStates = Partial<Record<ActionKey, AdminTrainerActionResult>>
 
@@ -289,6 +291,18 @@ export function TrainerReviewActions({
             <Button type="submit" disabled={!canDecide || pendingAction === 'approve'} className="w-full bg-emerald-600 text-white hover:bg-emerald-500">Aprobar solicitud</Button>
             <ActionFeedback state={states.approve} success="Aprobacion guardada." />
           </form>
+
+          {status === 'approved' ? (
+            <form onSubmit={event => submit('reinstateProfile', reinstateTrainerProfile, event)} className="space-y-3 rounded-xl border border-amber-500/25 p-4">
+              <input type="hidden" name="applicationId" value={applicationId} />
+              <h3 className="font-semibold text-amber-100">Restablecer perfil profesional</h3>
+              <p className="text-xs text-muted-foreground">
+                Restablece solo el perfil profesional suspendido tras reactivar la cuenta global. No reanuda acompaÃ±amientos: cada cliente debe confirmarlo.
+              </p>
+              <Button type="submit" disabled={pendingAction === 'reinstateProfile'} className="w-full" variant="outline">Restablecer perfil profesional</Button>
+              <ActionFeedback state={states.reinstateProfile} success="Perfil profesional restablecido." />
+            </form>
+          ) : null}
 
           <form onSubmit={event => submit('reject', rejectTrainerApplication, event)} className="space-y-3 rounded-xl border border-red-500/25 p-4">
             <input type="hidden" name="applicationId" value={applicationId} />
