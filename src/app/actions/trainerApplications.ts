@@ -248,15 +248,6 @@ export async function uploadTrainerCredential(formData: FormData): Promise<Crede
     const extension = EXTENSION_BY_MIME_TYPE[credential.file.type]
     if (!extension) return actionError('Tipo de credencial no permitido.')
     storagePath = trainerCredentialPath(user.id, applicationId, credentialId, extension)
-    const service = createServiceClient()
-    const { error: uploadError } = await service.storage
-      .from(TRAINER_CREDENTIAL_BUCKET)
-      .upload(storagePath, credential.file, {
-        contentType: credential.file.type,
-        upsert: false,
-      })
-    if (uploadError) return actionError('No se pudo cargar la credencial.')
-
     const { data: queued, error: queueError } = await (supabase.rpc as any)(
       'queue_trainer_credential_cleanup',
       {
@@ -266,14 +257,24 @@ export async function uploadTrainerCredential(formData: FormData): Promise<Crede
       },
     )
     if (queueError || !isCleanupJob(queued)) {
-      const { error: cleanupError } = await service.storage
-        .from(TRAINER_CREDENTIAL_BUCKET)
-        .remove([storagePath])
-      return actionError(cleanupError
-        ? 'No se pudo registrar ni limpiar el archivo privado.'
-        : 'No se pudo registrar la carga privada.')
+      return actionError('No se pudo preparar la carga privada; intenta nuevamente.')
     }
     cleanupJob = queued
+
+    const service = createServiceClient()
+    const { error: uploadError } = await service.storage
+      .from(TRAINER_CREDENTIAL_BUCKET)
+      .upload(storagePath, credential.file, {
+        contentType: credential.file.type,
+        upsert: false,
+      })
+    if (uploadError) {
+      await (supabase.rpc as any)('record_trainer_credential_cleanup_failure', {
+        p_cleanup_id: cleanupJob.id,
+        p_error: storageFailureMessage(uploadError),
+      })
+      return actionError('No se pudo cargar la credencial; la limpieza quedo pendiente.')
+    }
   }
 
   const credentialRpcArgs = {

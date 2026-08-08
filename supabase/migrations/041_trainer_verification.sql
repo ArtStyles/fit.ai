@@ -230,12 +230,8 @@ BEGIN
 
   IF p_storage_path !~ (
     '^' || v_user_id::TEXT || '/' || p_application_id::TEXT || '/' || p_credential_id::TEXT || '\.(pdf|jpg|png)$'
-  ) OR NOT EXISTS (
-    SELECT 1 FROM storage.objects object
-    WHERE object.bucket_id = 'trainer-credentials'
-      AND object.name = p_storage_path
   ) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Storage object unavailable.';
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Storage path invalid.';
   END IF;
 
   INSERT INTO public.trainer_credential_storage_cleanup (
@@ -637,7 +633,7 @@ BEGIN
 
   IF char_length(btrim(v_application.professional_name)) NOT BETWEEN 2 AND 100
     OR v_application.professional_photo_url IS NULL
-    OR v_application.professional_photo_url <> v_profile_avatar_url
+    OR v_application.professional_photo_url IS DISTINCT FROM v_profile_avatar_url
     OR v_application.professional_photo_url !~ '^https://[^/[:space:]]+(?:/[^[:space:]]*)?$'
     OR char_length(btrim(v_application.bio)) NOT BETWEEN 50 AND 2000
     OR cardinality(v_application.specialties) NOT BETWEEN 1 AND 10

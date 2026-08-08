@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(38);
+SELECT plan(51);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
@@ -22,6 +22,8 @@ VALUES
   ('11111111-1111-4111-8111-111111111111', 'verification-a@example.test', '{}'::jsonb),
   ('22222222-2222-4222-8222-222222222222', 'verification-b@example.test', '{}'::jsonb),
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'verification-c@example.test', '{}'::jsonb),
+  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'verification-notification-rollback@example.test', '{}'::jsonb),
+  ('ffffffff-ffff-4fff-8fff-ffffffffffff', 'verification-null-avatar@example.test', '{}'::jsonb),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'verification-admin@example.test', '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -30,6 +32,8 @@ VALUES
   ('11111111-1111-4111-8111-111111111111', 'https://cdn.example.test/a.jpg', true, false, 'active'),
   ('22222222-2222-4222-8222-222222222222', 'https://cdn.example.test/b.jpg', true, false, 'active'),
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'https://cdn.example.test/c.jpg', true, false, 'active'),
+  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'https://cdn.example.test/e.jpg', true, false, 'active'),
+  ('ffffffff-ffff-4fff-8fff-ffffffffffff', NULL, true, false, 'active'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'https://cdn.example.test/admin.jpg', true, true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   avatar_url = EXCLUDED.avatar_url,
@@ -59,17 +63,38 @@ INSERT INTO public.trainer_applications (
     'Bad Photo', 'https://attacker.example.test/not-owned.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
     repeat('experience ', 4), NULL, ARRAY['es'], 'bad-photo@example.test', NULL,
     'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    'Rollback Notification', 'https://cdn.example.test/e.jpg', repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+    repeat('experience ', 4), NULL, ARRAY['es'], 'notification-rollback@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
+  ),
+  (
+    '3fffffff-ffff-4fff-8fff-ffffffffffff', 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    'Null Avatar', NULL, repeat('bio ', 20), ARRAY['strength'], ARRAY['online'],
+    repeat('experience ', 4), NULL, ARRAY['es'], 'null-avatar@example.test', NULL,
+    'email', 'America/Havana', 'Weekdays after 14:00'
   );
 
 INSERT INTO public.trainer_application_credentials (
   id, application_id, credential_type, title, external_url
-) VALUES (
-  '44444444-4444-4444-8444-444444444444',
-  '33333333-3333-4333-8333-333333333333',
-  'link',
-  'Existing valid certificate',
-  'https://issuer.example.test/cert/c'
-);
+) VALUES
+  (
+    '44444444-4444-4444-8444-444444444444',
+    '33333333-3333-4333-8333-333333333333',
+    'link', 'Existing valid certificate', 'https://issuer.example.test/cert/c'
+  ),
+  (
+    '4eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    '3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    'link', 'Rollback certificate', 'https://issuer.example.test/cert/e'
+  ),
+  (
+    '4fffffff-ffff-4fff-8fff-ffffffffffff',
+    '3fffffff-ffff-4fff-8fff-ffffffffffff',
+    'link', 'Null avatar certificate', 'https://issuer.example.test/cert/f'
+  );
 
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
@@ -108,6 +133,33 @@ SELECT lives_ok(
       'link', 'Valid certificate', NULL, NULL, NULL, 'https://issuer.example.test/cert/1', NULL, NULL
     )$$,
   'credential RPC accepts a verifiable HTTPS link'
+);
+SELECT lives_ok(
+  $$SELECT public.queue_trainer_credential_cleanup(
+      '31111111-1111-4111-8111-111111111111',
+      '46666666-6666-4666-8666-666666666666',
+      '11111111-1111-4111-8111-111111111111/31111111-1111-4111-8111-111111111111/46666666-6666-4666-8666-666666666666.pdf'
+    )$$,
+  'upload cleanup can be queued before the storage object exists'
+);
+SELECT is(
+  (SELECT count(*) FROM public.list_trainer_credential_cleanup()
+   WHERE storage_path LIKE '%/46666666-6666-4666-8666-666666666666.pdf'),
+  1::bigint,
+  'pre-upload cleanup job is durably observable'
+);
+SELECT lives_ok(
+  $$SELECT public.finalize_trainer_credential_cleanup((
+      SELECT id FROM public.list_trainer_credential_cleanup()
+      WHERE storage_path LIKE '%/46666666-6666-4666-8666-666666666666.pdf'
+    ))$$,
+  'pre-upload cleanup can finalize when upload never created an object'
+);
+SELECT is(
+  (SELECT count(*) FROM public.list_trainer_credential_cleanup()
+   WHERE storage_path LIKE '%/46666666-6666-4666-8666-666666666666.pdf'),
+  0::bigint,
+  'finalized pre-upload cleanup is removed from the outbox'
 );
 RESET ROLE;
 INSERT INTO storage.objects (bucket_id, name, metadata)
@@ -188,6 +240,24 @@ SELECT is((SELECT status FROM public.trainer_applications WHERE id = '33333333-3
 SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '33333333-3333-4333-8333-333333333333'), 0::bigint, 'failed submit leaves no event');
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'applicationId' = '33333333-3333-4333-8333-333333333333'), 0::bigint, 'failed submit leaves no notification');
 
+SELECT set_config('request.jwt.claim.sub', 'ffffffff-ffff-4fff-8fff-ffffffffffff', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$UPDATE public.trainer_applications
+    SET professional_photo_url = 'https://attacker.example.test/null-avatar-bypass.jpg'
+    WHERE id = '3fffffff-ffff-4fff-8fff-ffffffffffff'$$,
+  'draft owner can directly update the professional photo'
+);
+SELECT throws_ok(
+  $$SELECT public.submit_trainer_application('3fffffff-ffff-4fff-8fff-ffffffffffff')$$,
+  'P0001', NULL, 'submit rejects every professional photo when the owner avatar is NULL'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '3fffffff-ffff-4fff-8fff-ffffffffffff'), 'draft', 'NULL-avatar bypass leaves status unchanged');
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '3fffffff-ffff-4fff-8fff-ffffffffffff'), 0::bigint, 'NULL-avatar bypass leaves no event');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'applicationId' = '3fffffff-ffff-4fff-8fff-ffffffffffff'), 0::bigint, 'NULL-avatar bypass leaves no notification');
+
 SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
@@ -220,6 +290,35 @@ SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE applicat
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'applicationId' = '3ddddddd-dddd-4ddd-8ddd-dddddddddddd'), 1::bigint, 'concurrent submit creates one durable notification per admin');
 SELECT dblink_disconnect('verification_c1');
 SELECT dblink_disconnect('verification_c2');
+
+CREATE OR REPLACE FUNCTION public.fail_notification_after_submission_mutations()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.payload->>'applicationId' = '3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Injected notification persistence failure.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER fail_notification_after_submission_mutations
+  BEFORE INSERT ON public.product_notifications
+  FOR EACH ROW EXECUTE FUNCTION public.fail_notification_after_submission_mutations();
+
+SELECT set_config('request.jwt.claim.sub', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.submit_trainer_application('3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')$$,
+  'P0001', NULL, 'notification persistence failure aborts submit after status and event mutations'
+);
+RESET ROLE;
+SELECT is((SELECT status FROM public.trainer_applications WHERE id = '3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'), 'draft', 'notification failure rolls back the status transition');
+SELECT is((SELECT count(*) FROM public.trainer_application_events WHERE application_id = '3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'), 0::bigint, 'notification failure rolls back the appended event');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE payload->>'applicationId' = '3eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'), 0::bigint, 'notification failure leaves no partial notification');
+DROP TRIGGER fail_notification_after_submission_mutations ON public.product_notifications;
+DROP FUNCTION public.fail_notification_after_submission_mutations();
 
 SELECT * FROM finish();
 ROLLBACK;

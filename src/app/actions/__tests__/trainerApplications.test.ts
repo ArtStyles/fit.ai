@@ -99,9 +99,13 @@ describe('trainer application actions', () => {
 
   it('uploads an owned credential and registers metadata through the credential RPC', async () => {
     const uploaded: Array<{ path: string; options: unknown }> = []
+    const operationOrder: string[] = []
     const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
       if (name === 'list_trainer_credential_cleanup') return { data: [], error: null }
-      if (name === 'queue_trainer_credential_cleanup') return { data: { id: cleanupId, storage_path: `${userId}/${applicationId}/${credentialId}.pdf` }, error: null }
+      if (name === 'queue_trainer_credential_cleanup') {
+        operationOrder.push('queue')
+        return { data: { id: cleanupId, storage_path: `${userId}/${applicationId}/${credentialId}.pdf` }, error: null }
+      }
       if (name === 'create_trainer_application_credential') {
         return { data: { id: credentialId, ...args }, error: null }
       }
@@ -118,6 +122,7 @@ describe('trainer application actions', () => {
     })
     const bucket = {
       upload: vi.fn(async (path: string, _file: File, options: unknown) => {
+        operationOrder.push('upload')
         uploaded.push({ path, options })
         return { error: null }
       }),
@@ -153,6 +158,7 @@ describe('trainer application actions', () => {
     }))
     expect(service.storage.from).toHaveBeenCalledWith('trainer-credentials')
     expect(bucket).not.toHaveProperty('getPublicUrl')
+    expect(operationOrder).toEqual(['queue', 'upload'])
   })
 
   it('does not initialize private storage for unsupported MIME or an unowned application', async () => {
@@ -177,6 +183,113 @@ describe('trainer application actions', () => {
     validFile.set('file', new File(['pdf'], 'credential.pdf', { type: 'application/pdf' }))
     await expect(uploadTrainerCredential(validFile)).resolves.toEqual({ ok: false, error: 'Solicitud no disponible.' })
     expect(createServiceClientMock).not.toHaveBeenCalled()
+  })
+
+  it('does not upload without a durable cleanup job and recovers when queueing succeeds on retry', async () => {
+    let queueAttempts = 0
+    const storagePath = `${userId}/${applicationId}/${credentialId}.pdf`
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'list_trainer_credential_cleanup') return { data: [], error: null }
+      if (name === 'queue_trainer_credential_cleanup') {
+        queueAttempts += 1
+        return queueAttempts === 1
+          ? { data: null, error: { message: 'database unavailable' } }
+          : { data: { id: cleanupId, storage_path: storagePath }, error: null }
+      }
+      if (name === 'create_trainer_application_credential') {
+        return { data: { id: credentialId }, error: null }
+      }
+      throw new Error(`Unexpected RPC ${name}`)
+    })
+    const client = authClient({
+      rpc,
+      from: vi.fn(() => ({
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+      })),
+    })
+    const bucket = {
+      upload: vi.fn(async () => ({ error: null })),
+      remove: vi.fn(async () => ({ error: null })),
+    }
+    createClientMock.mockResolvedValue(client)
+    createServiceClientMock.mockReturnValue({ storage: { from: () => bucket } })
+    const formData = new FormData()
+    formData.set('applicationId', applicationId)
+    formData.set('credentialType', 'document')
+    formData.set('title', 'Certificacion')
+    formData.set('file', new File(['pdf'], 'certificate.pdf', { type: 'application/pdf' }))
+
+    await expect(uploadTrainerCredential(formData)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo preparar la carga privada; intenta nuevamente.',
+    })
+    expect(bucket.upload).not.toHaveBeenCalled()
+    expect(bucket.remove).not.toHaveBeenCalled()
+
+    await expect(uploadTrainerCredential(formData)).resolves.toEqual({ ok: true, credentialId })
+    expect(bucket.upload).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an upload failure observable in the outbox and cleans it before a successful retry', async () => {
+    const storagePath = `${userId}/${applicationId}/${credentialId}.pdf`
+    let cleanupQueued = false
+    let uploadAttempts = 0
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'list_trainer_credential_cleanup') {
+        return { data: cleanupQueued ? [{ id: cleanupId, storage_path: storagePath }] : [], error: null }
+      }
+      if (name === 'queue_trainer_credential_cleanup') {
+        cleanupQueued = true
+        return { data: { id: cleanupId, storage_path: storagePath }, error: null }
+      }
+      if (name === 'record_trainer_credential_cleanup_failure') return { data: true, error: null }
+      if (name === 'finalize_trainer_credential_cleanup') {
+        cleanupQueued = false
+        return { data: true, error: null }
+      }
+      if (name === 'create_trainer_application_credential') {
+        cleanupQueued = false
+        return { data: { id: credentialId }, error: null }
+      }
+      throw new Error(`Unexpected RPC ${name}`)
+    })
+    const client = authClient({
+      rpc,
+      from: vi.fn(() => ({
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: applicationId, user_id: userId, status: 'draft' }, error: null }) }) }) }),
+      })),
+    })
+    const bucket = {
+      upload: vi.fn(async () => {
+        uploadAttempts += 1
+        return uploadAttempts === 1
+          ? { error: { message: 'storage unavailable' } }
+          : { error: null }
+      }),
+      remove: vi.fn(async () => ({ error: null })),
+    }
+    createClientMock.mockResolvedValue(client)
+    createServiceClientMock.mockReturnValue({ storage: { from: () => bucket } })
+    const formData = new FormData()
+    formData.set('applicationId', applicationId)
+    formData.set('credentialType', 'document')
+    formData.set('title', 'Certificacion')
+    formData.set('file', new File(['pdf'], 'certificate.pdf', { type: 'application/pdf' }))
+
+    await expect(uploadTrainerCredential(formData)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo cargar la credencial; la limpieza quedo pendiente.',
+    })
+    expect(cleanupQueued).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('record_trainer_credential_cleanup_failure', {
+      p_cleanup_id: cleanupId,
+      p_error: 'storage unavailable',
+    })
+
+    await expect(uploadTrainerCredential(formData)).resolves.toEqual({ ok: true, credentialId })
+    expect(bucket.remove).toHaveBeenCalledWith([storagePath])
+    expect(bucket.upload).toHaveBeenCalledTimes(2)
+    expect(cleanupQueued).toBe(false)
   })
 
   it('keeps a durable cleanup reference when storage removal fails and completes it on retry', async () => {
