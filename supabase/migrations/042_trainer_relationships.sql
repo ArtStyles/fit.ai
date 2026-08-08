@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS public.coaching_requests (
   client_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
   message TEXT NOT NULL DEFAULT '' CHECK (char_length(message) <= 1000),
   training_profile_consent_version TEXT NOT NULL,
+  idempotency_key UUID NOT NULL DEFAULT gen_random_uuid(),
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'accepted', 'declined', 'cancelled')),
   decided_at TIMESTAMPTZ,
@@ -46,6 +47,19 @@ CREATE TABLE IF NOT EXISTS public.coaching_requests (
 CREATE UNIQUE INDEX coaching_requests_one_pending_equivalent
   ON public.coaching_requests (client_user_id, trainer_user_id, service_id)
   WHERE status = 'pending';
+
+ALTER TABLE public.coaching_requests
+  ADD COLUMN IF NOT EXISTS idempotency_key UUID;
+ALTER TABLE public.coaching_requests
+  ALTER COLUMN idempotency_key SET DEFAULT gen_random_uuid();
+UPDATE public.coaching_requests
+SET idempotency_key = gen_random_uuid()
+WHERE idempotency_key IS NULL;
+ALTER TABLE public.coaching_requests
+  ALTER COLUMN idempotency_key SET NOT NULL;
+
+CREATE UNIQUE INDEX coaching_requests_client_idempotency_key
+  ON public.coaching_requests (client_user_id, idempotency_key);
 
 CREATE INDEX coaching_requests_trainer_pending_created_idx
   ON public.coaching_requests (trainer_user_id, created_at DESC, id DESC)
@@ -364,6 +378,211 @@ GRANT DELETE ON TABLE public.trainer_service_offerings TO authenticated;
 GRANT SELECT ON TABLE public.coaching_requests TO authenticated;
 GRANT SELECT ON TABLE public.coaching_relationships TO authenticated;
 GRANT SELECT ON TABLE public.coaching_consents TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.create_coaching_request(
+  service_id UUID,
+  message TEXT,
+  consent_version TEXT,
+  idempotency_key UUID
+)
+RETURNS TABLE (request_id UUID, created BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_client_user_id UUID := auth.uid();
+  v_requested_service_id UUID := $1;
+  v_message TEXT := $2;
+  v_consent_version TEXT := $3;
+  v_idempotency_key UUID := $4;
+  v_service public.trainer_service_offerings%ROWTYPE;
+  v_trainer_profile public.trainer_profiles%ROWTYPE;
+  v_existing_request public.coaching_requests%ROWTYPE;
+BEGIN
+  IF v_client_user_id IS NULL THEN
+    RAISE EXCEPTION 'COACHING_AUTH_REQUIRED';
+  END IF;
+  IF v_requested_service_id IS NULL OR v_idempotency_key IS NULL OR v_message IS NULL OR char_length(v_message) > 1000 THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_INVALID';
+  END IF;
+  IF v_consent_version <> 'training-profile-v1' THEN
+    RAISE EXCEPTION 'COACHING_CONSENT_VERSION_INVALID';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
+
+  SELECT * INTO v_existing_request
+  FROM public.coaching_requests request
+  WHERE request.client_user_id = v_client_user_id
+    AND request.idempotency_key = v_idempotency_key;
+  IF FOUND THEN
+    RETURN QUERY SELECT v_existing_request.id, FALSE;
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles client_profile
+    WHERE client_profile.id = v_client_user_id
+      AND client_profile.account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_CLIENT_NOT_ACTIVE';
+  END IF;
+
+  SELECT service.* INTO v_service
+  FROM public.trainer_service_offerings service
+  WHERE service.id = v_requested_service_id
+    AND service.is_active = TRUE
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'COACHING_SERVICE_NOT_AVAILABLE';
+  END IF;
+
+  SELECT * INTO v_trainer_profile
+  FROM public.trainer_profiles trainer_profile
+  WHERE trainer_profile.id = v_service.trainer_profile_id
+    AND trainer_profile.status = 'active';
+  IF NOT FOUND OR NOT EXISTS (
+    SELECT 1 FROM public.profiles trainer_account
+    WHERE trainer_account.id = v_trainer_profile.user_id
+      AND trainer_account.account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_TRAINER_NOT_ACTIVE';
+  END IF;
+  IF v_client_user_id = v_trainer_profile.user_id THEN
+    RAISE EXCEPTION 'COACHING_SELF_REQUEST_FORBIDDEN';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.coaching_relationships relationship
+    WHERE relationship.client_user_id = v_client_user_id
+      AND relationship.status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_ACTIVE_RELATIONSHIP_EXISTS';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.coaching_requests request
+    WHERE request.client_user_id = v_client_user_id
+      AND request.trainer_user_id = v_trainer_profile.user_id
+      AND request.service_id = v_service.id
+      AND request.status = 'pending'
+  ) THEN
+    RAISE EXCEPTION 'COACHING_PENDING_REQUEST_EXISTS';
+  END IF;
+
+  INSERT INTO public.coaching_requests (
+    service_id, trainer_user_id, client_user_id, message,
+    training_profile_consent_version, idempotency_key, status
+  ) VALUES (
+    v_service.id, v_trainer_profile.user_id, v_client_user_id, v_message,
+    v_consent_version, v_idempotency_key, 'pending'
+  ) RETURNING * INTO v_existing_request;
+
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+  ) VALUES (
+    v_client_user_id, v_trainer_profile.user_id, 'coaching_request', v_existing_request.id,
+    'created', jsonb_build_object('service_id', v_service.id, 'consent_version', v_consent_version, 'idempotency_key', v_idempotency_key)
+  );
+  PERFORM public.create_product_notification(
+    v_trainer_profile.user_id,
+    'coaching_request_created',
+    'Nueva solicitud de acompañamiento',
+    'Tienes una nueva solicitud para uno de tus servicios.',
+    '/coach/requests',
+    'coaching-request-created:' || v_existing_request.id::TEXT,
+    jsonb_build_object('request_id', v_existing_request.id, 'service_id', v_service.id)
+  );
+
+  RETURN QUERY SELECT v_existing_request.id, TRUE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.cancel_coaching_request(p_request_id UUID)
+RETURNS TABLE (request_id UUID)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_client_user_id UUID := auth.uid();
+  v_request public.coaching_requests%ROWTYPE;
+BEGIN
+  IF v_client_user_id IS NULL THEN
+    RAISE EXCEPTION 'COACHING_AUTH_REQUIRED';
+  END IF;
+
+  SELECT * INTO v_request
+  FROM public.coaching_requests request
+  WHERE request.id = cancel_coaching_request.p_request_id
+    AND request.client_user_id = v_client_user_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_request.status <> 'pending' THEN
+    RAISE EXCEPTION 'COACHING_REQUEST_NOT_CANCELLABLE';
+  END IF;
+
+  UPDATE public.coaching_requests
+  SET status = 'cancelled', decided_at = NOW()
+  WHERE id = v_request.id;
+
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+  ) VALUES (
+    v_client_user_id, v_request.trainer_user_id, 'coaching_request', v_request.id,
+    'cancelled', jsonb_build_object('service_id', v_request.service_id)
+  );
+  PERFORM public.create_product_notification(
+    v_request.trainer_user_id,
+    'coaching_request_cancelled',
+    'Solicitud cancelada',
+    'La persona retiró su solicitud de acompañamiento.',
+    '/coach/requests',
+    'coaching-request-cancelled:' || v_request.id::TEXT,
+    jsonb_build_object('request_id', v_request.id, 'service_id', v_request.service_id)
+  );
+
+  RETURN QUERY SELECT v_request.id;
+END;
+$$;
+
+ALTER FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) OWNER TO postgres;
+ALTER FUNCTION public.cancel_coaching_request(UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.cancel_coaching_request(UUID) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.create_coaching_request(UUID, TEXT, TEXT, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cancel_coaching_request(UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_requestable_trainer_services(trainer_slug TEXT)
+RETURNS TABLE (
+  service_id UUID,
+  name TEXT,
+  description TEXT,
+  modality TEXT,
+  duration_minutes INTEGER,
+  content TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'COACHING_AUTH_REQUIRED';
+  END IF;
+
+  RETURN QUERY
+  SELECT service.id, service.name, service.description, service.modality, service.duration_minutes, service.content
+  FROM public.trainer_service_offerings service
+  JOIN public.trainer_profiles trainer_profile ON trainer_profile.id = service.trainer_profile_id
+  WHERE trainer_profile.slug = get_requestable_trainer_services.trainer_slug
+    AND trainer_profile.status = 'active'
+    AND service.is_active = TRUE
+  ORDER BY service.created_at ASC, service.id ASC;
+END;
+$$;
+
+ALTER FUNCTION public.get_requestable_trainer_services(TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.get_requestable_trainer_services(TEXT) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_requestable_trainer_services(TEXT) TO authenticated;
 
 GRANT ALL ON TABLE public.trainer_service_offerings TO service_role;
 GRANT ALL ON TABLE public.coaching_requests TO service_role;

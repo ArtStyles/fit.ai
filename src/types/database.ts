@@ -446,6 +446,7 @@ export interface Database {
           client_user_id: string
           message: string
           training_profile_consent_version: string
+          idempotency_key: string
           status: 'pending' | 'accepted' | 'declined' | 'cancelled'
           decided_at: string | null
           created_at: string
@@ -458,6 +459,7 @@ export interface Database {
           client_user_id: string
           message?: string
           training_profile_consent_version: string
+          idempotency_key?: string
           status?: 'pending' | 'accepted' | 'declined' | 'cancelled'
           decided_at?: string | null
           created_at?: string
@@ -1430,6 +1432,18 @@ export interface Database {
           p_scope: string
         }
         Returns: boolean
+      }
+      create_coaching_request: {
+        Args: { service_id: string; message: string; consent_version: string; idempotency_key: string }
+        Returns: { request_id: string; created: boolean }[]
+      }
+      cancel_coaching_request: {
+        Args: { p_request_id: string }
+        Returns: { request_id: string }[]
+      }
+      get_requestable_trainer_services: {
+        Args: { trainer_slug: string }
+        Returns: Array<{ service_id: string; name: string; description: string; modality: string; duration_minutes: number; content: string }>
       }
       create_engine_plan_v2: {
         Args: {

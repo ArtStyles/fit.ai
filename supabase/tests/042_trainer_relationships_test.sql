@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(30);
+SELECT plan(60);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -339,6 +339,274 @@ SET LOCAL ROLE authenticated;
 SELECT ok(
   NOT public.has_active_coaching_scope('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'training_profile'),
   'ended relationship denies access'
+);
+RESET ROLE;
+
+RESET ROLE;
+
+SELECT ok(
+  has_function_privilege('authenticated', 'public.create_coaching_request(uuid,text,text,uuid)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.cancel_coaching_request(uuid)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.create_coaching_request(uuid,text,text,uuid)', 'EXECUTE'),
+  'request and cancellation RPCs are authenticated-only'
+);
+SELECT ok(
+  NOT has_table_privilege('authenticated', 'public.coaching_requests', 'UPDATE'),
+  'clients cannot bypass cancellation RPC with a direct request update'
+);
+
+SET LOCAL ROLE service_role;
+DELETE FROM public.coaching_consents;
+DELETE FROM public.coaching_relationships;
+DELETE FROM public.coaching_requests;
+UPDATE public.trainer_service_offerings
+SET id = '88888888-8888-4888-8888-888888888800'
+WHERE name = 'Owner service';
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes)
+VALUES ('88888888-8888-4888-8888-888888888801', '55555555-5555-4555-8555-555555555552', 'Other trainer service', 'online', 50);
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes, is_active)
+VALUES ('88888888-8888-4888-8888-888888888802', '55555555-5555-4555-8555-555555555551', 'Inactive request service', 'online', 50, FALSE);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800',
+    '', 'training-profile-v1', '88888888-8888-4888-8888-888888888881'
+  )$$,
+  'client can create a pending request with an empty message'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_requests WHERE status = 'pending'),
+  1::bigint,
+  'request creation persists one pending request'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_consents),
+  0::bigint,
+  'request creation grants no coaching scope before acceptance'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE action = 'created' AND entity_type = 'coaching_request'),
+  1::bigint,
+  'request creation writes one audit row in its transaction'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_created'),
+  1::bigint,
+  'request creation writes one deduplicated trainer notification'
+);
+SELECT is(
+  (SELECT created FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800',
+    '', 'training-profile-v1', '88888888-8888-4888-8888-888888888881'
+  )),
+  FALSE,
+  'the same idempotency key returns the original request without another write'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_requests WHERE status = 'pending'),
+  1::bigint,
+  'idempotent retry does not duplicate the pending request'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE action = 'created' AND entity_type = 'coaching_request'),
+  1::bigint,
+  'idempotent retry does not duplicate the audit row'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_created'),
+  1::bigint,
+  'idempotent retry does not duplicate the notification'
+);
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800',
+    '', 'training-profile-v1', '88888888-8888-4888-8888-888888888882'
+  )$$,
+  'COACHING_PENDING_REQUEST_EXISTS',
+  'an equivalent pending request is rejected'
+);
+SELECT lives_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888801',
+    'Solicitud a otro entrenador', 'training-profile-v1', '88888888-8888-4888-8888-888888888883'
+  )$$,
+  'a client may have a pending request to a different trainer'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_requests WHERE status = 'pending'),
+  2::bigint,
+  'multiple pending requests to distinct trainers coexist'
+);
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888802',
+    '', 'training-profile-v1', '88888888-8888-4888-8888-888888888884'
+  )$$,
+  'COACHING_SERVICE_NOT_AVAILABLE',
+  'inactive services cannot receive a request'
+);
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800',
+    '', 'wrong-consent-version', '88888888-8888-4888-8888-888888888885'
+  )$$,
+  'COACHING_CONSENT_VERSION_INVALID',
+  'request RPC rejects an unrecognized consent version'
+);
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800',
+    repeat('m', 1001), 'training-profile-v1', '88888888-8888-4888-8888-888888888886'
+  )$$,
+  'COACHING_REQUEST_INVALID',
+  'request RPC rejects a message beyond 1000 characters'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+UPDATE public.trainer_profiles SET status = 'inactive'
+WHERE id = '55555555-5555-4555-8555-555555555552';
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888801',
+    '', 'training-profile-v1', '88888888-8888-4888-8888-888888888887'
+  )$$,
+  'COACHING_TRAINER_NOT_ACTIVE',
+  'inactive trainer profiles cannot receive a request'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.trainer_profiles SET status = 'active'
+WHERE id = '55555555-5555-4555-8555-555555555552';
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800',
+    '', 'training-profile-v1', '88888888-8888-4888-8888-888888888888'
+  )$$,
+  'COACHING_SELF_REQUEST_FORBIDDEN',
+  'a trainer cannot request their own service'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+INSERT INTO public.coaching_relationships (service_id, trainer_user_id, client_user_id, status)
+VALUES (
+  '88888888-8888-4888-8888-888888888800',
+  '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333', 'active'
+);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888801',
+    '', 'training-profile-v1', '99999999-9999-4999-8999-999999999991'
+  )$$,
+  'COACHING_ACTIVE_RELATIONSHIP_EXISTS',
+  'an active relationship blocks all new pending requests'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+DELETE FROM public.coaching_relationships
+WHERE client_user_id = '33333333-3333-4333-8333-333333333333';
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT * FROM public.cancel_coaching_request(
+    (SELECT id FROM public.coaching_requests WHERE trainer_user_id = '11111111-1111-4111-8111-111111111111' AND status = 'pending')
+  )$$,
+  'a client can cancel only their own pending request through the RPC'
+);
+SELECT is(
+  (SELECT status FROM public.coaching_requests WHERE trainer_user_id = '11111111-1111-4111-8111-111111111111'),
+  'cancelled',
+  'cancellation atomically changes the request status'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE action = 'cancelled' AND entity_type = 'coaching_request'),
+  1::bigint,
+  'cancellation writes one audit row'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_cancelled'),
+  1::bigint,
+  'cancellation writes one trainer notification'
+);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.cancel_coaching_request(
+    (SELECT id FROM public.coaching_requests WHERE trainer_user_id = '22222222-2222-4222-8222-222222222222' AND status = 'pending')
+  )$$,
+  'COACHING_REQUEST_NOT_CANCELLABLE',
+  'another participant cannot cancel the client request'
+);
+SELECT is(
+  (SELECT status FROM public.coaching_requests WHERE trainer_user_id = '22222222-2222-4222-8222-222222222222'),
+  'pending',
+  'failed cancellation leaves the request pending'
+);
+RESET ROLE;
+
+CREATE FUNCTION public.fail_coaching_request_notification_test()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.type = 'coaching_request_created' THEN
+    RAISE EXCEPTION 'COACHING_TEST_NOTIFICATION_FAILURE';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER trg_fail_coaching_request_notification_test
+  BEFORE INSERT ON public.product_notifications
+  FOR EACH ROW EXECUTE FUNCTION public.fail_coaching_request_notification_test();
+SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT * FROM public.create_coaching_request(
+    '88888888-8888-4888-8888-888888888800',
+    'rollback', 'training-profile-v1', '99999999-9999-4999-8999-999999999992'
+  )$$,
+  'COACHING_TEST_NOTIFICATION_FAILURE',
+  'a notification failure aborts the request transaction'
+);
+SELECT is(
+  (SELECT count(*) FROM public.coaching_requests WHERE idempotency_key = '99999999-9999-4999-8999-999999999992'),
+  0::bigint,
+  'a failed notification leaves no partial request'
+);
+SELECT is(
+  (SELECT count(*) FROM public.professional_audit_logs WHERE metadata ->> 'idempotency_key' = '99999999-9999-4999-8999-999999999992'),
+  0::bigint,
+  'a failed notification rolls back the audit row'
+);
+SELECT is(
+  (SELECT count(*) FROM public.product_notifications WHERE type = 'coaching_request_created'),
+  2::bigint,
+  'a failed notification leaves no partial notification'
 );
 RESET ROLE;
 

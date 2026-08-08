@@ -17,6 +17,8 @@ export type PublicTrainerService = {
   content: string
 }
 
+export type RequestableTrainerService = PublicTrainerService & { id: string }
+
 export type PublicTrainerDirectoryRow = {
   userId: string
   slug: string
@@ -189,4 +191,21 @@ export async function getActiveTrainerBySlug(slug: string) {
     .maybeSingle()
 
   return error || !data ? null : toPublicTrainerDirectoryRow(data)
+}
+
+export async function getRequestableTrainerServicesBySlug(slug: string): Promise<RequestableTrainerService[]> {
+  const supabase = await createClient()
+  const { data, error } = await (supabase as any).rpc('get_requestable_trainer_services', { trainer_slug: slug })
+  if (error || !Array.isArray(data)) return []
+
+  return data.flatMap(service => (
+    typeof service?.service_id === 'string'
+    && typeof service.name === 'string'
+    && typeof service.description === 'string'
+    && typeof service.content === 'string'
+    && typeof service.duration_minutes === 'number'
+    && (service.modality === 'online' || service.modality === 'in_person' || service.modality === 'hybrid')
+      ? [{ id: service.service_id, name: service.name, description: service.description, content: service.content, durationMinutes: service.duration_minutes, modality: service.modality }]
+      : []
+  ))
 }
