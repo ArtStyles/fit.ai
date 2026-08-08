@@ -1256,6 +1256,18 @@ export interface Database {
           created_at: string
         }
       }
+      submit_trainer_application: {
+        Args: {
+          p_application_id: string
+        }
+        Returns: Json
+      }
+      withdraw_trainer_application: {
+        Args: {
+          p_application_id: string
+        }
+        Returns: Json
+      }
       activate_plan_version: {
         Args: {
           p_plan_id: string

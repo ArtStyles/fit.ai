@@ -174,6 +174,232 @@ CREATE TRIGGER trg_trainer_profiles_updated_at
 ALTER FUNCTION public.touch_trainer_verification_updated_at() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.touch_trainer_verification_updated_at() FROM PUBLIC, anon, authenticated;
 
+CREATE OR REPLACE FUNCTION public.submit_trainer_application(p_application_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_application public.trainer_applications%ROWTYPE;
+  v_event_id UUID;
+BEGIN
+  IF v_user_id IS NULL OR auth.role() <> 'authenticated' THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Authentication required.';
+  END IF;
+
+  SELECT application.*
+  INTO v_application
+  FROM public.trainer_applications application
+  WHERE application.id = p_application_id
+    AND application.user_id = v_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR NOT public.is_account_active(v_user_id) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Application unavailable.';
+  END IF;
+
+  IF v_application.status = 'submitted' THEN
+    SELECT event.id
+    INTO v_event_id
+    FROM public.trainer_application_events event
+    WHERE event.application_id = v_application.id
+      AND event.to_status = 'submitted'
+      AND event.actor_user_id = v_user_id
+      AND event.actor_role = 'applicant'
+    ORDER BY event.created_at DESC, event.id DESC
+    LIMIT 1;
+
+    RETURN jsonb_build_object(
+      'application_id', v_application.id,
+      'user_id', v_user_id,
+      'status', v_application.status,
+      'transitioned', FALSE,
+      'event_id', v_event_id
+    );
+  END IF;
+
+  IF v_application.status NOT IN ('draft', 'changes_requested') THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Invalid applicant transition.';
+  END IF;
+
+  IF char_length(btrim(v_application.professional_name)) NOT BETWEEN 2 AND 100
+    OR v_application.professional_photo_url IS NULL
+    OR btrim(v_application.professional_photo_url) = ''
+    OR char_length(btrim(v_application.bio)) NOT BETWEEN 50 AND 2000
+    OR cardinality(v_application.specialties) NOT BETWEEN 1 AND 10
+    OR EXISTS (
+      SELECT 1 FROM unnest(v_application.specialties) specialty
+      WHERE char_length(btrim(specialty)) NOT BETWEEN 1 AND 80
+    )
+    OR cardinality(v_application.modalities) NOT BETWEEN 1 AND 3
+    OR char_length(btrim(v_application.experience_summary)) NOT BETWEEN 20 AND 2000
+    OR (
+      v_application.modalities && ARRAY['in_person', 'hybrid']::TEXT[]
+      AND (
+        v_application.general_location IS NULL
+        OR char_length(btrim(v_application.general_location)) NOT BETWEEN 1 AND 120
+      )
+    )
+    OR char_length(COALESCE(v_application.general_location, '')) > 120
+    OR cardinality(v_application.languages) NOT BETWEEN 1 AND 10
+    OR EXISTS (
+      SELECT 1 FROM unnest(v_application.languages) language
+      WHERE char_length(btrim(language)) NOT BETWEEN 1 AND 80
+    )
+    OR char_length(v_application.contact_email) > 254
+    OR v_application.contact_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
+    OR (
+      v_application.preferred_contact IN ('phone', 'whatsapp')
+      AND NULLIF(btrim(COALESCE(v_application.contact_phone, '')), '') IS NULL
+    )
+    OR (
+      v_application.contact_phone IS NOT NULL
+      AND v_application.contact_phone !~ '^\+?[0-9][0-9[:space:]().-]{6,31}$'
+    )
+    OR NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_timezone_names timezone_name
+      WHERE timezone_name.name = v_application.timezone
+    )
+    OR char_length(btrim(v_application.interview_availability)) NOT BETWEEN 10 AND 1000
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.trainer_application_credentials credential
+      WHERE credential.application_id = v_application.id
+    )
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Application is incomplete.';
+  END IF;
+
+  UPDATE public.trainer_applications
+  SET status = 'submitted',
+      submitted_at = NOW(),
+      decided_at = NULL
+  WHERE id = v_application.id;
+
+  INSERT INTO public.trainer_application_events (
+    application_id,
+    from_status,
+    to_status,
+    public_note,
+    actor_user_id,
+    actor_role
+  ) VALUES (
+    v_application.id,
+    v_application.status,
+    'submitted',
+    'Solicitud enviada para revision.',
+    v_user_id,
+    'applicant'
+  )
+  RETURNING id INTO v_event_id;
+
+  RETURN jsonb_build_object(
+    'application_id', v_application.id,
+    'user_id', v_user_id,
+    'status', 'submitted',
+    'transitioned', TRUE,
+    'event_id', v_event_id
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.withdraw_trainer_application(p_application_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_application public.trainer_applications%ROWTYPE;
+  v_event_id UUID;
+BEGIN
+  IF v_user_id IS NULL OR auth.role() <> 'authenticated' THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Authentication required.';
+  END IF;
+
+  SELECT application.*
+  INTO v_application
+  FROM public.trainer_applications application
+  WHERE application.id = p_application_id
+    AND application.user_id = v_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR NOT public.is_account_active(v_user_id) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Application unavailable.';
+  END IF;
+
+  IF v_application.status = 'withdrawn' THEN
+    SELECT event.id
+    INTO v_event_id
+    FROM public.trainer_application_events event
+    WHERE event.application_id = v_application.id
+      AND event.to_status = 'withdrawn'
+      AND event.actor_user_id = v_user_id
+      AND event.actor_role = 'applicant'
+    ORDER BY event.created_at DESC, event.id DESC
+    LIMIT 1;
+
+    RETURN jsonb_build_object(
+      'application_id', v_application.id,
+      'user_id', v_user_id,
+      'status', v_application.status,
+      'transitioned', FALSE,
+      'event_id', v_event_id
+    );
+  END IF;
+
+  IF v_application.status NOT IN (
+    'draft',
+    'submitted',
+    'under_review',
+    'changes_requested',
+    'interview_required'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'Invalid applicant transition.';
+  END IF;
+
+  UPDATE public.trainer_applications
+  SET status = 'withdrawn',
+      decided_at = NOW()
+  WHERE id = v_application.id;
+
+  INSERT INTO public.trainer_application_events (
+    application_id,
+    from_status,
+    to_status,
+    public_note,
+    actor_user_id,
+    actor_role
+  ) VALUES (
+    v_application.id,
+    v_application.status,
+    'withdrawn',
+    'Solicitud retirada por el solicitante.',
+    v_user_id,
+    'applicant'
+  )
+  RETURNING id INTO v_event_id;
+
+  RETURN jsonb_build_object(
+    'application_id', v_application.id,
+    'user_id', v_user_id,
+    'status', 'withdrawn',
+    'transitioned', TRUE,
+    'event_id', v_event_id
+  );
+END;
+$$;
+
+ALTER FUNCTION public.submit_trainer_application(UUID) OWNER TO postgres;
+ALTER FUNCTION public.withdraw_trainer_application(UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.submit_trainer_application(UUID) FROM PUBLIC, anon, service_role;
+REVOKE ALL ON FUNCTION public.withdraw_trainer_application(UUID) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.submit_trainer_application(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.withdraw_trainer_application(UUID) TO authenticated;
+
 ALTER TABLE public.trainer_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trainer_application_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trainer_application_events ENABLE ROW LEVEL SECURITY;
