@@ -17,7 +17,7 @@ export default async function CoachPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <PageTopBar title="Resumen profesional" subtitle="Tu espacio de entrenador" backHref="/dashboard" backLabel="Inicio" icon={<Briefcase className="h-5 w-5" />} />
+      <PageTopBar title="Resumen profesional" subtitle="Tu espacio de entrenador" icon={<Briefcase className="h-5 w-5" />} />
       <main className="mx-auto max-w-5xl px-4 py-8">
         <section className="rounded-3xl border border-border/60 bg-muted/10 p-6">
           <p className="text-sm font-medium text-violet-300">Perfil activo</p>

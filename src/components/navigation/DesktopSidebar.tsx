@@ -14,13 +14,14 @@ const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
 export function DesktopSidebar({ navItems, workspace }: { navItems: readonly AppNavItem[], workspace?: Workspace }) {
   const pathname = usePathname()
   const { t } = useI18n()
+  const homeHref = workspace === 'coach' ? '/coach' : '/dashboard'
 
   if (HIDDEN_PREFIXES.some(prefix => pathname.startsWith(prefix))) return null
 
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border/60 bg-[hsl(var(--surface-1))] lg:flex lg:flex-col">
       <PendingLink
-        href="/dashboard"
+        href={homeHref}
         showSpinner={false}
         aria-label={t('Inicio')}
         className="mx-5 mt-6 inline-flex min-h-11 items-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"

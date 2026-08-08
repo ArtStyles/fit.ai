@@ -86,4 +86,12 @@ describe('professional workspace routes', () => {
     expect(html).toContain('Ada Aprobada')
     expect(html).toContain('Ada Propuesta')
   })
+
+  it('keeps the professional summary within the coach workspace', async () => {
+    const Page = (await import('../page')).default
+
+    const html = renderToStaticMarkup(await Page())
+
+    expect(html).not.toContain('href="/dashboard"')
+  })
 })
