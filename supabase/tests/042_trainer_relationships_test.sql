@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(26);
+SELECT plan(30);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -95,10 +95,20 @@ UPDATE public.trainer_profiles
 SET specialties = ARRAY['Fuerza'], modalities = ARRAY['online'], general_location = 'La Habana', languages = ARRAY['Español']
 WHERE id = '55555555-5555-4555-8555-555555555551';
 UPDATE public.trainer_service_offerings
-SET description = 'Acompañamiento semanal', content = 'Seguimiento de entrenamiento', capacity = 99
+SET description = 'Acompañamiento semanal', content = 'Seguimiento de entrenamiento', capacity = 99,
+    created_at = '2026-01-01T00:00:00Z'
 WHERE name = 'Owner service';
+INSERT INTO public.trainer_service_offerings (
+  trainer_profile_id, name, description, modality, duration_minutes, content, created_at
+) VALUES (
+  '55555555-5555-4555-8555-555555555551', 'Second active service', 'Second description', 'hybrid', 45, 'Second content',
+  '2026-01-02T00:00:00Z'
+);
 INSERT INTO public.trainer_service_offerings (trainer_profile_id, name, modality, duration_minutes, is_active)
 VALUES ('55555555-5555-4555-8555-555555555551', 'Inactive service', 'online', 45, FALSE);
+UPDATE public.trainer_profiles
+SET professional_name = 'Duplicate trainer'
+WHERE id IN ('55555555-5555-4555-8555-555555555551', '55555555-5555-4555-8555-555555555552');
 RESET ROLE;
 
 SELECT set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
@@ -121,8 +131,16 @@ SELECT is(
 );
 SELECT is(
   (SELECT jsonb_array_length(active_services) FROM public.active_trainer_directory WHERE slug = 'relationship-owner'),
-  1,
-  'directory omits inactive services'
+  2,
+  'directory omits inactive services while retaining each active service'
+);
+SELECT is(
+  (SELECT active_services FROM public.active_trainer_directory WHERE slug = 'relationship-owner'),
+  '[
+    {"name":"Owner service","description":"Acompañamiento semanal","modality":"online","duration_minutes":60,"content":"Seguimiento de entrenamiento"},
+    {"name":"Second active service","description":"Second description","modality":"hybrid","duration_minutes":45,"content":"Second content"}
+  ]'::jsonb,
+  'directory projects exactly the public service shape in creation order'
 );
 SELECT is(
   (SELECT active_services FROM public.active_trainer_directory WHERE slug = 'relationship-other-trainer'),
@@ -132,6 +150,23 @@ SELECT is(
 SELECT ok(
   NOT ((SELECT active_services -> 0 FROM public.active_trainer_directory WHERE slug = 'relationship-owner') ?| ARRAY['id', 'capacity', 'price_minor', 'currency', 'billing_interval']),
   'directory service projection omits ids, capacity, and commercial fields'
+);
+SELECT ok(
+  (SELECT professional_photo_url IS NULL AND general_location IS NULL FROM public.active_trainer_directory WHERE slug = 'relationship-other-trainer'),
+  'directory preserves null public profile fields'
+);
+SELECT is(
+  (SELECT string_agg(user_id::text, ',' ORDER BY professional_name, user_id) FROM public.active_trainer_directory),
+  '11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222',
+  'directory ordering uses user id as a deterministic duplicate-name tie-breaker'
+);
+SELECT is(
+  (SELECT user_id FROM public.active_trainer_directory
+    WHERE (professional_name, user_id) > ('Duplicate trainer', '11111111-1111-4111-8111-111111111111'::uuid)
+    ORDER BY professional_name, user_id
+    LIMIT 1),
+  '22222222-2222-4222-8222-222222222222'::uuid,
+  'keyset cursor advances through duplicate professional names without a gap'
 );
 SELECT ok(
   NOT has_table_privilege('anon', 'public.active_trainer_directory', 'SELECT')
