@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 function nextIdempotencyKey() {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -8,7 +9,35 @@ function nextIdempotencyKey() {
     : `${Date.now()}-${Math.random()}`
 }
 
-export function CoachRelationshipActions({ relationshipId }: { relationshipId: string }) {
+type EndAction = (formData: FormData) => Promise<{ ok: boolean; relationshipId?: string; changed?: boolean; error?: string }>
+
+export async function performCoachRelationshipEnd(
+  relationshipId: string,
+  idempotencyKey: string,
+  action: EndAction,
+  update: { setBusy: (value: boolean) => void; setMessage: (value: { text: string; error: boolean }) => void; refresh: () => void },
+) {
+  update.setBusy(true)
+  try {
+    const formData = new FormData()
+    formData.set('relationshipId', relationshipId)
+    formData.set('idempotencyKey', idempotencyKey)
+    const result = await action(formData)
+    update.setMessage(result.ok
+      ? { text: result.changed ? 'El acompañamiento fue finalizado.' : 'Este acompañamiento ya estaba finalizado.', error: false }
+      : { text: result.error ?? 'No se pudo finalizar el acompañamiento.', error: true })
+    if (result.ok) update.refresh()
+    return result.ok
+  } catch {
+    update.setMessage({ text: 'No se pudo finalizar el acompañamiento.', error: true })
+    return false
+  } finally {
+    update.setBusy(false)
+  }
+}
+
+export function CoachRelationshipActions({ relationshipId, status }: { relationshipId: string; status: 'active' | 'paused_by_platform' }) {
+  const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; error: boolean }>({ text: '', error: false })
@@ -16,31 +45,21 @@ export function CoachRelationshipActions({ relationshipId }: { relationshipId: s
   const descriptionId = `coach-relationship-end-${relationshipId}`
 
   async function finish() {
-    setBusy(true)
-    try {
-      const formData = new FormData()
-      formData.set('relationshipId', relationshipId)
-      const key = attemptKey.current ?? nextIdempotencyKey()
-      attemptKey.current = key
-      formData.set('idempotencyKey', key)
+    const key = attemptKey.current ?? nextIdempotencyKey()
+    attemptKey.current = key
+    const ended = await performCoachRelationshipEnd(relationshipId, key, async formData => {
       const { endCoachingRelationship } = await import('@/app/actions/coachingRelationships')
-      const result = await endCoachingRelationship(formData)
-      setMessage(result.ok
-        ? { text: result.changed ? 'El acompaÃ±amiento fue finalizado.' : 'Este acompaÃ±amiento ya estaba finalizado.', error: false }
-        : { text: result.error, error: true })
-      if (result.ok) {
-        attemptKey.current = undefined
-        setConfirming(false)
-      }
-    } catch {
-      setMessage({ text: 'No se pudo finalizar el acompaÃ±amiento.', error: true })
-    } finally {
-      setBusy(false)
+      return endCoachingRelationship(formData)
+    }, { setBusy, setMessage, refresh: router.refresh })
+    if (ended) {
+      attemptKey.current = undefined
+      setConfirming(false)
     }
   }
 
   return <section className="space-y-3" aria-labelledby={`${descriptionId}-title`}>
     <h2 id={`${descriptionId}-title`} className="text-lg font-bold text-foreground">Gestionar acompaÃ±amiento</h2>
+    {status === 'paused_by_platform' ? <p className="text-sm text-muted-foreground">Pausado por la plataforma: pendiente de confirmaciÃ³n del cliente. No hay acceso al progreso mientras permanezca pausado.</p> : null}
     <button type="button" aria-controls={descriptionId} aria-expanded={confirming} onClick={() => setConfirming(value => !value)}
       disabled={busy} className="min-h-11 rounded-xl border border-red-500/40 px-4 text-sm font-semibold text-foreground disabled:opacity-50">Finalizar acompaÃ±amiento</button>
     {confirming ? <div id={descriptionId} role="group" aria-describedby={`${descriptionId}-description`} className="rounded-2xl border border-red-500/30 p-4">
