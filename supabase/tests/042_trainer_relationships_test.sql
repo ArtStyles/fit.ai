@@ -1034,22 +1034,22 @@ INSERT INTO public.coaching_consents (relationship_id, scope, text_version, gran
   ('14141414-1414-4141-8141-141414141417', 'body_measurements', 'body-measurements-v1', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3');
 
 SELECT ok(
-  has_function_privilege('authenticated', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
-  AND has_function_privilege('authenticated', 'public.reinstate_trainer_profile(uuid,uuid)', 'EXECUTE'),
-  'administrative coaching RPCs require a callable authenticated boundary'
+  NOT has_function_privilege('authenticated', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
+  AND NOT has_function_privilege('authenticated', 'public.reinstate_trainer_profile(uuid,uuid)', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.reinstate_trainer_profile(uuid,uuid)', 'EXECUTE'),
+  'administrative coaching RPCs are service-role-only after server-side admin verification'
 );
 SELECT set_config('request.jwt.claim.sub', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT * FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)$$,
-  'COACHING_ADMIN_ACTOR_MISMATCH', 'a non-admin cannot forge a different admin id to suspend a trainer'
+  '42501', 'an authenticated non-admin cannot invoke administrative suspension'
 );
 RESET ROLE;
 
-SELECT set_config('request.jwt.claim.sub', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', true);
-SELECT set_config('request.jwt.claim.role', 'authenticated', true);
-SET LOCAL ROLE authenticated;
+SET LOCAL ROLE service_role;
 SELECT lives_ok(
   $$SELECT * FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)$$,
   'an authenticated active admin can suspend a trainer atomically'
@@ -1063,9 +1063,7 @@ SELECT ok((SELECT paused_at IS NOT NULL FROM public.coaching_relationships WHERE
 SELECT is((SELECT count(*) FROM public.coaching_consents WHERE relationship_id = '14141414-1414-4141-8141-141414141417' AND revoked_at IS NULL), 0::bigint, 'suspension revokes every active coaching scope');
 SELECT is((SELECT count(*) FROM public.admin_audit_logs WHERE target_user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2' AND action = 'account_suspended'), 1::bigint, 'suspension writes one administrative audit record');
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-trainer-suspended:14141414-1414-4141-8141-141414141417:%'), 2::bigint, 'suspension notifies the trainer and client without leaking request messages');
-SELECT set_config('request.jwt.claim.sub', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', true);
-SELECT set_config('request.jwt.claim.role', 'authenticated', true);
-SET LOCAL ROLE authenticated;
+SET LOCAL ROLE service_role;
 SELECT is((SELECT account_suspended FROM public.suspend_account_and_professional('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Policy breach', NULL)), FALSE, 'repeated suspension is idempotent');
 RESET ROLE;
 SELECT is((SELECT count(*) FROM public.admin_audit_logs WHERE target_user_id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2' AND action = 'account_suspended'), 1::bigint, 'repeated suspension does not duplicate the audit record');
@@ -1074,9 +1072,7 @@ SET LOCAL ROLE service_role;
 UPDATE public.profiles SET account_status = 'active', suspension_reason = NULL, suspended_at = NULL, suspended_until = NULL, suspended_by = NULL
 WHERE id = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
 RESET ROLE;
-SELECT set_config('request.jwt.claim.sub', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', true);
-SELECT set_config('request.jwt.claim.role', 'authenticated', true);
-SET LOCAL ROLE authenticated;
+SET LOCAL ROLE service_role;
 SELECT lives_ok(
   $$SELECT * FROM public.reinstate_trainer_profile('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1')$$,
   'an active admin can explicitly reinstate the trainer profile'

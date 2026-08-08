@@ -1177,11 +1177,9 @@ BEGIN
   IF p_admin_id IS NULL THEN
     RAISE EXCEPTION 'COACHING_ADMIN_REQUIRED';
   END IF;
-  IF v_authenticated_user_id IS NOT NULL AND v_authenticated_user_id <> p_admin_id THEN
-    RAISE EXCEPTION 'COACHING_ADMIN_ACTOR_MISMATCH';
-  END IF;
-  IF v_authenticated_user_id IS NULL AND COALESCE(auth.role(), '') <> 'service_role' THEN
-    RAISE EXCEPTION 'COACHING_ADMIN_REQUIRED';
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    IF v_authenticated_user_id IS NULL THEN RAISE EXCEPTION 'COACHING_ADMIN_REQUIRED'; END IF;
+    IF v_authenticated_user_id <> p_admin_id THEN RAISE EXCEPTION 'COACHING_ADMIN_ACTOR_MISMATCH'; END IF;
   END IF;
 
   SELECT profile.is_admin AND public.is_account_active(profile.id)
@@ -1313,7 +1311,11 @@ ALTER FUNCTION public.require_active_coaching_admin(UUID) OWNER TO postgres;
 ALTER FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) OWNER TO postgres;
 ALTER FUNCTION public.reinstate_trainer_profile(UUID, UUID) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.require_active_coaching_admin(UUID) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION public.reinstate_trainer_profile(UUID, UUID) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) TO authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.reinstate_trainer_profile(UUID, UUID) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.reinstate_trainer_profile(UUID, UUID) FROM PUBLIC, anon, authenticated;
+-- The only public caller is the server action, which validates the session
+-- before using its service-role client. This is necessary because migration
+-- 029 intentionally prevents ordinary authenticated callers from changing
+-- protected profile fields, even inside a definer RPC.
+GRANT EXECUTE ON FUNCTION public.suspend_account_and_professional(UUID, UUID, TEXT, TIMESTAMPTZ) TO service_role;
+GRANT EXECUTE ON FUNCTION public.reinstate_trainer_profile(UUID, UUID) TO service_role;

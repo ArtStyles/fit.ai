@@ -26,6 +26,12 @@ export type HistoryContinuityFixture = {
 
 type QueryError = { message?: string } | null
 
+/** Trainer relationship E2E is deliberately opt-in because it creates several
+ * service-role fixtures and needs the dedicated run-scoped credentials. */
+export function isTrainerRelationshipsE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return env.E2E_TRAINER_RELATIONSHIPS_ENABLED === 'true'
+}
+
 function assertNoError(error: QueryError, operation: string): void {
   if (error) throw new Error(`${operation} failed: ${error.message ?? 'unknown error'}`)
 }
