@@ -86,6 +86,17 @@ describe('trainer verification migration', () => {
     expect(migration).not.toMatch(/trainer_profiles: read active|status = 'active'[\s\S]+TO authenticated/i)
   })
 
+  it('requires completed onboarding at the SQL boundary before inserting a draft', () => {
+    const insertPolicy = migration.match(
+      /CREATE POLICY "trainer_applications: insert own draft"[\s\S]+?;/i,
+    )?.[0]
+
+    expect(insertPolicy).toBeDefined()
+    expect(insertPolicy).toMatch(
+      /WITH CHECK \([\s\S]+EXISTS \(\s*SELECT 1\s+FROM public\.profiles profile\s+WHERE profile\.id = auth\.uid\(\)\s+AND profile\.onboarding_done = TRUE/i,
+    )
+  })
+
   it('creates a private credential bucket and reserves administration for service role', () => {
     expect(migration).toMatch(
       /INSERT INTO storage\.buckets \(id, name, public[\s\S]+VALUES \(\s*'trainer-credentials',\s*'trainer-credentials',\s*false/i,

@@ -190,7 +190,16 @@ DROP POLICY IF EXISTS "trainer_applications: insert own draft" ON public.trainer
 CREATE POLICY "trainer_applications: insert own draft"
   ON public.trainer_applications
   FOR INSERT TO authenticated
-  WITH CHECK (auth.uid() = user_id AND status = 'draft');
+  WITH CHECK (
+    auth.uid() = user_id
+    AND status = 'draft'
+    AND EXISTS (
+      SELECT 1
+      FROM public.profiles profile
+      WHERE profile.id = auth.uid()
+        AND profile.onboarding_done = TRUE
+    )
+  );
 
 DROP POLICY IF EXISTS "trainer_applications: update own editable" ON public.trainer_applications;
 CREATE POLICY "trainer_applications: update own editable"
