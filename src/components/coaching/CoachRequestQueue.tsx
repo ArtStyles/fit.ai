@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 type CoachRequest = { id: string; message: string; createdAt: string; serviceName: string }
 
@@ -15,8 +16,17 @@ function newIdempotencyKey() {
 }
 
 export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
+  const router = useRouter()
+  const [visibleRequests, setVisibleRequests] = useState(requests)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState({ text: '', isError: false })
+  const attemptKeys = useRef(new Map<string, string>())
+
+  function finishTerminalRequest(requestId: string) {
+    attemptKeys.current.delete(requestId)
+    setVisibleRequests(current => current.filter(request => request.id !== requestId))
+    router.refresh()
+  }
 
   async function accept(requestId: string) {
     if (!window.confirm('Â¿Aceptar esta solicitud de acompaÃ±amiento?')) return
@@ -24,10 +34,13 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
     try {
       const formData = new FormData()
       formData.set('requestId', requestId)
-      formData.set('idempotencyKey', newIdempotencyKey())
+      const idempotencyKey = attemptKeys.current.get(requestId) ?? newIdempotencyKey()
+      attemptKeys.current.set(requestId, idempotencyKey)
+      formData.set('idempotencyKey', idempotencyKey)
       const { acceptCoachingRequest } = await import('@/app/actions/coachingRequests')
       const result = await acceptCoachingRequest(formData)
       setMessage({ text: result.ok ? 'La solicitud fue aceptada.' : result.error, isError: !result.ok })
+      if (result.ok || result.refreshed) finishTerminalRequest(requestId)
     } catch {
       setMessage({ text: 'No se pudo aceptar la solicitud.', isError: true })
     } finally {
@@ -45,6 +58,7 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
       const { declineCoachingRequest } = await import('@/app/actions/coachingRequests')
       const result = await declineCoachingRequest(formData)
       setMessage({ text: result.ok ? 'La solicitud fue rechazada.' : result.error, isError: !result.ok })
+      if (result.ok) finishTerminalRequest(requestId)
     } catch {
       setMessage({ text: 'No se pudo rechazar la solicitud.', isError: true })
     } finally {
@@ -52,14 +66,15 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
     }
   }
 
-  if (!requests.length) return <section className="rounded-3xl border border-dashed border-border/70 bg-muted/10 p-8 text-center">
+  if (!visibleRequests.length) return <section className="rounded-3xl border border-dashed border-border/70 bg-muted/10 p-8 text-center">
     <h1 className="text-xl font-bold text-foreground">No hay solicitudes nuevas</h1>
     <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Las solicitudes reales aparecerÃ¡n aquÃ­ cuando alguien pida trabajar contigo.</p>
+    <CoachingActionAnnouncement message={message.text} isError={message.isError} />
   </section>
 
   return <section aria-labelledby="coach-request-queue-title" className="space-y-3">
     <h1 id="coach-request-queue-title" className="text-xl font-bold text-foreground">Solicitudes pendientes</h1>
-    <ul className="space-y-3">{requests.map(request => {
+    <ul className="space-y-3">{visibleRequests.map(request => {
       const busy = busyId === request.id
       return <li key={request.id} className="rounded-2xl border border-border/70 p-4">
         <h2 className="font-semibold text-foreground">{request.serviceName}</h2>

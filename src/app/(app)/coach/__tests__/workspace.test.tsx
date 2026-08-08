@@ -12,6 +12,10 @@ const { requireActiveTrainerContext } = vi.hoisted(() => ({
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/coaching/access', () => ({ requireActiveTrainerContext }))
 vi.mock('@/app/actions/trainerProfile', () => ({ updateTrainerProfile: vi.fn() }))
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/coach',
+  useRouter: () => ({ refresh: vi.fn() }),
+}))
 
 describe('professional workspace routes', () => {
   beforeEach(() => vi.clearAllMocks())

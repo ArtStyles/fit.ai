@@ -606,6 +606,13 @@ BEGIN
     RETURN;
   END IF;
   IF v_request.status <> 'pending' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.coaching_relationships relationship
+      WHERE relationship.client_user_id = v_request.client_user_id
+        AND relationship.status = 'active'
+    ) THEN
+      RAISE EXCEPTION 'COACHING_ACTIVE_RELATIONSHIP_EXISTS';
+    END IF;
     RAISE EXCEPTION 'COACHING_REQUEST_NOT_PENDING';
   END IF;
 

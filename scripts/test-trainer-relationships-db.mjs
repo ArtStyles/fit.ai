@@ -16,6 +16,7 @@ const bootstrapSql = [
   'GRANT anon, authenticated, service_role TO postgres;',
   'CREATE SCHEMA IF NOT EXISTS extensions;',
   'CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;',
+  'CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;',
   'CREATE SCHEMA IF NOT EXISTS storage;',
   'CREATE TABLE storage.buckets (id TEXT PRIMARY KEY, name TEXT NOT NULL, owner UUID, public BOOLEAN NOT NULL DEFAULT FALSE, file_size_limit BIGINT, allowed_mime_types TEXT[]);',
   'CREATE TABLE storage.objects (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id TEXT NOT NULL REFERENCES storage.buckets(id) ON DELETE CASCADE, name TEXT NOT NULL, owner UUID, metadata JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (bucket_id, name));',
@@ -31,6 +32,72 @@ const bootstrapSql = [
   'REVOKE ALL ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB) FROM PUBLIC, anon, authenticated;',
   'GRANT EXECUTE ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB) TO service_role;',
 ].join('\n')
+
+const acceptanceRaceFixtureSql = `
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('91000000-0000-4000-8000-000000000001', 'race-trainer-a@example.test', '{}'::jsonb),
+  ('92000000-0000-4000-8000-000000000002', 'race-trainer-b@example.test', '{}'::jsonb),
+  ('93000000-0000-4000-8000-000000000003', 'race-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
+  ('91000000-0000-4000-8000-000000000001', 'https://example.test/a.webp', TRUE, 'active'),
+  ('92000000-0000-4000-8000-000000000002', 'https://example.test/b.webp', TRUE, 'active'),
+  ('93000000-0000-4000-8000-000000000003', 'https://example.test/client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id) VALUES
+  ('94000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001'),
+  ('94000000-0000-4000-8000-000000000002', '92000000-0000-4000-8000-000000000002');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('95000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001', '94000000-0000-4000-8000-000000000001', 'race-trainer-a', 'active', 'Race trainer A', 'Bio A', 'Experience A'),
+  ('95000000-0000-4000-8000-000000000002', '92000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000002', 'race-trainer-b', 'active', 'Race trainer B', 'Bio B', 'Experience B');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('96000000-0000-4000-8000-000000000001', '95000000-0000-4000-8000-000000000001', 'Race service A', 'online', 60),
+  ('96000000-0000-4000-8000-000000000002', '95000000-0000-4000-8000-000000000002', 'Race service B', 'online', 60);
+INSERT INTO public.coaching_requests (id, service_id, trainer_user_id, client_user_id, training_profile_consent_version, idempotency_key, status) VALUES
+  ('97000000-0000-4000-8000-000000000001', '96000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001', '93000000-0000-4000-8000-000000000003', 'training-profile-v1', '98000000-0000-4000-8000-000000000001', 'pending'),
+  ('97000000-0000-4000-8000-000000000002', '96000000-0000-4000-8000-000000000002', '92000000-0000-4000-8000-000000000002', '93000000-0000-4000-8000-000000000003', 'training-profile-v1', '98000000-0000-4000-8000-000000000002', 'pending');
+`
+
+const acceptanceRaceSql = `
+DO $$
+DECLARE
+  a_result UUID;
+  b_result UUID;
+  a_error TEXT;
+  b_error TEXT;
+BEGIN
+  PERFORM dblink_connect('accept_a', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_connect('accept_b', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
+  PERFORM dblink_exec('accept_a', $query$SET request.jwt.claim.sub = '91000000-0000-4000-8000-000000000001'$query$);
+  PERFORM dblink_exec('accept_a', $query$SET request.jwt.claim.role = 'authenticated'$query$);
+  PERFORM dblink_exec('accept_a', 'SET ROLE authenticated');
+  PERFORM dblink_exec('accept_b', $query$SET request.jwt.claim.sub = '92000000-0000-4000-8000-000000000002'$query$);
+  PERFORM dblink_exec('accept_b', $query$SET request.jwt.claim.role = 'authenticated'$query$);
+  PERFORM dblink_exec('accept_b', 'SET ROLE authenticated');
+  PERFORM dblink_send_query('accept_a', $query$SELECT relationship_id FROM public.accept_coaching_request('97000000-0000-4000-8000-000000000001', '99000000-0000-4000-8000-000000000001')$query$);
+  PERFORM dblink_send_query('accept_b', $query$SELECT relationship_id FROM public.accept_coaching_request('97000000-0000-4000-8000-000000000002', '99000000-0000-4000-8000-000000000002')$query$);
+  SELECT relationship_id INTO a_result FROM dblink_get_result('accept_a', false) AS result(relationship_id UUID);
+  SELECT relationship_id INTO b_result FROM dblink_get_result('accept_b', false) AS result(relationship_id UUID);
+  a_error := dblink_error_message('accept_a');
+  b_error := dblink_error_message('accept_b');
+  IF (CASE WHEN a_result IS NULL THEN 0 ELSE 1 END + CASE WHEN b_result IS NULL THEN 0 ELSE 1 END) <> 1 THEN
+    RAISE EXCEPTION 'COACHING_RACE_EXPECTED_ONE_SUCCESS: a=% b=% errors=%/%', a_result, b_result, a_error, b_error;
+  END IF;
+  IF a_result IS NULL AND a_error NOT LIKE '%COACHING_ACTIVE_RELATIONSHIP_EXISTS%' THEN
+    RAISE EXCEPTION 'COACHING_RACE_WRONG_A_LOSER_ERROR: %', a_error;
+  END IF;
+  IF b_result IS NULL AND b_error NOT LIKE '%COACHING_ACTIVE_RELATIONSHIP_EXISTS%' THEN
+    RAISE EXCEPTION 'COACHING_RACE_WRONG_B_LOSER_ERROR: %', b_error;
+  END IF;
+  IF (SELECT count(*) FROM public.coaching_relationships WHERE client_user_id = '93000000-0000-4000-8000-000000000003' AND status = 'active') <> 1
+    OR (SELECT count(*) FROM public.coaching_consents consent JOIN public.coaching_relationships relationship ON relationship.id = consent.relationship_id WHERE relationship.client_user_id = '93000000-0000-4000-8000-000000000003' AND consent.scope = 'training_profile') <> 1
+    OR (SELECT count(*) FROM public.coaching_requests WHERE client_user_id = '93000000-0000-4000-8000-000000000003' AND status = 'accepted') <> 1
+    OR (SELECT count(*) FROM public.coaching_requests WHERE client_user_id = '93000000-0000-4000-8000-000000000003' AND status = 'cancelled') <> 1 THEN
+    RAISE EXCEPTION 'COACHING_RACE_PARTIAL_STATE';
+  END IF;
+  PERFORM dblink_disconnect('accept_a');
+  PERFORM dblink_disconnect('accept_b');
+END;
+$$;
+`
 
 function docker(args, { input, print = true } = {}) {
   const result = spawnSync('docker', args, {
@@ -93,7 +160,9 @@ try {
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) {
     throw new Error('pgTAP reported one or more failed assertions')
   }
-  process.stdout.write('\n[trainer-relationships-db] PASS: all pgTAP assertions passed\n')
+  runPsql(acceptanceRaceFixtureSql, 'creating committed two-trainer acceptance race fixture')
+  runPsql(acceptanceRaceSql, 'running real dblink two-connection acceptance race')
+  process.stdout.write('\n[trainer-relationships-db] PASS: pgTAP assertions and real dblink race passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

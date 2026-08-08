@@ -95,6 +95,7 @@ describe('coaching request browser interactions', () => {
       oxc: { jsx: { runtime: 'automatic' } },
       resolve: { alias: [
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
+        { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
         { find: '@', replacement: path.join(repoRoot, 'src') },
       ] },
       server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false },
@@ -142,6 +143,39 @@ describe('coaching request browser interactions', () => {
       await page.getByText('La solicitud fue cancelada.').waitFor({ state: 'visible' })
       expect(await page.getByRole('alert').count()).toBe(0)
       expect(await page.locator('[aria-live="polite"]').count()).toBeGreaterThanOrEqual(2)
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('removes a terminal coach request and refreshes for both acceptance success and a refreshed race conflict', async () => {
+    for (const mode of ['success', 'conflict'] as const) {
+      const page = await browser.newPage()
+      try {
+        page.on('dialog', dialog => dialog.accept())
+        await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=${mode}`)
+        await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+        await page.getByRole('button', { name: 'Aceptar' }).click()
+        await page.getByText(mode === 'success' ? 'La solicitud fue aceptada.' : 'La solicitud se actualizÃ³. Recarga la bandeja.').waitFor({ state: 'visible' })
+        expect(await page.getByText('Servicio de prueba').count()).toBe(0)
+        expect(await page.evaluate(() => (window as Window & { __COACH_REFRESHES__?: number }).__COACH_REFRESHES__)).toBe(1)
+        expect(await page.getByRole('button', { name: 'Aceptar' }).count()).toBe(0)
+      } finally {
+        await page.close()
+      }
+    }
+  })
+
+  it('removes a declined coach request and refreshes the server queue', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      await page.getByRole('button', { name: 'Rechazar' }).click()
+      await page.getByText('La solicitud fue rechazada.').waitFor({ state: 'visible' })
+      expect(await page.getByText('Servicio de prueba').count()).toBe(0)
+      expect(await page.evaluate(() => (window as Window & { __COACH_REFRESHES__?: number }).__COACH_REFRESHES__)).toBe(1)
     } finally {
       await page.close()
     }
