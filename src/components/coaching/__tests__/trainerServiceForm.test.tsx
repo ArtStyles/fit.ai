@@ -10,7 +10,6 @@ vi.mock('@/app/actions/trainerServices', () => ({
 import {
   TrainerServiceForm,
   persistTrainerServiceChanges,
-  trainerServiceFieldAccessibility,
 } from '../TrainerServiceForm'
 
 const SERVICE = {
@@ -66,23 +65,6 @@ describe('TrainerServiceForm', () => {
 })
 
 describe('TrainerServiceForm accessibility', () => {
-  it('assigns unique input and error associations to errors in multiple service forms', () => {
-    const first = trainerServiceFieldAccessibility('service:one', 'name', true)
-    const second = trainerServiceFieldAccessibility('service/two', 'name', true)
-
-    expect(first).toEqual({
-      inputId: 'service-service-one-name',
-      errorId: 'service-service-one-name-error',
-      describedBy: 'service-service-one-name-error',
-    })
-    expect(second).toEqual({
-      inputId: 'service-service-two-name',
-      errorId: 'service-service-two-name-error',
-      describedBy: 'service-service-two-name-error',
-    })
-    expect(first.describedBy).not.toBe(second.describedBy)
-  })
-
   it('keeps the service state status and toggle action in the rendered form', () => {
     const html = renderToStaticMarkup(<TrainerServiceForm initialService={SERVICE} />)
 

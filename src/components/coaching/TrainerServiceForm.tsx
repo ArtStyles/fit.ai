@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import {
   createTrainerService,
@@ -37,16 +37,8 @@ export async function persistTrainerServiceChanges(input: FormData, save: SaveAc
   }
 }
 
-function safeFormScope(serviceId: string | undefined): string {
-  const normalized = (serviceId ?? 'new')
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return normalized || 'new'
-}
-
-export function trainerServiceFieldAccessibility(serviceId: string | undefined, name: string, hasError: boolean) {
-  const inputId = `service-${safeFormScope(serviceId)}-${name}`
+function trainerServiceFieldAccessibility(instanceId: string, name: string, hasError: boolean) {
+  const inputId = `service-${instanceId}-${name}`
   const errorId = `${inputId}-error`
   return {
     inputId,
@@ -64,12 +56,13 @@ export function TrainerServiceForm({ initialService }: { initialService?: Traine
   const [announcement, setAnnouncement] = useState('')
   const [saving, setSaving] = useState(false)
   const [isActive, setIsActive] = useState(initialService?.isActive ?? true)
-  const nameField = trainerServiceFieldAccessibility(initialService?.id, 'name', Boolean(fieldErrors.name))
-  const descriptionField = trainerServiceFieldAccessibility(initialService?.id, 'description', Boolean(fieldErrors.description))
-  const modalityField = trainerServiceFieldAccessibility(initialService?.id, 'modality', Boolean(fieldErrors.modality))
-  const durationField = trainerServiceFieldAccessibility(initialService?.id, 'durationMinutes', Boolean(fieldErrors.durationMinutes))
-  const capacityField = trainerServiceFieldAccessibility(initialService?.id, 'capacity', Boolean(fieldErrors.capacity))
-  const contentField = trainerServiceFieldAccessibility(initialService?.id, 'content', Boolean(fieldErrors.content))
+  const instanceId = useId()
+  const nameField = trainerServiceFieldAccessibility(instanceId, 'name', Boolean(fieldErrors.name))
+  const descriptionField = trainerServiceFieldAccessibility(instanceId, 'description', Boolean(fieldErrors.description))
+  const modalityField = trainerServiceFieldAccessibility(instanceId, 'modality', Boolean(fieldErrors.modality))
+  const durationField = trainerServiceFieldAccessibility(instanceId, 'durationMinutes', Boolean(fieldErrors.durationMinutes))
+  const capacityField = trainerServiceFieldAccessibility(instanceId, 'capacity', Boolean(fieldErrors.capacity))
+  const contentField = trainerServiceFieldAccessibility(instanceId, 'content', Boolean(fieldErrors.content))
 
   async function saveService(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
