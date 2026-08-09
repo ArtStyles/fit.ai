@@ -229,6 +229,8 @@ export async function applyPlanAdjustment(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
 
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' } }
+
   try {
     const existing = await findExistingPlanGeneration(requestId)
     if (existing?.success) return { success: true, appliedCount: 1 }

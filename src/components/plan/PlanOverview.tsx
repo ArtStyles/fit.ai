@@ -14,6 +14,8 @@ type PlanOverviewProps = {
   constraintLabels: string[]
   switcher: ReactNode
   prescriptionLocked?: boolean
+  professionalVersionNumber?: number | null
+  professionalChangeSummary?: string | null
 }
 
 export function PlanOverview({
@@ -25,6 +27,8 @@ export function PlanOverview({
   constraintLabels,
   switcher,
   prescriptionLocked = false,
+  professionalVersionNumber = null,
+  professionalChangeSummary = null,
 }: PlanOverviewProps) {
   const { t } = useI18n()
 
@@ -38,8 +42,13 @@ export function PlanOverview({
           </div>
           {prescriptionLocked && (
             <p className="mt-3 inline-flex rounded-full border border-violet-400/40 bg-violet-500/15 px-3 py-1 text-xs font-bold text-violet-100">
-              {t('Asignada por entrenador')} · {t('Versión profesional')}
+              {t('Asignada por entrenador')} · {professionalVersionNumber === null
+                ? t('Versión no disponible')
+                : t('Versión {version}', { version: professionalVersionNumber })}
             </p>
+          )}
+          {prescriptionLocked && professionalChangeSummary && (
+            <p className="mt-2 text-sm leading-relaxed text-violet-100/80">{professionalChangeSummary}</p>
           )}
           <h1 className="mt-3 text-balance font-display text-3xl font-extrabold leading-tight text-foreground sm:text-4xl">{name}</h1>
           <div className="mt-5 grid gap-2 sm:grid-cols-3">

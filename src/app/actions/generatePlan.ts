@@ -344,16 +344,6 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
   if (!user) return { success: false, error: 'No autenticado' }
   const mode = options.mode ?? 'initial'
 
-  if (!options.previewOnly) {
-    try {
-      const existing = await loadExistingPlanGeneration(supabase, user.id, options.requestId)
-      if (existing) return existing
-    } catch (error) {
-      console.error('[generatePlan] No se pudo comprobar el requestId:', error)
-      throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')
-    }
-  }
-
   const { data: activePlan, error: activePlanError } = await (supabase
     .from('workout_plans') as any)
     .select('id, name, ai_notes, week_number, family_id, prescription_locked')
@@ -384,11 +374,21 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
     return { success: false, error: 'El plan activo cambió. Recarga e inténtalo nuevamente.' }
   }
 
-  if (activePlan && mode !== 'initial') {
+  if (activePlan) {
     try {
       await requireEditableOwnedPlan(supabase, user.id, activePlan.id)
     } catch {
       return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' }
+    }
+  }
+
+  if (!options.previewOnly) {
+    try {
+      const existing = await loadExistingPlanGeneration(supabase, user.id, options.requestId)
+      if (existing) return existing
+    } catch (error) {
+      console.error('[generatePlan] No se pudo comprobar el requestId:', error)
+      throw new Error('PLAN_GENERATION_STATUS_AMBIGUOUS')
     }
   }
 

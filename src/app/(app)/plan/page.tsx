@@ -64,6 +64,7 @@ type PlanRow = {
   difficulty: string | null
   source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
   prescription_locked: boolean
+  trainer_assignment_id: string | null
   trainer_assignment_version_id: string | null
   trainer_relationship_id: string | null
   created_at: string
@@ -241,7 +242,7 @@ export default async function PlanPage() {
   const [activePlanResult, planLibraryResult] = await Promise.all([
     supabase
     .from('workout_plans')
-      .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, source_type, prescription_locked, trainer_assignment_version_id, trainer_relationship_id, created_at')
+      .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, source_type, prescription_locked, trainer_assignment_id, trainer_assignment_version_id, trainer_relationship_id, created_at')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .is('superseded_at', null)
@@ -313,6 +314,22 @@ export default async function PlanPage() {
       .eq('id', planRaw.trainer_relationship_id)
       .maybeSingle() as { data: { status: string } | null }
     professionalRelationshipActive = relationship?.status === 'active'
+  }
+
+  let professionalVersion: { version_number: number; change_summary: string | null } | null = null
+  if (planRaw.prescription_locked && planRaw.trainer_assignment_id && planRaw.trainer_assignment_version_id) {
+    const { data: version } = await supabase
+      .from('trainer_assignment_versions')
+      .select('version_number, change_summary, assignment_id')
+      .eq('id', planRaw.trainer_assignment_version_id)
+      .eq('assignment_id', planRaw.trainer_assignment_id)
+      .maybeSingle() as { data: { version_number: number; change_summary: string | null; assignment_id: string } | null }
+    if (version?.assignment_id === planRaw.trainer_assignment_id) {
+      professionalVersion = {
+        version_number: version.version_number,
+        change_summary: version.change_summary,
+      }
+    }
   }
 
   const [workoutRowsResult, exerciseOptionsResult, constraintProfileResult] = await Promise.all([
@@ -508,6 +525,8 @@ export default async function PlanPage() {
           difficultyLabel={formatDifficulty(planRaw.difficulty, t)}
           constraintLabels={constraintLabels}
           prescriptionLocked={prescriptionLocked}
+          professionalVersionNumber={professionalVersion?.version_number ?? null}
+          professionalChangeSummary={professionalVersion?.change_summary ?? null}
           switcher={<PlanSwitcher plans={plans} tier={tier} t={t} prescriptionLocked={professionalRelationshipActive} />}
         />
 

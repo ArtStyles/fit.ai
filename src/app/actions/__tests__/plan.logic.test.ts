@@ -120,4 +120,21 @@ describe('trainer prescription action barriers', () => {
     expect(requireEditableOwnedPlan).toHaveBeenCalled()
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
+
+  it('checks a locked initial active plan before idempotency lookup or generation', async () => {
+    const supabase = lockedClient()
+    createClient.mockResolvedValue(supabase)
+    const { generatePlan } = await import('../generatePlan')
+
+    await expect(generatePlan({ mode: 'initial', requestId: '00000000-0000-4000-8000-000000000004' })).resolves.toMatchObject({ success: false })
+    expect(requireEditableOwnedPlan).toHaveBeenCalledWith(supabase, 'locked-client', 'locked-plan')
+  })
+
+  it('preflights a locked adjustment before its existing-request shortcut', () => {
+    const action = adjustmentActions.slice(
+      adjustmentActions.indexOf('export async function applyPlanAdjustment'),
+      adjustmentActions.indexOf('// ─── Sugerir ajuste'),
+    )
+    expect(action.indexOf('requireEditableOwnedPlan')).toBeLessThan(action.indexOf('findExistingPlanGeneration'))
+  })
 })

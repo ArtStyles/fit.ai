@@ -425,24 +425,29 @@ describe('plan lifecycle application boundary', () => {
     expect(generatePlanAction).toContain('options.expectedParentPlanId')
   })
 
-  it('returns a committed request before revalidating active parent or family limits', () => {
+  it('authorizes an active prescription before an idempotent generation shortcut', () => {
     const generateStart = generatePlanAction.indexOf('export async function generatePlan')
     const existingLookup = generatePlanAction.indexOf('await loadExistingPlanGeneration(', generateStart)
     const activeLookup = generatePlanAction.indexOf('activePlanError', generateStart)
     const entitlementLookup = generatePlanAction.indexOf('getPlanCreatePolicy(supabase', generateStart)
+    const generateGuard = generatePlanAction.indexOf('requireEditableOwnedPlan(supabase, user.id, activePlan.id)', generateStart)
     const applyStart = adjustPlanAction.indexOf('export async function applyPlanAdjustment')
     const adjustmentReplay = adjustPlanAction.indexOf('findExistingPlanGeneration(requestId)', applyStart)
     const adjustmentParentLookup = adjustPlanAction.indexOf(
       'getOwnedActivePlan(supabase, user.id, planId)',
       applyStart,
     )
+    const adjustmentGuard = adjustPlanAction.indexOf('requireEditableOwnedPlan(supabase, user.id, planId)', applyStart)
 
     expect(existingLookup).toBeGreaterThan(0)
-    expect(existingLookup).toBeLessThan(activeLookup)
+    expect(activeLookup).toBeLessThan(generateGuard)
+    expect(generateGuard).toBeLessThan(existingLookup)
     expect(existingLookup).toBeLessThan(entitlementLookup)
     expect(generatePlanAction).toContain('generation_request_id')
     expect(generatePlanAction).toContain('generation_metadata')
     expect(adjustmentReplay).toBeGreaterThan(0)
+    expect(adjustmentGuard).toBeGreaterThan(0)
+    expect(adjustmentGuard).toBeLessThan(adjustmentReplay)
     expect(adjustmentReplay).toBeLessThan(adjustmentParentLookup)
   })
 

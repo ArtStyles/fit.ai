@@ -61,4 +61,15 @@ describe('plan information hierarchy', () => {
     expect(workspace).toContain('prescriptionLocked')
     expect(workspace).not.toContain("onEdit={() => setMode('edit')}")
   })
+
+  it('loads and renders reciprocal assignment version metadata for a locked plan', () => {
+    expect(page).toContain(".from('trainer_assignment_versions')")
+    expect(page).toContain(".eq('id', planRaw.trainer_assignment_version_id)")
+    expect(page).toContain('professionalVersion')
+    expect(workspace).toContain('prescriptionLocked')
+    const overview = readFileSync(new URL('../PlanOverview.tsx', import.meta.url), 'utf8')
+    expect(overview).toContain('professionalVersionNumber')
+    expect(overview).toContain('professionalChangeSummary')
+    expect(overview).toContain("t('Versión {version}', { version: professionalVersionNumber })")
+  })
 })
