@@ -4,6 +4,7 @@ import { createClient }            from '@/lib/supabase/server'
 import { filterExercisesForUser }  from '@/lib/ai/filter'
 import { buildWeeklySummary } from '@/lib/plans/periodization'
 import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
+import { requireEditableOwnedPlan } from '@/lib/plans/editability'
 import {
   resolvePlanGenerationLifecycle,
   type PlanGenerationMode,
@@ -355,7 +356,7 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
 
   const { data: activePlan, error: activePlanError } = await (supabase
     .from('workout_plans') as any)
-    .select('id, name, ai_notes, week_number, family_id')
+    .select('id, name, ai_notes, week_number, family_id, prescription_locked')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .is('superseded_at', null)
@@ -369,6 +370,7 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
         ai_notes: string | null
         week_number: number | null
         family_id: string
+        prescription_locked: boolean
       } | null
       error: { message: string } | null
     }
@@ -380,6 +382,14 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
 
   if (options.expectedParentPlanId && activePlan?.id !== options.expectedParentPlanId) {
     return { success: false, error: 'El plan activo cambió. Recarga e inténtalo nuevamente.' }
+  }
+
+  if (activePlan && mode !== 'initial') {
+    try {
+      await requireEditableOwnedPlan(supabase, user.id, activePlan.id)
+    } catch {
+      return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' }
+    }
   }
 
   if (mode === 'weekly_regeneration' && !activePlan) {

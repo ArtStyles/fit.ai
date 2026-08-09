@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { orderedIdsToUpdates } from './plan.logic'
 import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
+import { requireEditableOwnedPlan } from '@/lib/plans/editability'
 
 function asNullableString(value: FormDataEntryValue | null): string | null {
   const text = typeof value === 'string' ? value.trim() : ''
@@ -39,6 +40,7 @@ function asMoveDirection(value: FormDataEntryValue | null): 'up' | 'down' | null
 }
 
 async function touchManualPlan(supabase: Awaited<ReturnType<typeof createClient>>, planId: string, userId: string) {
+  await requireEditableOwnedPlan(supabase, userId, planId)
   await (supabase.from('workout_plans') as any)
     .update({
       plan_context: 'manual_update',
@@ -125,6 +127,8 @@ export async function activatePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+
   const { data, error } = await (supabase.rpc as any)('activate_plan_version', {
     p_plan_id: planId,
   })
@@ -191,6 +195,8 @@ export async function deletePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+
   const { error } = await (supabase.rpc as any)('retire_plan_family', {
     p_plan_id: planId,
   })
@@ -211,6 +217,8 @@ export async function updatePlanSummary(formData: FormData) {
   const name = asNullableString(formData.get('name'))
 
   if (!planId || !name) redirect('/plan?error=missing_fields')
+
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
 
   const { error } = await (supabase.from('workout_plans') as any)
     .update({
@@ -240,6 +248,9 @@ export async function updateWorkoutSummary(formData: FormData) {
   const name = asNullableString(formData.get('name'))
 
   if (!workoutId || !name) redirect('/plan?error=missing_fields')
+
+  if (!planId) redirect('/plan?error=missing_fields')
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
 
   const { error } = await (supabase.from('workouts') as any)
     .update({
@@ -277,6 +288,8 @@ export async function addWorkoutExercise(formData: FormData) {
   const exerciseId = asNullableString(formData.get('exerciseId'))
 
   if (!planId || !workoutId || !exerciseId) redirect('/plan?error=missing_fields')
+
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
 
   const workout = await getOwnedWorkout(supabase, workoutId, user.id)
   if (!workout || workout.plan_id !== planId) redirect('/plan?error=save_failed')
@@ -326,6 +339,8 @@ export async function updateWorkoutExercise(formData: FormData) {
 
   if (!planId || !workoutExerciseId) redirect('/plan?error=missing_fields')
 
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+
   const row = await getOwnedWorkoutExercise(supabase, workoutExerciseId)
   if (!row) redirect('/plan?error=save_failed')
 
@@ -362,6 +377,8 @@ export async function replaceWorkoutExercise(formData: FormData) {
 
   if (!planId || !workoutExerciseId || !exerciseId) redirect('/plan?error=missing_fields')
 
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+
   const row = await getOwnedWorkoutExercise(supabase, workoutExerciseId)
   if (!row) redirect('/plan?error=save_failed')
 
@@ -396,6 +413,8 @@ export async function removeWorkoutExercise(formData: FormData) {
 
   if (!planId || !workoutExerciseId) redirect('/plan?error=missing_fields')
 
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+
   const row = await getOwnedWorkoutExercise(supabase, workoutExerciseId)
   if (!row) redirect('/plan?error=save_failed')
 
@@ -424,6 +443,8 @@ export async function moveWorkoutExercise(formData: FormData) {
   const direction = asMoveDirection(formData.get('direction'))
 
   if (!planId || !workoutExerciseId || !direction) redirect('/plan?error=missing_fields')
+
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
 
   const row = await getOwnedWorkoutExercise(supabase, workoutExerciseId)
   if (!row) redirect('/plan?error=save_failed')
@@ -476,6 +497,7 @@ export async function reorderWorkoutExercises(
 
   const workout = await getOwnedWorkout(supabase, workoutId, user.id)
   if (!workout || workout.plan_id !== planId) return { success: false }
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { return { success: false } }
 
   const { data } = await (supabase.from('workout_exercises') as any)
     .select('id')

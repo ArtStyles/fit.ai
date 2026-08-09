@@ -62,12 +62,16 @@ type PlanRow = {
   duration_weeks: number | null
   days_per_week: number | null
   difficulty: string | null
-  source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+  source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
+  prescription_locked: boolean
+  trainer_assignment_version_id: string | null
+  trainer_relationship_id: string | null
   created_at: string
 }
 
 type PlanListRow = Pick<PlanRow, 'id' | 'name' | 'goal' | 'days_per_week' | 'difficulty' | 'source_type' | 'created_at'> & {
   is_active: boolean
+  prescription_locked: boolean
 }
 
 type WorkoutRow = {
@@ -98,11 +102,12 @@ function formatSource(value: PlanRow['source_type'], t: (source: string) => stri
   if (value === 'manual') return t('Manual')
   if (value === 'shared_post') return t('Copiado')
   if (value === 'imported') return t('Importado')
+  if (value === 'trainer_assigned') return t('Asignada por entrenador')
   return 'AI'
 }
 
-function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' | 'pro'; t: (source: string) => string }) {
-  const canCreate = tier === 'pro' || plans.length < FREE_PLAN_LIMIT
+function PlanSwitcher({ plans, tier, t, prescriptionLocked = false }: { plans: PlanListRow[]; tier: 'free' | 'pro'; t: (source: string) => string; prescriptionLocked?: boolean }) {
+  const canCreate = !prescriptionLocked && (tier === 'pro' || plans.filter(plan => !plan.prescription_locked).length < FREE_PLAN_LIMIT)
   const activePlan = plans.find(plan => plan.is_active)
   const planCount = tier === 'free' ? `${plans.length}/${FREE_PLAN_LIMIT}` : String(plans.length)
 
@@ -152,6 +157,8 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">{metadata}</p>
                       </div>
                     </div>
+                  ) : prescriptionLocked ? (
+                    <div className="min-w-0 flex-1 px-2 py-1.5 text-xs text-muted-foreground">{t('Biblioteca en solo lectura mientras tu entrenador gestione la rutina activa.')}</div>
                   ) : (
                     <form action={activatePlan} className="min-w-0 flex-1">
                       <input type="hidden" name="planId" value={plan.id} />
@@ -170,7 +177,7 @@ function PlanSwitcher({ plans, tier, t }: { plans: PlanListRow[]; tier: 'free' |
                       </SubmitButton>
                     </form>
                   )}
-                  <PlanRetireButton planId={plan.id} planName={plan.name} />
+                  {!prescriptionLocked && !plan.prescription_locked && <PlanRetireButton planId={plan.id} planName={plan.name} />}
                 </div>
               )
             })}
@@ -234,7 +241,7 @@ export default async function PlanPage() {
   const [activePlanResult, planLibraryResult] = await Promise.all([
     supabase
     .from('workout_plans')
-      .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, source_type, created_at')
+      .select('id, name, description, goal, duration_weeks, days_per_week, difficulty, source_type, prescription_locked, trainer_assignment_version_id, trainer_relationship_id, created_at')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .is('superseded_at', null)
@@ -247,7 +254,7 @@ export default async function PlanPage() {
       }>,
     supabase
       .from('workout_plans')
-      .select('id, name, goal, days_per_week, difficulty, source_type, created_at, is_active')
+      .select('id, name, goal, days_per_week, difficulty, source_type, prescription_locked, created_at, is_active')
       .eq('user_id', user.id)
       .is('superseded_at', null)
       .is('retired_at', null)
@@ -296,6 +303,16 @@ export default async function PlanPage() {
         </main>
       </div>
     )
+  }
+
+  let professionalRelationshipActive = false
+  if (planRaw.prescription_locked && planRaw.trainer_relationship_id) {
+    const { data: relationship } = await supabase
+      .from('coaching_relationships')
+      .select('status')
+      .eq('id', planRaw.trainer_relationship_id)
+      .maybeSingle() as { data: { status: string } | null }
+    professionalRelationshipActive = relationship?.status === 'active'
   }
 
   const [workoutRowsResult, exerciseOptionsResult, constraintProfileResult] = await Promise.all([
@@ -420,6 +437,7 @@ export default async function PlanPage() {
     ?? (workoutDurations.length > 0
       ? Math.round(workoutDurations.reduce((sum, minutes) => sum + minutes, 0) / workoutDurations.length)
       : null)
+  const prescriptionLocked = planRaw.prescription_locked === true
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -429,7 +447,7 @@ export default async function PlanPage() {
         backHref="/dashboard"
         backLabel="Dashboard"
         icon={<Dumbbell className="h-5 w-5" />}
-        right={(
+        right={prescriptionLocked ? undefined : (
           <details className="group relative">
             <summary
               aria-label={t('Acciones del plan')}
@@ -489,7 +507,8 @@ export default async function PlanPage() {
           durationMinutes={overviewDuration}
           difficultyLabel={formatDifficulty(planRaw.difficulty, t)}
           constraintLabels={constraintLabels}
-          switcher={<PlanSwitcher plans={plans} tier={tier} t={t} />}
+          prescriptionLocked={prescriptionLocked}
+          switcher={<PlanSwitcher plans={plans} tier={tier} t={t} prescriptionLocked={professionalRelationshipActive} />}
         />
 
         {(planRaw.goal || planRaw.description) && (
@@ -505,6 +524,7 @@ export default async function PlanPage() {
           workouts={workspaceWorkouts}
           exerciseOptions={exerciseOptions}
           todayIso={todayIso}
+          prescriptionLocked={prescriptionLocked}
         />
 
         <PlanDistribution items={distribution} />

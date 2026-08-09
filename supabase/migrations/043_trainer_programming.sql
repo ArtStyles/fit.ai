@@ -176,6 +176,88 @@ BEGIN
 END;
 $$;
 
+-- A professional prescription is immutable to direct API callers. These
+-- triggers intentionally run as invoker: authorized trainer RPCs execute as
+-- postgres. Controlled migration/repair sessions may use the service role only
+-- from a trusted database session, while an authenticated caller cannot forge
+-- the GUC.
+CREATE OR REPLACE FUNCTION public.guard_locked_trainer_plan_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF OLD.prescription_locked
+    AND NOT ((current_user = 'postgres' OR (auth.role() = 'service_role' AND session_user IN ('postgres', 'supabase_admin')))
+      AND current_setting('app.trainer_prescription_mutation', TRUE) = 'authorized') THEN
+    RAISE EXCEPTION 'TRAINER_PRESCRIPTION_LOCKED';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.guard_locked_trainer_workout_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+DECLARE v_plan_ids UUID[];
+BEGIN
+  v_plan_ids := CASE TG_OP
+    WHEN 'INSERT' THEN ARRAY[NEW.plan_id]
+    WHEN 'DELETE' THEN ARRAY[OLD.plan_id]
+    ELSE ARRAY[OLD.plan_id, NEW.plan_id]
+  END;
+  IF EXISTS (SELECT 1 FROM public.workout_plans plan WHERE plan.id = ANY(v_plan_ids) AND plan.prescription_locked)
+    AND NOT ((current_user = 'postgres' OR (auth.role() = 'service_role' AND session_user IN ('postgres', 'supabase_admin')))
+      AND current_setting('app.trainer_prescription_mutation', TRUE) = 'authorized') THEN
+    RAISE EXCEPTION 'TRAINER_PRESCRIPTION_LOCKED';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.guard_locked_trainer_workout_exercise_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+DECLARE v_workout_ids UUID[];
+BEGIN
+  v_workout_ids := CASE TG_OP
+    WHEN 'INSERT' THEN ARRAY[NEW.workout_id]
+    WHEN 'DELETE' THEN ARRAY[OLD.workout_id]
+    ELSE ARRAY[OLD.workout_id, NEW.workout_id]
+  END;
+  IF EXISTS (
+    SELECT 1 FROM public.workouts workout
+    JOIN public.workout_plans plan ON plan.id = workout.plan_id
+    WHERE workout.id = ANY(v_workout_ids) AND plan.prescription_locked
+  ) AND NOT ((current_user = 'postgres' OR (auth.role() = 'service_role' AND session_user IN ('postgres', 'supabase_admin')))
+    AND current_setting('app.trainer_prescription_mutation', TRUE) = 'authorized') THEN
+    RAISE EXCEPTION 'TRAINER_PRESCRIPTION_LOCKED';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_locked_trainer_plan_mutation ON public.workout_plans;
+CREATE TRIGGER trg_guard_locked_trainer_plan_mutation
+  BEFORE UPDATE OR DELETE ON public.workout_plans
+  FOR EACH ROW EXECUTE FUNCTION public.guard_locked_trainer_plan_mutation();
+DROP TRIGGER IF EXISTS trg_guard_locked_trainer_workout_mutation ON public.workouts;
+CREATE TRIGGER trg_guard_locked_trainer_workout_mutation
+  BEFORE INSERT OR UPDATE OR DELETE ON public.workouts
+  FOR EACH ROW EXECUTE FUNCTION public.guard_locked_trainer_workout_mutation();
+DROP TRIGGER IF EXISTS trg_guard_locked_trainer_workout_exercise_mutation ON public.workout_exercises;
+CREATE TRIGGER trg_guard_locked_trainer_workout_exercise_mutation
+  BEFORE INSERT OR UPDATE OR DELETE ON public.workout_exercises
+  FOR EACH ROW EXECUTE FUNCTION public.guard_locked_trainer_workout_exercise_mutation();
+
+
 DROP TRIGGER IF EXISTS trg_validate_trainer_assigned_plan ON public.workout_plans;
 CREATE CONSTRAINT TRIGGER trg_validate_trainer_assigned_plan
   AFTER INSERT OR UPDATE OF source_type, library_slot, prescription_locked,
@@ -937,6 +1019,8 @@ BEGIN
     v_relationship.id, v_assignment_id, v_assignment_version_id, TRUE
   ) RETURNING id INTO v_workout_plan_id;
 
+  PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+
   FOR v_workout IN SELECT value FROM jsonb_array_elements(v_snapshot->'workouts')
   LOOP
     INSERT INTO public.workouts (user_id, plan_id, name, day_of_week, order_in_plan)
@@ -1121,6 +1205,7 @@ BEGIN
   END IF;
 
   PERFORM set_config('app.plan_lifecycle_actor', v_client_user_id::TEXT, TRUE);
+  PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
   UPDATE public.workout_plans SET is_active = FALSE
   WHERE user_id = v_client_user_id AND is_active = TRUE;
   UPDATE public.workout_plans SET is_active = TRUE WHERE id = v_plan.id;
@@ -1275,6 +1360,7 @@ BEGIN
   INSERT INTO public.workout_plans (user_id, name, goal, duration_weeks, days_per_week, is_active, generated_by_ai, plan_context, source_type, family_id, library_slot, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id, prescription_locked)
   VALUES (v_target_client_id, v_template.name, v_template.goal, 1, v_template.days_per_week, FALSE, FALSE, 'first_plan', 'trainer_assigned', gen_random_uuid(), 'professional', v_relationship.id, v_assignment.id, v_new_version_id, TRUE)
   RETURNING id INTO v_new_plan_id;
+  PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
   FOR v_workout IN SELECT value FROM jsonb_array_elements(v_snapshot->'workouts') LOOP
     INSERT INTO public.workouts (user_id, plan_id, name, day_of_week, order_in_plan)
     VALUES (v_target_client_id, v_new_plan_id, v_workout->>'name', NULLIF(v_workout->>'dayOfWeek', '')::INTEGER - 1, NULLIF(v_workout->>'orderInPlan', '')::INTEGER)
@@ -1289,6 +1375,7 @@ BEGIN
   -- Nothing becomes visible as current until the complete new materialization
   -- exists; any failure above rolls every insert back with this transaction.
   PERFORM set_config('app.plan_lifecycle_actor', v_target_client_id::TEXT, TRUE);
+  PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
   UPDATE public.workout_plans SET is_active = FALSE WHERE user_id = v_target_client_id AND is_active = TRUE;
   UPDATE public.workout_plans SET is_active = TRUE WHERE id = v_new_plan_id;
   UPDATE public.trainer_assignment_versions
@@ -1408,6 +1495,7 @@ BEGIN
   UPDATE public.coaching_relationships SET status = 'active', paused_at = NULL WHERE id = v_relationship.id;
   IF v_frozen_assignment.id IS NOT NULL THEN
     PERFORM set_config('app.plan_lifecycle_actor', v_client_user_id::TEXT, TRUE);
+    PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
     UPDATE public.workout_plans SET is_active = FALSE WHERE user_id = v_client_user_id AND is_active = TRUE;
     UPDATE public.workout_plans SET is_active = TRUE WHERE id = v_frozen_plan.id;
     UPDATE public.trainer_assignment_versions SET status = 'active', effective_from = NOW() WHERE id = v_frozen_version.id;

@@ -54,4 +54,11 @@ describe('plan information hierarchy', () => {
     expect(readView).not.toContain('removeWorkoutExercise')
     expect(readView).not.toContain('WorkoutExerciseManager')
   })
+
+  it('renders a locked professional plan as read-only without mutation tools', () => {
+    expect(page).toContain('prescriptionLocked')
+    expect(page).toContain('Asignada por entrenador')
+    expect(workspace).toContain('prescriptionLocked')
+    expect(workspace).not.toContain("onEdit={() => setMode('edit')}")
+  })
 })

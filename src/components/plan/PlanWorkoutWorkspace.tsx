@@ -41,6 +41,7 @@ type WorkspaceProps = {
   workouts: PlanWorkspaceWorkout[]
   exerciseOptions: PlanExerciseOption[]
   todayIso: number
+  prescriptionLocked?: boolean
 }
 
 function initialWorkoutId(props: WorkspaceProps): string | null {
@@ -162,7 +163,7 @@ export function PlanWorkoutWorkspace(props: WorkspaceProps) {
       summary={selectedWorkout.summary}
       exercises={selectedWorkout.exercises}
       isToday={selectedWorkout.summary.dayOfWeek === props.todayIso}
-      onEdit={() => setMode('edit')}
+      onEdit={props.prescriptionLocked ? undefined : () => setMode('edit')}
     />
   ) : (
     <WorkoutEditView

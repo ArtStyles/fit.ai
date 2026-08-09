@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(102);
+SELECT plan(113);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -136,6 +136,8 @@ INSERT INTO public.coaching_consents (relationship_id, scope, text_version, gran
 VALUES ('11111111-0000-4000-8000-000000000061', 'training_profile', 'training-profile-v1', '33333333-0000-4000-8000-000000000003');
 INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active)
 VALUES ('11111111-0000-4000-8000-000000000110', '33333333-0000-4000-8000-000000000003', 'Personal before proposal', gen_random_uuid(), TRUE);
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan)
+VALUES ('11111111-0000-4000-8000-000000000111', '33333333-0000-4000-8000-000000000003', '11111111-0000-4000-8000-000000000110', 'Personal destination', 1, 1);
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
@@ -189,6 +191,51 @@ SELECT throws_ok(
 SELECT throws_ok(
   $$SELECT public.assert_professional_plan_replaceable('33333333-0000-4000-8000-000000000003')$$,
   'PROFESSIONAL_PLAN_REPLACEMENT_FORBIDDEN', 'active professional plan rejects personal replacement'
+);
+SELECT throws_ok(
+  $$UPDATE public.workout_plans SET name = 'Client mutation' WHERE trainer_assignment_id = (SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1')$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot update a locked professional plan'
+);
+SELECT throws_ok(
+  $$DELETE FROM public.workout_plans WHERE trainer_assignment_id = (SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1')$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot delete a locked professional plan'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.workouts (user_id, plan_id, name, day_of_week, order_in_plan) VALUES ('33333333-0000-4000-8000-000000000003', (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 'Injected workout', 7, 7)$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot insert a workout into a locked professional plan'
+);
+SELECT throws_ok(
+  $$UPDATE public.workouts SET name = 'Client mutation' WHERE id = (SELECT id FROM public.workouts WHERE plan_id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1') LIMIT 1)$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot update a locked professional workout'
+);
+SELECT throws_ok(
+  $$DELETE FROM public.workouts WHERE id = (SELECT id FROM public.workouts WHERE plan_id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1') LIMIT 1)$$,
+  NULL, NULL, 'authenticated client cannot delete a locked professional workout'
+);
+SELECT throws_ok(
+  $$UPDATE public.workouts SET plan_id = '11111111-0000-4000-8000-000000000110' WHERE id = (SELECT id FROM public.workouts WHERE plan_id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1') LIMIT 1)$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot move a workout out of a locked professional plan'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES ((SELECT id FROM public.workouts WHERE plan_id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1') LIMIT 1), '11111111-0000-4000-8000-000000000041', 99, 1, 1, 60)$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot insert an exercise into a locked professional workout'
+);
+SELECT throws_ok(
+  $$UPDATE public.workout_exercises SET reps = 99 WHERE id = (SELECT exercise.id FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id WHERE workout.plan_id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1') LIMIT 1)$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot update a locked professional prescription'
+);
+SELECT throws_ok(
+  $$UPDATE public.workout_exercises SET workout_id = '11111111-0000-4000-8000-000000000111' WHERE id = (SELECT exercise.id FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id WHERE workout.plan_id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1') LIMIT 1)$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot move an exercise out of a locked professional workout'
+);
+SELECT throws_ok(
+  $$DELETE FROM public.workout_exercises WHERE id = (SELECT exercise.id FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id WHERE workout.plan_id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1') LIMIT 1)$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot delete a locked professional prescription'
+);
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', true);
+SELECT throws_ok(
+  $$UPDATE public.workout_plans SET name = 'Forged GUC mutation' WHERE trainer_assignment_id = (SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1')$$,
+  'TRAINER_PRESCRIPTION_LOCKED', 'authenticated client cannot forge the professional mutation bypass GUC'
 );
 RESET ROLE;
 SET LOCAL ROLE service_role;
