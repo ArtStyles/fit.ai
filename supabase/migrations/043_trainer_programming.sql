@@ -108,6 +108,13 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'TRAINER_ASSIGNMENT_RELATIONSHIP_MISMATCH';
   END IF;
+  IF NEW.source_template_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.trainer_program_templates template
+    WHERE template.id = NEW.source_template_id
+      AND template.trainer_user_id = NEW.trainer_user_id
+  ) THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TEMPLATE_OWNER_MISMATCH';
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -159,7 +166,7 @@ CREATE TRIGGER trg_trainer_assignment_versions_referenced_delete
   FOR EACH ROW EXECUTE FUNCTION public.guard_referenced_trainer_assignment_version_delete();
 DROP TRIGGER IF EXISTS trg_trainer_plan_assignments_relationship_match ON public.trainer_plan_assignments;
 CREATE TRIGGER trg_trainer_plan_assignments_relationship_match
-  BEFORE INSERT OR UPDATE OF relationship_id, trainer_user_id, client_user_id ON public.trainer_plan_assignments
+  BEFORE INSERT OR UPDATE OF relationship_id, trainer_user_id, client_user_id, source_template_id ON public.trainer_plan_assignments
   FOR EACH ROW EXECUTE FUNCTION public.require_trainer_assignment_relationship_match();
 
 DROP TRIGGER IF EXISTS trg_trainer_program_templates_updated_at ON public.trainer_program_templates;

@@ -44,6 +44,11 @@ describe('trainer programming migration', () => {
     expect(migration).toMatch(/CREATE UNIQUE INDEX (?:IF NOT EXISTS )?trainer_plan_assignments_one_active_client[\s\S]+WHERE status = 'active'/i)
   })
 
+  it('rejects an assignment whose source template belongs to another trainer', () => {
+    expect(migration).toMatch(/CREATE OR REPLACE FUNCTION public\.require_trainer_assignment_relationship_match\(\)[\s\S]+NEW\.source_template_id IS NOT NULL[\s\S]+template\.id = NEW\.source_template_id[\s\S]+template\.trainer_user_id = NEW\.trainer_user_id[\s\S]+TRAINER_ASSIGNMENT_TEMPLATE_OWNER_MISMATCH/i)
+    expect(migration).toMatch(/BEFORE INSERT OR UPDATE OF relationship_id, trainer_user_id, client_user_id, source_template_id ON public\.trainer_plan_assignments/i)
+  })
+
   it('allows participant reads only while both accounts remain active and never grants direct snapshot mutation', () => {
     expect(migration).toMatch(/trainer_plan_assignments: read active participants[\s\S]+auth\.uid\(\) = trainer_plan_assignments\.client_user_id OR auth\.uid\(\) = relationship\.trainer_user_id[\s\S]+public\.is_account_active\(trainer_plan_assignments\.client_user_id\)[\s\S]+public\.is_account_active\(relationship\.trainer_user_id\)/i)
     expect(migration).toMatch(/trainer_assignment_versions: read active participants/i)
