@@ -98,6 +98,19 @@ export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(overflow).toBe(false)
 }
 
+/** Verifies the customer sees a professional prescription as read-only. */
+export async function expectProfessionalPlanReadOnly(page: Page): Promise<void> {
+  await expect(page.getByText('Asignada por entrenador', { exact: false })).toBeVisible()
+  await expect(page.getByLabel('Acciones del plan')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Ajustar plan', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Regenerar semana', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Compartir rutina', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Editar estructura', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Agregar ejercicio', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Empezar entrenamiento', exact: true })).toBeVisible()
+  await expect(page.getByText(/solo lectura/i)).toBeVisible()
+}
+
 export async function expectLandingContract(
   page: Page,
   landing: { locale: 'es' | 'en'; h1: string; cta: string },

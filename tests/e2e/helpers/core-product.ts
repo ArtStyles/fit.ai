@@ -32,6 +32,16 @@ export function isTrainerRelationshipsE2EEnabled(env: NodeJS.ProcessEnv): boolea
   return env.E2E_TRAINER_RELATIONSHIPS_ENABLED === 'true'
 }
 
+/** Programming writes are intentionally opt-in: published professional plans
+ * cannot be removed through ordinary REST cleanup. The dedicated database must
+ * be reset by its owner after the suite, and that acknowledgement is required
+ * before this test can create immutable evidence. */
+export function isTrainerProgrammingE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return isTrainerRelationshipsE2EEnabled(env)
+    && env.E2E_TRAINER_PROGRAMMING_ENABLED === 'true'
+    && env.E2E_TRAINER_PROGRAMMING_RETENTION_ACK === 'dedicated-project-reset'
+}
+
 export type TrainerRelationshipsFixture = {
   client: { id: string; email: string; client: SupabaseClient }
   trainerA: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string; professionalName: string }
@@ -49,6 +59,50 @@ export type TrainerRelationshipsFixture = {
     relationshipIds: string[]
     consentIds: string[]
   }
+}
+
+type TrainerProgrammingAuthorization = {
+  clientSessionId: string
+  workoutId: string
+  planId: string
+  assignmentVersionId: string
+}
+
+type TrainerProgrammingProposal = {
+  templateId: string
+  assignmentId: string
+  assignmentVersionId: string
+  planId: string
+}
+
+export type TrainerProgrammingFixture = TrainerRelationshipsFixture & {
+  password: string
+  relationshipId: string
+  personalPlanId: string
+  createTemplateAndPropose(name: string): Promise<TrainerProgrammingProposal>
+  readAcceptedAssignment(assignmentId: string): Promise<{
+    planId: string
+    personalPlanIsActive: boolean
+    personalPlanStillExists: boolean
+    snapshot: { name: string }
+  }>
+  authorizeCurrentProfessionalSession(): Promise<TrainerProgrammingAuthorization>
+  saveUnauthorizedProfessionalExercise(authorization: TrainerProgrammingAuthorization, exerciseId: string): Promise<never>
+  publishRevision(name: string, changeSummary: string): Promise<{
+    assignmentVersionId: string
+    planId: string
+    versionNumber: number
+    previousVersionEffectiveTo: string | null
+  }>
+  readAuthorizedSession(clientSessionId: string): Promise<{
+    planId: string
+    assignmentVersionId: string | null
+  }>
+  saveAuthorizedSessionWithActualResults(authorization: TrainerProgrammingAuthorization): Promise<{
+    inserted: boolean
+    skipNote: string | null
+  }>
+  moveToDifferentPolicyDate(): Promise<void>
 }
 
 type TrainerRelationshipRows = {
@@ -407,6 +461,258 @@ export async function endSuspendReinstateAndResumeTrainerRelationship(
   return relationshipId
 }
 
+/** Probes 043 before fixture writes so a partially deployed database never
+ * receives an unrecoverable professional materialization from E2E. */
+export async function assertTrainerProgrammingE2EReady(): Promise<void> {
+  if (!isTrainerProgrammingE2EEnabled(process.env)) {
+    throw new Error('Trainer programming E2E writes require dedicated-project reset acknowledgement')
+  }
+  await assertTrainerRelationshipsE2EReady()
+  const config = requireE2EConfig(process.env)
+  const service = adminClient(config)
+  const [tables, propose, save] = await Promise.all([
+    Promise.all([
+      service.from('trainer_program_templates').select('id').limit(1),
+      service.from('trainer_plan_assignments').select('id').limit(1),
+      service.from('trainer_assignment_versions').select('id, materialized_plan_id').limit(1),
+      service.from('workout_plans').select('id, prescription_locked').limit(1),
+    ]),
+    (service.rpc as any)('propose_trainer_assignment', {
+      p_relationship_id: null, p_template_id: null, p_change_summary: null, p_idempotency_key: null,
+    }),
+    (service.rpc as any)('save_session_log_atomic_v3', {
+      p_client_session_id: null, p_workout_id: null, p_completed_at: null,
+      p_duration_minutes: null, p_mood_rating: null, p_exercise_logs: [], p_result_snapshot: {},
+    }),
+  ])
+  const tableError = tables.find(result => result.error)?.error
+  const missingRpc = [propose.error, save.error].some(error =>
+    /Could not find the function|PGRST202/i.test(error?.message ?? ''))
+  if (tableError || missingRpc) {
+    throw new Error('Trainer programming migration 043 must be deployed to the dedicated E2E project')
+  }
+}
+
+function requireRpcRow<T>(data: T[] | null, operation: string): T {
+  const row = data?.[0]
+  if (!row) throw new Error(`${operation} returned no row`)
+  return row
+}
+
+async function createTrainerProgrammingPersonalPlan(
+  service: SupabaseClient,
+  userId: string,
+  scope: string,
+): Promise<string> {
+  const planId = randomUUID()
+  const { error } = await (service.from('workout_plans') as any).insert({
+    id: planId,
+    user_id: userId,
+    name: `E2E personal ${scope}`.slice(0, 120),
+    goal: 'Plan personal que debe preservarse.',
+    duration_weeks: 1,
+    days_per_week: 1,
+    difficulty: 'beginner',
+    is_active: true,
+    generated_by_ai: false,
+    plan_context: 'first_plan',
+    source_type: 'engine',
+    library_slot: 'personal',
+    prescription_locked: false,
+  })
+  assertNoError(error, 'Creating customer personal plan before professional acceptance')
+  return planId
+}
+
+async function currentProfessionalWorkout(service: SupabaseClient, userId: string): Promise<{ planId: string; workoutId: string }> {
+  const { data: plan, error: planError } = await (service.from('workout_plans') as any)
+    .select('id').eq('user_id', userId).eq('is_active', true).eq('library_slot', 'professional').eq('prescription_locked', true).maybeSingle()
+  assertNoError(planError, 'Reading active professional plan')
+  if (!plan?.id) throw new Error('Expected one active professional plan')
+  const { data: workout, error: workoutError } = await (service.from('workouts') as any)
+    .select('id').eq('user_id', userId).eq('plan_id', plan.id).order('order_in_plan').limit(1).maybeSingle()
+  assertNoError(workoutError, 'Reading active professional workout')
+  if (!workout?.id) throw new Error('Expected a materialized professional workout')
+  return { planId: plan.id, workoutId: workout.id }
+}
+
+function policyDate(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date())
+}
+
+function differentPolicyTimeZone(currentTimeZone: string): string {
+  const currentDate = policyDate(currentTimeZone)
+  const alternative = ['Pacific/Kiritimati', 'Etc/GMT+12'].find(zone => policyDate(zone) !== currentDate)
+  if (!alternative) throw new Error('Could not select a separate E2E policy date')
+  return alternative
+}
+
+/** Builds the relationship, personal library baseline, template and RPC
+ * boundaries used by the professional programming browser journey. */
+export async function seedTrainerProgrammingFixture(scope: string): Promise<TrainerProgrammingFixture> {
+  await assertTrainerProgrammingE2EReady()
+  const config = requireE2EConfig(process.env)
+  const fixture = await seedTrainerRelationshipsFixture(scope)
+  let programmingPublished = false
+  try {
+    const relationship = await exerciseTrainerRelationshipLifecycle(fixture)
+    const personalPlanId = await createTrainerProgrammingPersonalPlan(fixture.service, fixture.client.id, scope)
+    const catalog = await publicStrengthExercises(fixture.service, 3)
+    const revisionTimeZone = differentPolicyTimeZone(E2E_TIME_ZONE)
+    let latestProposal: TrainerProgrammingProposal | null = null
+    let latestTemplateWorkoutId: string | null = null
+
+    return {
+      ...fixture,
+      password: config.password,
+      relationshipId: relationship.relationshipId,
+      personalPlanId,
+      async createTemplateAndPropose(name) {
+        const templateId = randomUUID()
+        const templateWorkoutId = randomUUID()
+        const templateExercises = [randomUUID(), randomUUID()]
+        const day = templateDayForMaterializedWeekday(isoTodayForE2ETimeZone())
+        const templates = fixture.trainerA.client.from('trainer_program_templates') as any
+        const createdTemplate = await templates.insert({
+          id: templateId, trainer_user_id: fixture.trainerA.id, name,
+          goal: 'Progresar fuerza con control.', description: 'Plantilla E2E inmutable al publicarse.',
+          days_per_week: 1, status: 'active',
+        })
+        assertNoError(createdTemplate.error, 'Creating trainer program template')
+        const createdWorkout = await (fixture.trainerA.client.from('trainer_template_workouts') as any).insert({
+          id: templateWorkoutId, template_id: templateId, name: 'E2E Día profesional', day_of_week: day, order_in_plan: 1,
+        })
+        assertNoError(createdWorkout.error, 'Creating trainer template workout')
+        latestTemplateWorkoutId = templateWorkoutId
+        const createdExercises = await (fixture.trainerA.client.from('trainer_template_exercises') as any).insert([
+          { id: templateExercises[0], template_workout_id: templateWorkoutId, exercise_id: catalog[0].id, order_index: 1, sets: 2, reps: 8, weight_kg: 40, target_rpe: 7, rest_seconds: 60, notes: 'Resultado real permitido.' },
+          { id: templateExercises[1], template_workout_id: templateWorkoutId, exercise_id: catalog[1].id, order_index: 2, sets: 2, reps: 10, weight_kg: 20, target_rpe: 6, rest_seconds: 45, notes: 'Puede omitirse con motivo.' },
+        ])
+        assertNoError(createdExercises.error, 'Creating trainer template exercises')
+        const proposed = await (fixture.trainerA.client.rpc as any)('propose_trainer_assignment', {
+          p_relationship_id: relationship.relationshipId,
+          p_template_id: templateId,
+          p_change_summary: 'Primera prescripción profesional.',
+          p_idempotency_key: randomUUID(),
+        })
+        assertNoError(proposed.error, 'Proposing trainer assignment')
+        const row = requireRpcRow<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>(proposed.data, 'Proposing trainer assignment')
+        latestProposal = { templateId, assignmentId: row.assignment_id, assignmentVersionId: row.assignment_version_id, planId: row.workout_plan_id }
+        programmingPublished = true
+        return latestProposal
+      },
+      async readAcceptedAssignment(assignmentId) {
+        const { data: assignment, error: assignmentError } = await (fixture.service.from('trainer_plan_assignments') as any)
+          .select('status, active_version_id').eq('id', assignmentId).maybeSingle()
+        assertNoError(assignmentError, 'Reading accepted trainer assignment')
+        if (assignment?.status !== 'active' || !assignment.active_version_id) throw new Error('Assignment was not atomically accepted')
+        const { data: version, error: versionError } = await (fixture.service.from('trainer_assignment_versions') as any)
+          .select('materialized_plan_id, snapshot').eq('id', assignment.active_version_id).maybeSingle()
+        assertNoError(versionError, 'Reading accepted assignment version')
+        if (!version?.materialized_plan_id || !version.snapshot || typeof version.snapshot.name !== 'string') throw new Error('Accepted assignment version is incomplete')
+        const { data: personal, error: personalError } = await (fixture.service.from('workout_plans') as any)
+          .select('id, is_active').eq('id', personalPlanId).maybeSingle()
+        assertNoError(personalError, 'Reading preserved personal plan')
+        return {
+          planId: version.materialized_plan_id,
+          personalPlanIsActive: personal?.is_active === true,
+          personalPlanStillExists: Boolean(personal?.id),
+          snapshot: { name: version.snapshot.name },
+        }
+      },
+      async authorizeCurrentProfessionalSession() {
+        const current = await currentProfessionalWorkout(fixture.service, fixture.client.id)
+        const clientSessionId = randomUUID()
+        const authorized = await (fixture.client.client.rpc as any)('authorize_session_start', {
+          p_client_session_id: clientSessionId, p_workout_id: current.workoutId,
+        })
+        assertNoError(authorized.error, 'Authorizing professional session')
+        const plan = authorized.data?.plan
+        if (!plan || plan.id !== current.planId || typeof plan.trainerAssignmentVersionId !== 'string') {
+          throw new Error('Professional authorization did not preserve assignment identity')
+        }
+        return { clientSessionId, workoutId: current.workoutId, planId: current.planId, assignmentVersionId: plan.trainerAssignmentVersionId }
+      },
+      async saveUnauthorizedProfessionalExercise(authorization, exerciseId) {
+        const saved = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', {
+          p_client_session_id: authorization.clientSessionId,
+          p_workout_id: authorization.workoutId,
+          p_completed_at: new Date().toISOString(), p_duration_minutes: 25, p_mood_rating: 4,
+          p_exercise_logs: [{ exercise_id: exerciseId, sets_completed: 1, reps_completed: [1], weights_kg: [1], rpe_values: [1], duration_seconds: null, notes: 'Manipulación directa', skip_reason: null }],
+          p_result_snapshot: { version: 1, prs: [], progressions: [] },
+        })
+        if (!saved.error) throw new Error('Direct professional exercise manipulation unexpectedly persisted')
+        throw new Error(saved.error.message)
+      },
+      async publishRevision(name, changeSummary) {
+        if (!latestProposal) throw new Error('A proposal must be accepted before publishing a revision')
+        if (!latestTemplateWorkoutId) throw new Error('Revision template workout is missing')
+        const changedTemplate = await (fixture.trainerA.client.from('trainer_program_templates') as any)
+          .update({ name }).eq('id', latestProposal.templateId).eq('trainer_user_id', fixture.trainerA.id)
+        assertNoError(changedTemplate.error, 'Updating trainer template for revision')
+        const revisedDay = await (fixture.trainerA.client.from('trainer_template_workouts') as any)
+          .update({ day_of_week: templateDayForMaterializedWeekday(isoTodayForTimeZone(revisionTimeZone)) })
+          .eq('id', latestTemplateWorkoutId).eq('template_id', latestProposal.templateId)
+        assertNoError(revisedDay.error, 'Updating trainer template day for revision B')
+        const published = await (fixture.trainerA.client.rpc as any)('publish_trainer_assignment_revision', {
+          p_assignment_id: latestProposal.assignmentId, p_template_id: latestProposal.templateId,
+          p_change_summary: changeSummary, p_idempotency_key: randomUUID(),
+        })
+        assertNoError(published.error, 'Publishing trainer assignment revision')
+        const row = requireRpcRow<{ assignment_version_id: string; workout_plan_id: string }>(published.data, 'Publishing trainer assignment revision')
+        const { data: versions, error } = await (fixture.service.from('trainer_assignment_versions') as any)
+          .select('id, version_number, effective_to').eq('assignment_id', latestProposal.assignmentId).order('version_number')
+        assertNoError(error, 'Reading professional assignment versions')
+        const previous = (versions ?? []).find((version: any) => version.id === latestProposal?.assignmentVersionId)
+        const current = (versions ?? []).find((version: any) => version.id === row.assignment_version_id)
+        if (!current?.version_number) throw new Error('Revision did not materialize its version')
+        return { assignmentVersionId: row.assignment_version_id, planId: row.workout_plan_id, versionNumber: current.version_number, previousVersionEffectiveTo: previous?.effective_to ?? null }
+      },
+      async readAuthorizedSession(clientSessionId) {
+        const { data, error } = await (fixture.service.from('session_authorizations') as any)
+          .select('plan_id, session_context_snapshot').eq('client_session_id', clientSessionId).eq('user_id', fixture.client.id).maybeSingle()
+        assertNoError(error, 'Reading authorized professional session')
+        if (!data?.plan_id) throw new Error('Professional authorization was not recorded')
+        return { planId: data.plan_id, assignmentVersionId: data.session_context_snapshot?.plan?.trainerAssignmentVersionId ?? null }
+      },
+      async saveAuthorizedSessionWithActualResults(authorization) {
+        const { data: rows, error: rowsError } = await (fixture.service.from('workout_exercises') as any)
+          .select('exercise_id').eq('workout_id', authorization.workoutId).order('order_index')
+        assertNoError(rowsError, 'Reading professional prescription exercises')
+        if (!rows || rows.length < 2) throw new Error('Professional execution fixture requires two prescribed exercises')
+        const saved = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', {
+          p_client_session_id: authorization.clientSessionId,
+          p_workout_id: authorization.workoutId,
+          p_completed_at: new Date().toISOString(), p_duration_minutes: 32, p_mood_rating: 4,
+          p_exercise_logs: [
+            { exercise_id: rows[0].exercise_id, sets_completed: 2, reps_completed: [8, 9], weights_kg: [42.5, 45], rpe_values: [7, 8], duration_seconds: null, notes: 'Resultado real', skip_reason: null },
+            { exercise_id: rows[1].exercise_id, sets_completed: 0, reps_completed: [], weights_kg: [], rpe_values: [], duration_seconds: null, notes: null, skip_reason: 'dolor localizado' },
+          ],
+          p_result_snapshot: { version: 1, prs: [], progressions: [] },
+        })
+        assertNoError(saved.error, 'Saving professional session with actual results')
+        const row = requireRpcRow<{ progress_log_id: string; inserted: boolean }>(saved.data, 'Saving professional session')
+        const { data: skipped, error: skippedError } = await (fixture.service.from('exercise_logs') as any)
+          .select('notes').eq('progress_log_id', row.progress_log_id).eq('exercise_id', rows[1].exercise_id).maybeSingle()
+        assertNoError(skippedError, 'Reading skipped professional exercise evidence')
+        return { inserted: row.inserted === true, skipNote: skipped?.notes ?? null }
+      },
+      async moveToDifferentPolicyDate() {
+        const { error } = await (fixture.service.from('profiles') as any).update({ timezone: revisionTimeZone }).eq('id', fixture.client.id)
+        assertNoError(error, 'Moving fixture to a separate policy date for revision B')
+      },
+    }
+  } catch (error) {
+    // Before the first immutable publication the ordinary relationship cleanup
+    // remains safe. Afterwards the explicit external-reset acknowledgement is
+    // the teardown policy, so do not mask the useful seed failure with a
+    // forbidden REST deletion attempt.
+    if (!programmingPublished) await cleanupTrainerRelationshipsFixture(fixture)
+    throw error
+  }
+}
+
 async function deleteExactRows(service: SupabaseClient, table: string, column: string, ids: string[], operation: string): Promise<void> {
   if (!ids.length) return
   const { error } = await (service.from(table) as any).delete().in(column, Array.from(new Set(ids)))
@@ -517,8 +823,12 @@ async function retryTransientSupabase<T>(operation: string, action: () => Promis
 }
 
 function isoTodayForE2ETimeZone(now = new Date()): number {
+  return isoTodayForTimeZone(E2E_TIME_ZONE, now)
+}
+
+function isoTodayForTimeZone(timeZone: string, now = new Date()): number {
   const weekday = new Intl.DateTimeFormat('en-US', {
-    timeZone: E2E_TIME_ZONE,
+    timeZone,
     weekday: 'short',
   }).format(now)
 
@@ -527,6 +837,10 @@ function isoTodayForE2ETimeZone(now = new Date()): number {
     throw new Error(`Unable to resolve E2E ISO weekday for ${weekday}`)
   }
   return isoWeekday
+}
+
+function templateDayForMaterializedWeekday(weekday: number): number {
+  return weekday === 7 ? 1 : weekday + 1
 }
 
 function adminClient(config: E2ESeedConfig): SupabaseClient {
@@ -567,6 +881,24 @@ async function firstPublicStrengthExercise(supabase: SupabaseClient): Promise<{
     muscle_groups_es: string[] | null
     is_compound: boolean | null
   }
+}
+
+async function publicStrengthExercises(
+  supabase: SupabaseClient,
+  count: number,
+): Promise<Array<{ id: string }>> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id')
+    .eq('is_public', true)
+    .eq('exercise_type', 'strength')
+    .order('name')
+    .limit(count)
+  assertNoError(error, 'Loading public E2E strength exercises')
+  if (!data || data.length < count) {
+    throw new Error(`Trainer programming E2E requires ${count} public strength exercises seeded`)
+  }
+  return data as Array<{ id: string }>
 }
 
 async function clearProgressLogs(supabase: SupabaseClient, userId: string): Promise<void> {
