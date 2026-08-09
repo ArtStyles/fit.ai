@@ -2,9 +2,9 @@ import Link from 'next/link'
 import { AlertTriangle, ChevronRight, UsersRound } from 'lucide-react'
 import type { CoachClientSummary } from '@/lib/coaching/insights'
 
-function sessionDate(value: string | null) {
+function sessionDate(value: string | null, timeZone: string) {
   if (!value) return 'Aún no hay sesión prescrita registrada'
-  return new Intl.DateTimeFormat('es', { dateStyle: 'medium' }).format(new Date(value))
+  return new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeZone }).format(new Date(value))
 }
 
 export function CoachClientList({ clients }: { clients: readonly CoachClientSummary[] }) {
@@ -21,7 +21,7 @@ export function CoachClientList({ clients }: { clients: readonly CoachClientSumm
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="font-semibold text-foreground">{client.fullName ?? 'Cliente'}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Última sesión prescrita: {sessionDate(client.lastPrescribedSessionAt)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Última sesión prescrita: {sessionDate(client.lastPrescribedSessionAt, client.timeZone)}</p>
           </div>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </div>

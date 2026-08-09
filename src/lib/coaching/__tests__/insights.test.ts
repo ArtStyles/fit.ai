@@ -18,6 +18,7 @@ function payload(overrides: Record<string, unknown> = {}) {
           rangeStart: '2026-08-03', rangeEnd: '2026-08-10',
           versions: [{ id: 'version-a', effectiveFrom: '2026-07-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-a', isoDay: 1 }] }],
           sessions: [{ id: 'session-a', assignmentVersionId: 'version-a', workoutId: 'workout-a', completedAt: '2026-08-03T10:00:00.000Z', averageRpe: 7 }],
+          alertSessions: [{ id: 'session-a', assignmentVersionId: 'version-a', workoutId: 'workout-a', completedAt: '2026-08-03T10:00:00.000Z', averageRpe: 7 }],
         },
       },
       {
@@ -30,6 +31,10 @@ function payload(overrides: Record<string, unknown> = {}) {
           rangeStart: '2026-07-20', rangeEnd: '2026-08-10',
           versions: [{ id: 'version-b', effectiveFrom: '2026-06-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-b', isoDay: 1 }] }],
           sessions: [
+            { id: 'session-b1', assignmentVersionId: 'version-b', workoutId: 'workout-b', completedAt: '2026-07-20T10:00:00.000Z', averageRpe: 9 },
+            { id: 'session-b2', assignmentVersionId: 'version-b', workoutId: 'workout-b', completedAt: '2026-07-27T10:00:00.000Z', averageRpe: 9 },
+          ],
+          alertSessions: [
             { id: 'session-b1', assignmentVersionId: 'version-b', workoutId: 'workout-b', completedAt: '2026-07-20T10:00:00.000Z', averageRpe: 9 },
             { id: 'session-b2', assignmentVersionId: 'version-b', workoutId: 'workout-b', completedAt: '2026-07-27T10:00:00.000Z', averageRpe: 9 },
           ],
@@ -67,5 +72,27 @@ describe('adaptCoachClientsSummary', () => {
     expect(summary.counts).toEqual({ pendingRequests: 0, activeClients: 0, pausedRelationships: 3 })
     expect(summary.clients).toEqual([])
     expect(JSON.stringify(summary)).not.toMatch(/email|phone|contact|notes|measurement/i)
+  })
+
+  it('uses the seven-day alert window without letting a prior-week session complete this week’s prescription', () => {
+    const summary = adaptCoachClientsSummary(payload({
+      counts: { pendingRequests: 0, activeClients: 1, pausedRelationships: 0 },
+      clients: [{
+        relationshipId: 'relationship-alert-window',
+        startedAt: '2026-07-01T10:00:00.000Z',
+        client: { id: 'client-alert-window', fullName: 'Actividad domingo', avatarUrl: null, timezone: 'America/Havana' },
+        activeAssignmentVersionId: 'version-alert-window',
+        lastPrescribedSessionAt: '2026-08-09T10:00:00.000Z',
+        adherenceInput: {
+          rangeStart: '2026-08-10T04:00:00.000Z', rangeEnd: '2026-08-10T04:00:00.000Z',
+          versions: [{ id: 'version-alert-window', effectiveFrom: '2026-07-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-alert-window', isoDay: 1 }] }],
+          sessions: [],
+          alertSessions: [{ id: 'sunday-before', assignmentVersionId: 'version-alert-window', workoutId: 'workout-alert-window', completedAt: '2026-08-09T10:00:00.000Z', averageRpe: 7 }],
+        },
+      }],
+    }), NOW)
+
+    expect(summary.clients[0]?.adherence).toMatchObject({ prescribed: 1, completed: 0, pending: 1 })
+    expect(summary.clients[0]?.alerts.map(alert => alert.code)).not.toContain('no_recent_prescribed_activity')
   })
 })

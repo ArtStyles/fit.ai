@@ -15,6 +15,12 @@ describe('trainer insights migration', () => {
     expect(migration).toMatch(/'averageRpe'[\s\S]+?AVG\(/)
   })
 
+  it('keeps weekly adherence evidence separate from a seven-day local activity-alert window', () => {
+    const summaryRpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_clients_summary\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(summaryRpc).toMatch(/'alertSessions'/)
+    expect(summaryRpc).toMatch(/- 7 AS alert_start_date/i)
+  })
+
   it('exposes summary and detail only through definer RPCs with a fixed search path', () => {
     for (const functionName of ['get_coach_clients_summary', 'get_coach_client_insights']) {
       expect(migration).toMatch(new RegExp(

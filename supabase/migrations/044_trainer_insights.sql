@@ -139,8 +139,23 @@ BEGIN
                AND version.effective_from < ((week_window.end_date + 1)::TIMESTAMP AT TIME ZONE client.timezone)
                AND COALESCE(version.effective_to, 'infinity'::TIMESTAMPTZ) > (week_window.start_date::TIMESTAMP AT TIME ZONE client.timezone)
             ),
-           'sessions', COALESCE((
-             SELECT jsonb_agg(jsonb_build_object(
+           'sessions', COALESCE(jsonb_agg(session_row.payload ORDER BY session_row.completed_at ASC, session_row.id ASC)
+             FILTER (WHERE session_row.id IS NOT NULL AND session_row.completed_date >= week_window.start_date), '[]'::JSONB),
+           'alertSessions', COALESCE(jsonb_agg(session_row.payload ORDER BY session_row.completed_at ASC, session_row.id ASC)
+             FILTER (WHERE session_row.id IS NOT NULL), '[]'::JSONB)
+         )
+         FROM LATERAL (
+           SELECT
+             date_trunc('week', NOW() AT TIME ZONE client.timezone)::DATE AS start_date,
+             (NOW() AT TIME ZONE client.timezone)::DATE AS end_date,
+             (NOW() AT TIME ZONE client.timezone)::DATE - 7 AS alert_start_date
+         ) AS week_window
+         LEFT JOIN LATERAL (
+           SELECT
+             progress_log.id,
+             progress_log.completed_at,
+             (progress_log.completed_at AT TIME ZONE client.timezone)::DATE AS completed_date,
+             jsonb_build_object(
                'id', progress_log.id,
                'assignmentVersionId', version.id,
                'workoutId', session_authorization.workout_id,
@@ -152,36 +167,31 @@ BEGIN
                  WHERE exercise_log.progress_log_id = progress_log.id
                    AND rpe.value IS NOT NULL
                )
-             ) ORDER BY progress_log.completed_at ASC, progress_log.id ASC)
-             FROM public.progress_logs AS progress_log
-             JOIN public.session_authorizations AS session_authorization
-               ON session_authorization.client_session_id = progress_log.client_session_id
-              AND session_authorization.user_id = progress_log.user_id
-              AND session_authorization.consumed_at IS NOT NULL
-              AND session_authorization.released_at IS NULL
-             JOIN public.workouts AS workout ON workout.id = session_authorization.workout_id
-             JOIN public.workout_plans AS plan
-               ON plan.id = session_authorization.plan_id
-              AND workout.plan_id = plan.id
-              AND plan.prescription_locked = TRUE
-             JOIN public.trainer_assignment_versions AS version
-               ON version.id = plan.trainer_assignment_version_id
-              AND version.materialized_plan_id = plan.id
-             JOIN public.trainer_plan_assignments AS assignment
-               ON assignment.id = version.assignment_id
-              AND assignment.id = plan.trainer_assignment_id
-              AND assignment.relationship_id = plan.trainer_relationship_id
-             WHERE progress_log.user_id = relationship.client_user_id
-               AND assignment.relationship_id = relationship.id
-               AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
-               AND (progress_log.completed_at AT TIME ZONE client.timezone)::DATE BETWEEN week_window.start_date AND week_window.end_date
-           ), '[]'::JSONB)
-         )
-         FROM LATERAL (
-           SELECT
-             date_trunc('week', NOW() AT TIME ZONE client.timezone)::DATE AS start_date,
-             (NOW() AT TIME ZONE client.timezone)::DATE AS end_date
-         ) AS week_window
+             ) AS payload
+           FROM public.progress_logs AS progress_log
+           JOIN public.session_authorizations AS session_authorization
+             ON session_authorization.client_session_id = progress_log.client_session_id
+            AND session_authorization.user_id = progress_log.user_id
+            AND session_authorization.consumed_at IS NOT NULL
+            AND session_authorization.released_at IS NULL
+           JOIN public.workouts AS workout ON workout.id = session_authorization.workout_id
+           JOIN public.workout_plans AS plan
+             ON plan.id = session_authorization.plan_id
+            AND workout.plan_id = plan.id
+            AND plan.prescription_locked = TRUE
+           JOIN public.trainer_assignment_versions AS version
+             ON version.id = plan.trainer_assignment_version_id
+            AND version.materialized_plan_id = plan.id
+           JOIN public.trainer_plan_assignments AS assignment
+             ON assignment.id = version.assignment_id
+            AND assignment.id = plan.trainer_assignment_id
+            AND assignment.relationship_id = plan.trainer_relationship_id
+           WHERE progress_log.user_id = relationship.client_user_id
+             AND assignment.relationship_id = relationship.id
+             AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
+             AND (progress_log.completed_at AT TIME ZONE client.timezone)::DATE BETWEEN week_window.alert_start_date AND week_window.end_date
+         ) AS session_row ON TRUE
+         GROUP BY week_window.start_date, week_window.end_date, week_window.alert_start_date
        ) AS adherence_input
     FROM scoped_relationships AS relationship
     JOIN public.profiles AS client ON client.id = relationship.client_user_id

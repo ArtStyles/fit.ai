@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(25);
+SELECT plan(26);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('f4000000-0000-4000-8000-000000000001', 'insights-trainer@example.test', '{}'::JSONB),
@@ -102,6 +102,10 @@ SELECT is(
 SELECT ok(
   (SELECT (public.get_coach_clients_summary()->'clients'->0->'adherenceInput'->'sessions'->0->>'averageRpe')::NUMERIC BETWEEN 7.6 AND 7.7),
   'summary exposes only the aggregate RPE needed for the operational alert'
+);
+SELECT ok(
+  (SELECT jsonb_array_length(public.get_coach_clients_summary()->'clients'->0->'adherenceInput'->'alertSessions') >= 1),
+  'summary supplies a separate minimal activity-alert window'
 );
 SELECT lives_ok(
   $$SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,

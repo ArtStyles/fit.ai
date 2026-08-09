@@ -13,6 +13,7 @@ export type CoachClientSummary = {
   clientId: string
   fullName: string | null
   avatarUrl: string | null
+  timeZone: string
   status: 'active'
   lastPrescribedSessionAt: string | null
   adherence: TrainerAdherence
@@ -80,7 +81,7 @@ function parseCounts(value: unknown): CoachClientsSummary['counts'] {
 }
 
 function parseAdherenceInput(value: unknown) {
-  if (!isRecord(value) || !Array.isArray(value.versions) || !Array.isArray(value.sessions)) unavailable()
+  if (!isRecord(value) || !Array.isArray(value.versions) || !Array.isArray(value.sessions) || !Array.isArray(value.alertSessions)) unavailable()
   const versions = value.versions.map(version => {
     if (!isRecord(version) || !Array.isArray(version.workouts)) unavailable()
     return {
@@ -95,7 +96,7 @@ function parseAdherenceInput(value: unknown) {
       }),
     }
   })
-  const sessions: TrainerSessionEvidence[] = value.sessions.map(session => {
+  const parseSessions = (rows: unknown[]): TrainerSessionEvidence[] => rows.map(session => {
     if (!isRecord(session)) unavailable()
     return {
       id: requiredString(session.id),
@@ -107,11 +108,14 @@ function parseAdherenceInput(value: unknown) {
       averageRpe: finiteNumberOrNull(session.averageRpe),
     }
   })
+  const sessions = parseSessions(value.sessions)
+  const alertSessions = parseSessions(value.alertSessions)
   return {
     rangeStart: dateString(value.rangeStart),
     rangeEnd: dateString(value.rangeEnd),
     versions,
     sessions,
+    alertSessions,
   }
 }
 
@@ -144,12 +148,13 @@ function parseClient(value: unknown, now: string): CoachClientSummary {
     clientId,
     fullName: nullableString(client.fullName),
     avatarUrl: nullableString(client.avatarUrl),
+    timeZone,
     status: 'active',
     lastPrescribedSessionAt: dateOrNull(value.lastPrescribedSessionAt),
     adherence,
     alerts: deriveOperationalAlerts({
       adherence,
-      sessions: adherenceInput.sessions,
+      sessions: adherenceInput.alertSessions,
       timeZone,
       now,
       relationshipStartedAt: startedAt,
