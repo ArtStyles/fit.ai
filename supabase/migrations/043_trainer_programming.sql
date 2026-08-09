@@ -437,6 +437,20 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.require_public_trainer_template_exercise()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.exercises exercise WHERE exercise.id = NEW.exercise_id AND exercise.is_public = TRUE) THEN
+    RAISE EXCEPTION 'TRAINER_TEMPLATE_EXERCISE_NOT_PUBLIC';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
 DROP TRIGGER IF EXISTS trg_trainer_assignment_versions_immutable ON public.trainer_assignment_versions;
 CREATE TRIGGER trg_trainer_assignment_versions_immutable
   BEFORE UPDATE ON public.trainer_assignment_versions
@@ -462,6 +476,10 @@ DROP TRIGGER IF EXISTS trg_trainer_template_exercises_updated_at ON public.train
 CREATE TRIGGER trg_trainer_template_exercises_updated_at
   BEFORE UPDATE ON public.trainer_template_exercises
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+DROP TRIGGER IF EXISTS trg_trainer_template_exercises_public_catalog ON public.trainer_template_exercises;
+CREATE TRIGGER trg_trainer_template_exercises_public_catalog
+  BEFORE INSERT OR UPDATE OF exercise_id ON public.trainer_template_exercises
+  FOR EACH ROW EXECUTE FUNCTION public.require_public_trainer_template_exercise();
 DROP TRIGGER IF EXISTS trg_trainer_plan_assignments_updated_at ON public.trainer_plan_assignments;
 CREATE TRIGGER trg_trainer_plan_assignments_updated_at
   BEFORE UPDATE ON public.trainer_plan_assignments
@@ -595,12 +613,15 @@ AS $$
 DECLARE
   v_ids UUID[];
   v_expected UUID[];
+  v_trainer_user_id UUID;
 BEGIN
-  IF auth.uid() IS NULL OR NOT public.is_account_active(auth.uid()) OR NOT EXISTS (
-    SELECT 1 FROM public.trainer_program_templates template
-    JOIN public.trainer_profiles profile ON profile.user_id = template.trainer_user_id
-    WHERE template.id = p_template_id AND template.trainer_user_id = auth.uid() AND profile.status = 'active'
-  ) THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  SELECT trainer_user_id INTO v_trainer_user_id FROM public.trainer_program_templates WHERE id = p_template_id;
+  IF auth.uid() IS NULL OR v_trainer_user_id IS NULL OR v_trainer_user_id <> auth.uid() THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_trainer_user_id::TEXT, 0));
+  PERFORM 1 FROM public.profiles profile WHERE profile.id = v_trainer_user_id AND profile.account_status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  PERFORM 1 FROM public.trainer_profiles profile WHERE profile.user_id = v_trainer_user_id AND profile.status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
   IF p_workout_ids IS NULL OR cardinality(p_workout_ids) IS NULL OR cardinality(p_workout_ids) = 0
     OR cardinality(p_workout_ids) <> cardinality(ARRAY(SELECT DISTINCT item FROM unnest(p_workout_ids) AS item)) THEN
     RAISE EXCEPTION 'TRAINER_TEMPLATE_REORDER_INVALID';
@@ -631,13 +652,15 @@ AS $$
 DECLARE
   v_ids UUID[];
   v_expected UUID[];
+  v_trainer_user_id UUID;
 BEGIN
-  IF auth.uid() IS NULL OR NOT public.is_account_active(auth.uid()) OR NOT EXISTS (
-    SELECT 1 FROM public.trainer_template_workouts workout
-    JOIN public.trainer_program_templates template ON template.id = workout.template_id
-    JOIN public.trainer_profiles profile ON profile.user_id = template.trainer_user_id
-    WHERE workout.id = p_template_workout_id AND template.trainer_user_id = auth.uid() AND profile.status = 'active'
-  ) THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  SELECT template.trainer_user_id INTO v_trainer_user_id FROM public.trainer_template_workouts workout JOIN public.trainer_program_templates template ON template.id = workout.template_id WHERE workout.id = p_template_workout_id;
+  IF auth.uid() IS NULL OR v_trainer_user_id IS NULL OR v_trainer_user_id <> auth.uid() THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_trainer_user_id::TEXT, 0));
+  PERFORM 1 FROM public.profiles profile WHERE profile.id = v_trainer_user_id AND profile.account_status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  PERFORM 1 FROM public.trainer_profiles profile WHERE profile.user_id = v_trainer_user_id AND profile.status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
   IF p_template_exercise_ids IS NULL OR cardinality(p_template_exercise_ids) IS NULL OR cardinality(p_template_exercise_ids) = 0
     OR cardinality(p_template_exercise_ids) <> cardinality(ARRAY(SELECT DISTINCT item FROM unnest(p_template_exercise_ids) AS item)) THEN
     RAISE EXCEPTION 'TRAINER_TEMPLATE_REORDER_INVALID';

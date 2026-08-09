@@ -23,6 +23,7 @@ describe('professional template editor browser interactions', () => {
     const { createServer } = await import(pathToFileURL(viteEntry).href)
     viteServer = await createServer({ configFile: false, root: repoRoot, appType: 'spa', cacheDir: path.join(repoRoot, 'node_modules', '.vite-program-template-test'), oxc: { jsx: { runtime: 'automatic' } }, resolve: { alias: [
       { find: '@/app/actions/trainerPrograms', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerPrograms.fixture.ts') },
+      { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
       { find: '@', replacement: path.join(repoRoot, 'src') },
     ] }, server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false } })
     await viteServer.listen()
@@ -47,6 +48,7 @@ describe('professional template editor browser interactions', () => {
       await page.locator('form').filter({ hasText: 'Ejercicio' }).locator('button').filter({ hasText: 'Sentadilla' }).click()
       await page.getByRole('button', { name: 'Agregar ejercicio' }).click()
       await page.waitForFunction(() => Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent?.includes('Ejercicio agregado.')))
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_REFRESHES__?: number }).__PROGRAM_REFRESHES__)).toBeGreaterThanOrEqual(2)
     } finally { await page.close() }
   }, 15_000)
 })

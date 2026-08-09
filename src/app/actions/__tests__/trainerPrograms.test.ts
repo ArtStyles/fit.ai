@@ -85,6 +85,6 @@ describe('trainer program actions', () => {
   it('keeps trainer program actions separated from client workout plans', async () => {
     const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../trainerPrograms.ts', import.meta.url), 'utf8'))
     expect(source).not.toContain(".from('workout_plans')")
-    expect(source).not.toContain('from(\"workout_plans\")')
+    expect(source).not.toContain('from("workout_plans")')
   })
 })

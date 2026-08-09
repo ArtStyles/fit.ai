@@ -1,6 +1,7 @@
 'use client'
 
 import { useId, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ExercisePicker } from '@/components/plan/ExercisePicker'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
 
@@ -34,6 +35,7 @@ async function callAction<T extends Result>(loader: () => Promise<T>) {
 export function TemplateWorkoutEditor({ workout, options }: { workout: TemplateWorkoutView; options: PlanExerciseOption[] }) {
   const [announcement, setAnnouncement] = useState('')
   const [saving, setSaving] = useState(false)
+  const router = useRouter()
   const id = useId()
 
   async function addExercise(event: React.FormEvent<HTMLFormElement>) {
@@ -42,6 +44,7 @@ export function TemplateWorkoutEditor({ workout, options }: { workout: TemplateW
     setSaving(true)
     const formData = new FormData(event.currentTarget)
     const result = await callAction(async () => (await import('@/app/actions/trainerPrograms')).addTrainerTemplateExercise(formData))
+    if (result.ok) router.refresh()
     setAnnouncement(result.ok ? 'Ejercicio agregado.' : result.error ?? 'No se pudo agregar el ejercicio.')
     setSaving(false)
   }
@@ -53,19 +56,22 @@ export function TemplateWorkoutEditor({ workout, options }: { workout: TemplateW
     formData.set('templateWorkoutId', workout.id)
     formData.set('templateExerciseIds', exerciseIds.join(','))
     const result = await callAction(async () => (await import('@/app/actions/trainerPrograms')).reorderTrainerTemplateExercises(formData))
+    if (result.ok) router.refresh()
     setAnnouncement(result.ok ? 'Orden actualizado.' : result.error ?? 'No se pudo actualizar el orden.')
     setSaving(false)
   }
+  async function removeWorkout() { if (saving || !window.confirm(`¿Eliminar ${workout.name}?`)) return; setSaving(true); const data = new FormData(); data.set('templateWorkoutId', workout.id); const result = await callAction(async () => (await import('@/app/actions/trainerPrograms')).deleteTrainerTemplateWorkout(data)); if (result.ok) router.refresh(); setAnnouncement(result.ok ? 'Entrenamiento eliminado.' : result.error ?? 'No se pudo eliminar el entrenamiento.'); setSaving(false) }
+  async function removeExercise(id: string) { if (saving || !window.confirm('¿Eliminar este ejercicio?')) return; setSaving(true); const data = new FormData(); data.set('templateExerciseId', id); const result = await callAction(async () => (await import('@/app/actions/trainerPrograms')).deleteTrainerTemplateExercise(data)); if (result.ok) router.refresh(); setAnnouncement(result.ok ? 'Ejercicio eliminado.' : result.error ?? 'No se pudo eliminar el ejercicio.'); setSaving(false) }
 
   return (
     <article className="rounded-2xl border border-border/70 bg-muted/10 p-4" aria-labelledby={`template-workout-${id}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div><h3 id={`template-workout-${id}`} className="font-semibold text-foreground">{workout.name}</h3><p className="text-xs text-muted-foreground">Día {workout.day_of_week} · Orden {workout.order_in_plan}</p></div>
+        <div><h3 id={`template-workout-${id}`} className="font-semibold text-foreground">{workout.name}</h3><p className="text-xs text-muted-foreground">Día {workout.day_of_week} · Orden {workout.order_in_plan}</p></div><button type="button" disabled={saving} onClick={() => void removeWorkout()} className="min-h-11 rounded-lg border border-red-500/50 px-3 text-xs text-red-300 disabled:opacity-50">Eliminar entrenamiento</button>
       </div>
       <ol className="mt-4 space-y-2" aria-label={`Ejercicios de ${workout.name}`}>
         {workout.exercises.map((item, index) => <li key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3 py-2 text-sm">
           <span><strong>{index + 1}. {item.exercise?.name ?? 'Ejercicio'}</strong><span className="ml-2 text-muted-foreground">{item.sets} × {item.reps}</span></span>
-          <div className="flex gap-1"><button type="button" disabled={saving || index === 0} onClick={() => void moveExercise([...workout.exercises.slice(0, index - 1), item, workout.exercises[index - 1], ...workout.exercises.slice(index + 1)].map(row => row.id))} className="min-h-11 rounded-lg border border-border px-3 text-xs disabled:opacity-40" aria-label={`Subir ${item.exercise?.name ?? 'ejercicio'}`}>Subir</button><button type="button" disabled={saving || index === workout.exercises.length - 1} onClick={() => void moveExercise([...workout.exercises.slice(0, index), workout.exercises[index + 1], item, ...workout.exercises.slice(index + 2)].map(row => row.id))} className="min-h-11 rounded-lg border border-border px-3 text-xs disabled:opacity-40" aria-label={`Bajar ${item.exercise?.name ?? 'ejercicio'}`}>Bajar</button></div>
+          <div className="flex gap-1"><button type="button" disabled={saving || index === 0} onClick={() => void moveExercise([...workout.exercises.slice(0, index - 1), item, workout.exercises[index - 1], ...workout.exercises.slice(index + 1)].map(row => row.id))} className="min-h-11 rounded-lg border border-border px-3 text-xs disabled:opacity-40" aria-label={`Subir ${item.exercise?.name ?? 'ejercicio'}`}>Subir</button><button type="button" disabled={saving || index === workout.exercises.length - 1} onClick={() => void moveExercise([...workout.exercises.slice(0, index), workout.exercises[index + 1], item, ...workout.exercises.slice(index + 2)].map(row => row.id))} className="min-h-11 rounded-lg border border-border px-3 text-xs disabled:opacity-40" aria-label={`Bajar ${item.exercise?.name ?? 'ejercicio'}`}>Bajar</button><button type="button" disabled={saving} onClick={() => void removeExercise(item.id)} className="min-h-11 rounded-lg border border-red-500/50 px-3 text-xs text-red-300" aria-label={`Eliminar ${item.exercise?.name ?? 'ejercicio'}`}>Eliminar</button></div>
         </li>)}
       </ol>
       <form onSubmit={event => void addExercise(event)} noValidate className="mt-4 grid gap-3 rounded-xl border border-violet-500/20 p-3 sm:grid-cols-2">

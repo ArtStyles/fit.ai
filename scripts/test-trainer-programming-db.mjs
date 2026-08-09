@@ -40,7 +40,7 @@ ALTER TABLE public.profiles ADD COLUMN session_duration_minutes INTEGER;
 ALTER TABLE public.profiles ADD COLUMN preferred_workout_days INTEGER[];
 ALTER TABLE public.profiles ADD COLUMN available_equipment TEXT[];
 ALTER TABLE public.profiles ADD COLUMN cardio_preferences TEXT[];
-CREATE TABLE public.exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL);
+CREATE TABLE public.exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, is_public BOOLEAN NOT NULL DEFAULT TRUE);
 CREATE TABLE public.workout_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), name TEXT NOT NULL,
   goal TEXT, duration_weeks INTEGER, days_per_week INTEGER, difficulty TEXT, is_active BOOLEAN NOT NULL DEFAULT FALSE,

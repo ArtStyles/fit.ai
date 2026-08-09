@@ -53,8 +53,9 @@ function failure(fieldErrors: FieldErrors, message = 'Revisa los campos de la ru
   return { ok: false, error: message, ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}) }
 }
 
-function revalidatePrograms() {
+function revalidatePrograms(templateId?: string) {
   revalidatePath('/coach/programs')
+  if (templateId) revalidatePath(`/coach/programs/${templateId}`)
 }
 
 async function ownedTemplate(context: Awaited<ReturnType<typeof requireActiveTrainerContext>>, templateId: string) {
@@ -72,7 +73,7 @@ async function ownedWorkout(context: Awaited<ReturnType<typeof requireActiveTrai
   const { data, error } = await workouts.select('id, template_id, trainer_program_templates!inner(trainer_user_id)').eq('id', workoutId).eq('trainer_program_templates.trainer_user_id', context.user.id).maybeSingle()
   if (error) return { ok: false as const, result: failure({}, 'No se pudo verificar el entrenamiento.') }
   if (!data) return { ok: false as const, result: failure({}, 'No tienes permiso para modificar este entrenamiento.') }
-  return { ok: true as const, workoutId }
+  return { ok: true as const, workoutId, templateId: data.template_id as string }
 }
 
 function templateInput(formData: FormData) {
@@ -118,7 +119,7 @@ export async function createTrainerProgram(formData: FormData): Promise<IdResult
   const { data, error } = await (context.supabase.from('trainer_program_templates') as any)
     .insert({ ...parsed.value, trainer_user_id: context.user.id, status: 'draft' }).select('id').single()
   if (error || !data?.id) return failure({}, 'No se pudo crear la rutina.')
-  revalidatePrograms()
+  revalidatePrograms(data.id)
   return { ok: true, templateId: data.id }
 }
 
@@ -131,7 +132,7 @@ export async function updateTrainerProgram(formData: FormData): Promise<IdResult
   const { data, error } = await (context.supabase.from('trainer_program_templates') as any)
     .update(parsed.value).eq('id', ownership.templateId).eq('trainer_user_id', context.user.id).select('id').single()
   if (error || !data?.id) return failure({}, 'No se pudo guardar la rutina.')
-  revalidatePrograms()
+  revalidatePrograms(ownership.templateId)
   return { ok: true, templateId: ownership.templateId }
 }
 
@@ -142,7 +143,7 @@ export async function archiveTrainerProgram(formData: FormData): Promise<ChangeR
   const { error } = await (context.supabase.from('trainer_program_templates') as any)
     .update({ status: 'archived' }).eq('id', ownership.templateId).eq('trainer_user_id', context.user.id)
   if (error) return failure({}, 'No se pudo archivar la rutina.')
-  revalidatePrograms()
+  revalidatePrograms(ownership.templateId)
   return { ok: true }
 }
 
@@ -155,7 +156,7 @@ export async function createTrainerTemplateWorkout(formData: FormData): Promise<
   const { data, error } = await (context.supabase.from('trainer_template_workouts') as any)
     .insert({ ...parsed.value, template_id: ownership.templateId }).select('id').single()
   if (error || !data?.id) return failure({}, 'No se pudo crear el entrenamiento. Revisa que el día y el orden no estén repetidos.')
-  revalidatePrograms()
+  revalidatePrograms(ownership.templateId)
   return { ok: true, workoutId: data.id }
 }
 
@@ -168,7 +169,7 @@ export async function updateTrainerTemplateWorkout(formData: FormData): Promise<
   const { data, error } = await (context.supabase.from('trainer_template_workouts') as any)
     .update(parsed.value).eq('id', ownership.workoutId).select('id').single()
   if (error || !data?.id) return failure({}, 'No se pudo guardar el entrenamiento. Revisa que el día y el orden no estén repetidos.')
-  revalidatePrograms()
+  revalidatePrograms(ownership.templateId)
   return { ok: true, workoutId: ownership.workoutId }
 }
 
@@ -178,7 +179,7 @@ export async function deleteTrainerTemplateWorkout(formData: FormData): Promise<
   if (!ownership.ok) return ownership.result
   const { error } = await (context.supabase.from('trainer_template_workouts') as any).delete().eq('id', ownership.workoutId)
   if (error) return failure({}, 'No se pudo eliminar el entrenamiento.')
-  revalidatePrograms()
+  revalidatePrograms(ownership.templateId)
   return { ok: true }
 }
 
@@ -207,6 +208,8 @@ export async function updateTrainerTemplateExercise(formData: FormData): Promise
   const { data: existing, error: existingError } = await exercises.select('id, trainer_template_workouts!inner(id, trainer_program_templates!inner(trainer_user_id))').eq('id', templateExerciseId).eq('trainer_template_workouts.trainer_program_templates.trainer_user_id', context.user.id).maybeSingle()
   if (existingError) return failure({}, 'No se pudo verificar el ejercicio.')
   if (!existing) return failure({}, 'No tienes permiso para modificar este ejercicio.')
+  const { data: catalogExercise, error: catalogError } = await (context.supabase.from('exercises') as any).select('id').eq('id', parsed.value.exercise_id).eq('is_public', true).maybeSingle()
+  if (catalogError || !catalogExercise) return failure({ exerciseId: 'El ejercicio seleccionado ya no está disponible.' })
   const { data, error } = await exercises.update(parsed.value).eq('id', templateExerciseId).select('id').single()
   if (error || !data?.id) return failure({}, 'No se pudo guardar el ejercicio. Revisa el orden indicado.')
   revalidatePrograms()
