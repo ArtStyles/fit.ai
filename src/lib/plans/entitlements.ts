@@ -33,6 +33,7 @@ export async function getSavedPlanCount(
   const { count, error } = await (supabase.from('workout_plans') as any)
     .select('family_id', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .eq('library_slot', 'personal')
     .is('superseded_at', null)
     .is('retired_at', null) as { count: number | null; error: { message?: string } | null }
 
@@ -49,6 +50,7 @@ async function hasReplaceableFamily(
     .select('family_id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('family_id', familyId)
+    .eq('library_slot', 'personal')
     .is('superseded_at', null)
     .is('retired_at', null) as { count: number | null; error: { message?: string } | null }
 

@@ -33,6 +33,10 @@ const onboardingWizard = readFileSync(
   new URL('../../../app/onboarding/OnboardingWizard.tsx', import.meta.url),
   'utf8',
 )
+const programmingMigration = readFileSync(
+  new URL('../../../../supabase/migrations/043_trainer_programming.sql', import.meta.url),
+  'utf8',
+)
 
 function sqlFunction(name: string): string {
   const match = migration.match(new RegExp(
@@ -357,6 +361,39 @@ describe('atomic plan lifecycle migration', () => {
       /GRANT EXECUTE ON FUNCTION public\.create_engine_plan\(JSONB, JSONB, INTEGER, TEXT, UUID, JSONB\)\s+TO authenticated/i,
     )
     expect(databaseTypes).not.toMatch(/\n\s+create_engine_plan:\s*\{/)
+  })
+})
+
+describe('professional plan identity migration', () => {
+  it('reserves a professional slot with an all-or-nothing trainer assignment identity', () => {
+    expect(programmingMigration).toMatch(/ADD COLUMN IF NOT EXISTS library_slot TEXT NOT NULL DEFAULT 'personal'/i)
+    expect(programmingMigration).toMatch(/ADD COLUMN IF NOT EXISTS prescription_locked BOOLEAN NOT NULL DEFAULT FALSE/i)
+    expect(programmingMigration).toMatch(/source_type IN \('ai', 'engine', 'manual', 'imported', 'shared_post', 'trainer_assigned'\)/i)
+    expect(programmingMigration).toMatch(/source_type = 'trainer_assigned'[\s\S]+library_slot <> 'professional'/i)
+    expect(programmingMigration).toMatch(/trainer_assignment_version_id IS NULL[\s\S]+TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID/i)
+    expect(programmingMigration).toMatch(/CREATE CONSTRAINT TRIGGER trg_validate_trainer_assigned_plan/i)
+    expect(programmingMigration).toMatch(/DEFERRABLE INITIALLY DEFERRED/i)
+  })
+
+  it('counts only personal family heads for every free-tier quota path', () => {
+    for (const name of [
+      'enforce_plan_family_limit',
+      'enforce_subscription_tier_change',
+      'set_subscription_tier_atomic',
+    ]) {
+      const match = programmingMigration.match(new RegExp(
+        `CREATE OR REPLACE FUNCTION public\\.${name}\\([\\s\\S]+?\\n\\$\\$;`,
+        'i',
+      ))
+      expect(match, name).not.toBeNull()
+      expect(match![0]).toMatch(/library_slot\s*=\s*'personal'/i)
+    }
+  })
+
+  it('keeps the one-active-plan index unfiltered across both library slots', () => {
+    expect(programmingMigration).toMatch(/idx_workout_plans_one_active_per_user[\s\S]+ON public\.workout_plans\(user_id\)[\s\S]+WHERE is_active = TRUE/i)
+    const index = programmingMigration.match(/CREATE UNIQUE INDEX IF NOT EXISTS idx_workout_plans_one_active_per_user[\s\S]+?;/i)
+    expect(index?.[0]).not.toMatch(/library_slot/i)
   })
 })
 

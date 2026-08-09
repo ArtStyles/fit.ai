@@ -3,6 +3,7 @@ import { getPlanCreatePolicy } from '../entitlements'
 
 type PlanHead = {
   family_id: string
+  library_slot: 'personal' | 'professional'
   retired_at: string | null
   superseded_at: string | null
 }
@@ -23,8 +24,8 @@ function supabaseMock(tier: 'free' | 'pro' | null, planHeads: PlanHead[]) {
       if (table === 'workout_plans') {
         const filters: Partial<PlanHead> & { user_id?: string } = {}
         const query = {
-          eq(column: 'user_id' | 'family_id', value: string) {
-            filters[column] = value
+          eq(column: 'user_id' | 'family_id' | 'library_slot', value: string) {
+            filters[column] = value as never
             return query
           },
           is(column: 'retired_at' | 'superseded_at', value: null) {
@@ -34,6 +35,7 @@ function supabaseMock(tier: 'free' | 'pro' | null, planHeads: PlanHead[]) {
           then(resolve: (value: { count: number; data: PlanHead[]; error: null }) => unknown) {
             const data = planHeads.filter(plan => (
               (filters.family_id === undefined || plan.family_id === filters.family_id)
+              && (filters.library_slot === undefined || plan.library_slot === filters.library_slot)
               && (filters.retired_at === undefined || plan.retired_at === filters.retired_at)
               && (filters.superseded_at === undefined || plan.superseded_at === filters.superseded_at)
             ))
@@ -51,6 +53,7 @@ function supabaseMock(tier: 'free' | 'pro' | null, planHeads: PlanHead[]) {
 
 const head = (familyId: string): PlanHead => ({
   family_id: familyId,
+  library_slot: 'personal',
   retired_at: null,
   superseded_at: null,
 })
@@ -117,5 +120,15 @@ describe('getPlanCreatePolicy', () => {
       planCount: 12,
       replacingExisting: false,
     })
+  })
+
+  it('does not charge trainer-assigned professional plans against the personal library', async () => {
+    await expect(
+      getPlanCreatePolicy(supabaseMock('free', [
+        head('personal-a'),
+        head('personal-b'),
+        { ...head('trainer-assignment'), library_slot: 'professional' },
+      ]) as never, 'u1'),
+    ).resolves.toMatchObject({ allowed: false, tier: 'free', planCount: 2 })
   })
 })

@@ -959,7 +959,12 @@ export interface Database {
           plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id: string | null
           manually_updated_at: string | null
-          source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
+          library_slot: 'personal' | 'professional'
+          trainer_relationship_id: string | null
+          trainer_assignment_id: string | null
+          trainer_assignment_version_id: string | null
+          prescription_locked: boolean
           generation_metadata: Json
           source_post_id: string | null
           source_user_id: string | null
@@ -987,7 +992,12 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
-          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
+          library_slot?: 'personal' | 'professional'
+          trainer_relationship_id?: string | null
+          trainer_assignment_id?: string | null
+          trainer_assignment_version_id?: string | null
+          prescription_locked?: boolean
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
@@ -1011,7 +1021,12 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
-          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
+          library_slot?: 'personal' | 'professional'
+          trainer_relationship_id?: string | null
+          trainer_assignment_id?: string | null
+          trainer_assignment_version_id?: string | null
+          prescription_locked?: boolean
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null

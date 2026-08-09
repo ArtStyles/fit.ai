@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(22);
+SELECT plan(31);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -102,6 +102,64 @@ VALUES ('11111111-0000-4000-8000-000000000071', '11111111-0000-4000-8000-0000000
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status)
 VALUES ('11111111-0000-4000-8000-000000000081', '11111111-0000-4000-8000-000000000071', 1, '{"schemaVersion":1}'::jsonb, 'active');
 UPDATE public.trainer_plan_assignments SET active_version_id = '11111111-0000-4000-8000-000000000081' WHERE id = '11111111-0000-4000-8000-000000000071';
+INSERT INTO public.workout_plans (
+  id, user_id, name, family_id, source_type, library_slot, prescription_locked,
+  trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id
+) VALUES (
+  '11111111-0000-4000-8000-000000000091',
+  '33333333-0000-4000-8000-000000000003', 'Professional plan',
+  '11111111-0000-4000-8000-000000000092', 'trainer_assigned', 'professional', TRUE,
+  '11111111-0000-4000-8000-000000000061',
+  '11111111-0000-4000-8000-000000000071',
+  '11111111-0000-4000-8000-000000000081'
+);
+UPDATE public.trainer_assignment_versions
+SET materialized_plan_id = '11111111-0000-4000-8000-000000000091'
+WHERE id = '11111111-0000-4000-8000-000000000081';
+SELECT lives_ok(
+  $$SET CONSTRAINTS ALL IMMEDIATE$$,
+  'a coherent trainer plan may be finalized through its deferred circular references'
+);
+SELECT is(
+  (SELECT library_slot FROM public.workout_plans WHERE id = '11111111-0000-4000-8000-000000000091'),
+  'professional', 'trainer plans use the independent professional library slot'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.workout_plans (user_id, name, family_id, source_type, library_slot, prescription_locked)
+    VALUES ('33333333-0000-4000-8000-000000000003', 'Incomplete trainer plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE)$$,
+  'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID', 'trainer plans require all relationship and assignment references'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.workout_plans (user_id, name, family_id, source_type, library_slot, prescription_locked)
+    VALUES ('33333333-0000-4000-8000-000000000003', 'Unlocked trainer plan', gen_random_uuid(), 'trainer_assigned', 'professional', FALSE)$$,
+  'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID', 'trainer plans must be prescription locked'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.workout_plans (user_id, name, family_id, source_type, library_slot, prescription_locked)
+    VALUES ('33333333-0000-4000-8000-000000000003', 'Professional manual plan', gen_random_uuid(), 'manual', 'professional', FALSE)$$,
+  'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID', 'only trainer-assigned plans may claim a professional slot'
+);
+INSERT INTO public.workout_plans (id, user_id, name, family_id)
+VALUES
+  ('33333333-0000-4000-8000-000000000101', '33333333-0000-4000-8000-000000000003', 'Personal A', '33333333-0000-4000-8000-000000000102'),
+  ('33333333-0000-4000-8000-000000000103', '33333333-0000-4000-8000-000000000003', 'Personal B', '33333333-0000-4000-8000-000000000104');
+UPDATE public.workout_plans SET is_active = TRUE WHERE id = '11111111-0000-4000-8000-000000000091';
+SELECT throws_ok(
+  $$UPDATE public.workout_plans SET is_active = TRUE WHERE id = '33333333-0000-4000-8000-000000000101'$$,
+  '23505', NULL, 'a personal plan cannot become active alongside the professional plan'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.workout_plans (user_id, name, family_id) VALUES ('33333333-0000-4000-8000-000000000003', 'Personal C', gen_random_uuid())$$,
+  'PLAN_FAMILY_LIMIT: free plan family limit reached', 'a free client cannot add a third personal family after receiving a professional plan'
+);
+SELECT is(
+  (SELECT count(DISTINCT family_id) FROM public.workout_plans WHERE user_id = '33333333-0000-4000-8000-000000000003' AND library_slot = 'personal' AND retired_at IS NULL AND superseded_at IS NULL),
+  2::bigint, 'professional plans do not expand the personal family quota'
+);
+SELECT is(
+  (SELECT count(*) FROM public.workout_plans WHERE user_id = '33333333-0000-4000-8000-000000000003' AND source_type = 'trainer_assigned'),
+  1::bigint, 'the professional plan remains independently preserved'
+);
 SELECT throws_ok(
   $$INSERT INTO public.trainer_assignment_versions (assignment_id, version_number, snapshot, effective_from, effective_to)
     VALUES ('11111111-0000-4000-8000-000000000071', 2, '{"schemaVersion":1}'::jsonb, NOW(), NOW() - INTERVAL '1 minute')$$,

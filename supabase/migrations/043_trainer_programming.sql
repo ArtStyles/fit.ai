@@ -79,6 +79,231 @@ ALTER TABLE public.trainer_plan_assignments
   FOREIGN KEY (active_version_id) REFERENCES public.trainer_assignment_versions(id)
   ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
 
+-- A professional prescription is a client-owned materialization, not a new
+-- personal library family. These columns deliberately retain the normal
+-- workout_plans shape so the existing session engine can execute it.
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS subscription_tier TEXT NOT NULL DEFAULT 'free';
+ALTER TABLE public.workout_plans
+  ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'ai',
+  ADD COLUMN IF NOT EXISTS family_id UUID NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ;
+ALTER TABLE public.workout_plans
+  ADD COLUMN IF NOT EXISTS library_slot TEXT NOT NULL DEFAULT 'personal',
+  ADD COLUMN IF NOT EXISTS trainer_relationship_id UUID,
+  ADD COLUMN IF NOT EXISTS trainer_assignment_id UUID,
+  ADD COLUMN IF NOT EXISTS trainer_assignment_version_id UUID,
+  ADD COLUMN IF NOT EXISTS prescription_locked BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Explicitly backfill old rows before applying the all-or-nothing identity
+-- rule. Historical plans remain personal and mutable.
+UPDATE public.workout_plans
+SET library_slot = 'personal', prescription_locked = FALSE
+WHERE library_slot IS DISTINCT FROM 'personal'
+   OR prescription_locked IS DISTINCT FROM FALSE;
+
+ALTER TABLE public.workout_plans
+  DROP CONSTRAINT IF EXISTS workout_plans_source_type_check;
+ALTER TABLE public.workout_plans
+  ADD CONSTRAINT workout_plans_source_type_check
+  CHECK (source_type IN ('ai', 'engine', 'manual', 'imported', 'shared_post', 'trainer_assigned'));
+ALTER TABLE public.workout_plans
+  DROP CONSTRAINT IF EXISTS workout_plans_trainer_relationship_id_fkey,
+  DROP CONSTRAINT IF EXISTS workout_plans_trainer_assignment_id_fkey,
+  DROP CONSTRAINT IF EXISTS workout_plans_trainer_assignment_version_id_fkey;
+ALTER TABLE public.workout_plans
+  ADD CONSTRAINT workout_plans_trainer_relationship_id_fkey
+    FOREIGN KEY (trainer_relationship_id) REFERENCES public.coaching_relationships(id)
+    ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
+  ADD CONSTRAINT workout_plans_trainer_assignment_id_fkey
+    FOREIGN KEY (trainer_assignment_id) REFERENCES public.trainer_plan_assignments(id)
+    ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
+  ADD CONSTRAINT workout_plans_trainer_assignment_version_id_fkey
+    FOREIGN KEY (trainer_assignment_version_id) REFERENCES public.trainer_assignment_versions(id)
+    ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+-- Re-declare the existing invariant as documentation and a migration-time
+-- guard: both personal and professional materializations compete for one
+-- active slot, even though only personal plans consume the Free allowance.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workout_plans_one_active_per_user
+  ON public.workout_plans(user_id)
+  WHERE is_active = TRUE;
+
+CREATE OR REPLACE FUNCTION public.validate_trainer_assigned_plan_identity()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NEW.source_type = 'trainer_assigned' THEN
+    IF NEW.library_slot <> 'professional'
+      OR NEW.prescription_locked <> TRUE
+      OR NEW.trainer_relationship_id IS NULL
+      OR NEW.trainer_assignment_id IS NULL
+      OR NEW.trainer_assignment_version_id IS NULL THEN
+      RAISE EXCEPTION 'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.trainer_plan_assignments assignment
+      JOIN public.trainer_assignment_versions version
+        ON version.id = NEW.trainer_assignment_version_id
+       AND version.assignment_id = assignment.id
+       AND version.materialized_plan_id = NEW.id
+      JOIN public.coaching_relationships relationship
+        ON relationship.id = NEW.trainer_relationship_id
+       AND relationship.id = assignment.relationship_id
+      WHERE assignment.id = NEW.trainer_assignment_id
+        AND assignment.client_user_id = NEW.user_id
+        AND relationship.client_user_id = NEW.user_id
+        AND relationship.trainer_user_id = assignment.trainer_user_id
+    ) THEN
+      RAISE EXCEPTION 'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID';
+    END IF;
+  ELSIF NEW.library_slot <> 'personal'
+    OR NEW.prescription_locked <> FALSE
+    OR NEW.trainer_relationship_id IS NOT NULL
+    OR NEW.trainer_assignment_id IS NOT NULL
+    OR NEW.trainer_assignment_version_id IS NOT NULL THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_validate_trainer_assigned_plan ON public.workout_plans;
+CREATE CONSTRAINT TRIGGER trg_validate_trainer_assigned_plan
+  AFTER INSERT OR UPDATE OF source_type, library_slot, prescription_locked,
+    trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id, user_id
+  ON public.workout_plans
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION public.validate_trainer_assigned_plan_identity();
+
+CREATE OR REPLACE FUNCTION public.enforce_plan_family_limit()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_id UUID := auth.uid();
+  v_actor_role TEXT := COALESCE(auth.role(), '');
+  v_subscription_tier TEXT;
+  v_family_count INTEGER;
+  v_family_exists BOOLEAN;
+BEGIN
+  IF v_actor_id IS NULL THEN
+    IF v_actor_role <> 'service_role' AND session_user NOT IN ('postgres', 'supabase_admin') THEN
+      RAISE EXCEPTION 'Not authenticated';
+    END IF;
+  ELSIF v_actor_id <> NEW.user_id
+    AND v_actor_role <> 'service_role'
+    AND session_user NOT IN ('postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PLAN_OWNERSHIP_MISMATCH';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.user_id::TEXT, 0));
+  IF NEW.is_active AND (NEW.retired_at IS NOT NULL OR NEW.superseded_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'PLAN_VERSION_UNAVAILABLE';
+  END IF;
+  IF NEW.retired_at IS NOT NULL OR NEW.superseded_at IS NOT NULL OR NEW.library_slot <> 'personal' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT subscription_tier INTO v_subscription_tier FROM profiles WHERE id = NEW.user_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Profile not found'; END IF;
+  IF COALESCE(v_subscription_tier, 'free') = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans
+    WHERE user_id = NEW.user_id AND library_slot = 'personal'
+      AND retired_at IS NULL AND superseded_at IS NULL AND id <> NEW.id;
+    SELECT EXISTS (
+      SELECT 1 FROM workout_plans
+      WHERE user_id = NEW.user_id AND library_slot = 'personal' AND family_id = NEW.family_id
+        AND retired_at IS NULL AND superseded_at IS NULL AND id <> NEW.id
+    ) INTO v_family_exists;
+    IF NOT v_family_exists AND v_family_count >= 2 THEN
+      RAISE EXCEPTION 'PLAN_FAMILY_LIMIT: free plan family limit reached';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_plan_family_limit ON public.workout_plans;
+CREATE TRIGGER trg_enforce_plan_family_limit
+  BEFORE INSERT OR UPDATE OF user_id, family_id, library_slot, retired_at, superseded_at, is_active
+  ON public.workout_plans
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_plan_family_limit();
+
+CREATE OR REPLACE FUNCTION public.enforce_subscription_tier_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_role TEXT := COALESCE(auth.role(), '');
+  v_family_count INTEGER;
+BEGIN
+  IF NEW.subscription_tier IS NOT DISTINCT FROM OLD.subscription_tier THEN RETURN NEW; END IF;
+  IF v_actor_role <> 'service_role' AND session_user NOT IN ('postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PLAN_SUBSCRIPTION_TIER_CHANGE_FORBIDDEN';
+  END IF;
+  IF NOT pg_try_advisory_xact_lock(hashtextextended(NEW.id::TEXT, 0)) THEN
+    RAISE EXCEPTION 'PLAN_TIER_LOCK_BUSY_RETRY';
+  END IF;
+  IF OLD.subscription_tier = 'pro' AND NEW.subscription_tier = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans WHERE user_id = NEW.id AND library_slot = 'personal'
+      AND retired_at IS NULL AND superseded_at IS NULL;
+    IF v_family_count > 2 THEN
+      RAISE EXCEPTION 'PLAN_DOWNGRADE_FAMILY_LIMIT: archive plans until at most two current families remain';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.set_subscription_tier_atomic(
+  p_user_id UUID, p_subscription_tier TEXT
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_role TEXT := COALESCE(auth.role(), '');
+  v_current_tier TEXT;
+  v_family_count INTEGER;
+BEGIN
+  IF v_actor_role <> 'service_role' AND session_user NOT IN ('postgres', 'supabase_admin') THEN
+    RAISE EXCEPTION 'PLAN_SUBSCRIPTION_TIER_CHANGE_FORBIDDEN';
+  END IF;
+  IF p_subscription_tier NOT IN ('free', 'pro') THEN RAISE EXCEPTION 'Invalid subscription tier'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', p_user_id::TEXT, TRUE);
+  SELECT subscription_tier INTO v_current_tier FROM profiles WHERE id = p_user_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Profile not found'; END IF;
+  IF v_current_tier = 'pro' AND p_subscription_tier = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans WHERE user_id = p_user_id AND library_slot = 'personal'
+      AND retired_at IS NULL AND superseded_at IS NULL;
+    IF v_family_count > 2 THEN
+      RAISE EXCEPTION 'PLAN_DOWNGRADE_FAMILY_LIMIT: archive plans until at most two current families remain';
+    END IF;
+  END IF;
+  UPDATE profiles SET subscription_tier = p_subscription_tier WHERE id = p_user_id;
+  RETURN p_user_id;
+END;
+$$;
+
 CREATE INDEX IF NOT EXISTS trainer_program_templates_owner_status_idx
   ON public.trainer_program_templates (trainer_user_id, status, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS trainer_template_workouts_template_order_idx
