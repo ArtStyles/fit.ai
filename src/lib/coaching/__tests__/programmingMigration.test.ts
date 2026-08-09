@@ -64,4 +64,25 @@ describe('trainer programming migration', () => {
     expect(migration).toMatch(/CREATE TRIGGER trg_trainer_assignment_versions_immutable/i)
     expect(migration).toMatch(/CREATE TRIGGER trg_trainer_assignment_versions_referenced_delete/i)
   })
+
+  it('serializes both template reorder RPCs with suspension before validating active ownership', () => {
+    for (const functionName of ['reorder_trainer_template_workouts', 'reorder_trainer_template_exercises']) {
+      const rpc = migration.match(
+        new RegExp(`CREATE OR REPLACE FUNCTION public\\.${functionName}\\([\\s\\S]+?END;\\n\\$\\$;`, 'i'),
+      )?.[0]
+
+      expect(rpc).toBeDefined()
+      const trainerLookup = rpc!.indexOf('INTO v_trainer_user_id')
+      const trainerLock = rpc!.indexOf('pg_advisory_xact_lock(hashtextextended(v_trainer_user_id::TEXT, 0))')
+      const accountLock = rpc!.indexOf('FROM public.profiles profile')
+      const activeAccountGuard = rpc!.indexOf("profile.account_status = 'active'")
+      const activeProfileGuard = rpc!.indexOf("profile.status = 'active'")
+
+      expect(trainerLookup).toBeGreaterThanOrEqual(0)
+      expect(trainerLock).toBeGreaterThan(trainerLookup)
+      expect(accountLock).toBeGreaterThan(trainerLock)
+      expect(activeAccountGuard).toBeGreaterThan(trainerLock)
+      expect(activeProfileGuard).toBeGreaterThan(activeAccountGuard)
+    }
+  })
 })

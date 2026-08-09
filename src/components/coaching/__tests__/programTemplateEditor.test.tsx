@@ -51,4 +51,25 @@ describe('professional template editor browser interactions', () => {
       expect(await page.evaluate(() => (window as Window & { __PROGRAM_REFRESHES__?: number }).__PROGRAM_REFRESHES__)).toBeGreaterThanOrEqual(2)
     } finally { await page.close() }
   }, 15_000)
+
+  it('wires deterministic workout and exercise edit forms to their update actions and refreshes', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_EDITOR_READY__?: boolean }).__PROGRAM_EDITOR_READY__))
+      await page.getByText('Editar entrenamiento', { exact: true }).click()
+      const workout = page.getByRole('group', { name: 'Editar entrenamiento 22222222-2222-4222-8222-222222222222' })
+      await workout.getByRole('button', { name: 'Guardar entrenamiento' }).click()
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent?.includes('Entrenamiento actualizado.')))
+      await page.getByText('Editar ejercicio', { exact: true }).first().click()
+      const exercise = page.getByRole('group', { name: 'Editar ejercicio 33333333-3333-4333-8333-333333333333' })
+      await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent?.includes('Ejercicio actualizado.')))
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: Array<{ action: string; fields: Record<string, string> }> }).__PROGRAM_ACTIONS__)).toEqual([
+        { action: 'update-workout', fields: { templateWorkoutId: '22222222-2222-4222-8222-222222222222', name: 'Día A', dayOfWeek: '1', orderInPlan: '1' } },
+        { action: 'update-exercise', fields: { templateExerciseId: '33333333-3333-4333-8333-333333333333', exerciseId: '44444444-4444-4444-8444-444444444444', orderIndex: '1', sets: '3', reps: '10', weightKg: '', targetRpe: '', restSeconds: '60', notes: '' } },
+      ])
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_REFRESHES__?: number }).__PROGRAM_REFRESHES__)).toBe(2)
+    } finally { await page.close() }
+  }, 15_000)
 })

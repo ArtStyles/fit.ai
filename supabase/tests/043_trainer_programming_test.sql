@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(46);
+SELECT plan(52);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -304,6 +304,114 @@ SET LOCAL ROLE authenticated;
 SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 0::bigint, 'nonparticipant cannot read assignment');
 SELECT is((SELECT count(*) FROM public.trainer_assignment_versions), 0::bigint, 'nonparticipant cannot read version');
 RESET ROLE;
+
+-- Both operations acquire the trainer advisory lock before account/profile rows.
+-- A session-level guard makes both remote transactions demonstrably contend on
+-- that same lock; the pg_stat_activity checks are condition based (no sleeps).
+CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
+-- dblink sessions cannot see this test transaction's fixture rows, so prepare
+-- a dedicated, committed race fixture in a third connection.
+SELECT dblink_connect('program_race_setup', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('program_race_setup', $dblink$
+  INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+    ('99999999-0000-4000-8000-000000000009', 'program-race-trainer@example.test', '{}'::jsonb),
+    ('aaaaaaaa-0000-4000-8000-000000000010', 'program-race-admin@example.test', '{}'::jsonb);
+  INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status, is_admin) VALUES
+    ('99999999-0000-4000-8000-000000000009', 'https://example.test/race-trainer.webp', TRUE, 'active', FALSE),
+    ('aaaaaaaa-0000-4000-8000-000000000010', 'https://example.test/race-admin.webp', TRUE, 'active', TRUE);
+  INSERT INTO public.trainer_applications (id, user_id) VALUES
+    ('99999999-0000-4000-8000-000000000011', '99999999-0000-4000-8000-000000000009');
+  INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+    ('99999999-0000-4000-8000-000000000021', '99999999-0000-4000-8000-000000000009', '99999999-0000-4000-8000-000000000011', 'program-race-trainer', 'active', 'Race trainer', 'Race profile', 'Race evidence');
+  INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_per_week) VALUES
+    ('99999999-0000-4000-8000-000000000051', '99999999-0000-4000-8000-000000000009', 'Race template', 2);
+  INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES
+    ('99999999-0000-4000-8000-000000000054', '99999999-0000-4000-8000-000000000051', 'Race order one', 1, 1),
+    ('99999999-0000-4000-8000-000000000055', '99999999-0000-4000-8000-000000000051', 'Race order two', 2, 2);
+$dblink$);
+SELECT dblink_disconnect('program_race_setup');
+SELECT pg_advisory_lock(hashtextextended('99999999-0000-4000-8000-000000000009', 0));
+SELECT dblink_connect('program_reorder_race', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('program_suspend_race', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('program_reorder_race', $$SET request.jwt.claim.sub = '99999999-0000-4000-8000-000000000009'$$);
+SELECT dblink_exec('program_reorder_race', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('program_reorder_race', 'SET ROLE authenticated');
+SELECT dblink_exec('program_reorder_race', $dblink$
+  CREATE OR REPLACE FUNCTION pg_temp.try_reorder_program() RETURNS JSONB LANGUAGE plpgsql AS $fn$
+  BEGIN
+    RETURN jsonb_build_object('ok', TRUE, 'completed_at', clock_timestamp(),
+      'result', public.reorder_trainer_template_workouts(
+        '99999999-0000-4000-8000-000000000051',
+        ARRAY['99999999-0000-4000-8000-000000000054'::uuid, '99999999-0000-4000-8000-000000000055'::uuid]
+      ));
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'completed_at', clock_timestamp(), 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $fn$;
+$dblink$);
+SELECT dblink_exec('program_suspend_race', 'SET request.jwt.claim.role = ''service_role''');
+SELECT dblink_exec('program_suspend_race', 'SET ROLE service_role');
+SELECT dblink_exec('program_suspend_race', $dblink$
+  CREATE OR REPLACE FUNCTION pg_temp.try_suspend_program() RETURNS JSONB LANGUAGE plpgsql AS $fn$
+  BEGIN
+    PERFORM public.suspend_account_and_professional(
+      '99999999-0000-4000-8000-000000000009',
+      'aaaaaaaa-0000-4000-8000-000000000010',
+      'Programming race suspension', NULL
+    );
+    RETURN jsonb_build_object('ok', TRUE, 'completed_at', clock_timestamp());
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'completed_at', clock_timestamp(), 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $fn$;
+$dblink$);
+CREATE TEMP TABLE program_race_pids (operation TEXT PRIMARY KEY, pid INTEGER NOT NULL);
+INSERT INTO program_race_pids SELECT 'reorder', pid FROM dblink('program_reorder_race', 'SELECT pg_backend_pid()') AS response(pid INTEGER);
+INSERT INTO program_race_pids SELECT 'suspend', pid FROM dblink('program_suspend_race', 'SELECT pg_backend_pid()') AS response(pid INTEGER);
+SELECT dblink_send_query('program_reorder_race', 'SELECT pg_temp.try_reorder_program()');
+DO $$
+DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (
+      SELECT 1 FROM pg_stat_activity activity JOIN program_race_pids race ON race.pid = activity.pid
+      WHERE race.operation = 'reorder' AND activity.wait_event_type = 'Lock'
+    );
+    IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'program reorder did not reach trainer lock guard'; END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT dblink_send_query('program_suspend_race', 'SELECT pg_temp.try_suspend_program()');
+DO $$
+DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (
+      SELECT 1 FROM pg_stat_activity activity JOIN program_race_pids race ON race.pid = activity.pid
+      WHERE race.operation = 'suspend' AND activity.wait_event_type = 'Lock'
+    );
+    IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'program suspension did not reach trainer lock guard'; END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT pg_advisory_unlock(hashtextextended('99999999-0000-4000-8000-000000000009', 0));
+CREATE TEMP TABLE program_race_results (operation TEXT PRIMARY KEY, result JSONB NOT NULL);
+INSERT INTO program_race_results SELECT 'reorder', result FROM dblink_get_result('program_reorder_race') AS response(result JSONB);
+INSERT INTO program_race_results SELECT 'suspend', result FROM dblink_get_result('program_suspend_race') AS response(result JSONB);
+SELECT is((SELECT count(*) FROM program_race_results WHERE result->>'sqlstate' = '40P01'), 0::bigint, 'reorder and suspension never deadlock');
+SELECT ok((SELECT (result->>'ok')::boolean FROM program_race_results WHERE operation = 'suspend'), 'administrative suspension completes in the real lock race');
+SELECT ok((SELECT (result->>'ok')::boolean FROM program_race_results WHERE operation = 'reorder')
+  OR (SELECT result->>'message' LIKE '%TRAINER_TEMPLATE_OWNER_REQUIRED%' FROM program_race_results WHERE operation = 'reorder'),
+  'reorder either commits before suspension or rejects the inactive trainer');
+SELECT ok(NOT (SELECT (result->>'ok')::boolean FROM program_race_results WHERE operation = 'reorder')
+  OR (SELECT (result->>'completed_at')::timestamptz <= (SELECT result->>'completed_at' FROM program_race_results WHERE operation = 'suspend')::timestamptz FROM program_race_results WHERE operation = 'reorder'),
+  'a successful reorder completes before the suspension transaction');
+SELECT is((SELECT account_status FROM public.profiles WHERE id = '99999999-0000-4000-8000-000000000009'), 'suspended', 'race leaves the trainer account suspended');
+SELECT is((SELECT status FROM public.trainer_profiles WHERE user_id = '99999999-0000-4000-8000-000000000009'), 'suspended', 'race leaves the professional profile suspended');
+SELECT dblink_disconnect('program_reorder_race');
+SELECT dblink_disconnect('program_suspend_race');
 
 SELECT * FROM finish();
 ROLLBACK;
