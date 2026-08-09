@@ -473,22 +473,35 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COACH_CLIENT_INSIGHTS_UNAVAILABLE';
   END IF;
 
-  -- The scope helper rechecks authenticated trainer/profile and client status,
-  -- active relationship, current training-profile consent, and the separately
-  -- revocable body-measurements consent before this table is ever read.
-  IF NOT public.has_active_coaching_scope(v_trainer_id, p_client_id, 'body_measurements') THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COACH_CLIENT_INSIGHTS_UNAVAILABLE';
-  END IF;
-
+  -- This single authorization statement locks the rows that revocation updates.
+  -- The locks remain held until the RPC statement completes its measurement read.
   SELECT CASE
-    WHEN client.timezone IS NOT NULL
-      AND EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names AS zone WHERE zone.name = client.timezone)
-    THEN client.timezone
+    WHEN client_account.timezone IS NOT NULL
+      AND EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names AS zone WHERE zone.name = client_account.timezone)
+    THEN client_account.timezone
     ELSE 'America/Havana'
   END
   INTO v_client_timezone
-  FROM public.profiles AS client
-  WHERE client.id = p_client_id;
+  FROM public.coaching_relationships AS relationship
+  JOIN public.trainer_profiles AS trainer_profile ON trainer_profile.user_id = relationship.trainer_user_id
+  JOIN public.profiles AS trainer_account ON trainer_account.id = trainer_profile.user_id
+  JOIN public.profiles AS client_account ON client_account.id = relationship.client_user_id
+  JOIN public.coaching_consents AS training_consent
+    ON training_consent.relationship_id = relationship.id
+   AND training_consent.scope = 'training_profile'
+   AND training_consent.revoked_at IS NULL
+  JOIN public.coaching_consents AS body_consent
+    ON body_consent.relationship_id = relationship.id
+   AND body_consent.scope = 'body_measurements'
+   AND body_consent.revoked_at IS NULL
+  WHERE relationship.trainer_user_id = v_trainer_id
+    AND relationship.client_user_id = p_client_id
+    AND relationship.status = 'active'
+    AND trainer_profile.status = 'active'
+    AND trainer_account.account_status = 'active'
+    AND client_account.account_status = 'active'
+    AND public.has_active_coaching_scope(v_trainer_id, p_client_id, 'body_measurements')
+  FOR SHARE OF relationship, trainer_profile, trainer_account, client_account, training_consent, body_consent;
 
   IF v_client_timezone IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COACH_CLIENT_INSIGHTS_UNAVAILABLE';

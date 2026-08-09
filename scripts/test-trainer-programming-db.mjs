@@ -131,6 +131,65 @@ SELECT dblink_disconnect('accept_a');
 SELECT dblink_disconnect('accept_b');
 `
 
+// Hold the relationship lock in the real revocation transaction, then dispatch
+// the measurements RPC in a second authenticated connection. The reader must
+// recheck after the revocation commits and return only the generic error.
+const measurementRevocationRaceSql = `
+CREATE EXTENSION IF NOT EXISTS dblink;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('d4000000-0000-4000-8000-000000000001', 'measurement-race-trainer@example.test', '{}'::jsonb),
+  ('d4000000-0000-4000-8000-000000000002', 'measurement-race-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, timezone, onboarding_done, account_status) VALUES
+  ('d4000000-0000-4000-8000-000000000001', 'Measurement race trainer', 'https://example.test/measurement-race-trainer.webp', 'America/Havana', TRUE, 'active'),
+  ('d4000000-0000-4000-8000-000000000002', 'Measurement race client', 'https://example.test/measurement-race-client.webp', 'America/Havana', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id) VALUES ('d4000000-0000-4000-8000-000000000011', 'd4000000-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('d4000000-0000-4000-8000-000000000021', 'd4000000-0000-4000-8000-000000000001', 'd4000000-0000-4000-8000-000000000011', 'measurement-race-trainer', 'active', 'Measurement race trainer', 'Race', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('d4000000-0000-4000-8000-000000000031', 'd4000000-0000-4000-8000-000000000021', 'Measurement race service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('d4000000-0000-4000-8000-000000000041', 'd4000000-0000-4000-8000-000000000031', 'd4000000-0000-4000-8000-000000000001', 'd4000000-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('d4000000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'd4000000-0000-4000-8000-000000000002'),
+  ('d4000000-0000-4000-8000-000000000041', 'body_measurements', 'body-measurements-v1', 'd4000000-0000-4000-8000-000000000002');
+INSERT INTO public.measurements (user_id, recorded_at, weight_kg, notes) VALUES
+  ('d4000000-0000-4000-8000-000000000002', NOW(), 70, 'RACE_NOTE_MUST_NOT_LEAK');
+SELECT dblink_connect('measurement_reader', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('measurement_revoker', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('measurement_reader', $$SET application_name = 'measurement-race-reader'$$);
+SELECT dblink_exec('measurement_reader', $$SET request.jwt.claim.sub = 'd4000000-0000-4000-8000-000000000001'$$);
+SELECT dblink_exec('measurement_reader', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('measurement_reader', 'SET ROLE authenticated');
+SELECT dblink_exec('measurement_reader', $$CREATE FUNCTION pg_temp.try_measurements() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN RETURN jsonb_build_object('ok', true, 'payload', public.get_coach_client_measurements('d4000000-0000-4000-8000-000000000002', CURRENT_DATE - 30, CURRENT_DATE)); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok', false, 'sqlstate', SQLSTATE, 'message', SQLERRM); END; $f$;$$);
+SELECT dblink_exec('measurement_revoker', $$SET request.jwt.claim.sub = 'd4000000-0000-4000-8000-000000000002'$$);
+SELECT dblink_exec('measurement_revoker', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('measurement_revoker', 'SET ROLE service_role');
+SELECT dblink_exec('measurement_revoker', $$BEGIN; DO $lock$ BEGIN PERFORM 1 FROM public.coaching_relationships WHERE id = 'd4000000-0000-4000-8000-000000000041' FOR UPDATE; END $lock$;$$);
+SELECT dblink_send_query('measurement_reader', 'SELECT pg_temp.try_measurements()');
+DO $$
+DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'measurement-race-reader' AND wait_event_type = 'Lock');
+    IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'measurement reader did not wait for revocation lock'; END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT dblink_exec('measurement_revoker', $$SET ROLE authenticated; DO $revoke$ BEGIN PERFORM public.revoke_body_measurements_consent('d4000000-0000-4000-8000-000000000041', gen_random_uuid()); END $revoke$; COMMIT;$$);
+CREATE TEMP TABLE measurement_race_results (result JSONB NOT NULL);
+INSERT INTO measurement_race_results SELECT result FROM dblink_get_result('measurement_reader') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT result->>'ok' FROM measurement_race_results) <> 'false' THEN RAISE EXCEPTION 'measurement reader returned data after effective revocation: %', (SELECT result FROM measurement_race_results); END IF;
+  IF (SELECT result->>'sqlstate' FROM measurement_race_results) <> 'P0001' OR (SELECT result->>'message' FROM measurement_race_results) <> 'COACH_CLIENT_INSIGHTS_UNAVAILABLE' THEN RAISE EXCEPTION 'measurement reader leaked revocation result: %', (SELECT result FROM measurement_race_results); END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.coaching_consents WHERE relationship_id = 'd4000000-0000-4000-8000-000000000041' AND scope = 'body_measurements' AND revoked_at IS NOT NULL) THEN RAISE EXCEPTION 'measurement revocation did not commit'; END IF;
+END;
+$$;
+SELECT dblink_disconnect('measurement_reader');
+SELECT dblink_disconnect('measurement_revoker');
+`
+
 // Exercise the real authorization RPC across a professional revision. The
 // reservation is released before B because the daily policy intentionally
 // permits only one live authorization per user/date.
@@ -241,6 +300,7 @@ try {
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running 044 pgTAP consent-bound insight suite')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
+  runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
   process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-044 behavior and rerunnability passed\n')

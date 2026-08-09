@@ -32,9 +32,16 @@ export default async function CoachClientDetailPage({ params, searchParams }: {
     const detail = await getCoachClientInsights(supabase as any, {
       clientId: params.clientId, weeks, now, ...range,
     })
-    const measurements = detail.activeScopes.includes('body_measurements')
-      ? await getCoachClientMeasurements(supabase as any, { clientId: params.clientId, ...range }).catch(() => null)
-      : null
+    let measurements = null
+    if (detail.activeScopes.includes('body_measurements')) {
+      try {
+        measurements = await getCoachClientMeasurements(supabase as any, {
+          clientId: params.clientId, fromDate: detail.rangeStart, toDate: detail.rangeEnd,
+        })
+      } catch {
+        console.error('[coach-client-measurements] unavailable')
+      }
+    }
     return <div className="min-h-screen bg-background pb-28"><PageTopBar title="Detalle del cliente" subtitle="Evidencia compartida" backHref="/coach/clients" backLabel="Clientes" /><main className="mx-auto max-w-4xl px-4 py-8"><ClientInsightsDashboard detail={detail} weeks={weeks} />{measurements === null ? null : <ClientMeasurementsPanel measurements={measurements} />}</main></div>
   } catch {
     notFound()

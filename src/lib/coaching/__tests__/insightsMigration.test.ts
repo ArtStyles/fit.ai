@@ -6,6 +6,7 @@ const migration = readFileSync(
   'utf8',
 )
 const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
+const runner = readFileSync(new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url), 'utf8')
 
 describe('trainer insights migration', () => {
   it('projects aggregate request/relationship counts and trusted average RPE without exposing session text', () => {
@@ -45,6 +46,15 @@ describe('trainer insights migration', () => {
     expect(rpc).toMatch(/'weightKg'/)
     expect(rpc).not.toMatch(/measurements\.notes|['"]notes['"]/i)
     expect(rpc).not.toMatch(/SELECT\s+\*/i)
+  })
+
+  it('locks all authorization rows before reading measurements and has a real dblink revocation race', () => {
+    const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_client_measurements\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(rpc).toMatch(/FOR SHARE OF relationship, trainer_profile, trainer_account, client_account, training_consent, body_consent/i)
+    expect(rpc!.indexOf('FOR SHARE OF relationship')).toBeLessThan(rpc!.indexOf('FROM public.measurements'))
+    expect(runner).toMatch(/measurementRevocationRaceSql/)
+    expect(runner).toMatch(/revoke_body_measurements_consent/)
+    expect(runner).toMatch(/measurement revocation race/)
   })
 
   it('guards the detail before sensitive reads and returns one generic access error', () => {

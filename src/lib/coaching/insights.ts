@@ -229,6 +229,8 @@ export type CoachClientInsights = {
   client: Pick<CoachClientSummary, 'clientId' | 'fullName' | 'avatarUrl' | 'timeZone'>
   relationshipStartedAt: string
   activeScopes: CoachClientConsentScope[]
+  rangeStart: string
+  rangeEnd: string
   adherence: TrainerAdherence
   occurrences: CoachClientInsightOccurrence[]
   alerts: OperationalAlert[]
@@ -271,6 +273,12 @@ function nullableFiniteNumber(value: unknown): number | null {
   return finiteNumberOrNull(value)
 }
 
+function nullableMeasurementNumber(value: unknown, accepts: (number: number) => boolean): number | null {
+  const number = nullableFiniteNumber(value)
+  if (number !== null && !accepts(number)) unavailable()
+  return number
+}
+
 function recognizedActiveScopes(value: unknown): CoachClientConsentScope[] {
   if (!Array.isArray(value)) unavailable()
   const scopes = value.map(scope => {
@@ -295,18 +303,31 @@ function localDate(value: string, timeZone: string): string {
 }
 
 function shiftDate(date: string, days: number): string {
-  const parsed = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(date)
-  if (!parsed) unavailable()
+  const parsed = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(calendarDate(date))!
   const next = new Date(Date.UTC(Number(parsed[1]), Number(parsed[2]) - 1, Number(parsed[3]) + days))
   return `${next.getUTCFullYear().toString().padStart(4, '0')}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`
+}
+
+function calendarDate(value: unknown): string {
+  const text = requiredString(value)
+  const parsed = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  if (!parsed) unavailable()
+  const year = Number(parsed[1])
+  const month = Number(parsed[2])
+  const day = Number(parsed[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) unavailable()
+  return text
 }
 
 function parsedDetailRange(input: { timeZone: string; now: string; weeks?: 4 | 12; rangeStart?: string; rangeEnd?: string }) {
   const now = dateString(input.now)
   const rangeEnd = input.rangeEnd ?? localDate(now, input.timeZone)
   const rangeStart = input.rangeStart ?? shiftDate(rangeEnd, -((input.weeks ?? 4) * 7 - 1))
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(rangeStart) || !/^\d{4}-\d{2}-\d{2}$/.test(rangeEnd) || rangeStart > rangeEnd) unavailable()
-  return { now, rangeStart, rangeEnd }
+  const calendarRangeStart = calendarDate(rangeStart)
+  const calendarRangeEnd = calendarDate(rangeEnd)
+  if (calendarRangeStart > calendarRangeEnd) unavailable()
+  return { now, rangeStart: calendarRangeStart, rangeEnd: calendarRangeEnd }
 }
 
 function parseDetailPayload(value: unknown) {
@@ -409,7 +430,7 @@ export function adaptCoachClientInsights(
     exerciseResults: session.exerciseResults,
   }))
   return {
-    client: parsed.client, relationshipStartedAt: parsed.relationshipStartedAt, activeScopes: parsed.activeScopes, adherence, occurrences: occurrenceDetail,
+    client: parsed.client, relationshipStartedAt: parsed.relationshipStartedAt, activeScopes: parsed.activeScopes, rangeStart: range.rangeStart, rangeEnd: range.rangeEnd, adherence, occurrences: occurrenceDetail,
     alerts: deriveOperationalAlerts({ adherence, sessions: adherenceSessions, timeZone: parsed.client.timeZone, now: range.now, relationshipStartedAt: parsed.relationshipStartedAt }), sessions,
   }
 }
@@ -426,19 +447,15 @@ export function adaptCoachClientMeasurements(payload: unknown): CoachClientMeasu
   return payload.measurements.map(measurement => {
     if (!isRecord(measurement) || !exactMeasurementKeys(measurement)) unavailable()
     return {
-      recordedOn: (() => {
-        const recordedOn = requiredString(measurement.recordedOn)
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(recordedOn)) unavailable()
-        return recordedOn
-      })(),
-      weightKg: nullableFiniteNumber(measurement.weightKg),
-      bodyFatPercentage: nullableFiniteNumber(measurement.bodyFatPercentage),
-      muscleMassKg: nullableFiniteNumber(measurement.muscleMassKg),
-      chestCm: nullableFiniteNumber(measurement.chestCm),
-      waistCm: nullableFiniteNumber(measurement.waistCm),
-      hipsCm: nullableFiniteNumber(measurement.hipsCm),
-      armsCm: nullableFiniteNumber(measurement.armsCm),
-      legsCm: nullableFiniteNumber(measurement.legsCm),
+      recordedOn: calendarDate(measurement.recordedOn),
+      weightKg: nullableMeasurementNumber(measurement.weightKg, number => number > 0 && number <= 999.9),
+      bodyFatPercentage: nullableMeasurementNumber(measurement.bodyFatPercentage, number => number >= 0 && number <= 100),
+      muscleMassKg: nullableMeasurementNumber(measurement.muscleMassKg, number => number > 0 && number <= 999.9),
+      chestCm: nullableMeasurementNumber(measurement.chestCm, number => number > 0 && number <= 999.9),
+      waistCm: nullableMeasurementNumber(measurement.waistCm, number => number > 0 && number <= 999.9),
+      hipsCm: nullableMeasurementNumber(measurement.hipsCm, number => number > 0 && number <= 999.9),
+      armsCm: nullableMeasurementNumber(measurement.armsCm, number => number > 0 && number <= 999.9),
+      legsCm: nullableMeasurementNumber(measurement.legsCm, number => number > 0 && number <= 999.9),
     }
   })
 }

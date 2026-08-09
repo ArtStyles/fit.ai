@@ -19,6 +19,11 @@ describe('coach client measurements adapter', () => {
     expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], notes: 'private' }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
     expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], weightKg: Number.NaN }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
     expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], recordedOn: '2026-08-08T12:00:00.000Z' }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+    expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], recordedOn: '2026-02-31' }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+    expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], bodyFatPercentage: -0.1 }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+    expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], bodyFatPercentage: 100.1 }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+    expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], weightKg: 0 }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+    expect(() => adaptCoachClientMeasurements({ ...payload, measurements: [{ ...payload.measurements[0], waistCm: -1 }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
   })
 
   it('converges a measurements RPC failure into the generic unavailable error', async () => {

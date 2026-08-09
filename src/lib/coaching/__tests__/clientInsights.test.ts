@@ -43,6 +43,16 @@ describe('adaptCoachClientInsights', () => {
     expect(detail.activeScopes).toEqual(['training_profile', 'body_measurements'])
   })
 
+  it('exposes the exact inclusive local calendar range for optional consented data', () => {
+    const detail = adaptCoachClientInsights({
+      ...payload,
+      client: { ...payload.client, timezone: 'Pacific/Pago_Pago' },
+    }, { weeks: 4, now: '2026-01-01T00:30:00.000Z' })
+
+    expect(detail.rangeStart).toBe('2025-12-04')
+    expect(detail.rangeEnd).toBe('2025-12-31')
+  })
+
   it('rejects an incompatible active-scope payload with the generic error', () => {
     expect(() => adaptCoachClientInsights({
       ...payload,

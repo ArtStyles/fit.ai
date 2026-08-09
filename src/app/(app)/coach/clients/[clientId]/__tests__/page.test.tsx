@@ -56,16 +56,17 @@ describe('CoachClientDetailPage', () => {
   })
 
   it('calls the measurements RPC once when the basic payload has current body-measurements consent', async () => {
-    getCoachClientInsights.mockResolvedValue({ activeScopes: ['training_profile', 'body_measurements'] })
+    getCoachClientInsights.mockResolvedValue({ activeScopes: ['training_profile', 'body_measurements'], rangeStart: '2025-12-04', rangeEnd: '2025-12-31' })
     const { default: CoachClientDetailPage } = await import('../page')
 
     await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })
 
     expect(getCoachClientMeasurements).toHaveBeenCalledTimes(1)
-    expect(getCoachClientMeasurements).toHaveBeenCalledWith({}, expect.objectContaining({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }))
+    expect(getCoachClientMeasurements).toHaveBeenCalledWith({}, { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fromDate: '2025-12-04', toDate: '2025-12-31' })
   })
 
   it('keeps the already-authorized detail visible when the later measurements request fails', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     getCoachClientInsights.mockResolvedValue({ activeScopes: ['body_measurements'] })
     getCoachClientMeasurements.mockRejectedValue(new Error('COACH_CLIENT_INSIGHTS_UNAVAILABLE'))
     const { default: CoachClientDetailPage } = await import('../page')
@@ -73,5 +74,20 @@ describe('CoachClientDetailPage', () => {
     await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })).resolves.toBeDefined()
     expect(getCoachClientInsights).toHaveBeenCalledTimes(1)
     expect(getCoachClientMeasurements).toHaveBeenCalledTimes(1)
+    log.mockRestore()
+  })
+
+  it('records a sanitized internal event for an optional measurements failure without PII', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    getCoachClientInsights.mockResolvedValue({ activeScopes: ['body_measurements'], rangeStart: '2026-08-01', rangeEnd: '2026-08-28' })
+    getCoachClientMeasurements.mockRejectedValue(new Error('private client measurement payload'))
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })
+
+    expect(log).toHaveBeenCalledWith('[coach-client-measurements] unavailable')
+    expect(log.mock.calls.flat().join(' ')).not.toContain('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    expect(log.mock.calls.flat().join(' ')).not.toContain('private client measurement payload')
+    log.mockRestore()
   })
 })
