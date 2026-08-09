@@ -630,6 +630,7 @@ export interface Database {
           status: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
           accepted_at: string | null
           active_version_id: string | null
+          proposal_idempotency_key: string | null
           created_at: string
           updated_at: string
         }
@@ -642,6 +643,7 @@ export interface Database {
           status?: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
           accepted_at?: string | null
           active_version_id?: string | null
+          proposal_idempotency_key?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1608,6 +1610,10 @@ export interface Database {
       decline_coaching_request: {
         Args: { request_id: string; reason?: string }
         Returns: { declined_request_id: string }[]
+      }
+      propose_trainer_assignment: {
+        Args: { p_relationship_id: string; p_template_id: string; p_change_summary: string | null; p_idempotency_key: string }
+        Returns: Array<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>
       }
       grant_body_measurements_consent: {
         Args: { relationship_id: string; consent_version: string; idempotency_key: string }

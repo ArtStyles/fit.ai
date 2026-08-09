@@ -684,6 +684,299 @@ REVOKE ALL ON FUNCTION public.reorder_trainer_template_exercises(UUID, UUID[]) F
 GRANT EXECUTE ON FUNCTION public.reorder_trainer_template_workouts(UUID, UUID[]) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.reorder_trainer_template_exercises(UUID, UUID[]) TO authenticated, service_role;
 
+-- A proposal is retriable without creating another immutable copy. The key is
+-- deliberately scoped to its authenticated trainer so unrelated trainers can
+-- use independent client-generated keys.
+ALTER TABLE public.trainer_plan_assignments
+  ADD COLUMN IF NOT EXISTS proposal_idempotency_key TEXT;
+ALTER TABLE public.trainer_plan_assignments
+  DROP CONSTRAINT IF EXISTS trainer_plan_assignments_proposal_idempotency_key_check;
+ALTER TABLE public.trainer_plan_assignments
+  ADD CONSTRAINT trainer_plan_assignments_proposal_idempotency_key_check
+  CHECK (proposal_idempotency_key IS NULL OR char_length(btrim(proposal_idempotency_key)) BETWEEN 1 AND 200);
+CREATE UNIQUE INDEX IF NOT EXISTS trainer_plan_assignments_proposal_idempotency_unique
+  ON public.trainer_plan_assignments (trainer_user_id, proposal_idempotency_key)
+  WHERE proposal_idempotency_key IS NOT NULL;
+
+-- Template prescriptions permit fractional RPE values. Preserve that exact
+-- value when materializing a professional plan rather than silently rounding.
+ALTER TABLE public.workout_exercises
+  ALTER COLUMN target_rpe TYPE NUMERIC(3, 1) USING target_rpe::NUMERIC(3, 1);
+
+-- Keep the professional workflow self-contained for installations that apply
+-- the programming migration without the optional notifications bootstrap.
+CREATE OR REPLACE FUNCTION public.create_product_notification(
+  p_user_id UUID,
+  p_type TEXT,
+  p_title TEXT,
+  p_body TEXT,
+  p_url TEXT,
+  p_dedupe_key TEXT,
+  p_payload JSONB DEFAULT '{}'::JSONB
+)
+RETURNS public.product_notifications
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  notification public.product_notifications%ROWTYPE;
+BEGIN
+  INSERT INTO public.product_notifications (user_id, type, title, body, url, payload, dedupe_key)
+  VALUES (p_user_id, p_type, p_title, p_body, p_url, COALESCE(p_payload, '{}'::JSONB), p_dedupe_key)
+  ON CONFLICT (user_id, dedupe_key) DO NOTHING
+  RETURNING * INTO notification;
+  IF notification.id IS NULL THEN
+    SELECT * INTO STRICT notification FROM public.product_notifications
+    WHERE user_id = p_user_id AND dedupe_key = p_dedupe_key;
+  END IF;
+  RETURN notification;
+END;
+$$;
+ALTER FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.propose_trainer_assignment(
+  p_relationship_id UUID,
+  p_template_id UUID,
+  p_change_summary TEXT,
+  p_idempotency_key TEXT
+)
+RETURNS TABLE (assignment_id UUID, assignment_version_id UUID, workout_plan_id UUID)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_trainer_user_id UUID := auth.uid();
+  v_client_user_id UUID;
+  v_relationship public.coaching_relationships%ROWTYPE;
+  v_template public.trainer_program_templates%ROWTYPE;
+  v_assignment_id UUID;
+  v_assignment_version_id UUID;
+  v_workout_plan_id UUID;
+  v_snapshot JSONB;
+  v_snapshot_workouts JSONB;
+  v_workout JSONB;
+  v_exercise JSONB;
+  v_materialized_workout_id UUID;
+  v_workout_count INTEGER;
+  v_exercise_count INTEGER;
+BEGIN
+  IF v_trainer_user_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+  IF p_relationship_id IS NULL OR p_template_id IS NULL
+    OR NULLIF(BTRIM(COALESCE(p_idempotency_key, '')), '') IS NULL THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_PROPOSAL_INVALID';
+  END IF;
+  IF char_length(BTRIM(p_idempotency_key)) > 200
+    OR (p_change_summary IS NOT NULL AND char_length(BTRIM(p_change_summary)) > 1000) THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_PROPOSAL_INVALID';
+  END IF;
+
+  -- Acquire the client lock before any mutable relationship state. This is the
+  -- same lock order as acceptance/end flows and serializes proposals per client.
+  SELECT relationship.client_user_id INTO v_client_user_id
+  FROM public.coaching_relationships relationship
+  WHERE relationship.id = p_relationship_id;
+  IF v_client_user_id IS NULL THEN
+    RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_FOUND';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
+  -- Administrative trainer suspension uses this compatibility lock before it
+  -- changes professional availability; revalidate only after acquiring it.
+  PERFORM pg_advisory_xact_lock(hashtextextended('trainer-profile:' || v_trainer_user_id::TEXT, 0));
+
+  SELECT * INTO v_relationship
+  FROM public.coaching_relationships relationship
+  WHERE relationship.id = p_relationship_id
+    AND relationship.trainer_user_id = v_trainer_user_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_relationship.status <> 'active' THEN
+    RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_ACTIVE';
+  END IF;
+  IF v_relationship.client_user_id <> v_client_user_id THEN
+    RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_FOUND';
+  END IF;
+
+  PERFORM 1 FROM public.profiles profile
+  WHERE profile.id = v_trainer_user_id AND profile.account_status = 'active'
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
+  PERFORM 1 FROM public.trainer_profiles profile
+  WHERE profile.user_id = v_trainer_user_id AND profile.status = 'active'
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
+  PERFORM 1 FROM public.profiles profile
+  WHERE profile.id = v_client_user_id AND profile.account_status = 'active'
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_CLIENT_INACTIVE'; END IF;
+
+  -- Return the original complete materialization for a retried request.
+  SELECT assignment.id, version.id, version.materialized_plan_id
+  INTO v_assignment_id, v_assignment_version_id, v_workout_plan_id
+  FROM public.trainer_plan_assignments assignment
+  JOIN public.trainer_assignment_versions version
+    ON version.assignment_id = assignment.id AND version.version_number = 1
+  WHERE assignment.trainer_user_id = v_trainer_user_id
+    AND assignment.proposal_idempotency_key = BTRIM(p_idempotency_key)
+  FOR UPDATE OF assignment, version;
+  IF FOUND THEN
+    RETURN QUERY SELECT v_assignment_id, v_assignment_version_id, v_workout_plan_id;
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.coaching_consents consent
+    WHERE consent.relationship_id = v_relationship.id
+      AND consent.scope = 'training_profile'
+      AND consent.revoked_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_CONSENT_REQUIRED';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.trainer_plan_assignments assignment
+    WHERE assignment.client_user_id = v_client_user_id AND assignment.status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_ACTIVE_EXISTS';
+  END IF;
+
+  SELECT * INTO v_template
+  FROM public.trainer_program_templates template
+  WHERE template.id = p_template_id
+    AND template.trainer_user_id = v_trainer_user_id
+    AND template.status <> 'archived'
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TEMPLATE_NOT_AVAILABLE'; END IF;
+
+  SELECT COUNT(*)::INTEGER INTO v_workout_count
+  FROM public.trainer_template_workouts workout
+  WHERE workout.template_id = v_template.id;
+  IF v_workout_count <> v_template.days_per_week THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE';
+  END IF;
+  SELECT COUNT(*)::INTEGER INTO v_exercise_count
+  FROM public.trainer_template_exercises exercise
+  JOIN public.trainer_template_workouts workout ON workout.id = exercise.template_workout_id
+  JOIN public.exercises catalog ON catalog.id = exercise.exercise_id AND catalog.is_public = TRUE
+  WHERE workout.template_id = v_template.id;
+  IF v_exercise_count = 0 OR EXISTS (
+    SELECT 1
+    FROM public.trainer_template_workouts workout
+    WHERE workout.template_id = v_template.id
+      AND NOT EXISTS (SELECT 1 FROM public.trainer_template_exercises exercise WHERE exercise.template_workout_id = workout.id)
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.trainer_template_exercises exercise
+    JOIN public.trainer_template_workouts workout ON workout.id = exercise.template_workout_id
+    LEFT JOIN public.exercises catalog ON catalog.id = exercise.exercise_id AND catalog.is_public = TRUE
+    WHERE workout.template_id = v_template.id AND catalog.id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE';
+  END IF;
+
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'sourceTemplateWorkoutId', row.id,
+      'name', row.name,
+      'dayOfWeek', row.day_of_week,
+      'orderInPlan', row.order_in_plan,
+      'exercises', row.exercises
+    ) ORDER BY row.day_of_week, row.order_in_plan, row.id
+  ) INTO v_snapshot_workouts
+  FROM (
+    SELECT workout.id, workout.name, workout.day_of_week, workout.order_in_plan,
+      jsonb_agg(jsonb_build_object(
+        'sourceTemplateExerciseId', exercise.id,
+        'exerciseId', exercise.exercise_id,
+        'orderIndex', exercise.order_index,
+        'sets', exercise.sets,
+        'reps', exercise.reps,
+        'weightKg', exercise.weight_kg,
+        'targetRpe', exercise.target_rpe,
+        'restSeconds', exercise.rest_seconds,
+        'notes', exercise.notes
+      ) ORDER BY exercise.order_index, exercise.id) AS exercises
+    FROM public.trainer_template_workouts workout
+    JOIN public.trainer_template_exercises exercise ON exercise.template_workout_id = workout.id
+    WHERE workout.template_id = v_template.id
+    GROUP BY workout.id, workout.name, workout.day_of_week, workout.order_in_plan
+  ) AS row;
+  v_snapshot := jsonb_build_object(
+    'schemaVersion', 1,
+    'name', v_template.name,
+    'goal', v_template.goal,
+    'description', v_template.description,
+    'daysPerWeek', v_template.days_per_week,
+    'workouts', v_snapshot_workouts
+  );
+
+  INSERT INTO public.trainer_plan_assignments (
+    relationship_id, trainer_user_id, client_user_id, source_template_id, status, proposal_idempotency_key
+  ) VALUES (
+    v_relationship.id, v_trainer_user_id, v_client_user_id, v_template.id, 'proposed', BTRIM(p_idempotency_key)
+  ) RETURNING id INTO v_assignment_id;
+  INSERT INTO public.trainer_assignment_versions (
+    assignment_id, version_number, snapshot, change_summary, status
+  ) VALUES (
+    v_assignment_id, 1, v_snapshot, NULLIF(BTRIM(p_change_summary), ''), 'proposed'
+  ) RETURNING id INTO v_assignment_version_id;
+  INSERT INTO public.workout_plans (
+    user_id, name, goal, duration_weeks, days_per_week, is_active,
+    generated_by_ai, plan_context, source_type, family_id, library_slot,
+    trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id, prescription_locked
+  ) VALUES (
+    v_client_user_id, v_template.name, v_template.goal, 1, v_template.days_per_week, FALSE,
+    FALSE, 'first_plan', 'trainer_assigned', gen_random_uuid(), 'professional',
+    v_relationship.id, v_assignment_id, v_assignment_version_id, TRUE
+  ) RETURNING id INTO v_workout_plan_id;
+
+  FOR v_workout IN SELECT value FROM jsonb_array_elements(v_snapshot->'workouts')
+  LOOP
+    INSERT INTO public.workouts (user_id, plan_id, name, day_of_week, order_in_plan)
+    VALUES (
+      v_client_user_id, v_workout_plan_id, v_workout->>'name', NULLIF(v_workout->>'dayOfWeek', '')::INTEGER - 1,
+      NULLIF(v_workout->>'orderInPlan', '')::INTEGER
+    ) RETURNING id INTO v_materialized_workout_id;
+    FOR v_exercise IN SELECT value FROM jsonb_array_elements(v_workout->'exercises')
+    LOOP
+      INSERT INTO public.workout_exercises (
+        workout_id, exercise_id, order_index, sets, reps, rest_seconds, weight_kg, target_rpe, notes
+      ) VALUES (
+        v_materialized_workout_id, (v_exercise->>'exerciseId')::UUID,
+        (v_exercise->>'orderIndex')::INTEGER, (v_exercise->>'sets')::INTEGER,
+        (v_exercise->>'reps')::INTEGER, (v_exercise->>'restSeconds')::INTEGER,
+        NULLIF(v_exercise->>'weightKg', '')::NUMERIC,
+        NULLIF(v_exercise->>'targetRpe', '')::NUMERIC, NULLIF(v_exercise->>'notes', '')
+      );
+    END LOOP;
+  END LOOP;
+  UPDATE public.trainer_assignment_versions
+  SET materialized_plan_id = v_workout_plan_id
+  WHERE id = v_assignment_version_id;
+
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+  ) VALUES (
+    v_trainer_user_id, v_client_user_id, 'trainer_plan_assignment', v_assignment_id,
+    'proposed', jsonb_build_object('relationship_id', v_relationship.id, 'version_number', 1)
+  );
+  PERFORM public.create_product_notification(
+    v_client_user_id, 'coaching_assignment_status', 'Nueva rutina profesional',
+    'Tu entrenador te enviÃ³ una rutina para revisar.', '/coaching',
+    'coaching-assignment-proposed:' || v_assignment_id::TEXT,
+    jsonb_build_object('assignment_id', v_assignment_id, 'version_number', 1)
+  );
+
+  RETURN QUERY SELECT v_assignment_id, v_assignment_version_id, v_workout_plan_id;
+END;
+$$;
+ALTER FUNCTION public.propose_trainer_assignment(UUID, UUID, TEXT, TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.propose_trainer_assignment(UUID, UUID, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.propose_trainer_assignment(UUID, UUID, TEXT, TEXT) TO authenticated, service_role;
+
 
 -- Preserve the Phase 3 atomic contracts while excluding professional
 -- materializations from personal-library quota checks.

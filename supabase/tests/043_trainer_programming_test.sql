@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(52);
+SELECT plan(64);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -127,6 +127,42 @@ INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_pe
 VALUES ('22222222-0000-4000-8000-000000000052', '22222222-0000-4000-8000-000000000002', 'Other template', 1);
 INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status)
 VALUES ('11111111-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '33333333-0000-4000-8000-000000000003', 'active');
+-- A complete owned template and the active training-profile consent are the
+-- real inputs to a first proposal. Keep an active personal plan around to
+-- prove proposal never replaces it before client acceptance.
+INSERT INTO public.trainer_template_exercises (id, template_workout_id, exercise_id, order_index, sets, reps, rest_seconds)
+VALUES ('11111111-0000-4000-8000-000000000058', '11111111-0000-4000-8000-000000000054', '11111111-0000-4000-8000-000000000041', 1, 4, 6, 90);
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by)
+VALUES ('11111111-0000-4000-8000-000000000061', 'training_profile', 'training-profile-v1', '33333333-0000-4000-8000-000000000003');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active)
+VALUES ('11111111-0000-4000-8000-000000000110', '33333333-0000-4000-8000-000000000003', 'Personal before proposal', gen_random_uuid(), TRUE);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.propose_trainer_assignment('11111111-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000051', 'Primera propuesta', 'proposal-idempotency-1')$$,
+  'active trainer proposes a complete immutable professional assignment'
+);
+SELECT is((SELECT snapshot->>'schemaVersion' FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), '1', 'proposal stores SnapshotV1');
+SELECT is((SELECT jsonb_array_length(snapshot->'workouts') FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 2, 'snapshot contains every ordered template workout');
+SELECT is((SELECT user_id FROM public.workout_plans plan JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), '33333333-0000-4000-8000-000000000003'::uuid, 'materialized plan belongs to the client');
+SELECT is((SELECT is_active FROM public.workout_plans plan JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), FALSE, 'proposal leaves professional plan inactive');
+SELECT is((SELECT is_active FROM public.workout_plans WHERE id = '11111111-0000-4000-8000-000000000110'), TRUE, 'proposal does not change the current personal plan');
+SELECT is((SELECT count(*) FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 2::bigint, 'proposal materializes every workout');
+SELECT is((SELECT count(*) FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id JOIN public.workout_plans plan ON plan.id = workout.plan_id JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 3::bigint, 'proposal materializes every exercise prescription');
+SELECT is(
+  (SELECT workout_plan_id FROM public.propose_trainer_assignment('11111111-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000051', 'ignored retry text', 'proposal-idempotency-1')),
+  (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'),
+  'proposal retry returns the original materialized plan'
+);
+SELECT is((SELECT count(*) FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1'), 1::bigint, 'proposal retry creates no duplicate assignment');
+SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_type = 'trainer_plan_assignment' AND action = 'proposed'), 1::bigint, 'proposal records an audit event');
+SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-assignment-proposed:%'), 1::bigint, 'proposal notifies the client without private template data');
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+UPDATE public.workout_plans SET is_active = FALSE, retired_at = NOW() WHERE id = '11111111-0000-4000-8000-000000000110';
 -- Three isolated clients exercise the real lifecycle RPCs against a genuine
 -- professional plan instead of a test-only quota shortcut.
 INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
@@ -251,7 +287,7 @@ SELECT is(
 );
 SELECT is(
   (SELECT count(*) FROM public.workout_plans WHERE user_id = '33333333-0000-4000-8000-000000000003' AND source_type = 'trainer_assigned'),
-  1::bigint, 'the professional plan remains independently preserved'
+  2::bigint, 'proposed and active professional plans remain independently preserved'
 );
 SELECT throws_ok(
   $$INSERT INTO public.trainer_assignment_versions (assignment_id, version_number, snapshot, effective_from, effective_to)
@@ -280,14 +316,14 @@ RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
-SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 4::bigint, 'trainer participant can read every assigned client');
+SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 5::bigint, 'trainer participant can read every assigned client');
 RESET ROLE;
 
 SELECT set_config('request.jwt.claim.sub', '33333333-0000-4000-8000-000000000003', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
-SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 1::bigint, 'client participant can read assignment');
-SELECT is((SELECT count(*) FROM public.trainer_assignment_versions), 1::bigint, 'client participant can read versions');
+SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 2::bigint, 'client participant can read assignments');
+SELECT is((SELECT count(*) FROM public.trainer_assignment_versions), 2::bigint, 'client participant can read versions');
 SELECT throws_ok(
   $$INSERT INTO public.trainer_plan_assignments (relationship_id, trainer_user_id, client_user_id) VALUES ('11111111-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000001', '33333333-0000-4000-8000-000000000003')$$,
   '42501', 'permission denied for table trainer_plan_assignments', 'participants have no direct assignment writes'

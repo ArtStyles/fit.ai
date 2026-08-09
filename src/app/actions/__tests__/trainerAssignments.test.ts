@@ -1,0 +1,79 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { requireActiveTrainerContext, revalidatePath } = vi.hoisted(() => ({
+  requireActiveTrainerContext: vi.fn(),
+  revalidatePath: vi.fn(),
+}))
+
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/coaching/access', () => ({ requireActiveTrainerContext }))
+vi.mock('next/cache', () => ({ revalidatePath }))
+
+const ids = {
+  relationship: '11111111-1111-4111-8111-111111111111',
+  template: '22222222-2222-4222-8222-222222222222',
+  assignment: '33333333-3333-4333-8333-333333333333',
+  version: '44444444-4444-4444-8444-444444444444',
+  plan: '55555555-5555-4555-8555-555555555555',
+}
+
+function form(values: Record<string, string>) {
+  const result = new FormData()
+  Object.entries(values).forEach(([key, value]) => result.set(key, value))
+  return result
+}
+
+function supabaseFixture(result = { assignment_id: ids.assignment, assignment_version_id: ids.version, workout_plan_id: ids.plan }) {
+  const rpc = vi.fn(async () => ({ data: result, error: null }))
+  return { rpc }
+}
+
+describe('trainer assignment actions', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('proposes through the atomic RPC and derives the trainer from the active session', async () => {
+    const supabase = supabaseFixture()
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { proposeTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(proposeTrainerAssignment(form({
+      relationshipId: ids.relationship,
+      templateId: ids.template,
+      changeSummary: 'Rutina inicial',
+      idempotencyKey: 'client-generated-key-01',
+      trainerUserId: 'attacker',
+    }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, assignmentVersionId: ids.version, workoutPlanId: ids.plan })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('propose_trainer_assignment', {
+      p_relationship_id: ids.relationship,
+      p_template_id: ids.template,
+      p_change_summary: 'Rutina inicial',
+      p_idempotency_key: 'client-generated-key-01',
+    })
+    expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+    expect(revalidatePath).toHaveBeenCalledWith('/coaching')
+  })
+
+  it('rejects malformed identifiers and does not call the RPC', async () => {
+    const supabase = supabaseFixture()
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { proposeTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(proposeTrainerAssignment(form({ relationshipId: 'not-a-uuid', templateId: ids.template, changeSummary: '', idempotencyKey: 'key' }))).resolves.toMatchObject({
+      ok: false,
+      fieldErrors: { relationshipId: expect.any(String) },
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('returns a safe error when the atomic proposal is rejected', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: null, error: { message: 'TRAINER_ASSIGNMENT_CONSENT_REQUIRED' } })) }
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { proposeTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(proposeTrainerAssignment(form({ relationshipId: ids.relationship, templateId: ids.template, changeSummary: '', idempotencyKey: 'key' }))).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo enviar la rutina. Verifica que el acompaÃ±amiento siga activo y que el cliente haya dado su consentimiento.',
+    })
+  })
+})
