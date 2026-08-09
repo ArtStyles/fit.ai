@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
 import { orderedIdsToUpdates } from '../plan.logic'
 
-const planActions = readFileSync(new URL('../plan.ts', import.meta.url), 'utf8')
-const adjustmentActions = readFileSync(new URL('../adjustPlan.ts', import.meta.url), 'utf8')
-const generateActions = readFileSync(new URL('../generatePlan.ts', import.meta.url), 'utf8')
-const postActions = readFileSync(new URL('../posts.ts', import.meta.url), 'utf8')
-
-const { createClient, redirect, requireEditableOwnedPlan, revalidatePath } = vi.hoisted(() => ({
+const {
+  createClient,
+  redirect,
+  requireEditableOwnedPlan,
+  revalidatePath,
+  filterExercisesForUser,
+  generateEvidencePlan,
+  regenerateEvidencePlan,
+} = vi.hoisted(() => ({
   createClient: vi.fn(),
   redirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }),
   requireEditableOwnedPlan: vi.fn(),
   revalidatePath: vi.fn(),
+  filterExercisesForUser: vi.fn(),
+  generateEvidencePlan: vi.fn(),
+  regenerateEvidencePlan: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient }))
@@ -22,6 +27,15 @@ vi.mock('@/lib/plans/editability', async () => ({
 vi.mock('next/navigation', () => ({ redirect }))
 vi.mock('next/cache', () => ({ revalidatePath }))
 vi.mock('@/lib/features/community', () => ({ isCommunityEnabled: () => true, communityUnavailableResult: () => ({ ok: false }) }))
+vi.mock('@/lib/ai/filter', async () => ({
+  ...(await vi.importActual<typeof import('@/lib/ai/filter')>('@/lib/ai/filter')),
+  filterExercisesForUser,
+}))
+vi.mock('@/lib/training-engine', async () => ({
+  ...(await vi.importActual<typeof import('@/lib/training-engine')>('@/lib/training-engine')),
+  generateEvidencePlan,
+  regenerateEvidencePlan,
+}))
 
 function lockedClient() {
   const query = (table: string) => {
@@ -40,6 +54,54 @@ function lockedClient() {
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'locked-client' } } })) },
     rpc: vi.fn(),
     from: vi.fn(query),
+  }
+}
+
+function lockedInitialGenerationClient() {
+  const metrics = {
+    generationRequestLookups: 0,
+    profileReads: 0,
+    exerciseReads: 0,
+  }
+
+  const query = (table: string) => {
+    const filters: Record<string, unknown> = {}
+    const builder: any = {
+      select: () => builder,
+      eq: (key: string, value: unknown) => { filters[key] = value; return builder },
+      is: () => builder,
+      order: () => builder,
+      limit: () => builder,
+      in: () => builder,
+      maybeSingle: async () => {
+        if (table === 'workout_plans' && filters.generation_request_id) {
+          metrics.generationRequestLookups += 1
+          return {
+            data: { id: 'existing-plan', name: 'Existing', days_per_week: 3, week_number: 1, generation_metadata: {} },
+            error: null,
+          }
+        }
+        return {
+          data: { id: 'locked-plan', prescription_locked: true, name: 'Locked plan', ai_notes: null, week_number: 1, family_id: 'family-1' },
+          error: null,
+        }
+      },
+      single: async () => {
+        if (table === 'profiles') metrics.profileReads += 1
+        if (table === 'exercises') metrics.exerciseReads += 1
+        return { data: null, error: null }
+      },
+    }
+    return builder
+  }
+
+  return {
+    supabase: {
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'locked-client' } } })) },
+      rpc: vi.fn(),
+      from: vi.fn(query),
+    },
+    metrics,
   }
 }
 
@@ -68,12 +130,6 @@ describe('trainer prescription action barriers', () => {
     requireEditableOwnedPlan.mockRejectedValue(new Error('PLAN_PRESCRIPTION_LOCKED'))
   })
 
-  it('uses the server-side editable-plan guard for all mutable plan surfaces', () => {
-    for (const source of [planActions, adjustmentActions, generateActions, postActions]) {
-      expect(source).toContain('requireEditableOwnedPlan')
-    }
-  })
-
   it('stops plan mutations at the server guard before RPC or table writes', async () => {
     const supabase = lockedClient()
     createClient.mockResolvedValue(supabase)
@@ -86,21 +142,6 @@ describe('trainer prescription action barriers', () => {
 
     expect(requireEditableOwnedPlan).toHaveBeenCalled()
     expect(supabase.rpc).not.toHaveBeenCalled()
-  })
-
-  it('keeps every AI and sharing route behind the common server guard', () => {
-    for (const [source, exports] of [
-      [adjustmentActions, ['previewStructuredPlanAdjustment', 'applyPlanAdjustment', 'suggestWorkoutAdjustment', 'applyWorkoutAdjustment']],
-      [generateActions, ['generatePlan']],
-      [postActions, ['createPostFromPlan']],
-    ] as const) {
-      for (const name of exports) {
-        const start = source.indexOf(`export async function ${name}`)
-        expect(start, name).toBeGreaterThanOrEqual(0)
-        const next = source.indexOf('export async function ', start + 1)
-        expect(source.slice(start, next < 0 ? undefined : next), name).toContain('requireEditableOwnedPlan')
-      }
-    }
   })
 
   it('returns locked errors before AI generation, adjustment, or post persistence', async () => {
@@ -121,20 +162,20 @@ describe('trainer prescription action barriers', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
-  it('checks a locked initial active plan before idempotency lookup or generation', async () => {
-    const supabase = lockedClient()
+  it('rejects a locked initial retry before idempotency lookup, filtering, engine execution, or RPC writes', async () => {
+    const { supabase, metrics } = lockedInitialGenerationClient()
     createClient.mockResolvedValue(supabase)
     const { generatePlan } = await import('../generatePlan')
 
     await expect(generatePlan({ mode: 'initial', requestId: '00000000-0000-4000-8000-000000000004' })).resolves.toMatchObject({ success: false })
     expect(requireEditableOwnedPlan).toHaveBeenCalledWith(supabase, 'locked-client', 'locked-plan')
+    expect(metrics.generationRequestLookups).toBe(0)
+    expect(metrics.profileReads).toBe(0)
+    expect(metrics.exerciseReads).toBe(0)
+    expect(filterExercisesForUser).not.toHaveBeenCalled()
+    expect(generateEvidencePlan).not.toHaveBeenCalled()
+    expect(regenerateEvidencePlan).not.toHaveBeenCalled()
+    expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
-  it('preflights a locked adjustment before its existing-request shortcut', () => {
-    const action = adjustmentActions.slice(
-      adjustmentActions.indexOf('export async function applyPlanAdjustment'),
-      adjustmentActions.indexOf('// ─── Sugerir ajuste'),
-    )
-    expect(action.indexOf('requireEditableOwnedPlan')).toBeLessThan(action.indexOf('findExistingPlanGeneration'))
-  })
 })
