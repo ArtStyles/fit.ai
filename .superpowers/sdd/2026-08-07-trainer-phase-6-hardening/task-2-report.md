@@ -30,7 +30,7 @@ The before/after snapshot covers both attacker and foreign graphs: account profi
 
 `resetPolicy` metadata was removed. Every published security fixture now invokes `cleanup_trainer_security_e2e_fixture(text, uuid[])` in its final cleanup, and partial preparation paths invoke the same action after signing out registered actors.
 
-The cleanup RPC is `SECURITY DEFINER`, executable only by `service_role`, and rejects public, anonymous, and authenticated callers. It is not a project reset: it accepts exact user UUIDs only, requires every target auth user to carry the same requested `e2e_run_id`, deletes the immutable graph in dependency order, deletes those exact auth users, and fails unless the exact target count was removed. The browser helper additionally requires every trainer-security opt-in before it can call the cleanup boundary. The SQL suite proves authenticated denial and actual deletion of a published assignment/version/plan graph and three exact users.
+The cleanup RPC is `SECURITY DEFINER`, explicitly owned by `postgres`, executable only by `service_role`, and rejects public, anonymous, and authenticated callers. It is not a project reset: it accepts exact user UUIDs only, locks and captures the targets that still exist, requires every captured auth user to carry the same requested `e2e_run_id`, and deletes only that captured set in dependency order. A completed retry returns zero; a partial retry removes only the remaining matching users; mixed or unmarked existing targets fail before mutation. The browser helper additionally requires every trainer-security opt-in before it can call the cleanup boundary. The SQL suite proves authenticated denial, mixed-run rejection, first-call deletion of a published assignment/version/plan graph and three exact users, a zero-count retry, and a one-user partial retry whose absent UUID does not broaden scope.
 
 Global teardown continues unrelated account cleanup even if security preflight prevents security-fixture work.
 
@@ -55,7 +55,7 @@ PostgreSQL-only runners do not contain an HTTP server, GoTrue, or the Next.js ro
 - Barrier RED: neither the two-trainer runner nor accept/publish/suspend captured and observed exact PIDs. GREEN: focal contracts and real database runners verify both condition-based barriers.
 - Full regression RED: the first serial run found one overly broad structural assertion that prohibited the acceptance barrier's bounded `pg_sleep(0.01)` while claiming to cover only suspension races. GREEN: the assertion now scopes itself to suspension SQL, and the complete serial run passes.
 
-## Current verification evidence
+## Review round 2 verification evidence
 
 - Focused Vitest security command — 7 files, 24 tests passed.
 - `pnpm test:db:trainer-security` — 3/3 fresh isolated databases passed; 153.8 seconds.
@@ -68,3 +68,17 @@ PostgreSQL-only runners do not contain an HTTP server, GoTrue, or the Next.js ro
 - `pnpm lint` — exit 0.
 
 Remote Playwright execution is not claimed in this review round. The suite remains opt-in and cannot seed unless marker 45 and the cleanup routine are both deployed.
+
+## TDD evidence for review round 3
+
+- Owner RED: the focal migration contract failed because migration 045 did not contain an explicit cleanup owner. GREEN: `ALTER FUNCTION ... OWNER TO postgres` now precedes the deny-first ACL reconstruction.
+- Catalog RED: the real authorization suite, after reapplying migration 045, reported owner digest `b1c96e76694dd81ef8c2a12270b73d2f` against the obsolete expected digest. GREEN: the reviewed owner digest and an explicit `postgres` owner assertion now pass; the ACL digest remained `ca5fd1fb5de789d16af77d89118b55f8`.
+- Idempotency RED: the supplemental security suite's second exact cleanup call failed with `TRAINER_SECURITY_CLEANUP_SCOPE_MISMATCH`. GREEN: the first call returns 3, the completed retry returns 0, a mixed set containing an unmarked existing user is rejected without mutation, and a partial retry deletes only its one remaining marked user.
+
+## Review round 3 verification evidence
+
+- Focused Vitest security command — 7 files, 24 tests passed.
+- `SECURITY_RACE_REPEATS=1 pnpm test:db:trainer-security` — 1/1 fresh isolated database passed; 47.6 seconds.
+- `pnpm test:db:trainers` — exit 0; migrations 040–045 behavior, authorization catalog, and rerunnability passed.
+- `pnpm type-check` — exit 0.
+- `pnpm lint` — exit 0.

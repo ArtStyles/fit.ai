@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(177);
+SELECT plan(178);
 
 CREATE TEMP TABLE expected_trainer_sensitive_tables (table_name TEXT PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO expected_trainer_sensitive_tables (table_name) VALUES
@@ -101,10 +101,18 @@ SELECT is(
   'effective anon/authenticated column ACLs match the reviewed allowlist'
 );
 SELECT is(
+  (SELECT owner.rolname
+   FROM pg_proc function
+   JOIN pg_roles owner ON owner.oid = function.proowner
+   WHERE function.oid = 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])'::regprocedure),
+  'postgres',
+  'trainer security fixture cleanup remains postgres-owned after migration rerun'
+);
+SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  'e3b5913c8073fb1b7a1e8bebcc8106d2',
+  'b1c96e76694dd81ef8c2a12270b73d2f',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (

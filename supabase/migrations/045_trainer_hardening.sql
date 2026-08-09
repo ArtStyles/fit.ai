@@ -200,7 +200,8 @@ SECURITY DEFINER
 SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
-  v_expected INTEGER;
+  v_target_ids UUID[];
+  v_existing INTEGER;
   v_matched INTEGER;
   v_deleted INTEGER;
 BEGIN
@@ -210,81 +211,92 @@ BEGIN
   IF p_run_id IS NULL OR btrim(p_run_id) = '' OR cardinality(p_user_ids) IS NULL OR cardinality(p_user_ids) = 0 THEN
     RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_SCOPE_REQUIRED';
   END IF;
+  IF array_position(p_user_ids, NULL) IS NOT NULL THEN
+    RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_SCOPE_MISMATCH';
+  END IF;
 
-  SELECT count(*) INTO v_expected FROM (SELECT DISTINCT unnest(p_user_ids) AS id) target;
-  SELECT count(*) INTO v_matched
-  FROM auth.users target
-  WHERE target.id = ANY(p_user_ids)
-    AND target.raw_user_meta_data ->> 'e2e_run_id' = p_run_id;
-  IF v_matched <> v_expected THEN
+  SELECT array_agg(target.id ORDER BY target.id), count(*),
+    count(*) FILTER (WHERE target.raw_user_meta_data ->> 'e2e_run_id' = p_run_id)
+  INTO v_target_ids, v_existing, v_matched
+  FROM (
+    SELECT target.id, target.raw_user_meta_data
+    FROM auth.users target
+    WHERE target.id = ANY(p_user_ids)
+    FOR UPDATE
+  ) target;
+  IF v_existing = 0 THEN
+    RETURN 0;
+  END IF;
+  IF v_matched <> v_existing THEN
     RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_SCOPE_MISMATCH';
   END IF;
 
   SET CONSTRAINTS ALL DEFERRED;
   PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
 
-  DELETE FROM public.session_authorizations lease WHERE lease.user_id = ANY(p_user_ids);
+  DELETE FROM public.session_authorizations lease WHERE lease.user_id = ANY(v_target_ids);
   DELETE FROM public.exercise_logs log USING public.progress_logs progress
-    WHERE log.progress_log_id = progress.id AND progress.user_id = ANY(p_user_ids);
-  DELETE FROM public.progress_logs progress WHERE progress.user_id = ANY(p_user_ids);
-  DELETE FROM public.measurements measurement WHERE measurement.user_id = ANY(p_user_ids);
+    WHERE log.progress_log_id = progress.id AND progress.user_id = ANY(v_target_ids);
+  DELETE FROM public.progress_logs progress WHERE progress.user_id = ANY(v_target_ids);
+  DELETE FROM public.measurements measurement WHERE measurement.user_id = ANY(v_target_ids);
 
   UPDATE public.trainer_plan_assignments assignment
   SET active_version_id = NULL
-  WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids);
+  WHERE assignment.client_user_id = ANY(v_target_ids) OR assignment.trainer_user_id = ANY(v_target_ids);
   UPDATE public.trainer_assignment_versions version
   SET materialized_plan_id = NULL
   WHERE version.assignment_id IN (
     SELECT assignment.id FROM public.trainer_plan_assignments assignment
-    WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids)
+    WHERE assignment.client_user_id = ANY(v_target_ids) OR assignment.trainer_user_id = ANY(v_target_ids)
   );
   DELETE FROM public.workout_exercises exercise
   WHERE exercise.workout_id IN (
-    SELECT workout.id FROM public.workouts workout WHERE workout.user_id = ANY(p_user_ids)
+    SELECT workout.id FROM public.workouts workout WHERE workout.user_id = ANY(v_target_ids)
   );
-  DELETE FROM public.workouts workout WHERE workout.user_id = ANY(p_user_ids);
-  DELETE FROM public.workout_plans plan WHERE plan.user_id = ANY(p_user_ids);
+  DELETE FROM public.workouts workout WHERE workout.user_id = ANY(v_target_ids);
+  DELETE FROM public.workout_plans plan WHERE plan.user_id = ANY(v_target_ids);
   DELETE FROM public.trainer_assignment_versions version
   WHERE version.assignment_id IN (
     SELECT assignment.id FROM public.trainer_plan_assignments assignment
-    WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids)
+    WHERE assignment.client_user_id = ANY(v_target_ids) OR assignment.trainer_user_id = ANY(v_target_ids)
   );
   DELETE FROM public.trainer_plan_assignments assignment
-  WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids);
-  DELETE FROM public.trainer_program_templates template WHERE template.trainer_user_id = ANY(p_user_ids);
+  WHERE assignment.client_user_id = ANY(v_target_ids) OR assignment.trainer_user_id = ANY(v_target_ids);
+  DELETE FROM public.trainer_program_templates template WHERE template.trainer_user_id = ANY(v_target_ids);
 
   DELETE FROM public.coaching_consents consent
   WHERE consent.relationship_id IN (
     SELECT relationship.id FROM public.coaching_relationships relationship
-    WHERE relationship.client_user_id = ANY(p_user_ids) OR relationship.trainer_user_id = ANY(p_user_ids)
+    WHERE relationship.client_user_id = ANY(v_target_ids) OR relationship.trainer_user_id = ANY(v_target_ids)
   );
   DELETE FROM public.coaching_relationships relationship
-  WHERE relationship.client_user_id = ANY(p_user_ids) OR relationship.trainer_user_id = ANY(p_user_ids);
+  WHERE relationship.client_user_id = ANY(v_target_ids) OR relationship.trainer_user_id = ANY(v_target_ids);
   DELETE FROM public.coaching_requests request
-  WHERE request.client_user_id = ANY(p_user_ids) OR request.trainer_user_id = ANY(p_user_ids);
+  WHERE request.client_user_id = ANY(v_target_ids) OR request.trainer_user_id = ANY(v_target_ids);
 
   DELETE FROM public.trainer_service_offerings service
   WHERE service.trainer_profile_id IN (
-    SELECT profile.id FROM public.trainer_profiles profile WHERE profile.user_id = ANY(p_user_ids)
+    SELECT profile.id FROM public.trainer_profiles profile WHERE profile.user_id = ANY(v_target_ids)
   );
-  DELETE FROM public.trainer_profiles profile WHERE profile.user_id = ANY(p_user_ids);
-  DELETE FROM public.trainer_applications application WHERE application.user_id = ANY(p_user_ids);
+  DELETE FROM public.trainer_profiles profile WHERE profile.user_id = ANY(v_target_ids);
+  DELETE FROM public.trainer_applications application WHERE application.user_id = ANY(v_target_ids);
 
-  DELETE FROM public.product_notifications notification WHERE notification.user_id = ANY(p_user_ids);
-  DELETE FROM public.product_push_tokens token WHERE token.user_id = ANY(p_user_ids);
-  DELETE FROM public.product_notification_preferences preference WHERE preference.user_id = ANY(p_user_ids);
+  DELETE FROM public.product_notifications notification WHERE notification.user_id = ANY(v_target_ids);
+  DELETE FROM public.product_push_tokens token WHERE token.user_id = ANY(v_target_ids);
+  DELETE FROM public.product_notification_preferences preference WHERE preference.user_id = ANY(v_target_ids);
   DELETE FROM public.professional_audit_logs audit
-  WHERE audit.actor_user_id = ANY(p_user_ids) OR audit.subject_user_id = ANY(p_user_ids);
+  WHERE audit.actor_user_id = ANY(v_target_ids) OR audit.subject_user_id = ANY(v_target_ids);
   DELETE FROM public.admin_audit_logs audit
-  WHERE audit.admin_user_id = ANY(p_user_ids) OR audit.target_user_id = ANY(p_user_ids);
+  WHERE audit.admin_user_id = ANY(v_target_ids) OR audit.target_user_id = ANY(v_target_ids);
 
-  DELETE FROM auth.users target WHERE target.id = ANY(p_user_ids);
+  DELETE FROM auth.users target WHERE target.id = ANY(v_target_ids);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
-  IF v_deleted <> v_expected THEN RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_INCOMPLETE'; END IF;
+  IF v_deleted <> v_existing THEN RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_INCOMPLETE'; END IF;
   RETURN v_deleted;
 END;
 $$;
 
+ALTER FUNCTION public.cleanup_trainer_security_e2e_fixture(TEXT, UUID[]) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.cleanup_trainer_security_e2e_fixture(TEXT, UUID[]) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.cleanup_trainer_security_e2e_fixture(TEXT, UUID[]) TO service_role;
 

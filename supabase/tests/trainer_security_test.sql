@@ -442,7 +442,10 @@ $$;
 RESET ROLE;
 
 UPDATE auth.users
-SET raw_user_meta_data = jsonb_build_object('e2e_run_id', 'security-sql-run')
+SET raw_user_meta_data = CASE
+  WHEN id = '76000000-0000-4000-8000-000000000003' THEN '{}'::JSONB
+  ELSE jsonb_build_object('e2e_run_id', 'security-sql-run')
+END
 WHERE id = ANY(ARRAY[
   '76000000-0000-4000-8000-000000000001'::UUID,
   '76000000-0000-4000-8000-000000000002'::UUID,
@@ -450,14 +453,61 @@ WHERE id = ANY(ARRAY[
 ]);
 SELECT set_config('request.jwt.claim.role', 'service_role', false);
 SET ROLE service_role;
-SELECT public.cleanup_trainer_security_e2e_fixture(
-  'security-sql-run',
-  ARRAY[
-    '76000000-0000-4000-8000-000000000001'::UUID,
-    '76000000-0000-4000-8000-000000000002'::UUID,
-    '76000000-0000-4000-8000-000000000003'::UUID
-  ]
-);
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.cleanup_trainer_security_e2e_fixture(
+      'security-sql-run',
+      ARRAY[
+        '76000000-0000-4000-8000-000000000001'::UUID,
+        '76000000-0000-4000-8000-000000000002'::UUID,
+        '76000000-0000-4000-8000-000000000003'::UUID
+      ]
+    );
+    RAISE EXCEPTION 'mixed/unmarked cleanup was not rejected';
+  EXCEPTION WHEN SQLSTATE 'P0001' THEN
+    IF SQLERRM <> 'TRAINER_SECURITY_CLEANUP_SCOPE_MISMATCH' THEN RAISE; END IF;
+  END;
+END;
+$$;
+RESET ROLE;
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM auth.users WHERE id::TEXT LIKE '76000000-0000-4000-8000-%') <> 3 THEN
+    RAISE EXCEPTION 'mixed/unmarked cleanup changed exact targets';
+  END IF;
+END;
+$$;
+UPDATE auth.users
+SET raw_user_meta_data = jsonb_build_object('e2e_run_id', 'security-sql-run')
+WHERE id = '76000000-0000-4000-8000-000000000003';
+SET ROLE service_role;
+DO $$
+DECLARE
+  first_deleted INTEGER;
+  retry_deleted INTEGER;
+BEGIN
+  first_deleted := public.cleanup_trainer_security_e2e_fixture(
+    'security-sql-run',
+    ARRAY[
+      '76000000-0000-4000-8000-000000000001'::UUID,
+      '76000000-0000-4000-8000-000000000002'::UUID,
+      '76000000-0000-4000-8000-000000000003'::UUID
+    ]
+  );
+  IF first_deleted <> 3 THEN RAISE EXCEPTION 'first cleanup deleted %, expected 3', first_deleted; END IF;
+
+  retry_deleted := public.cleanup_trainer_security_e2e_fixture(
+    'security-sql-run',
+    ARRAY[
+      '76000000-0000-4000-8000-000000000001'::UUID,
+      '76000000-0000-4000-8000-000000000002'::UUID,
+      '76000000-0000-4000-8000-000000000003'::UUID
+    ]
+  );
+  IF retry_deleted <> 0 THEN RAISE EXCEPTION 'cleanup retry deleted %, expected 0', retry_deleted; END IF;
+END;
+$$;
 RESET ROLE;
 DO $$
 BEGIN
@@ -469,5 +519,26 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- A partially completed retry operates only on the still-existing, correctly
+-- marked target; an absent UUID never broadens the cleanup scope.
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('76100000-0000-4000-8000-000000000001', 'security-cleanup-retry@example.test', '{"e2e_run_id":"security-partial-run"}'::JSONB);
+SELECT set_config('request.jwt.claim.role', 'service_role', false);
+SET ROLE service_role;
+DO $$
+DECLARE remaining_deleted INTEGER;
+BEGIN
+  remaining_deleted := public.cleanup_trainer_security_e2e_fixture(
+    'security-partial-run',
+    ARRAY[
+      '76100000-0000-4000-8000-000000000001'::UUID,
+      '76100000-0000-4000-8000-000000000002'::UUID
+    ]
+  );
+  IF remaining_deleted <> 1 THEN RAISE EXCEPTION 'partial cleanup retry deleted %, expected 1', remaining_deleted; END IF;
+END;
+$$;
+RESET ROLE;
 
 SELECT 'trainer security supplemental races and IDOR effects passed' AS result;
