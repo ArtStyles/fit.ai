@@ -2,9 +2,17 @@ import Link from 'next/link'
 import { AlertTriangle, CalendarDays, ClipboardList } from 'lucide-react'
 import { ClientSessionEvidence } from './ClientSessionEvidence'
 import type { CoachClientInsights } from '@/lib/coaching/insights'
+import { CoachInsightsAnalytics } from './CoachInsightsAnalytics'
 
 export function ClientInsightsDashboard({ detail, weeks }: { detail: CoachClientInsights; weeks: 4 | 12 }) {
   return <div className="space-y-6">
+    <CoachInsightsAnalytics
+      kind="client-insights"
+      weeks={weeks}
+      prescribedSessionCount={detail.adherence.prescribed}
+      evidenceSessionCount={detail.sessions.length}
+      measurementsShared={detail.activeScopes?.includes('body_measurements') ?? false}
+    />
     <section aria-labelledby="client-insights-title" className="rounded-3xl border border-border/70 bg-muted/10 p-5">
       <h1 id="client-insights-title" className="text-2xl font-bold text-foreground">{detail.client.fullName ?? 'Cliente'}</h1>
       <p className="mt-2 text-sm text-muted-foreground">Evidencia de entrenamiento compartida con consentimiento vigente. Vista de solo lectura.</p>

@@ -11,6 +11,9 @@ export type AnalyticsEventName =
   | 'first_session_completed'
   | 'plan_adjustment_used'
   | 'organic_page_cta_clicked'
+  | 'coach_overview_viewed'
+  | 'coach_client_insights_viewed'
+  | 'coach_alert_filter_used'
 
 export const ANALYTICS_LOCALES = ['es', 'en'] as const
 export const ANALYTICS_PATHS = ['/', '/es', '/en', '/register', '/onboarding'] as const
@@ -20,6 +23,8 @@ export const ANALYTICS_STAGES = [
 export const ANALYTICS_SOURCES = ['landing', 'guide'] as const
 export const ANALYTICS_SCREENS = ['landing', 'register', 'onboarding'] as const
 export const ANALYTICS_DURATION_BUCKETS = ['short', 'medium', 'long'] as const
+export const ANALYTICS_INSIGHT_PERIODS = [4, 12] as const
+export const ANALYTICS_ALERT_FILTERS = ['all', 'attention'] as const
 
 export type AnalyticsProperties = {
   locale?: (typeof ANALYTICS_LOCALES)[number]
@@ -29,6 +34,15 @@ export type AnalyticsProperties = {
   screen?: (typeof ANALYTICS_SCREENS)[number]
   authenticated?: boolean
   duration_bucket?: (typeof ANALYTICS_DURATION_BUCKETS)[number]
+  active_client_count?: number
+  pending_request_count?: number
+  paused_relationship_count?: number
+  period_weeks?: (typeof ANALYTICS_INSIGHT_PERIODS)[number]
+  prescribed_session_count?: number
+  evidence_session_count?: number
+  measurements_shared?: boolean
+  alert_filter?: (typeof ANALYTICS_ALERT_FILTERS)[number]
+  matching_client_count?: number
 }
 
 export type SanitizedAnalyticsEvent = {
@@ -49,6 +63,9 @@ const EVENT_NAMES = new Set<AnalyticsEventName>([
   'first_session_completed',
   'plan_adjustment_used',
   'organic_page_cta_clicked',
+  'coach_overview_viewed',
+  'coach_client_insights_viewed',
+  'coach_alert_filter_used',
 ])
 
 const PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
@@ -59,7 +76,28 @@ const PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
   'screen',
   'authenticated',
   'duration_bucket',
+  'active_client_count',
+  'pending_request_count',
+  'paused_relationship_count',
+  'period_weeks',
+  'prescribed_session_count',
+  'evidence_session_count',
+  'measurements_shared',
+  'alert_filter',
+  'matching_client_count',
 ])
+
+const LEGACY_PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
+  'locale', 'path', 'stage', 'source', 'screen', 'authenticated', 'duration_bucket',
+])
+
+const INSIGHT_EVENT_PROPERTY_KEYS: Record<Extract<AnalyticsEventName,
+  'coach_overview_viewed' | 'coach_client_insights_viewed' | 'coach_alert_filter_used'>,
+readonly (keyof AnalyticsProperties)[]> = {
+  coach_overview_viewed: ['active_client_count', 'pending_request_count', 'paused_relationship_count'],
+  coach_client_insights_viewed: ['period_weeks', 'prescribed_session_count', 'evidence_session_count', 'measurements_shared'],
+  coach_alert_filter_used: ['alert_filter', 'matching_client_count'],
+}
 
 const MAX_PROPERTIES_BYTES = 1024
 
@@ -81,6 +119,30 @@ const PROPERTY_VALIDATORS: Record<keyof AnalyticsProperties, (value: unknown) =>
   screen: value => isOneOf(value, ANALYTICS_SCREENS),
   authenticated: value => typeof value === 'boolean',
   duration_bucket: value => isOneOf(value, ANALYTICS_DURATION_BUCKETS),
+  active_client_count: value => isAggregateCount(value),
+  pending_request_count: value => isAggregateCount(value),
+  paused_relationship_count: value => isAggregateCount(value),
+  period_weeks: value => typeof value === 'number' && (ANALYTICS_INSIGHT_PERIODS as readonly number[]).includes(value),
+  prescribed_session_count: value => isAggregateCount(value),
+  evidence_session_count: value => isAggregateCount(value),
+  measurements_shared: value => typeof value === 'boolean',
+  alert_filter: value => isOneOf(value, ANALYTICS_ALERT_FILTERS),
+  matching_client_count: value => isAggregateCount(value),
+}
+
+function isAggregateCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 10_000
+}
+
+function allowedPropertiesForEvent(name: AnalyticsEventName): ReadonlySet<keyof AnalyticsProperties> {
+  if (name in INSIGHT_EVENT_PROPERTY_KEYS) {
+    return new Set(INSIGHT_EVENT_PROPERTY_KEYS[name as keyof typeof INSIGHT_EVENT_PROPERTY_KEYS])
+  }
+  return LEGACY_PROPERTY_KEYS
+}
+
+function capturesPath(name: AnalyticsEventName): boolean {
+  return allowedPropertiesForEvent(name).has('path')
 }
 
 function serializedByteLength(value: unknown): number {
@@ -94,12 +156,13 @@ export function sanitizeEvent(input: unknown): SanitizedAnalyticsEvent | null {
     if (typeof input.name !== 'string' || !EVENT_NAMES.has(input.name as AnalyticsEventName)) return null
     if (!isPlainRecord(input.properties)) return null
 
-    const properties: Record<string, string | boolean> = {}
+    const propertyKeys = allowedPropertiesForEvent(input.name as AnalyticsEventName)
+    const properties: Record<string, string | number | boolean> = {}
     for (const [key, value] of Object.entries(input.properties)) {
-      if (!PROPERTY_KEYS.has(key as keyof AnalyticsProperties)) return null
+      if (!PROPERTY_KEYS.has(key as keyof AnalyticsProperties) || !propertyKeys.has(key as keyof AnalyticsProperties)) return null
       const propertyKey = key as keyof AnalyticsProperties
       if (!PROPERTY_VALIDATORS[propertyKey](value)) return null
-      properties[key] = value as string | boolean
+      properties[key] = value as string | number | boolean
     }
 
     if (serializedByteLength(properties) > MAX_PROPERTIES_BYTES) return null
@@ -118,7 +181,7 @@ export async function trackEvent(
 
   const event = sanitizeEvent({
     name,
-    properties: { ...properties, path: window.location.pathname },
+    properties: capturesPath(name) ? { ...properties, path: window.location.pathname } : properties,
   })
   if (!event) return
 

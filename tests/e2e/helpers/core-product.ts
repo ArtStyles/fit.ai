@@ -42,6 +42,13 @@ export function isTrainerProgrammingE2EEnabled(env: NodeJS.ProcessEnv): boolean 
     && env.E2E_TRAINER_PROGRAMMING_RETENTION_ACK === 'dedicated-project-reset'
 }
 
+/** Insights fixtures reuse the immutable programming data and therefore add a
+ * separate acknowledgement instead of widening the programming opt-in. */
+export function isTrainerInsightsE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return isTrainerProgrammingE2EEnabled(env)
+    && env.E2E_TRAINER_INSIGHTS_ENABLED === 'true'
+}
+
 export type TrainerRelationshipsFixture = {
   client: { id: string; email: string; client: SupabaseClient }
   trainerA: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string; professionalName: string }
@@ -117,6 +124,20 @@ export type TrainerProgrammingFixture = TrainerRelationshipsFixture & {
     skipNote: string | null
   }>
   moveToDifferentPolicyDate(): Promise<void>
+}
+
+export type TrainerInsightsFixture = TrainerProgrammingFixture & {
+  prepareInsightsEvidence(): Promise<{
+    personalProgressLogId: string
+    historicalProfessionalProgressLogId: string
+    currentProfessionalProgressLogId: string
+    measurementWeightKg: number
+  }>
+  grantBodyMeasurements(): Promise<void>
+  revokeBodyMeasurements(): Promise<void>
+  endActiveRelationship(): Promise<void>
+  suspendTrainer(): Promise<void>
+  readClientInsightsError(): Promise<string>
 }
 
 type TrainerRelationshipRows = {
@@ -507,6 +528,43 @@ export async function assertTrainerProgrammingE2EReady(): Promise<void> {
   }
 }
 
+/**
+ * Runs only SELECT and intentionally-invalid RPC probes before any insights
+ * fixture write. The generic domain errors prove deployed RPCs without reading
+ * a client row or leaking credentials into test output.
+ */
+export async function assertTrainerInsightsE2EReady(): Promise<void> {
+  if (!isTrainerInsightsE2EEnabled(process.env)) {
+    throw new Error('Trainer insights E2E writes require E2E_TRAINER_INSIGHTS_ENABLED=true and dedicated-project reset acknowledgement')
+  }
+
+  await assertTrainerProgrammingE2EReady()
+  const config = requireE2EConfig(process.env)
+  const service = adminClient(config)
+  const [tables, summary, detail, measurements] = await Promise.all([
+    Promise.all([
+      service.from('coaching_relationships').select('id, status').limit(1),
+      service.from('coaching_consents').select('id, scope, revoked_at').limit(1),
+      service.from('trainer_assignment_versions').select('id, materialized_plan_id').limit(1),
+      service.from('progress_logs').select('id, client_session_id').limit(1),
+      service.from('measurements').select('id, recorded_at').limit(1),
+    ]),
+    service.rpc('get_coach_clients_summary'),
+    (service.rpc as any)('get_coach_client_insights', {
+      p_client_id: null, p_from_date: null, p_to_date: null,
+    }),
+    (service.rpc as any)('get_coach_client_measurements', {
+      p_client_id: null, p_from_date: null, p_to_date: null,
+    }),
+  ])
+  const tableError = tables.find(result => result.error)?.error
+  const missingRpc = [summary.error, detail.error, measurements.error].some(error =>
+    /Could not find the function|PGRST202/i.test(error?.message ?? ''))
+  if (tableError || missingRpc) {
+    throw new Error('Trainer insights migrations 042, 043, and 044 must be deployed to the dedicated E2E project')
+  }
+}
+
 function requireRpcRow<T>(data: T[] | null, operation: string): T {
   const row = data?.[0]
   if (!row) throw new Error(`${operation} returned no row`)
@@ -763,6 +821,101 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
     // forbidden REST deletion attempt.
     if (!programmingPublished) await cleanupTrainerRelationshipsFixture(fixture)
     throw error
+  }
+}
+
+/** Adds the exact personal, versioned professional, and measurement rows used
+ * by the insights browser journey. It is intentionally callable only after a
+ * real client acceptance, so every professional log has a consumed lease. */
+export async function seedTrainerInsightsFixture(scope: string): Promise<TrainerInsightsFixture> {
+  await assertTrainerInsightsE2EReady()
+  const fixture = await seedTrainerProgrammingFixture(scope)
+  return {
+    ...fixture,
+    async prepareInsightsEvidence() {
+      const personalProgressLogId = randomUUID()
+      const { error: personalError } = await (fixture.service.from('progress_logs') as any).insert({
+        id: personalProgressLogId,
+        user_id: fixture.client.id,
+        workout_id: null,
+        completed_at: new Date().toISOString(),
+        duration_minutes: 20,
+        mood_rating: 4,
+        notes: 'Personal E2E session excluded from professional adherence.',
+      })
+      assertNoError(personalError, 'Creating personal E2E session')
+
+      const historicalAuthorization = await fixture.authorizeCurrentProfessionalSession()
+      const historical = await fixture.saveAuthorizedSessionWithActualResults(historicalAuthorization)
+      await fixture.moveToDifferentPolicyDate()
+      const revision = await fixture.publishRevision('E2E Insights V2', 'Versión profesional actual para Insights')
+      if (revision.versionNumber !== 2) throw new Error('Insights fixture requires a historical and a current professional version')
+      const currentAuthorization = await fixture.authorizeCurrentProfessionalSession()
+      const current = await fixture.saveAuthorizedSessionWithActualResults(currentAuthorization)
+      const measurementWeightKg = 72.4
+      const { error: measurementError } = await (fixture.service.from('measurements') as any).insert({
+        id: randomUUID(),
+        user_id: fixture.client.id,
+        recorded_at: new Date().toISOString(),
+        weight_kg: measurementWeightKg,
+        body_fat_percentage: null,
+        muscle_mass_kg: null,
+        chest_cm: null,
+        waist_cm: null,
+        hips_cm: null,
+        arms_cm: null,
+        legs_cm: null,
+        notes: 'Private fixture note that must never reach analytics.',
+      })
+      assertNoError(measurementError, 'Creating consent-bound E2E measurement')
+      return {
+        personalProgressLogId,
+        historicalProfessionalProgressLogId: historical.progressLogId,
+        currentProfessionalProgressLogId: current.progressLogId,
+        measurementWeightKg,
+      }
+    },
+    async grantBodyMeasurements() {
+      const result = await (fixture.client.client.rpc as any)('grant_body_measurements_consent', {
+        p_relationship_id: fixture.relationshipId,
+        p_consent_version: 'body-measurements-v1',
+        p_idempotency_key: randomUUID(),
+      })
+      assertNoError(result.error, 'Granting Insights body-measurements consent')
+    },
+    async revokeBodyMeasurements() {
+      const result = await (fixture.client.client.rpc as any)('revoke_body_measurements_consent', {
+        p_relationship_id: fixture.relationshipId,
+        p_idempotency_key: randomUUID(),
+      })
+      assertNoError(result.error, 'Revoking Insights body-measurements consent')
+    },
+    async endActiveRelationship() {
+      const result = await (fixture.client.client.rpc as any)('end_coaching_relationship', {
+        p_relationship_id: fixture.relationshipId,
+        p_reason: 'E2E Insights access cut-off.',
+        p_idempotency_key: randomUUID(),
+      })
+      assertNoError(result.error, 'Ending Insights coaching relationship')
+    },
+    async suspendTrainer() {
+      const result = await (fixture.service.rpc as any)('suspend_account_and_professional', {
+        p_user_id: fixture.trainerA.id,
+        p_admin_id: fixture.admin.id,
+        p_reason: 'E2E Insights suspension access cut-off.',
+        p_until: null,
+      })
+      assertNoError(result.error, 'Suspending Insights trainer')
+    },
+    async readClientInsightsError() {
+      const result = await (fixture.trainerA.client.rpc as any)('get_coach_client_insights', {
+        p_client_id: fixture.client.id,
+        p_from_date: '2026-01-01',
+        p_to_date: '2026-01-28',
+      })
+      if (!result.error?.message) throw new Error('Insights read unexpectedly succeeded after access was removed')
+      return result.error.message
+    },
   }
 }
 

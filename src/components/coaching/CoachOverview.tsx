@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { ClipboardList, Dumbbell, PauseCircle, UserRound, UsersRound } from 'lucide-react'
 import type { CoachClientsSummary } from '@/lib/coaching/insights'
+import { CoachInsightsAnalytics } from './CoachInsightsAnalytics'
 
 export function CoachOverview({ professionalName, summary }: { professionalName: string; summary: CoachClientsSummary }) {
   return <section aria-labelledby="coach-overview-title">
+    <CoachInsightsAnalytics kind="overview" counts={summary.counts} />
     <div className="rounded-3xl border border-border/60 bg-muted/10 p-6">
       <p className="text-sm font-medium text-violet-300">Perfil activo</p>
       <h1 id="coach-overview-title" className="mt-2 text-2xl font-bold text-foreground">{professionalName}</h1>

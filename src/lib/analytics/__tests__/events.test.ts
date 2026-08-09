@@ -14,6 +14,9 @@ const EVENT_NAMES: AnalyticsEventName[] = [
   'first_session_completed',
   'plan_adjustment_used',
   'organic_page_cta_clicked',
+  'coach_overview_viewed',
+  'coach_client_insights_viewed',
+  'coach_alert_filter_used',
 ]
 
 const originalWindow = globalThis.window
@@ -81,6 +84,31 @@ describe('sanitizeEvent', () => {
       name: 'signup_started',
       properties: { [key]: 'sensitive' },
     })).toBeNull()
+  })
+
+  it.each([
+    ['coach_overview_viewed', { active_client_count: 3, pending_request_count: 1, paused_relationship_count: 0 }],
+    ['coach_client_insights_viewed', { period_weeks: 4, prescribed_session_count: 8, evidence_session_count: 6, measurements_shared: false }],
+    ['coach_client_insights_viewed', { period_weeks: 12, prescribed_session_count: 24, evidence_session_count: 18, measurements_shared: true }],
+    ['coach_alert_filter_used', { alert_filter: 'attention', matching_client_count: 2 }],
+  ] as const)('accepts the closed aggregate analytics contract for %s', (name, properties) => {
+    expect(sanitizeEvent({ name, properties })).toEqual({ name, properties })
+  })
+
+  it.each([
+    ['coach_overview_viewed', { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+    ['coach_client_insights_viewed', { client_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+    ['coach_client_insights_viewed', { relationshipId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+    ['coach_client_insights_viewed', { notes: 'private coaching note' }],
+    ['coach_client_insights_viewed', { weight: 72.4 }],
+    ['coach_client_insights_viewed', { measurement: 72.4 }],
+    ['coach_client_insights_viewed', { measurements: [{ weightKg: 72.4 }] }],
+    ['coach_alert_filter_used', { alert_filter: 'all', free_text: 'Client name' }],
+    ['coach_overview_viewed', { active_client_count: -1 }],
+    ['coach_client_insights_viewed', { period_weeks: 6 }],
+    ['coach_alert_filter_used', { alert_filter: 'all', matching_client_count: 1.5 }],
+  ] as const)('cuts forbidden or non-aggregate insight analytics payloads for %s', (name, properties) => {
+    expect(sanitizeEvent({ name, properties })).toBeNull()
   })
 
   it.each([
@@ -203,6 +231,30 @@ describe('trackEvent', () => {
 
     expect(sendBeacon).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('does not append a dynamic pathname to a coach insight aggregate event', async () => {
+    setBrowser('/coach/clients/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    const sendBeacon = vi.fn((_url: string, _body?: BodyInit | null) => true)
+    setNavigator({ sendBeacon })
+
+    await trackEvent('coach_client_insights_viewed', {
+      period_weeks: 4,
+      prescribed_session_count: 8,
+      evidence_session_count: 6,
+      measurements_shared: false,
+    })
+
+    const [, body] = sendBeacon.mock.calls[0]!
+    await expect((body as Blob).text()).resolves.toBe(JSON.stringify({
+      name: 'coach_client_insights_viewed',
+      properties: {
+        period_weeks: 4,
+        prescribed_session_count: 8,
+        evidence_session_count: 6,
+        measurements_shared: false,
+      },
+    }))
   })
 
   it('does nothing during server rendering', async () => {
