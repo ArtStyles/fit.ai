@@ -996,7 +996,13 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_actor_id UUID := auth.uid();
+  v_actor_role TEXT := COALESCE(auth.role(), '');
 BEGIN
+  IF p_user_id IS NULL OR (v_actor_role <> 'service_role' AND v_actor_id IS DISTINCT FROM p_user_id) THEN
+    RAISE EXCEPTION 'PROFESSIONAL_PLAN_REPLACEMENT_FORBIDDEN';
+  END IF;
   IF EXISTS (
     SELECT 1
     FROM public.workout_plans plan
@@ -1015,6 +1021,7 @@ END;
 $$;
 ALTER FUNCTION public.assert_professional_plan_replaceable(UUID) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.assert_professional_plan_replaceable(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.assert_professional_plan_replaceable(UUID) TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.accept_trainer_assignment(
   p_assignment_id UUID,
@@ -1032,6 +1039,8 @@ DECLARE
   v_relationship public.coaching_relationships%ROWTYPE;
   v_plan public.workout_plans%ROWTYPE;
   v_target_client_id UUID;
+  v_target_trainer_id UUID;
+  v_target_relationship_id UUID;
   v_existing_assignment_id UUID;
   v_existing_plan_id UUID;
 BEGIN
@@ -1041,13 +1050,35 @@ BEGIN
     RAISE EXCEPTION 'TRAINER_ASSIGNMENT_ACCEPTANCE_INVALID';
   END IF;
 
-  -- Read only the owner key first, then always acquire client before trainer.
-  SELECT client_user_id INTO v_target_client_id
+  -- This non-locking discovery is used only to select the advisory namespaces.
+  -- All rows are re-read and locked below before any decision or mutation.
+  SELECT client_user_id, trainer_user_id, relationship_id
+  INTO v_target_client_id, v_target_trainer_id, v_target_relationship_id
   FROM public.trainer_plan_assignments WHERE id = p_assignment_id;
   IF v_target_client_id IS NULL OR v_target_client_id <> v_client_user_id THEN
     RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_FOUND';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_target_trainer_id::TEXT, 0));
+
+  -- Canonical mutable-row order after client -> trainer advisory locks.
+  PERFORM 1 FROM public.profiles WHERE id = v_client_user_id AND account_status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_CLIENT_INACTIVE'; END IF;
+  PERFORM 1 FROM public.profiles WHERE id = v_target_trainer_id AND account_status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
+  PERFORM 1 FROM public.trainer_profiles WHERE user_id = v_target_trainer_id AND status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
+  SELECT * INTO v_relationship FROM public.coaching_relationships relationship
+  WHERE relationship.id = v_target_relationship_id
+    AND relationship.client_user_id = v_client_user_id
+    AND relationship.trainer_user_id = v_target_trainer_id FOR UPDATE;
+  IF NOT FOUND OR v_relationship.status <> 'active' THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_ACTIVE'; END IF;
+  SELECT * INTO v_assignment FROM public.trainer_plan_assignments assignment
+  WHERE assignment.id = p_assignment_id
+    AND assignment.client_user_id = v_client_user_id
+    AND assignment.trainer_user_id = v_target_trainer_id
+    AND assignment.relationship_id = v_target_relationship_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_FOUND'; END IF;
 
   SELECT assignment.id, version.materialized_plan_id
   INTO v_existing_assignment_id, v_existing_plan_id
@@ -1061,22 +1092,7 @@ BEGIN
     RETURN;
   END IF;
 
-  SELECT * INTO v_assignment FROM public.trainer_plan_assignments assignment
-  WHERE assignment.id = p_assignment_id AND assignment.client_user_id = v_client_user_id FOR UPDATE;
-  IF NOT FOUND OR v_assignment.status <> 'proposed' THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_PROPOSED'; END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended(v_assignment.trainer_user_id::TEXT, 0));
-
-  SELECT * INTO v_relationship FROM public.coaching_relationships relationship
-  WHERE relationship.id = v_assignment.relationship_id
-    AND relationship.client_user_id = v_client_user_id
-    AND relationship.trainer_user_id = v_assignment.trainer_user_id FOR UPDATE;
-  IF NOT FOUND OR v_relationship.status <> 'active' THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_ACTIVE'; END IF;
-  PERFORM 1 FROM public.profiles WHERE id = v_client_user_id AND account_status = 'active' FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_CLIENT_INACTIVE'; END IF;
-  PERFORM 1 FROM public.profiles WHERE id = v_assignment.trainer_user_id AND account_status = 'active' FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
-  PERFORM 1 FROM public.trainer_profiles WHERE user_id = v_assignment.trainer_user_id AND status = 'active' FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
+  IF v_assignment.status <> 'proposed' THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_PROPOSED'; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.coaching_consents consent WHERE consent.relationship_id = v_relationship.id AND consent.scope = 'training_profile' AND consent.revoked_at IS NULL) THEN
     RAISE EXCEPTION 'TRAINER_ASSIGNMENT_CONSENT_REQUIRED';
   END IF;

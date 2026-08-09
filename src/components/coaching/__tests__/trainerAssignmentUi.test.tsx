@@ -23,12 +23,14 @@ describe('trainer assignment UI contracts', () => {
     expect(source).not.toContain('contact_phone')
   })
 
-  it('renders the proposed prescription as read-only review data', async () => {
+  it('renders the proposed prescription as read-only review data with a retry-stable acceptance key', async () => {
     const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../ProposedProgramReview.tsx', import.meta.url), 'utf8'))
     expect(source).toContain('prescripción se mantiene bloqueada')
     expect(source).toContain('versionNumber')
     expect(source).not.toContain('<input')
-    expect(source).not.toContain('<button')
+    expect(source).toContain('Aceptar rutina')
+    expect(source).toContain('useRef<string | null>')
+    expect(source).toContain('acceptanceKeyRef.current')
   })
 })
 

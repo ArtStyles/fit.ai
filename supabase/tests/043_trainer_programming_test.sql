@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(77);
+SELECT plan(81);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -181,6 +181,26 @@ SELECT throws_ok(
   $$SELECT public.activate_plan_version((SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'))$$,
   'PROFESSIONAL_PLAN_MANUAL_ACTIVATION_FORBIDDEN', 'legacy activation cannot activate professional prescriptions directly'
 );
+SELECT ok(has_function_privilege('authenticated', 'public.assert_professional_plan_replaceable(uuid)', 'EXECUTE'), 'authenticated lifecycle RPCs may execute the replacement guard');
+SELECT throws_ok(
+  $$SELECT public.assert_professional_plan_replaceable('11111111-0000-4000-8000-000000000001')$$,
+  'PROFESSIONAL_PLAN_REPLACEMENT_FORBIDDEN', 'client cannot invoke replacement guard for another user'
+);
+SELECT throws_ok(
+  $$SELECT public.assert_professional_plan_replaceable('33333333-0000-4000-8000-000000000003')$$,
+  'PROFESSIONAL_PLAN_REPLACEMENT_FORBIDDEN', 'active professional plan rejects personal replacement'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+UPDATE public.coaching_relationships
+SET status = 'ended', ended_at = NOW(), ended_by = '33333333-0000-4000-8000-000000000003', end_reason = 'Test lifecycle closure'
+WHERE id = '11111111-0000-4000-8000-000000000061';
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-0000-4000-8000-000000000003', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok($$SELECT public.assert_professional_plan_replaceable('33333333-0000-4000-8000-000000000003')$$, 'ended relationship permits a later personal choice');
 RESET ROLE;
 SET LOCAL ROLE service_role;
 SELECT set_config('request.jwt.claim.role', 'service_role', true);

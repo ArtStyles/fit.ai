@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { TrainerProgramSnapshotV1 } from '@/lib/coaching/programs'
 import { acceptTrainerAssignment } from '@/app/actions/trainerAssignments'
@@ -20,6 +20,7 @@ export function ProposedProgramReview({ proposal }: { proposal: ProposedProgramR
   const [isAccepting, setIsAccepting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [accepted, setAccepted] = useState(false)
+  const acceptanceKeyRef = useRef<string | null>(null)
 
   async function accept() {
     if (!window.confirm('Al aceptar, esta rutina será tu plan principal y quedará bloqueada para edición. ¿Continuar?')) return
@@ -27,13 +28,16 @@ export function ProposedProgramReview({ proposal }: { proposal: ProposedProgramR
     setError(null)
     const data = new FormData()
     data.set('assignmentId', proposal.assignmentId)
-    data.set('idempotencyKey', crypto.randomUUID())
+    const idempotencyKey = acceptanceKeyRef.current ?? crypto.randomUUID()
+    acceptanceKeyRef.current = idempotencyKey
+    data.set('idempotencyKey', idempotencyKey)
     try {
       const result = await acceptTrainerAssignment(data)
       if (!result.ok) {
         setError(result.error)
         return
       }
+      acceptanceKeyRef.current = null
       setAccepted(true)
       router.refresh()
     } catch {
