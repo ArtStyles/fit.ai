@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(100);
+SELECT plan(102);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -676,12 +676,17 @@ SET LOCAL ROLE service_role;
 SELECT set_config('request.jwt.claim.role', 'service_role', true);
 UPDATE public.coaching_relationships SET status = 'paused_by_platform', paused_at = NOW() WHERE id = 'dddddddd-0000-4000-8000-000000000011';
 SELECT is((SELECT status FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021'), 'frozen', 'platform pause freezes the active assignment without deleting its plan');
+SELECT set_config('app.plan_lifecycle_actor', 'dddddddd-0000-4000-8000-000000000001', true);
+UPDATE public.workout_plans SET is_active = FALSE WHERE id = (SELECT materialized_plan_id FROM public.trainer_assignment_versions WHERE id = (SELECT active_version_id FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021'));
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active) VALUES ('dddddddd-0000-4000-8000-000000000051', 'dddddddd-0000-4000-8000-000000000001', 'Temporary personal resume choice', gen_random_uuid(), TRUE);
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', 'dddddddd-0000-4000-8000-000000000001', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
 SELECT lives_ok($$SELECT public.resume_paused_coaching_relationship('dddddddd-0000-4000-8000-000000000011', 'dddddddd-0000-4000-8000-000000000012')$$, 'client confirmation resumes the paused relationship');
 SELECT is((SELECT status FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021'), 'active', 'resume restores the last frozen assignment only after client confirmation');
+SELECT ok(NOT (SELECT is_active FROM public.workout_plans WHERE id = 'dddddddd-0000-4000-8000-000000000051') AND (SELECT is_active FROM public.workout_plans WHERE trainer_assignment_version_id = (SELECT active_version_id FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021')), 'resume deactivates the alternate personal plan and restores the frozen professional plan');
+SELECT is((SELECT count(*) FROM public.workout_plans WHERE user_id = 'dddddddd-0000-4000-8000-000000000001' AND is_active), 1::bigint, 'resume leaves exactly one active plan');
 
 SELECT * FROM finish();
 ROLLBACK;

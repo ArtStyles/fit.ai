@@ -1353,6 +1353,9 @@ DECLARE
   v_trainer_account public.profiles%ROWTYPE;
   v_trainer_profile public.trainer_profiles%ROWTYPE;
   v_service public.trainer_service_offerings%ROWTYPE;
+  v_frozen_assignment public.trainer_plan_assignments%ROWTYPE;
+  v_frozen_version public.trainer_assignment_versions%ROWTYPE;
+  v_frozen_plan public.workout_plans%ROWTYPE;
   v_training_version TEXT;
 BEGIN
   IF v_client_user_id IS NULL THEN RAISE EXCEPTION 'COACHING_AUTH_REQUIRED'; END IF;
@@ -1382,13 +1385,34 @@ BEGIN
   WHERE consent.relationship_id = v_relationship.id AND consent.scope = 'training_profile' ORDER BY consent.granted_at DESC, consent.id DESC LIMIT 1;
   IF v_training_version IS NULL THEN RAISE EXCEPTION 'COACHING_TRAINING_CONSENT_REQUIRED'; END IF;
 
-  UPDATE public.coaching_relationships SET status = 'active', paused_at = NULL WHERE id = v_relationship.id;
-  UPDATE public.trainer_assignment_versions version SET status = 'active', effective_from = NOW()
-  FROM public.trainer_plan_assignments assignment
+  SELECT * INTO v_frozen_assignment FROM public.trainer_plan_assignments assignment
   WHERE assignment.relationship_id = v_relationship.id AND assignment.status = 'frozen'
-    AND version.id = assignment.active_version_id AND version.status = 'frozen';
-  UPDATE public.trainer_plan_assignments assignment SET status = 'active', updated_at = NOW()
-  WHERE assignment.relationship_id = v_relationship.id AND assignment.status = 'frozen';
+  ORDER BY assignment.created_at DESC, assignment.id DESC LIMIT 1 FOR UPDATE;
+  IF FOUND THEN
+    SELECT * INTO v_frozen_version FROM public.trainer_assignment_versions version
+    WHERE version.id = v_frozen_assignment.active_version_id
+      AND version.assignment_id = v_frozen_assignment.id AND version.status = 'frozen'
+    FOR UPDATE;
+    IF NOT FOUND OR v_frozen_version.materialized_plan_id IS NULL THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_VERSION_NOT_FROZEN'; END IF;
+    SELECT * INTO v_frozen_plan FROM public.workout_plans plan
+    WHERE plan.id = v_frozen_version.materialized_plan_id
+      AND plan.user_id = v_client_user_id AND plan.source_type = 'trainer_assigned'
+      AND plan.library_slot = 'professional' AND plan.prescription_locked = TRUE
+      AND plan.trainer_relationship_id = v_relationship.id
+      AND plan.trainer_assignment_id = v_frozen_assignment.id
+      AND plan.trainer_assignment_version_id = v_frozen_version.id
+    FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_PLAN_INVALID'; END IF;
+  END IF;
+
+  UPDATE public.coaching_relationships SET status = 'active', paused_at = NULL WHERE id = v_relationship.id;
+  IF v_frozen_assignment.id IS NOT NULL THEN
+    PERFORM set_config('app.plan_lifecycle_actor', v_client_user_id::TEXT, TRUE);
+    UPDATE public.workout_plans SET is_active = FALSE WHERE user_id = v_client_user_id AND is_active = TRUE;
+    UPDATE public.workout_plans SET is_active = TRUE WHERE id = v_frozen_plan.id;
+    UPDATE public.trainer_assignment_versions SET status = 'active', effective_from = NOW() WHERE id = v_frozen_version.id;
+    UPDATE public.trainer_plan_assignments SET status = 'active', updated_at = NOW() WHERE id = v_frozen_assignment.id;
+  END IF;
   UPDATE public.coaching_consents consent
   SET revoked_at = NOW(), revoked_by = v_client_user_id
   WHERE consent.relationship_id = v_relationship.id

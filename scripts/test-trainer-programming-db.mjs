@@ -7,7 +7,7 @@ import { waitForFinalDatabase } from './trainer-foundations-readiness.mjs'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
-const migrationPaths = ['037_atomic_plan_lifecycle.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql']
+const migrationPaths = ['037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql']
   .map(file => path.join(repoRoot, 'supabase', 'migrations', file))
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 
@@ -35,12 +35,13 @@ GRANT ALL ON TABLE public.product_notifications, public.professional_audit_logs 
 
 const planBootstrapSql = `
 ALTER TABLE public.profiles ADD COLUMN subscription_tier TEXT NOT NULL DEFAULT 'free';
+ALTER TABLE public.profiles ADD COLUMN timezone TEXT;
 ALTER TABLE public.profiles ADD COLUMN days_per_week INTEGER;
 ALTER TABLE public.profiles ADD COLUMN session_duration_minutes INTEGER;
 ALTER TABLE public.profiles ADD COLUMN preferred_workout_days INTEGER[];
 ALTER TABLE public.profiles ADD COLUMN available_equipment TEXT[];
 ALTER TABLE public.profiles ADD COLUMN cardio_preferences TEXT[];
-CREATE TABLE public.exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, is_public BOOLEAN NOT NULL DEFAULT TRUE);
+CREATE TABLE public.exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, name_es TEXT, muscle_groups TEXT[], muscle_groups_es TEXT[], is_compound BOOLEAN, is_public BOOLEAN NOT NULL DEFAULT TRUE);
 CREATE TABLE public.workout_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), name TEXT NOT NULL,
   goal TEXT, duration_weeks INTEGER, days_per_week INTEGER, difficulty TEXT, is_active BOOLEAN NOT NULL DEFAULT FALSE,
@@ -54,6 +55,9 @@ CREATE TABLE public.workouts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), use
 CREATE TABLE public.workout_exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), workout_id UUID NOT NULL REFERENCES public.workouts(id), exercise_id UUID REFERENCES public.exercises(id), order_index INTEGER, sets INTEGER, reps INTEGER, duration_seconds INTEGER, rest_seconds INTEGER, target_rpe INTEGER, weight_kg NUMERIC, notes TEXT, weight_suggestion_basis TEXT);
 CREATE TABLE public.plan_generation_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), mode TEXT NOT NULL, generator TEXT NOT NULL, success BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE public.posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), routine_snapshot JSONB);
+CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), workout_id UUID REFERENCES public.workouts(id), client_session_id UUID, session_result_snapshot JSONB, session_context_snapshot JSONB, completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), duration_minutes INTEGER, mood_rating INTEGER);
+CREATE UNIQUE INDEX progress_logs_user_client_session_unique ON public.progress_logs(user_id, client_session_id) WHERE client_session_id IS NOT NULL;
+CREATE TABLE public.exercise_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), progress_log_id UUID NOT NULL REFERENCES public.progress_logs(id), exercise_id UUID REFERENCES public.exercises(id), sets_completed INTEGER, reps_completed INTEGER[], weights_kg NUMERIC[], rpe_values NUMERIC[], duration_seconds INTEGER, notes TEXT);
 CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
 `
 
@@ -121,6 +125,54 @@ SELECT dblink_disconnect('accept_a');
 SELECT dblink_disconnect('accept_b');
 `
 
+// Exercise the real authorization RPC across a professional revision. The
+// reservation is released before B because the daily policy intentionally
+// permits only one live authorization per user/date.
+const revisionSessionContinuitySql = `
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('eeeeeeee-0000-4000-8000-000000000001', 'continuity-trainer@example.test', '{}'::jsonb),
+  ('eeeeeeee-0000-4000-8000-000000000002', 'continuity-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
+  ('eeeeeeee-0000-4000-8000-000000000001', 'https://example.test/continuity-trainer.webp', TRUE, 'active'),
+  ('eeeeeeee-0000-4000-8000-000000000002', 'https://example.test/continuity-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id) VALUES ('eeeeeeee-0000-4000-8000-000000000011', 'eeeeeeee-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('eeeeeeee-0000-4000-8000-000000000021', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000011', 'continuity-trainer', 'active', 'Continuity trainer', 'Bio', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES ('eeeeeeee-0000-4000-8000-000000000031', 'eeeeeeee-0000-4000-8000-000000000021', 'Continuity service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES ('eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000031', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES ('eeeeeeee-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'eeeeeeee-0000-4000-8000-000000000002');
+INSERT INTO public.exercises (id, name, name_es, muscle_groups, muscle_groups_es, is_compound) VALUES ('eeeeeeee-0000-4000-8000-000000000051', 'Continuity squat', 'Sentadilla', ARRAY['quadriceps'], ARRAY['cuadriceps'], TRUE);
+INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_per_week) VALUES ('eeeeeeee-0000-4000-8000-000000000061', 'eeeeeeee-0000-4000-8000-000000000001', 'Continuity B', 1);
+INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES ('eeeeeeee-0000-4000-8000-000000000071', 'eeeeeeee-0000-4000-8000-000000000061', 'Version B day', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1);
+INSERT INTO public.trainer_template_exercises (id, template_workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES ('eeeeeeee-0000-4000-8000-000000000081', 'eeeeeeee-0000-4000-8000-000000000071', 'eeeeeeee-0000-4000-8000-000000000051', 1, 3, 8, 60);
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, source_template_id, status, accepted_at, active_version_id) VALUES ('eeeeeeee-0000-4000-8000-000000000091', 'eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000061', 'active', NOW(), 'eeeeeeee-0000-4000-8000-000000000101');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES ('eeeeeeee-0000-4000-8000-000000000101', 'eeeeeeee-0000-4000-8000-000000000091', 1, '{"schemaVersion":1}'::jsonb, 'active', 'eeeeeeee-0000-4000-8000-000000000111');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES ('eeeeeeee-0000-4000-8000-000000000111', 'eeeeeeee-0000-4000-8000-000000000002', 'Continuity A', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000091', 'eeeeeeee-0000-4000-8000-000000000101');
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000111', 'Version A day', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1);
+INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000051', 1, 3, 8, 60);
+COMMIT;
+SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000002'; SET request.jwt.claim.role = 'authenticated'; SET ROLE authenticated;
+SELECT public.authorize_session_start('eeeeeeee-0000-4000-8000-000000000131', 'eeeeeeee-0000-4000-8000-000000000121');
+RESET ROLE; SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000001'; SET request.jwt.claim.role = 'authenticated'; SET ROLE authenticated;
+SELECT public.publish_trainer_assignment_revision('eeeeeeee-0000-4000-8000-000000000091', 'eeeeeeee-0000-4000-8000-000000000061', 'Revision B for future sessions', 'continuity-revision-key');
+RESET ROLE; SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000002'; SET request.jwt.claim.role = 'authenticated'; SET ROLE authenticated;
+SELECT public.authorize_session_start('eeeeeeee-0000-4000-8000-000000000131', 'eeeeeeee-0000-4000-8000-000000000121');
+DO $$ BEGIN
+  IF (SELECT plan_id FROM public.session_authorizations WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131') <> 'eeeeeeee-0000-4000-8000-000000000111'::uuid THEN RAISE EXCEPTION 'authorization A plan changed'; END IF;
+  IF (SELECT session_context_snapshot->'plan'->>'trainerAssignmentVersionId' FROM public.session_authorizations WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131') <> 'eeeeeeee-0000-4000-8000-000000000101' THEN RAISE EXCEPTION 'authorization A version changed'; END IF;
+END $$;
+RESET ROLE; SET ROLE service_role;
+UPDATE public.session_authorizations SET released_at = NOW() WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131';
+RESET ROLE; SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000002'; SET request.jwt.claim.role = 'authenticated'; SET ROLE authenticated;
+SELECT public.authorize_session_start('eeeeeeee-0000-4000-8000-000000000132', (SELECT workout.id FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_version_id = (SELECT active_version_id FROM public.trainer_plan_assignments WHERE id = 'eeeeeeee-0000-4000-8000-000000000091')));
+DO $$ BEGIN
+  IF (SELECT session_context_snapshot->'plan'->>'trainerAssignmentVersionId' FROM public.session_authorizations WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000132') <> (SELECT active_version_id::text FROM public.trainer_plan_assignments WHERE id = 'eeeeeeee-0000-4000-8000-000000000091') THEN RAISE EXCEPTION 'authorization B did not use current version'; END IF;
+END $$;
+RESET ROLE;
+`
+
 function docker(args, { input, print = true } = {}) {
   const result = spawnSync('docker', args, { cwd: repoRoot, encoding: 'utf8', input, maxBuffer: 20 * 1024 * 1024 })
   if (print) {
@@ -164,13 +216,15 @@ try {
   runPsql(bootstrapSql, 'applying minimal pre-041 history')
   runPsql(planBootstrapSql, 'applying required plan and exercise history')
   runPsql(`BEGIN;\n${readFileSync(migrationPaths[0], 'utf8')}\nCOMMIT;`, 'applying migration 037 lifecycle')
-  runPsql(readFileSync(migrationPaths[1], 'utf8'), 'applying migration 041')
-  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 042')
-  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 043')
-  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'reapplying migration 043 for rerunnability')
+  runPsql(readFileSync(migrationPaths[1], 'utf8'), 'applying migration 038 session authorization')
+  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 041')
+  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 042')
+  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'applying migration 043')
+  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'reapplying migration 043 for rerunnability')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
+  runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
   process.stdout.write('\n[trainer-programming-db] PASS: migration 043 behavior and rerunnability passed\n')
 } finally {
   if (started) {
