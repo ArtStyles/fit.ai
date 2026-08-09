@@ -348,9 +348,83 @@ describe('saveSession idempotency', () => {
       prs: storedSnapshot.prs,
       progressions: storedSnapshot.progressions,
     })
-    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.objectContaining({
       p_result_snapshot: { version: 1, prs: [], progressions: [] },
     }))
+  })
+
+  it('uses v3 before v2 so an authorized locked session is validated by the database', async () => {
+    const supabase = successfulSaveMock()
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: true })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.objectContaining({
+      p_client_session_id: payload.clientSessionId,
+      p_workout_id: payload.workoutId,
+    }))
+    expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
+  })
+
+  it('never writes progression targets back into a locked professional plan', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: null }],
+      workouts: [{ data: { plan_id: 'plan-locked' } }],
+      workout_plans: [{ data: { id: 'plan-locked', prescription_locked: true } }],
+    })
+    supabase.rpc = vi.fn(() => Promise.resolve({
+      data: [{ progress_log_id: 'log-locked', inserted: true, result_snapshot: storedSnapshot }],
+      error: null,
+    }))
+    const workoutExerciseQuery = query({ data: null }) as { update: Mock }
+    const originalFrom = supabase.from
+    supabase.from = vi.fn((table: string) => table === 'workout_exercises'
+      ? workoutExerciseQuery
+      : originalFrom(table))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: true })
+
+    expect(supabase.from).not.toHaveBeenCalledWith('workout_exercises')
+    expect(workoutExerciseQuery.update).not.toHaveBeenCalled()
+  })
+
+  it('fails closed rather than falling back when the v3 protection is missing for a locked authorization', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: null }],
+      session_authorizations: [{ data: {
+        session_context_snapshot: {
+          version: 1,
+          workout: { id: payload.workoutId, name: 'Piernas', focus: null, dayOfWeek: 3 },
+          plan: {
+            id: '22222222-2222-4222-8222-222222222222',
+            familyId: '33333333-3333-4333-8333-333333333333',
+            name: 'Rutina profesional',
+            weekNumber: 1,
+            prescriptionLocked: true,
+            trainerAssignmentId: '44444444-4444-4444-8444-444444444444',
+            trainerAssignmentVersionId: '55555555-5555-4555-8555-555555555555',
+          },
+          exercises: [],
+        },
+      }}],
+    })
+    supabase.rpc = vi.fn((name: string) => Promise.resolve({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: `Could not find the function public.${name} in the schema cache`,
+      },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({
+      success: false,
+      error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesiÃ³n de forma segura.',
+    })
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.any(Object))
+    expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
+    expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic', expect.any(Object))
   })
 
   it('saves an authorized session after its source plan is no longer active', async () => {
@@ -367,7 +441,7 @@ describe('saveSession idempotency', () => {
       success: true,
       progressLogId: 'log-authorized',
     })
-    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.objectContaining({
       p_client_session_id: payload.clientSessionId,
       p_workout_id: payload.workoutId,
     }))
@@ -375,7 +449,7 @@ describe('saveSession idempotency', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('workout_plans')
   })
 
-  it('fails closed when v2 rejects an unclaimed session', async () => {
+  it('fails closed when v3 rejects an unclaimed session', async () => {
     const supabase: any = createSupabaseMock({
       progress_logs: [{ data: null }],
     })
@@ -391,7 +465,7 @@ describe('saveSession idempotency', () => {
       error: 'No se pudo validar la autorización de esta sesión. Inicia una nueva sesión.',
     })
     expect(supabase.rpc).toHaveBeenCalledTimes(1)
-    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.any(Object))
     expect(supabase.from).not.toHaveBeenCalledWith('workout_plans')
   })
 
@@ -762,7 +836,7 @@ describe('saveSession idempotency', () => {
       error: 'No se pudo guardar la sesión. Inténtalo nuevamente.',
     })
     await expect(saveSession(payload)).resolves.toMatchObject({ success: true, progressLogId: 'log-new' })
-    expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.objectContaining({
+    expect(failed.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.objectContaining({
       p_client_session_id: payload.clientSessionId,
     }))
     expect(retried.rpc).toHaveBeenCalledTimes(1)
@@ -872,6 +946,9 @@ describe('saveSession idempotency', () => {
         familyId: '33333333-3333-4333-8333-333333333333',
         name: 'Strength block',
         weekNumber: 2,
+        prescriptionLocked: false,
+        trainerAssignmentId: null,
+        trainerAssignmentVersionId: null,
       },
       exercises: [{
         exerciseId: '44444444-4444-4444-8444-444444444444',

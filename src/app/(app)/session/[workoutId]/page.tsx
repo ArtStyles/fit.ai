@@ -76,7 +76,7 @@ export default async function SessionPage({ params }: PageProps) {
   const workout = access.workout
 
   // ── Datos del workout + última sesión completada (en paralelo) ────────────
-  const [{ data: weRows }, { data: exerciseOptionRows }, { data: lastLogRow }] = await Promise.all([
+  const [{ data: weRows }, { data: exerciseOptionRows }, { data: lastLogRow }, { data: workoutPlan }] = await Promise.all([
     supabase
       .from('workout_exercises')
       .select(`
@@ -118,6 +118,14 @@ export default async function SessionPage({ params }: PageProps) {
       .order('completed_at', { ascending: false })
       .limit(1)
       .maybeSingle() as unknown as Promise<{ data: { id: string } | null }>,
+    workout.plan_id
+      ? (supabase
+          .from('workout_plans')
+          .select('prescription_locked')
+          .eq('id', workout.plan_id)
+          .eq('user_id', user.id)
+          .maybeSingle() as unknown as Promise<{ data: { prescription_locked: boolean | null } | null }>)
+      : Promise.resolve({ data: null }),
   ])
 
   // ── Pesos/reps de la última sesión para pre-rellenar ──────────────────────
@@ -156,6 +164,7 @@ export default async function SessionPage({ params }: PageProps) {
   }))
 
   const rows = weRows ?? []
+  const prescriptionLocked = workoutPlan?.prescription_locked === true
 
   // ── Transformar a ExerciseSession[] ───────────────────────────────────────
   const exerciseInitData = rows
@@ -210,6 +219,7 @@ export default async function SessionPage({ params }: PageProps) {
       communityEnabled={communityEnabled}
       exercises={exercises}
       exerciseOptions={exerciseOptions}
+      prescriptionLocked={prescriptionLocked}
     />
   )
 }

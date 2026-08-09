@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(113);
+SELECT plan(124);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -734,6 +734,160 @@ SELECT lives_ok($$SELECT public.resume_paused_coaching_relationship('dddddddd-00
 SELECT is((SELECT status FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021'), 'active', 'resume restores the last frozen assignment only after client confirmation');
 SELECT ok(NOT (SELECT is_active FROM public.workout_plans WHERE id = 'dddddddd-0000-4000-8000-000000000051') AND (SELECT is_active FROM public.workout_plans WHERE trainer_assignment_version_id = (SELECT active_version_id FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021')), 'resume deactivates the alternate personal plan and restores the frozen professional plan');
 SELECT is((SELECT count(*) FROM public.workout_plans WHERE user_id = 'dddddddd-0000-4000-8000-000000000001' AND is_active), 1::bigint, 'resume leaves exactly one active plan');
+
+-- v3 uses immutable authorization evidence and validates server-side plan
+-- identities, never mutable client ids.
+-- This fixture is inserted through the protected authorization table to
+-- exercise real persistence and rejection paths under an authenticated user.
+RESET ROLE;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('f1111111-0000-4000-8000-000000000001', 'locked-session@example.test', '{}'::jsonb),
+  ('f1111111-0000-4000-8000-000000000002', 'locked-skip@example.test', '{}'::jsonb);
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
+  ('f1111111-0000-4000-8000-000000000001', 'https://example.test/locked-session.webp', TRUE, 'active'),
+  ('f1111111-0000-4000-8000-000000000002', 'https://example.test/locked-skip.webp', TRUE, 'active');
+INSERT INTO public.exercises (id, name) VALUES
+  ('f1111111-0000-4000-8000-000000000011', 'Locked extra exercise');
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('f1111111-0000-4000-8000-000000000051', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000001', 'active'),
+  ('f1111111-0000-4000-8000-000000000052', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('f1111111-0000-4000-8000-000000000051', 'training_profile', 'training-profile-v1', 'f1111111-0000-4000-8000-000000000001'),
+  ('f1111111-0000-4000-8000-000000000052', 'training_profile', 'training-profile-v1', 'f1111111-0000-4000-8000-000000000002');
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status, accepted_at, active_version_id) VALUES
+  ('f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000051', '11111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000001', 'active', NOW(), 'f1111111-0000-4000-8000-000000000071'),
+  ('f1111111-0000-4000-8000-000000000062', 'f1111111-0000-4000-8000-000000000052', '11111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000002', 'active', NOW(), 'f1111111-0000-4000-8000-000000000072');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  ('f1111111-0000-4000-8000-000000000071', 'f1111111-0000-4000-8000-000000000061', 1, '{"schemaVersion":1}'::jsonb, 'active', 'f1111111-0000-4000-8000-000000000021'),
+  ('f1111111-0000-4000-8000-000000000072', 'f1111111-0000-4000-8000-000000000062', 1, '{"schemaVersion":1}'::jsonb, 'active', 'f1111111-0000-4000-8000-000000000022');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
+  ('f1111111-0000-4000-8000-000000000021', 'f1111111-0000-4000-8000-000000000001', 'Authorization fixture', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'f1111111-0000-4000-8000-000000000051', 'f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000071'),
+  ('f1111111-0000-4000-8000-000000000022', 'f1111111-0000-4000-8000-000000000002', 'Skip fixture', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'f1111111-0000-4000-8000-000000000052', 'f1111111-0000-4000-8000-000000000062', 'f1111111-0000-4000-8000-000000000072');
+SET CONSTRAINTS ALL IMMEDIATE;
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
+  ('f1111111-0000-4000-8000-000000000031', 'f1111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000021', 'Locked day', 1, 1),
+  ('f1111111-0000-4000-8000-000000000032', 'f1111111-0000-4000-8000-000000000002', 'f1111111-0000-4000-8000-000000000022', 'Skip day', 1, 1);
+INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
+  ('f1111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000041', 1, 3, 8, 60),
+  ('f1111111-0000-4000-8000-000000000032', '11111111-0000-4000-8000-000000000041', 1, 3, 8, 60);
+
+CREATE OR REPLACE FUNCTION pg_temp.seed_locked_session(p_client_session_id UUID, p_user_id UUID, p_plan_id UUID, p_workout_id UUID, p_assignment_id UUID, p_version_id UUID)
+RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE v_start TIMESTAMPTZ := date_trunc('day', NOW());
+BEGIN
+  INSERT INTO public.session_authorizations (
+    client_session_id, user_id, workout_id, plan_id, session_context_snapshot,
+    policy_timezone, policy_date, policy_day_start, policy_day_end,
+    workout_window_start, created_at, expires_at
+  ) VALUES (
+    p_client_session_id,
+    p_user_id,
+    p_workout_id,
+    p_plan_id,
+    jsonb_build_object(
+      'version', 1,
+      'workout', jsonb_build_object('id', p_workout_id, 'name', 'Locked day', 'focus', NULL, 'dayOfWeek', 1),
+      'plan', jsonb_build_object('id', p_plan_id, 'familyId', gen_random_uuid(), 'name', 'Professional snapshot', 'weekNumber', 1, 'prescriptionLocked', TRUE, 'trainerAssignmentId', p_assignment_id, 'trainerAssignmentVersionId', p_version_id),
+      'exercises', jsonb_build_array(jsonb_build_object('exerciseId', '11111111-0000-4000-8000-000000000041', 'name', 'Squat', 'nameEs', NULL, 'muscleGroups', jsonb_build_array(), 'muscleGroupsEs', jsonb_build_array(), 'isCompound', FALSE))
+    ),
+    'UTC', v_start::DATE, v_start, v_start + INTERVAL '1 day', v_start,
+    NOW(), NOW() + INTERVAL '12 hours'
+  );
+END;
+$$;
+SELECT pg_temp.seed_locked_session('f1111111-0000-4000-8000-000000000041', 'f1111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000021', 'f1111111-0000-4000-8000-000000000031', 'f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000071');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'f1111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_session_log_atomic_v3('f1111111-0000-4000-8000-000000000041', 'f1111111-0000-4000-8000-000000000031', NOW(), 40, 8, '[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets_completed":2,"reps_completed":[8,9],"weights_kg":[80,82.5],"rpe_values":[7,8],"duration_seconds":null,"notes":"Real result","skip_reason":null}]'::jsonb, '{"version":1,"prs":[],"progressions":[]}'::jsonb)$$,
+  'locked session saves real prescribed weights, reps and RPE through v3'
+);
+SELECT is((SELECT sets_completed FROM public.exercise_logs WHERE progress_log_id = (SELECT id FROM public.progress_logs WHERE client_session_id = 'f1111111-0000-4000-8000-000000000041')), 2, 'v3 persists real completed-set evidence');
+SELECT is((SELECT session_context_snapshot->'plan'->>'prescriptionLocked' FROM public.progress_logs WHERE client_session_id = 'f1111111-0000-4000-8000-000000000041'), 'true', 'v3 persists the locked authorization snapshot');
+SELECT ok(
+  NOT has_function_privilege(
+    'authenticated',
+    'public.save_session_log_atomic_v2(uuid,uuid,timestamptz,integer,integer,jsonb,jsonb)'::regprocedure,
+    'EXECUTE'
+  ),
+  'authenticated clients cannot bypass v3 locked-plan validation through v2'
+);
+SELECT is(
+  (
+    SELECT inserted
+    FROM public.save_session_log_atomic_v3(
+      'f1111111-0000-4000-8000-000000000041',
+      'f1111111-0000-4000-8000-000000000031',
+      NOW(), 40, 8,
+      '[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets_completed":2,"reps_completed":[8,9],"weights_kg":[80,82.5],"rpe_values":[7,8],"duration_seconds":null,"notes":"Retry","skip_reason":null}]'::jsonb,
+      '{"version":1,"prs":[],"progressions":[]}'::jsonb
+    )
+  ),
+  FALSE,
+  'locked v3 retries preserve v2 idempotency after the authorization is consumed'
+);
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.seed_locked_session('f1111111-0000-4000-8000-000000000045', 'f1111111-0000-4000-8000-000000000002', 'f1111111-0000-4000-8000-000000000022', 'f1111111-0000-4000-8000-000000000032', 'f1111111-0000-4000-8000-000000000062', 'f1111111-0000-4000-8000-000000000072');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'f1111111-0000-4000-8000-000000000002', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_session_log_atomic_v3('f1111111-0000-4000-8000-000000000045', 'f1111111-0000-4000-8000-000000000032', NOW(), 20, NULL, '[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets_completed":0,"reps_completed":[],"weights_kg":[],"rpe_values":[],"duration_seconds":null,"notes":null,"skip_reason":"Dolor de rodilla"}]'::jsonb, '{"version":1,"prs":[],"progressions":[]}'::jsonb)$$,
+  'locked session accepts an explicit skipped prescribed exercise'
+);
+SELECT is((SELECT sets_completed FROM public.exercise_logs WHERE progress_log_id = (SELECT id FROM public.progress_logs WHERE client_session_id = 'f1111111-0000-4000-8000-000000000045')), 0, 'v3 persists the skipped zero-set result');
+SELECT is((SELECT notes FROM public.exercise_logs WHERE progress_log_id = (SELECT id FROM public.progress_logs WHERE client_session_id = 'f1111111-0000-4000-8000-000000000045')), 'Saltado: Dolor de rodilla.', 'v3 normalizes and preserves the explicit skip reason');
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT pg_temp.seed_locked_session('f1111111-0000-4000-8000-000000000042', 'f1111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000021', 'f1111111-0000-4000-8000-000000000031', 'f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000071');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'f1111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_session_log_atomic_v3('f1111111-0000-4000-8000-000000000042', 'f1111111-0000-4000-8000-000000000031', NOW(), 40, NULL, '[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets_completed":0,"reps_completed":[],"weights_kg":[],"rpe_values":[],"duration_seconds":null,"notes":null,"skip_reason":""}]'::jsonb, '{"version":1,"prs":[],"progressions":[]}'::jsonb)$$,
+  'SESSION_PROFESSIONAL_SKIP_REASON_REQUIRED', 'locked omission without an explicit reason is rejected'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.session_authorizations SET released_at = NOW() WHERE client_session_id = 'f1111111-0000-4000-8000-000000000042';
+SELECT pg_temp.seed_locked_session('f1111111-0000-4000-8000-000000000043', 'f1111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000021', 'f1111111-0000-4000-8000-000000000031', 'f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000071');
+UPDATE public.session_authorizations
+SET session_context_snapshot = jsonb_set(
+  session_context_snapshot,
+  '{plan}',
+  (session_context_snapshot->'plan') - 'prescriptionLocked'
+)
+WHERE client_session_id = 'f1111111-0000-4000-8000-000000000043';
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'f1111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_session_log_atomic_v3('f1111111-0000-4000-8000-000000000043', 'f1111111-0000-4000-8000-000000000031', NOW(), 40, NULL, '[{"exercise_id":"f1111111-0000-4000-8000-000000000011","sets_completed":1,"reps_completed":[8],"weights_kg":[10],"rpe_values":[7],"duration_seconds":null,"notes":null,"skip_reason":null}]'::jsonb, '{"version":1,"prs":[],"progressions":[]}'::jsonb)$$,
+  'SESSION_PROFESSIONAL_EXERCISE_FORBIDDEN', 'legacy authorization without a lock flag still rejects an extra or substituted exercise id from the locked database plan'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.session_authorizations SET released_at = NOW() WHERE client_session_id = 'f1111111-0000-4000-8000-000000000043';
+SELECT pg_temp.seed_locked_session('f1111111-0000-4000-8000-000000000044', 'f1111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000021', 'f1111111-0000-4000-8000-000000000031', 'f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000071');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'f1111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.save_session_log_atomic_v3('f1111111-0000-4000-8000-000000000044', 'f1111111-0000-4000-8000-000000000031', NOW(), 40, NULL, '[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets_completed":1,"reps_completed":[8],"weights_kg":[10],"rpe_values":[7],"duration_seconds":null,"notes":null,"skip_reason":null},{"exercise_id":"11111111-0000-4000-8000-000000000041","sets_completed":1,"reps_completed":[8],"weights_kg":[10],"rpe_values":[7],"duration_seconds":null,"notes":null,"skip_reason":null}]'::jsonb, '{"version":1,"prs":[],"progressions":[]}'::jsonb)$$,
+  'SESSION_PROFESSIONAL_EXERCISE_DUPLICATE', 'locked session rejects duplicate exercise evidence'
+);
 
 SELECT * FROM finish();
 ROLLBACK;

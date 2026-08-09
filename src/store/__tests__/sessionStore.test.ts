@@ -108,4 +108,37 @@ describe('session store side effects', () => {
     useSessionStore.getState().updateSetField('we-one', 0, 'reps', '9')
     expect(useSessionStore.getState().clientSessionId).toBe(migrated)
   })
+
+  it('keeps execution data editable but refuses ad-hoc and replacement exercises in a locked prescription', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession('workout-locked', 'Locked workout', [exercise('one')], true)
+
+    const before = useSessionStore.getState().exercises
+    useSessionStore.getState().addSessionExercise({
+      exerciseId: 'extra',
+      name: 'Extra exercise',
+      imageUrl: null,
+      instructions: null,
+      muscleGroups: [],
+      isCompound: false,
+    })
+    useSessionStore.getState().replaceSessionExercise('we-one', {
+      exerciseId: 'replacement',
+      name: 'Replacement exercise',
+      imageUrl: null,
+      instructions: null,
+      muscleGroups: [],
+      isCompound: false,
+    })
+    useSessionStore.getState().updateSetField('we-one', 0, 'weightKg', '42.5')
+    useSessionStore.getState().skipExercise('we-one', 'Dolor')
+
+    expect(useSessionStore.getState().exercises).toHaveLength(before.length)
+    expect(useSessionStore.getState().exercises[0]).toMatchObject({
+      exerciseId: 'one',
+      sets: expect.arrayContaining([expect.objectContaining({ weightKg: '42.5' })]),
+      status: 'skipped',
+      skipReason: 'Dolor',
+    })
+  })
 })

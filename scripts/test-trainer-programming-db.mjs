@@ -163,12 +163,18 @@ DO $$ BEGIN
   IF (SELECT plan_id FROM public.session_authorizations WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131') <> 'eeeeeeee-0000-4000-8000-000000000111'::uuid THEN RAISE EXCEPTION 'authorization A plan changed'; END IF;
   IF (SELECT session_context_snapshot->'plan'->>'trainerAssignmentVersionId' FROM public.session_authorizations WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131') <> 'eeeeeeee-0000-4000-8000-000000000101' THEN RAISE EXCEPTION 'authorization A version changed'; END IF;
 END $$;
-RESET ROLE; SET ROLE service_role;
-UPDATE public.session_authorizations SET released_at = NOW() WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131';
-RESET ROLE; SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000002'; SET request.jwt.claim.role = 'authenticated'; SET ROLE authenticated;
-SELECT public.authorize_session_start('eeeeeeee-0000-4000-8000-000000000132', (SELECT workout.id FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_version_id = (SELECT active_version_id FROM public.trainer_plan_assignments WHERE id = 'eeeeeeee-0000-4000-8000-000000000091')));
+SELECT public.save_session_log_atomic_v3(
+  'eeeeeeee-0000-4000-8000-000000000131',
+  'eeeeeeee-0000-4000-8000-000000000121',
+  NOW(),
+  35,
+  NULL,
+  '[{"exercise_id":"eeeeeeee-0000-4000-8000-000000000051","sets_completed":1,"reps_completed":[8],"weights_kg":[60],"rpe_values":[7],"duration_seconds":null,"notes":"Completed after revision B","skip_reason":null}]'::jsonb,
+  '{"version":1,"prs":[],"progressions":[]}'::jsonb
+);
 DO $$ BEGIN
-  IF (SELECT session_context_snapshot->'plan'->>'trainerAssignmentVersionId' FROM public.session_authorizations WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000132') <> (SELECT active_version_id::text FROM public.trainer_plan_assignments WHERE id = 'eeeeeeee-0000-4000-8000-000000000091') THEN RAISE EXCEPTION 'authorization B did not use current version'; END IF;
+  IF (SELECT session_context_snapshot->'plan'->>'trainerAssignmentVersionId' FROM public.progress_logs WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131') <> 'eeeeeeee-0000-4000-8000-000000000101' THEN RAISE EXCEPTION 'v3 did not preserve superseded authorization A version'; END IF;
+  IF (SELECT count(*) FROM public.exercise_logs WHERE progress_log_id = (SELECT id FROM public.progress_logs WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131') AND exercise_id = 'eeeeeeee-0000-4000-8000-000000000051') <> 1 THEN RAISE EXCEPTION 'v3 did not persist authorized A exercise result'; END IF;
 END $$;
 RESET ROLE;
 `

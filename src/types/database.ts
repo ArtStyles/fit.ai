@@ -1804,6 +1804,22 @@ export interface Database {
           result_snapshot: Json
         }>
       }
+      save_session_log_atomic_v3: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+          p_completed_at: string
+          p_duration_minutes: number
+          p_mood_rating: number | null
+          p_exercise_logs: Json
+          p_result_snapshot: Json
+        }
+        Returns: Array<{
+          progress_log_id: string
+          inserted: boolean
+          result_snapshot: Json
+        }>
+      }
       get_dashboard_payload: {
         Args: {
           p_week_start: string

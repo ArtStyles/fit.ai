@@ -1569,10 +1569,179 @@ BEGIN
     $fn$;
     ALTER FUNCTION public.authorize_session_start(UUID, UUID) OWNER TO postgres;
     REVOKE ALL ON FUNCTION public.authorize_session_start(UUID, UUID) FROM PUBLIC;
-    GRANT EXECUTE ON FUNCTION public.authorize_session_start(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.authorize_session_start(UUID, UUID) TO authenticated;
   END IF;
 END;
 $$;
+
+-- Version 3 keeps the v2 authorization/idempotency boundary, and adds the
+-- professional execution invariant. The client supplies only actual results;
+-- the authorized workout is the source of the allowed prescription.
+CREATE OR REPLACE FUNCTION public.save_session_log_atomic_v3(
+  p_client_session_id UUID,
+  p_workout_id UUID,
+  p_completed_at TIMESTAMPTZ,
+  p_duration_minutes INTEGER,
+  p_mood_rating INTEGER,
+  p_exercise_logs JSONB,
+  p_result_snapshot JSONB
+)
+RETURNS TABLE(progress_log_id UUID, inserted BOOLEAN, result_snapshot JSONB)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_authorization public.session_authorizations%ROWTYPE;
+  v_authorized_plan public.workout_plans%ROWTYPE;
+  v_prescription_locked BOOLEAN := FALSE;
+  v_normalized_exercise_logs JSONB := COALESCE(p_exercise_logs, '[]'::JSONB);
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'SESSION_AUTHENTICATION_REQUIRED';
+  END IF;
+
+  IF p_client_session_id IS NULL OR p_workout_id IS NULL THEN
+    RAISE EXCEPTION 'SESSION_AUTHORIZATION_INVALID_ID';
+  END IF;
+
+  -- This matches v2's order. The row lock also freezes the authorization
+  -- snapshot across a retry while a later professional revision is published.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  SELECT * INTO v_authorization
+  FROM public.session_authorizations
+  WHERE client_session_id = p_client_session_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'SESSION_AUTHORIZATION_REQUIRED'; END IF;
+  IF v_authorization.user_id IS DISTINCT FROM v_user_id
+    OR v_authorization.workout_id IS DISTINCT FROM p_workout_id THEN
+    RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH';
+  END IF;
+
+  SELECT * INTO v_authorized_plan
+  FROM public.workout_plans
+  WHERE id = v_authorization.plan_id
+    AND user_id = v_user_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.workouts
+    WHERE id = v_authorization.workout_id
+      AND plan_id = v_authorized_plan.id
+      AND user_id = v_user_id
+  ) THEN
+    RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH';
+  END IF;
+
+  v_prescription_locked := COALESCE(v_authorized_plan.prescription_locked, FALSE) OR COALESCE(
+    LOWER(v_authorization.session_context_snapshot->'plan'->>'prescriptionLocked') IN ('true', 't', '1'),
+    FALSE
+  );
+
+  IF v_prescription_locked THEN
+    IF v_authorized_plan.prescription_locked IS DISTINCT FROM TRUE
+      OR v_authorized_plan.trainer_assignment_id IS NULL
+      OR v_authorized_plan.trainer_assignment_version_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1
+        FROM public.trainer_plan_assignments AS assignment
+        WHERE assignment.id = v_authorized_plan.trainer_assignment_id
+          AND assignment.client_user_id = v_user_id
+          AND assignment.relationship_id = v_authorized_plan.trainer_relationship_id
+      )
+      OR NOT EXISTS (
+        SELECT 1
+        FROM public.trainer_assignment_versions AS version
+        WHERE version.id = v_authorized_plan.trainer_assignment_version_id
+          AND version.assignment_id = v_authorized_plan.trainer_assignment_id
+          AND version.materialized_plan_id = v_authorized_plan.id
+      ) THEN
+      RAISE EXCEPTION 'SESSION_PROFESSIONAL_AUTHORIZATION_INVALID';
+    END IF;
+
+    IF jsonb_typeof(v_normalized_exercise_logs) IS DISTINCT FROM 'array' THEN
+      RAISE EXCEPTION 'SESSION_PROFESSIONAL_EXERCISE_INVALID';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_to_recordset(v_normalized_exercise_logs) AS item(
+        exercise_id UUID,
+        sets_completed INTEGER,
+        skip_reason TEXT
+      )
+      WHERE item.exercise_id IS NULL
+        OR item.sets_completed IS NULL
+        OR item.sets_completed < 0
+        OR (item.sets_completed = 0 AND NULLIF(BTRIM(item.skip_reason), '') IS NULL)
+    ) THEN
+      RAISE EXCEPTION 'SESSION_PROFESSIONAL_SKIP_REASON_REQUIRED';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_to_recordset(v_normalized_exercise_logs) AS item(exercise_id UUID)
+      GROUP BY item.exercise_id
+      HAVING COUNT(*) > 1
+    ) THEN
+      RAISE EXCEPTION 'SESSION_PROFESSIONAL_EXERCISE_DUPLICATE';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_to_recordset(v_normalized_exercise_logs) AS item(exercise_id UUID)
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM public.workout_exercises AS prescription
+        WHERE prescription.workout_id = v_authorization.workout_id
+          AND prescription.exercise_id = item.exercise_id
+      )
+    ) THEN
+      RAISE EXCEPTION 'SESSION_PROFESSIONAL_EXERCISE_FORBIDDEN';
+    END IF;
+
+    -- Keep an explicit omission reason in the client payload and normalize the
+    -- persistent legacy-compatible notes column without dropping the evidence.
+    SELECT COALESCE(jsonb_agg(
+      CASE
+        WHEN COALESCE((item.value->>'sets_completed')::INTEGER, 0) = 0 THEN
+          jsonb_set(
+            item.value,
+            '{notes}',
+            to_jsonb('Saltado: ' || BTRIM(item.value->>'skip_reason') || '.'),
+            TRUE
+          )
+        ELSE item.value
+      END
+      ORDER BY item.ordinality
+    ), '[]'::JSONB)
+    INTO v_normalized_exercise_logs
+    FROM jsonb_array_elements(v_normalized_exercise_logs) WITH ORDINALITY AS item(value, ordinality);
+  END IF;
+
+  RETURN QUERY
+  SELECT * FROM public.save_session_log_atomic_v2(
+    p_client_session_id,
+    p_workout_id,
+    p_completed_at,
+    p_duration_minutes,
+    p_mood_rating,
+    v_normalized_exercise_logs,
+    p_result_snapshot
+  );
+END;
+$$;
+ALTER FUNCTION public.save_session_log_atomic_v3(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.save_session_log_atomic_v3(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.save_session_log_atomic_v3(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB) TO authenticated;
+
+-- v2 remains available only as an implementation detail of v3. Keeping it
+-- directly callable would let an authenticated browser bypass the locked-plan
+-- validation above by invoking the previous RPC name.
+REVOKE EXECUTE ON FUNCTION public.save_session_log_atomic_v2(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB)
+  FROM authenticated;
 
 
 -- Preserve the Phase 3 atomic contracts while excluding professional

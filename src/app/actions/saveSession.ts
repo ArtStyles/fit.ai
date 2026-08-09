@@ -206,6 +206,7 @@ type ExerciseLogPayload = {
   rpe_values: Array<number | null>
   duration_seconds: number | null
   notes: string | null
+  skip_reason?: string | null
 }
 
 type SessionOutcome = {
@@ -312,6 +313,7 @@ async function deriveSessionOutcome(
       rpe_values: completedSets.map(set => set.rpe),
       duration_seconds: completedSets.reduce((total, set) => total + Math.max(0, set.durationSeconds ?? 0), 0) || null,
       notes: buildExerciseLogNote(ex),
+      skip_reason: ex.status === 'skipped' ? ex.skipReason?.trim() || null : null,
     }
   })
 
@@ -458,13 +460,14 @@ async function updateActivePlanTargets(
 
   const { data: activePlan } = await (supabase
     .from('workout_plans') as any)
-    .select('id')
+    .select('id, prescription_locked')
     .eq('id', workoutRow.plan_id)
     .eq('user_id', userId)
     .eq('is_active', true)
-    .maybeSingle() as { data: { id: string } | null }
+    .maybeSingle() as { data: { id: string; prescription_locked?: boolean | null } | null }
 
   if (!activePlan) return
+  if (activePlan.prescription_locked === true) return
 
   const { data: planWorkouts } = await (supabase
     .from('workouts') as any)
@@ -654,11 +657,18 @@ function parseSessionDetailBackup(value: unknown): ExerciseLogPayload[] | null {
 
 function isMissingAtomicSaveRpc(
   error: { code?: string | null; message: string } | null,
-  rpcName: 'save_session_log_atomic_v2' | 'save_session_log_atomic',
+  rpcName: 'save_session_log_atomic_v3' | 'save_session_log_atomic_v2' | 'save_session_log_atomic',
 ): boolean {
   if (!error || error.code !== 'PGRST202') return false
   const escapedRpcName = rpcName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`(?:public\\.)?${escapedRpcName}(?![A-Za-z0-9_])`, 'i').test(error.message)
+}
+
+function isPrescriptionLockedAuthorization(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const plan = (value as { plan?: unknown }).plan
+  return Boolean(plan && typeof plan === 'object' && !Array.isArray(plan) &&
+    (plan as { prescriptionLocked?: unknown }).prescriptionLocked === true)
 }
 
 function isMissingProgressLogColumn(
@@ -965,7 +975,7 @@ export async function saveSession(
 
   const completedAt = new Date(payload.finishedAt).toISOString()
   let { data: persistedRows, error: persistenceError } = await (supabase as any).rpc(
-    'save_session_log_atomic_v2',
+    'save_session_log_atomic_v3',
     {
       p_client_session_id: payload.clientSessionId,
       p_workout_id: payload.workoutId,
@@ -982,6 +992,47 @@ export async function saveSession(
       result_snapshot: unknown
     }> | null
     error: { message: string } | null
+  }
+
+  if (isMissingAtomicSaveRpc(persistenceError, 'save_session_log_atomic_v3')) {
+    const { data: authorization } = await (supabase
+      .from('session_authorizations') as any)
+      .select('session_context_snapshot')
+      .eq('client_session_id', payload.clientSessionId)
+      .eq('user_id', user.id)
+      .maybeSingle() as { data: { session_context_snapshot: unknown } | null }
+
+    if (isPrescriptionLockedAuthorization(authorization?.session_context_snapshot)) {
+      return {
+        success: false,
+        progressLogId: null,
+        prs: [],
+        progressions: [],
+        error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesiÃ³n de forma segura.',
+      }
+    }
+
+    const v2Result = await (supabase as any).rpc(
+      'save_session_log_atomic_v2',
+      {
+        p_client_session_id: payload.clientSessionId,
+        p_workout_id: payload.workoutId,
+        p_completed_at: completedAt,
+        p_duration_minutes: durationMinutes,
+        p_mood_rating: payload.moodRating,
+        p_exercise_logs: candidateOutcome.exerciseLogs,
+        p_result_snapshot: candidateSnapshot,
+      },
+    ) as {
+      data: Array<{
+        progress_log_id: string
+        inserted: boolean
+        result_snapshot: unknown
+      }> | null
+      error: { message: string } | null
+    }
+    persistedRows = v2Result.data
+    persistenceError = v2Result.error
   }
 
   if (isMissingAtomicSaveRpc(persistenceError, 'save_session_log_atomic_v2')) {

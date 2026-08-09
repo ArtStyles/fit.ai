@@ -118,6 +118,16 @@ describe('active session wiring contracts', () => {
     expect(rpeSelector).toMatch(/function increment\(\) \{[\s\S]+if \(disabled\) return[\s\S]+onChange\(next\)/)
   })
 
+  it('keeps result and skip controls while a trainer prescription removes routine mutations', () => {
+    expect(sessionPage).toContain('prescriptionLocked')
+    expect(sessionClient).toContain('prescriptionLocked')
+    expect(sessionClient).toMatch(/\{!prescriptionLocked && \(\s*<SessionRoutineTools exerciseOptions=\{exerciseOptions\} \/>\s*\)\}/)
+    expect(exerciseHeader).toContain('prescriptionLocked')
+    expect(exerciseHeader).toContain('{!prescriptionLocked && canReplace && (')
+    expect(exerciseHeader).toContain('SKIP_REASONS.map')
+    expect(exerciseCard).toContain('updateSetField')
+  })
+
   it('orders completion sections and keeps navigation independent of motion', () => {
     const ordered = [
       'data-section="session-complete"',
