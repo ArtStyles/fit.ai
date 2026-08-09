@@ -33,6 +33,24 @@ describe('trainer insights migration', () => {
     }
   })
 
+  it('uses one normalized summary timezone and limits every summary evidence path to published active assignments', () => {
+    const summaryRpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_clients_summary\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(summaryRpc).toBeDefined()
+    expect(summaryRpc).toMatch(/AS client_timezone/i)
+    expect(summaryRpc).toMatch(/client_timezone\.timezone AS timezone/i)
+    expect(summaryRpc).not.toMatch(/AT TIME ZONE client\.timezone/i)
+    expect(summaryRpc).toMatch(/assignment\.status\s*=\s*'active'/i)
+    expect(summaryRpc).toMatch(/version\.status\s+IN\s*\(\s*'active'\s*,\s*'superseded'\s*\)/i)
+  })
+
+  it('replaces the legacy product-event constraint with the three exact coach aggregate events', () => {
+    expect(migration).toMatch(/DROP CONSTRAINT IF EXISTS product_events_event_name_check/i)
+    expect(migration).toMatch(/ADD CONSTRAINT product_events_event_name_check/i)
+    for (const event of ['coach_overview_viewed', 'coach_client_insights_viewed', 'coach_alert_filter_used']) {
+      expect(migration).toContain(`'${event}'`)
+    }
+  })
+
   it('isolates measurements behind its own body-measurements consent guard and minimal projection', () => {
     const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_client_measurements\([\s\S]+?END;\n\$\$;/i)?.[0]
     expect(rpc).toBeDefined()

@@ -97,4 +97,48 @@ describe('adaptCoachClientInsights', () => {
       versions: [{ ...payload.versions[0], status: 'proposed' }],
     })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
   })
+  it('classifies only the canonical occurrence claimant as prescribed and keeps professional extras out of alerts', () => {
+    const highRpe = [{ ...payload.sessions[0].exerciseResults[0], rpeValues: [9, 9, 9] }]
+    const detail = adaptCoachClientInsights({
+      ...payload,
+      sessions: [
+        payload.sessions[0],
+        { ...payload.sessions[0], id: 'session-duplicate', completedAt: '2026-08-03T16:00:00.000Z', exerciseResults: highRpe },
+        { ...payload.sessions[0], id: 'session-outside-grace', completedAt: '2026-08-06T15:00:00.000Z', exerciseResults: highRpe },
+      ],
+    }, { rangeStart: '2026-08-03', rangeEnd: '2026-08-06', now: '2026-08-10T12:00:00.000Z' })
+
+    expect(detail.adherence).toEqual({ prescribed: 1, completed: 1, missed: 0, pending: 0, adherencePercent: 100 })
+    expect(detail.sessions.map(session => [session.id, session.classification])).toEqual([
+      ['session-a', 'prescribed'],
+      ['session-duplicate', 'additional'],
+      ['session-outside-grace', 'additional'],
+    ])
+    expect(detail.alerts.map(alert => alert.code)).not.toContain('repeated_high_rpe')
+  })
+
+  it('filters the UTC fetch buffer to both inclusive local boundaries in an extreme timezone', () => {
+    const lowRpe = [{ ...payload.sessions[0].exerciseResults[0], rpeValues: [7, 7, 7] }]
+    const highRpe = [{ ...payload.sessions[0].exerciseResults[0], rpeValues: [9, 9, 9] }]
+    const detail = adaptCoachClientInsights({
+      ...payload,
+      client: { ...payload.client, timezone: 'Pacific/Kiritimati' },
+      versions: [{ ...payload.versions[0], effectiveFrom: '2025-12-01T00:00:00.000Z' }],
+      prescribedWorkouts: [
+        { ...payload.prescribedWorkouts[0], dayOfWeek: 1 },
+        { ...payload.prescribedWorkouts[0], dayOfWeek: 7 },
+      ],
+      sessions: [
+        { ...payload.sessions[0], id: 'day-before', completedAt: '2026-01-04T09:30:00.000Z', exerciseResults: highRpe },
+        { ...payload.sessions[0], id: 'range-start', completedAt: '2026-01-04T10:30:00.000Z', exerciseResults: highRpe },
+        { ...payload.sessions[0], id: 'range-end', completedAt: '2026-01-11T09:30:00.000Z', exerciseResults: lowRpe },
+        { ...payload.sessions[0], id: 'day-after', completedAt: '2026-01-11T10:30:00.000Z', exerciseResults: highRpe },
+      ],
+    }, { rangeStart: '2026-01-05', rangeEnd: '2026-01-11', now: '2026-01-14T12:00:00.000Z' })
+
+    expect(detail.sessions.map(session => session.id)).toEqual(['range-start', 'range-end'])
+    expect(detail.sessions.map(session => session.classification)).toEqual(['prescribed', 'prescribed'])
+    expect(detail.adherence).toEqual({ prescribed: 2, completed: 2, missed: 0, pending: 0, adherencePercent: 100 })
+    expect(detail.alerts.map(alert => alert.code)).not.toContain('repeated_high_rpe')
+  })
 })

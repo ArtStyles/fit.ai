@@ -211,6 +211,50 @@ function isClosedSummary(input: unknown): input is { prescribed: number; complet
   return typeof input === 'object' && input !== null && 'prescribed' in input && 'completed' in input && !('occurrences' in input)
 }
 
+/** Canonically assigns at most one professional session to each occurrence. */
+export function matchTrainerSessionsToOccurrences(input: {
+  occurrences: readonly PrescribedOccurrence[]
+  sessions: readonly TrainerSessionEvidence[]
+  timeZone: string
+  now: InstantInput
+}): ReadonlyMap<string, string> {
+  const timeZone = validTimeZone(input.timeZone)
+  const now = asDate(input.now)
+  const matches = new Map<string, string>()
+  if (!now) return matches
+  const claimedOccurrenceIds = new Set<string>()
+  const orderedOccurrences = [...input.occurrences].sort((left, right) =>
+    left.scheduledDate.localeCompare(right.scheduledDate)
+    || left.graceEndsOn.localeCompare(right.graceEndsOn)
+    || left.id.localeCompare(right.id),
+  )
+  const orderedSessions = [...input.sessions].sort((left, right) => {
+    const leftAt = asDate(left.completedAt)?.getTime() ?? Number.POSITIVE_INFINITY
+    const rightAt = asDate(right.completedAt)?.getTime() ?? Number.POSITIVE_INFINITY
+    return leftAt - rightAt || left.id.localeCompare(right.id)
+  })
+
+  for (const session of orderedSessions) {
+    if (session.source !== 'professional' || session.prescribed === false || !session.assignmentVersionId) continue
+    const completedAt = asDate(session.completedAt)
+    if (!completedAt || completedAt > now) continue
+    const completedDate = localDateAt(session.completedAt, timeZone)
+    if (!completedDate) continue
+    const occurrence = orderedOccurrences.find(candidate =>
+      !claimedOccurrenceIds.has(candidate.id)
+      && candidate.assignmentVersionId === session.assignmentVersionId
+      && candidate.workoutId === session.workoutId
+      && candidate.scheduledDate <= completedDate
+      && completedDate <= candidate.graceEndsOn,
+    )
+    if (!occurrence) continue
+    claimedOccurrenceIds.add(occurrence.id)
+    matches.set(session.id, occurrence.id)
+  }
+
+  return matches
+}
+
 export function calculateTrainerAdherence(input: { prescribed: number; completed: number }): ClosedTrainerAdherence
 export function calculateTrainerAdherence(input: {
   occurrences: readonly PrescribedOccurrence[]
@@ -237,35 +281,9 @@ export function calculateTrainerAdherence(input: {
   const timeZone = validTimeZone(input.timeZone)
   const nowDate = localDateAt(input.now, timeZone)
   if (!nowDate) return { prescribed: input.occurrences.length, completed: 0, missed: 0, pending: input.occurrences.length, adherencePercent: 0 }
-  const claimedOccurrenceIds = new Set<string>()
   const now = asDate(input.now)
   if (!now) return { prescribed: input.occurrences.length, completed: 0, missed: 0, pending: input.occurrences.length, adherencePercent: 0 }
-  const orderedOccurrences = [...input.occurrences].sort((left, right) =>
-    left.scheduledDate.localeCompare(right.scheduledDate)
-    || left.graceEndsOn.localeCompare(right.graceEndsOn)
-    || left.id.localeCompare(right.id),
-  )
-  const orderedSessions = [...input.sessions].sort((left, right) => {
-    const leftAt = asDate(left.completedAt)?.getTime() ?? Number.POSITIVE_INFINITY
-    const rightAt = asDate(right.completedAt)?.getTime() ?? Number.POSITIVE_INFINITY
-    return leftAt - rightAt || left.id.localeCompare(right.id)
-  })
-
-  for (const session of orderedSessions) {
-    if (session.source !== 'professional' || session.prescribed === false || !session.assignmentVersionId) continue
-    const completedAt = asDate(session.completedAt)
-    if (!completedAt || completedAt > now) continue
-    const completedDate = localDateAt(session.completedAt, timeZone)
-    if (!completedDate) continue
-    const occurrence = orderedOccurrences.find(candidate =>
-      !claimedOccurrenceIds.has(candidate.id)
-      && candidate.assignmentVersionId === session.assignmentVersionId
-      && candidate.workoutId === session.workoutId
-      && candidate.scheduledDate <= completedDate
-      && completedDate <= candidate.graceEndsOn,
-    )
-    if (occurrence) claimedOccurrenceIds.add(occurrence.id)
-  }
+  const claimedOccurrenceIds = new Set(matchTrainerSessionsToOccurrences(input).values())
 
   let completed = 0
   let missed = 0

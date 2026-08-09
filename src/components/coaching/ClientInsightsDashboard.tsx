@@ -24,7 +24,7 @@ export function ClientInsightsDashboard({ detail, weeks }: { detail: CoachClient
     <section aria-labelledby="adherence-title" className="rounded-3xl border border-border/70 bg-muted/10 p-5">
       <div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-violet-300" aria-hidden="true" /><h2 id="adherence-title" className="text-lg font-bold text-foreground">Calendario y tendencia prescrita</h2></div>
       <p className="mt-3 text-sm text-muted-foreground">{detail.adherence.completed} completadas · {detail.adherence.missed} missed · {detail.adherence.pending} pending · {detail.adherence.adherencePercent}% de adherencia cerrada</p>
-      <p className="mt-2 text-sm text-muted-foreground">Las sesiones adicionales o personales se excluyen de la adherencia.</p>
+      <p className="mt-2 text-sm text-muted-foreground">Las sesiones profesionales adicionales se muestran como evidencia, pero quedan fuera del cálculo de adherencia.</p>
       {detail.occurrences.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">No hay sesiones prescritas en este periodo.</p> : <ul className="mt-4 grid gap-2 sm:grid-cols-2">
         {detail.occurrences.map(occurrence => <li key={occurrence.id} className="rounded-xl border border-border/60 p-3 text-sm"><p className="font-medium text-foreground">{occurrence.workoutName}</p><p className="mt-1 text-muted-foreground">{occurrence.scheduledDate} · <span className="font-medium">{occurrence.status}</span></p></li>)}
       </ul>}
@@ -35,7 +35,7 @@ export function ClientInsightsDashboard({ detail, weeks }: { detail: CoachClient
     <section aria-labelledby="session-evidence-title">
       <div className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-violet-300" aria-hidden="true" /><h2 id="session-evidence-title" className="text-lg font-bold text-foreground">Evidencia de sesiones</h2></div>
       <p className="mt-2 text-sm text-muted-foreground">Sets, carga, repeticiones, RPE, duración y notas se muestran sin edición histórica.</p>
-      {detail.sessions.length === 0 ? <p className="mt-4 rounded-2xl border border-dashed border-border/70 p-5 text-sm text-muted-foreground">No hay evidencia de sesiones prescritas en este periodo.</p> : <div className="mt-4 space-y-3">{detail.sessions.map(session => <ClientSessionEvidence key={session.id} session={session} timeZone={detail.client.timeZone} />)}</div>}
+      {detail.sessions.length === 0 ? <p className="mt-4 rounded-2xl border border-dashed border-border/70 p-5 text-sm text-muted-foreground">No hay evidencia profesional en este periodo.</p> : <div className="mt-4 space-y-3">{detail.sessions.map(session => <ClientSessionEvidence key={session.id} session={session} timeZone={detail.client.timeZone} />)}</div>}
     </section>
   </div>
 }

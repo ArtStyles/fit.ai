@@ -19,6 +19,30 @@ CREATE INDEX IF NOT EXISTS trainer_assignment_versions_assignment_effective_idx
 CREATE INDEX IF NOT EXISTS progress_logs_user_completed_insights_idx
   ON public.progress_logs (user_id, completed_at DESC, id DESC);
 
+-- Migration 034 created this legacy constraint without an explicit name, so
+-- PostgreSQL assigned the stable column-derived name below. Keep this update in
+-- 044: Phase 6 reserves the next migration number.
+ALTER TABLE public.product_events
+  DROP CONSTRAINT IF EXISTS product_events_event_name_check;
+ALTER TABLE public.product_events
+  ADD CONSTRAINT product_events_event_name_check CHECK (event_name IN (
+    'landing_view',
+    'primary_cta_clicked',
+    'language_changed',
+    'signup_started',
+    'signup_completed',
+    'onboarding_step_completed',
+    'onboarding_abandoned',
+    'plan_generated',
+    'first_session_started',
+    'first_session_completed',
+    'plan_adjustment_used',
+    'organic_page_cta_clicked',
+    'coach_overview_viewed',
+    'coach_client_insights_viewed',
+    'coach_alert_filter_used'
+  ));
+
 CREATE OR REPLACE FUNCTION public.get_coach_clients_summary()
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -73,17 +97,13 @@ BEGIN
       client.id AS client_id,
       client.full_name,
       client.avatar_url,
-      CASE
-        WHEN client.timezone IS NOT NULL
-          AND EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names AS zone WHERE zone.name = client.timezone)
-        THEN client.timezone
-        ELSE 'America/Havana'
-      END AS timezone,
+      client_timezone.timezone AS timezone,
       (
         SELECT version.id
         FROM public.trainer_plan_assignments AS assignment
         JOIN public.trainer_assignment_versions AS version
           ON version.id = assignment.active_version_id
+         AND version.status = 'active'
         WHERE assignment.relationship_id = relationship.id
           AND assignment.status = 'active'
         LIMIT 1
@@ -104,10 +124,12 @@ BEGIN
         JOIN public.trainer_assignment_versions AS version
           ON version.id = plan.trainer_assignment_version_id
          AND version.materialized_plan_id = plan.id
+         AND version.status IN ('active', 'superseded')
         JOIN public.trainer_plan_assignments AS assignment
           ON assignment.id = version.assignment_id
          AND assignment.id = plan.trainer_assignment_id
          AND assignment.relationship_id = plan.trainer_relationship_id
+         AND assignment.status = 'active'
         WHERE progress_log.user_id = relationship.client_user_id
           AND assignment.relationship_id = relationship.id
           AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
@@ -136,8 +158,10 @@ BEGIN
              FROM public.trainer_plan_assignments AS assignment
              JOIN public.trainer_assignment_versions AS version ON version.assignment_id = assignment.id
              WHERE assignment.relationship_id = relationship.id
-               AND version.effective_from < ((week_window.end_date + 1)::TIMESTAMP AT TIME ZONE client.timezone)
-               AND COALESCE(version.effective_to, 'infinity'::TIMESTAMPTZ) > (week_window.start_date::TIMESTAMP AT TIME ZONE client.timezone)
+               AND assignment.status = 'active'
+               AND version.status IN ('active', 'superseded')
+               AND version.effective_from < ((week_window.end_date + 1)::TIMESTAMP AT TIME ZONE client_timezone.timezone)
+               AND COALESCE(version.effective_to, 'infinity'::TIMESTAMPTZ) > ((week_window.alert_start_date - 2)::TIMESTAMP AT TIME ZONE client_timezone.timezone)
             ),
            'sessions', COALESCE(jsonb_agg(session_row.payload ORDER BY session_row.completed_at ASC, session_row.id ASC)
              FILTER (WHERE session_row.id IS NOT NULL AND session_row.completed_date >= week_window.start_date), '[]'::JSONB),
@@ -146,15 +170,15 @@ BEGIN
          )
          FROM LATERAL (
            SELECT
-             date_trunc('week', NOW() AT TIME ZONE client.timezone)::DATE AS start_date,
-             (NOW() AT TIME ZONE client.timezone)::DATE AS end_date,
-             (NOW() AT TIME ZONE client.timezone)::DATE - 7 AS alert_start_date
+             date_trunc('week', NOW() AT TIME ZONE client_timezone.timezone)::DATE AS start_date,
+             (NOW() AT TIME ZONE client_timezone.timezone)::DATE AS end_date,
+             (NOW() AT TIME ZONE client_timezone.timezone)::DATE - 7 AS alert_start_date
          ) AS week_window
          LEFT JOIN LATERAL (
            SELECT
              progress_log.id,
              progress_log.completed_at,
-             (progress_log.completed_at AT TIME ZONE client.timezone)::DATE AS completed_date,
+             (progress_log.completed_at AT TIME ZONE client_timezone.timezone)::DATE AS completed_date,
              jsonb_build_object(
                'id', progress_log.id,
                'assignmentVersionId', version.id,
@@ -182,19 +206,29 @@ BEGIN
            JOIN public.trainer_assignment_versions AS version
              ON version.id = plan.trainer_assignment_version_id
             AND version.materialized_plan_id = plan.id
+            AND version.status IN ('active', 'superseded')
            JOIN public.trainer_plan_assignments AS assignment
              ON assignment.id = version.assignment_id
             AND assignment.id = plan.trainer_assignment_id
             AND assignment.relationship_id = plan.trainer_relationship_id
+            AND assignment.status = 'active'
            WHERE progress_log.user_id = relationship.client_user_id
              AND assignment.relationship_id = relationship.id
              AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
-             AND (progress_log.completed_at AT TIME ZONE client.timezone)::DATE BETWEEN week_window.alert_start_date AND week_window.end_date
+             AND (progress_log.completed_at AT TIME ZONE client_timezone.timezone)::DATE BETWEEN week_window.alert_start_date AND week_window.end_date
          ) AS session_row ON TRUE
          GROUP BY week_window.start_date, week_window.end_date, week_window.alert_start_date
        ) AS adherence_input
     FROM scoped_relationships AS relationship
     JOIN public.profiles AS client ON client.id = relationship.client_user_id
+    CROSS JOIN LATERAL (
+      SELECT CASE
+        WHEN client.timezone IS NOT NULL
+          AND EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names AS zone WHERE zone.name = client.timezone)
+        THEN client.timezone
+        ELSE 'America/Havana'
+      END AS timezone
+    ) AS client_timezone
   )
   SELECT jsonb_build_object(
     'schemaVersion', 1,

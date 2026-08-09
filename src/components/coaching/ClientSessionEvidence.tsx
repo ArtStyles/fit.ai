@@ -12,6 +12,7 @@ export function ClientSessionEvidence({ session, timeZone }: { session: CoachCli
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{session.status}</span>
     </div>
     <p className="mt-1 text-sm text-muted-foreground">Completada: {completedAt}{session.durationMinutes === null ? '' : ` · ${session.durationMinutes} min`}</p>
+    {session.classification === 'additional' ? <p className="mt-2 text-sm font-medium text-amber-300">Sesión profesional adicional · Fuera del cálculo de adherencia.</p> : null}
     {session.exerciseResults.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">Sin ejercicios registrados; evidencia incompleta.</p> : <ul className="mt-3 space-y-3">
       {session.exerciseResults.map(result => <li key={result.id} className="border-l-2 border-violet-400/50 pl-3 text-sm">
         <p className="font-medium text-foreground">{result.name}</p>

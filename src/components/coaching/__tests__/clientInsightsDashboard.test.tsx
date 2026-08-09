@@ -15,8 +15,11 @@ const detail = {
   alerts: [{ code: 'low_adherence', message: 'La adherencia reciente está por debajo del 50%.' }],
   sessions: [{
     id: 'session-1', completedAt: '2026-08-03T15:00:00.000Z', workoutName: 'Fuerza A', durationMinutes: 45,
-    notes: '<script>alert("no ejecutar")</script>', status: 'incomplete',
+    notes: '<script>alert("no ejecutar")</script>', status: 'incomplete', classification: 'prescribed',
     exerciseResults: [{ id: 'result-1', name: 'Sentadilla', setsCompleted: 3, repsCompleted: [8, 8, 7], weightsKg: [60, 60, 60], rpeValues: [8, 8, 9], durationSeconds: 180, notes: '<b>Última serie difícil</b>' }],
+  }, {
+    id: 'session-2', completedAt: '2026-08-03T16:00:00.000Z', workoutName: 'Fuerza A', durationMinutes: 20,
+    notes: null, status: 'completed', classification: 'additional', exerciseResults: [],
   }],
 } as any
 
@@ -29,10 +32,13 @@ describe('ClientInsightsDashboard', () => {
     expect(html).toContain('missed')
     expect(html).toContain('pending')
     expect(html).toContain('incomplete')
-    expect(html).toContain('Las sesiones adicionales o personales se excluyen de la adherencia.')
+    expect(html).toContain('Las sesiones profesionales adicionales se muestran como evidencia, pero quedan fuera del cálculo de adherencia.')
     expect(html).toContain('&lt;script&gt;alert(&quot;no ejecutar&quot;)&lt;/script&gt;')
     expect(html).toContain('&lt;b&gt;Última serie difícil&lt;/b&gt;')
     expect(html).not.toContain('<script>')
+    expect(html).toContain('Sesión profesional adicional')
+    expect(html).toContain('Fuera del cálculo de adherencia')
+    expect(html).not.toContain('sesión personal')
     expect(html).not.toMatch(/<form|<button|<input/i)
   })
 

@@ -3,6 +3,7 @@ import {
   calculateTrainerAdherence,
   deriveOperationalAlerts,
   localCalendarDayStart,
+  matchTrainerSessionsToOccurrences,
   type OperationalAlert,
   type TrainerAdherence,
   type TrainerSessionEvidence,
@@ -127,6 +128,9 @@ function parseClient(value: unknown, now: string): CoachClientSummary {
   const timeZone = requiredString(client.timezone)
   const startedAt = dateString(value.startedAt)
   const adherenceInput = parseAdherenceInput(value.adherenceInput)
+  const rangeStart = summaryRangeBoundary(adherenceInput.rangeStart, timeZone)
+  const rangeEnd = summaryRangeBoundary(adherenceInput.rangeEnd, timeZone)
+  if (!rangeStart || !rangeEnd) unavailable()
   const workouts = adherenceInput.versions.flatMap(version => version.workouts.map(workout => ({
     ...workout,
     assignmentVersionId: version.id,
@@ -135,8 +139,8 @@ function parseClient(value: unknown, now: string): CoachClientSummary {
     versions: adherenceInput.versions,
     workouts,
     timeZone,
-    rangeStart: adherenceInput.rangeStart,
-    rangeEnd: adherenceInput.rangeEnd,
+    rangeStart,
+    rangeEnd,
     now,
   })
   const adherence = calculateTrainerAdherence({
@@ -145,17 +149,48 @@ function parseClient(value: unknown, now: string): CoachClientSummary {
     timeZone,
     now,
   })
+  const alertStartDate = shiftDate(localDate(rangeEnd, timeZone), -7)
+  const alertOccurrenceStart = localCalendarDayStart(shiftDate(alertStartDate, -2), timeZone)
+  const alertOccurrences = alertOccurrenceStart === null ? [] : buildPrescribedOccurrences({
+    versions: adherenceInput.versions,
+    workouts,
+    timeZone,
+    rangeStart: alertOccurrenceStart.toISOString(),
+    rangeEnd,
+    now,
+  })
+  const alertMatches = matchTrainerSessionsToOccurrences({
+    occurrences: alertOccurrences,
+    sessions: adherenceInput.alertSessions,
+    timeZone,
+    now,
+  })
+  const canonicalAlertSessions = adherenceInput.alertSessions.map(session => ({
+    ...session,
+    prescribed: alertMatches.has(session.id),
+  }))
+  const latestCanonicalAlertValue = canonicalAlertSessions
+    .filter(session => session.prescribed)
+    .sort((left, right) => new Date(left.completedAt).getTime() - new Date(right.completedAt).getTime() || left.id.localeCompare(right.id))
+    .at(-1)?.completedAt ?? null
+  const latestCanonicalAlert = latestCanonicalAlertValue instanceof Date
+    ? latestCanonicalAlertValue.toISOString()
+    : latestCanonicalAlertValue
+  const projectedLastSessionAt = dateOrNull(value.lastPrescribedSessionAt)
+  const lastPrescribedSessionAt = projectedLastSessionAt !== null && localDate(projectedLastSessionAt, timeZone) >= alertStartDate
+    ? latestCanonicalAlert
+    : projectedLastSessionAt
   return {
     clientId,
     fullName: nullableString(client.fullName),
     avatarUrl: nullableString(client.avatarUrl),
     timeZone,
     status: 'active',
-    lastPrescribedSessionAt: dateOrNull(value.lastPrescribedSessionAt),
+    lastPrescribedSessionAt,
     adherence,
     alerts: deriveOperationalAlerts({
       adherence,
-      sessions: adherenceInput.alertSessions,
+      sessions: canonicalAlertSessions,
       timeZone,
       now,
       relationshipStartedAt: startedAt,
@@ -222,6 +257,7 @@ export type CoachClientSessionEvidence = {
   durationMinutes: number | null
   notes: string | null
   status: CoachEvidenceStatus
+  classification: 'prescribed' | 'additional'
   exerciseResults: CoachClientExerciseEvidence[]
 }
 
@@ -302,6 +338,14 @@ function localDate(value: string, timeZone: string): string {
   }
 }
 
+function summaryRangeBoundary(value: string, timeZone: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return localCalendarDayStart(value, timeZone)?.toISOString() ?? null
+  }
+  const instant = new Date(value)
+  return Number.isNaN(instant.getTime()) ? null : instant.toISOString()
+}
+
 function shiftDate(date: string, days: number): string {
   const parsed = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(calendarDate(date))!
   const next = new Date(Date.UTC(Number(parsed[1]), Number(parsed[2]) - 1, Number(parsed[3]) + days))
@@ -372,26 +416,6 @@ function parseDetailPayload(value: unknown) {
   return { client, relationshipStartedAt, activeScopes, versions, prescribedWorkouts, sessions }
 }
 
-function claimedOccurrenceIds(input: {
-  occurrences: ReturnType<typeof buildPrescribedOccurrences>
-  sessions: Array<{ id: string; assignmentVersionId: string; workoutId: string; completedAt: string }>
-  timeZone: string
-  now: string
-}) {
-  const claimed = new Set<string>()
-  const now = new Date(input.now)
-  for (const session of [...input.sessions].sort((left, right) =>
-    new Date(left.completedAt).getTime() - new Date(right.completedAt).getTime() || left.id.localeCompare(right.id))) {
-    if (new Date(session.completedAt) > now) continue
-    const completedDate = localDate(session.completedAt, input.timeZone)
-    const occurrence = input.occurrences.find(candidate => !claimed.has(candidate.id)
-      && candidate.assignmentVersionId === session.assignmentVersionId && candidate.workoutId === session.workoutId
-      && candidate.scheduledDate <= completedDate && completedDate <= candidate.graceEndsOn)
-    if (occurrence) claimed.add(occurrence.id)
-  }
-  return claimed
-}
-
 function averageSessionRpe(exerciseResults: readonly CoachClientExerciseEvidence[]): number | null {
   const values = exerciseResults.flatMap(result => result.rpeValues ?? [])
   return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0) / values.length
@@ -413,20 +437,27 @@ export function adaptCoachClientInsights(
     workouts: parsed.prescribedWorkouts.map(workout => ({ id: workout.id, assignmentVersionId: workout.assignmentVersionId, isoWeekday: workout.isoWeekday })),
     timeZone: parsed.client.timeZone, rangeStart: rangeStart.toISOString(), rangeEnd: rangeEnd.toISOString(), now: range.now,
   })
-  const adherenceSessions: TrainerSessionEvidence[] = parsed.sessions.map(session => ({
+  const exactSessions = parsed.sessions.filter(session => {
+    const completedDate = localDate(session.completedAt, parsed.client.timeZone)
+    return range.rangeStart <= completedDate && completedDate <= range.rangeEnd
+  })
+  const unclassifiedSessions: TrainerSessionEvidence[] = exactSessions.map(session => ({
     id: session.id, assignmentVersionId: session.assignmentVersionId, workoutId: session.workoutId, completedAt: session.completedAt,
     source: 'professional', prescribed: true, averageRpe: averageSessionRpe(session.exerciseResults),
   }))
+  const sessionMatches = matchTrainerSessionsToOccurrences({ occurrences, sessions: unclassifiedSessions, timeZone: parsed.client.timeZone, now: range.now })
+  const adherenceSessions = unclassifiedSessions.map(session => ({ ...session, prescribed: sessionMatches.has(session.id) }))
   const adherence = calculateTrainerAdherence({ occurrences, sessions: adherenceSessions, timeZone: parsed.client.timeZone, now: range.now })
-  const claimed = claimedOccurrenceIds({ occurrences, sessions: parsed.sessions, timeZone: parsed.client.timeZone, now: range.now })
+  const claimed = new Set(sessionMatches.values())
   const workoutNames = new Map(parsed.prescribedWorkouts.map(workout => [`${workout.assignmentVersionId}:${workout.id}`, workout.name]))
   const occurrenceDetail = occurrences.map(occurrence => ({
     id: occurrence.id, scheduledDate: occurrence.scheduledDate, workoutName: workoutNames.get(`${occurrence.assignmentVersionId}:${occurrence.workoutId}`) ?? 'Rutina prescrita',
     status: (claimed.has(occurrence.id) ? 'completed' : localDate(range.now, parsed.client.timeZone) > occurrence.graceEndsOn ? 'missed' : 'pending') as CoachOccurrenceStatus,
   }))
-  const sessions = parsed.sessions.map(session => ({
+  const sessions = exactSessions.map(session => ({
     id: session.id, completedAt: session.completedAt, workoutName: session.workoutName, durationMinutes: session.durationMinutes, notes: session.notes,
     status: (session.exerciseResults.length === 0 || session.exerciseResults.some(result => result.setsCompleted === null) ? 'incomplete' : 'completed') as CoachEvidenceStatus,
+    classification: sessionMatches.has(session.id) ? 'prescribed' as const : 'additional' as const,
     exerciseResults: session.exerciseResults,
   }))
   return {

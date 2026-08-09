@@ -97,8 +97,7 @@ test('trainer insights shows only consent-bound prescribed evidence and cuts it 
   await expect(page.getByRole('heading', { name: 'E2E client', exact: true })).toHaveCount(0)
 })
 
-test('trainer suspension pauses access and returns the same generic insight response', async ({ page: _page }, testInfo) => {
-  void _page
+test('trainer suspension pauses access and returns the same generic insight response', async ({ page }, testInfo) => {
   test.skip(!supportedViewport(testInfo.project.name), 'Insights acceptance runs at the required 375px and 1440px viewports only.')
   test.skip(!isTrainerInsightsE2EEnabled(process.env), 'Requires dedicated credentials, migrations 042-044, and explicit insights reset acknowledgement.')
   test.setTimeout(300_000)
@@ -111,8 +110,16 @@ test('trainer suspension pauses access and returns the same generic insight resp
     retry: testInfo.retry,
   }))
 
+  await signIn(page, fixture.trainerA.email, fixture.password)
+  await page.goto(`/coach/clients/${fixture.client.id}`)
+  await expect(page.getByRole('heading', { name: 'E2E client', exact: true })).toBeVisible()
+  await expect(page.getByText(/Vista de solo lectura/)).toBeVisible()
+
   await fixture.suspendTrainer()
   await expect(fixture.readClientInsightsError()).resolves.toBe('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+  await page.reload()
+  await page.goto(`/coach/clients/${fixture.client.id}`)
+  await expect(page.getByRole('heading', { name: 'E2E client', exact: true })).toHaveCount(0)
   const { data, error } = await (fixture.service.from('coaching_relationships') as any)
     .select('status').eq('id', fixture.relationshipId).maybeSingle()
   expect(error).toBeNull()

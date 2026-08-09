@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(39);
+SELECT plan(44);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('f4000000-0000-4000-8000-000000000001', 'insights-trainer@example.test', '{}'::JSONB),
@@ -57,12 +57,27 @@ INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_p
   ('f4000000-0000-4000-8000-000000000102', 'f4000000-0000-4000-8000-000000000003', NULL, 'Personal workout', NULL, NULL);
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, effective_from, effective_to) VALUES
   ('f4000000-0000-4000-8000-000000000072', 'f4000000-0000-4000-8000-000000000061', 2, '{"schemaVersion":1,"workouts":[]}'::JSONB, 'superseded', NOW() - INTERVAL '21 days', NOW() - INTERVAL '15 days'),
-  ('f4000000-0000-4000-8000-000000000073', 'f4000000-0000-4000-8000-000000000061', 3, '{"schemaVersion":1,"workouts":[]}'::JSONB, 'proposed', NOW(), NULL);
+  ('f4000000-0000-4000-8000-000000000073', 'f4000000-0000-4000-8000-000000000061', 3,
+    '{"schemaVersion":1,"workouts":[{"name":"UNPUBLISHED SUMMARY WORKOUT","dayOfWeek":1,"orderInPlan":1,"exercises":[]}]}'::JSONB,
+    'proposed', NOW(), NULL);
 INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
   ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000051', 1, 3, 8, 60);
 INSERT INTO public.progress_logs (id, user_id, client_session_id, workout_id, completed_at, duration_minutes, notes, session_context_snapshot) VALUES
   ('f4000000-0000-4000-8000-000000000112', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000122', 'f4000000-0000-4000-8000-000000000102', NOW() - INTERVAL '1 day', 20, 'PERSONAL_LOG_MUST_NOT_LEAK',
     '{"version":1,"plan":{"trainerAssignmentVersionId":"f4000000-0000-4000-8000-000000000071"}}'::JSONB);
+
+SELECT lives_ok(
+  $$INSERT INTO public.product_events (event_name, anonymous_id) VALUES
+    ('coach_overview_viewed', gen_random_uuid()),
+    ('coach_client_insights_viewed', gen_random_uuid()),
+    ('coach_alert_filter_used', gen_random_uuid())$$,
+  'the database accepts all three exact aggregate coach events'
+);
+SELECT throws_ok(
+  $$INSERT INTO public.product_events (event_name, anonymous_id) VALUES ('coach_unknown_event', gen_random_uuid())$$,
+  '23514', NULL,
+  'the database rejects an unknown coach event'
+);
 
 SELECT set_config('request.jwt.claim.sub', 'f4000000-0000-4000-8000-000000000003', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
@@ -162,6 +177,37 @@ SELECT is(
 SELECT ok(
   (SELECT public.get_coach_clients_summary()::TEXT NOT LIKE '%Trusted result%'),
   'summary adherence input excludes session notes and exercise result data'
+);
+SELECT ok(
+  (SELECT public.get_coach_clients_summary()::TEXT NOT LIKE '%UNPUBLISHED SUMMARY WORKOUT%'),
+  'summary excludes a non-empty proposed assignment-version snapshot'
+);
+RESET ROLE;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('f4000000-0000-4000-8000-000000000004', 'insights-null-zone@example.test', '{}'::JSONB),
+  ('f4000000-0000-4000-8000-000000000005', 'insights-invalid-zone@example.test', '{}'::JSONB);
+INSERT INTO public.profiles (id, full_name, timezone, onboarding_done, account_status) VALUES
+  ('f4000000-0000-4000-8000-000000000004', 'Null zone client', NULL, TRUE, 'active'),
+  ('f4000000-0000-4000-8000-000000000005', 'Invalid zone client', 'Mars/Olympus_Mons', TRUE, 'active');
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('f4000000-0000-4000-8000-000000000042', 'f4000000-0000-4000-8000-000000000031', 'f4000000-0000-4000-8000-000000000001', 'f4000000-0000-4000-8000-000000000004', 'active'),
+  ('f4000000-0000-4000-8000-000000000043', 'f4000000-0000-4000-8000-000000000031', 'f4000000-0000-4000-8000-000000000001', 'f4000000-0000-4000-8000-000000000005', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('f4000000-0000-4000-8000-000000000042', 'training_profile', 'training-profile-v1', 'f4000000-0000-4000-8000-000000000004'),
+  ('f4000000-0000-4000-8000-000000000043', 'training_profile', 'training-profile-v1', 'f4000000-0000-4000-8000-000000000005');
+SELECT set_config('request.jwt.claim.sub', 'f4000000-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.get_coach_clients_summary()$$,
+  'one invalid client timezone cannot break the trainer summary'
+);
+SELECT ok(
+  (SELECT count(*) = 2
+   FROM jsonb_array_elements(public.get_coach_clients_summary()->'clients') AS client(value)
+   WHERE client.value->'client'->>'id' IN ('f4000000-0000-4000-8000-000000000004', 'f4000000-0000-4000-8000-000000000005')
+     AND client.value->'client'->>'timezone' = 'America/Havana'),
+  'NULL and invalid IANA zones both use the America/Havana fallback everywhere'
 );
 SELECT is(
   (SELECT jsonb_array_length(public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'sessions')),
