@@ -1607,6 +1607,14 @@ export interface Database {
         }
         Returns: Json
       }
+      get_coach_client_measurements: {
+        Args: {
+          p_client_id: string
+          p_from_date: string
+          p_to_date: string
+        }
+        Returns: Json
+      }
       create_coaching_request: {
         Args: { service_id: string; message: string; consent_version: string; idempotency_key: string }
         Returns: { request_id: string; created: boolean }[]

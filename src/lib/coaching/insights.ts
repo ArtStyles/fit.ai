@@ -228,10 +228,25 @@ export type CoachClientSessionEvidence = {
 export type CoachClientInsights = {
   client: Pick<CoachClientSummary, 'clientId' | 'fullName' | 'avatarUrl' | 'timeZone'>
   relationshipStartedAt: string
+  activeScopes: CoachClientConsentScope[]
   adherence: TrainerAdherence
   occurrences: CoachClientInsightOccurrence[]
   alerts: OperationalAlert[]
   sessions: CoachClientSessionEvidence[]
+}
+
+export type CoachClientConsentScope = 'training_profile' | 'body_measurements'
+
+export type CoachClientMeasurement = {
+  recordedOn: string
+  weightKg: number | null
+  bodyFatPercentage: number | null
+  muscleMassKg: number | null
+  chestCm: number | null
+  waistCm: number | null
+  hipsCm: number | null
+  armsCm: number | null
+  legsCm: number | null
 }
 
 function nullableText(value: unknown): string | null {
@@ -249,6 +264,21 @@ function nullableFiniteNumberArray(value: unknown): number[] | null {
   if (value === null || value === undefined) return null
   if (!Array.isArray(value) || value.some(item => typeof item !== 'number' || !Number.isFinite(item))) unavailable()
   return value
+}
+
+function nullableFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  return finiteNumberOrNull(value)
+}
+
+function recognizedActiveScopes(value: unknown): CoachClientConsentScope[] {
+  if (!Array.isArray(value)) unavailable()
+  const scopes = value.map(scope => {
+    if (scope !== 'training_profile' && scope !== 'body_measurements') unavailable()
+    return scope
+  })
+  if (new Set(scopes).size !== scopes.length) unavailable()
+  return scopes
 }
 
 function localDate(value: string, timeZone: string): string {
@@ -289,6 +319,7 @@ function parseDetailPayload(value: unknown) {
     timeZone: requiredString(value.client.timezone),
   }
   const relationshipStartedAt = dateString(value.relationship.startedAt)
+  const activeScopes = recognizedActiveScopes(value.relationship.activeScopes)
   const versions = value.versions.map(version => {
     if (!isRecord(version)) unavailable()
     const status = requiredString(version.status)
@@ -317,7 +348,7 @@ function parseDetailPayload(value: unknown) {
       workoutId: requiredString(session.workout.id), workoutName: requiredString(session.workout.name), exerciseResults,
     }
   })
-  return { client, relationshipStartedAt, versions, prescribedWorkouts, sessions }
+  return { client, relationshipStartedAt, activeScopes, versions, prescribedWorkouts, sessions }
 }
 
 function claimedOccurrenceIds(input: {
@@ -378,8 +409,51 @@ export function adaptCoachClientInsights(
     exerciseResults: session.exerciseResults,
   }))
   return {
-    client: parsed.client, relationshipStartedAt: parsed.relationshipStartedAt, adherence, occurrences: occurrenceDetail,
+    client: parsed.client, relationshipStartedAt: parsed.relationshipStartedAt, activeScopes: parsed.activeScopes, adherence, occurrences: occurrenceDetail,
     alerts: deriveOperationalAlerts({ adherence, sessions: adherenceSessions, timeZone: parsed.client.timeZone, now: range.now, relationshipStartedAt: parsed.relationshipStartedAt }), sessions,
+  }
+}
+
+function exactMeasurementKeys(value: UnknownRecord): boolean {
+  const expected = ['recordedOn', 'weightKg', 'bodyFatPercentage', 'muscleMassKg', 'chestCm', 'waistCm', 'hipsCm', 'armsCm', 'legsCm']
+  const keys = Object.keys(value)
+  return keys.length === expected.length && expected.every(key => keys.includes(key))
+}
+
+/** Validates the separate, minimized body-measurements projection. */
+export function adaptCoachClientMeasurements(payload: unknown): CoachClientMeasurement[] {
+  if (!isRecord(payload) || payload.schemaVersion !== 1 || !Array.isArray(payload.measurements)) unavailable()
+  return payload.measurements.map(measurement => {
+    if (!isRecord(measurement) || !exactMeasurementKeys(measurement)) unavailable()
+    return {
+      recordedOn: (() => {
+        const recordedOn = requiredString(measurement.recordedOn)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(recordedOn)) unavailable()
+        return recordedOn
+      })(),
+      weightKg: nullableFiniteNumber(measurement.weightKg),
+      bodyFatPercentage: nullableFiniteNumber(measurement.bodyFatPercentage),
+      muscleMassKg: nullableFiniteNumber(measurement.muscleMassKg),
+      chestCm: nullableFiniteNumber(measurement.chestCm),
+      waistCm: nullableFiniteNumber(measurement.waistCm),
+      hipsCm: nullableFiniteNumber(measurement.hipsCm),
+      armsCm: nullableFiniteNumber(measurement.armsCm),
+      legsCm: nullableFiniteNumber(measurement.legsCm),
+    }
+  })
+}
+
+/** Calls the separate revocable-consent RPC; errors intentionally remain generic. */
+export async function getCoachClientMeasurements(
+  supabase: { rpc: (name: string, args: { p_client_id: string; p_from_date: string; p_to_date: string }) => PromiseLike<{ data: unknown; error: unknown }> },
+  input: { clientId: string; fromDate: string; toDate: string },
+): Promise<CoachClientMeasurement[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_coach_client_measurements', { p_client_id: input.clientId, p_from_date: input.fromDate, p_to_date: input.toDate })
+    if (error) unavailable()
+    return adaptCoachClientMeasurements(data)
+  } catch {
+    unavailable()
   }
 }
 

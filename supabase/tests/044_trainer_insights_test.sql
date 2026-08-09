@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(28);
+SELECT plan(39);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('f4000000-0000-4000-8000-000000000001', 'insights-trainer@example.test', '{}'::JSONB),
@@ -31,6 +31,8 @@ INSERT INTO public.coaching_consents (relationship_id, scope, text_version, gran
   ('f4000000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'f4000000-0000-4000-8000-000000000003');
 INSERT INTO public.exercises (id, name) VALUES
   ('f4000000-0000-4000-8000-000000000051', 'Live exercise name');
+INSERT INTO public.measurements (id, user_id, recorded_at, weight_kg, body_fat_percentage, muscle_mass_kg, waist_cm, notes) VALUES
+  ('f4000000-0000-4000-8000-000000000131', 'f4000000-0000-4000-8000-000000000003', '2026-08-08 02:30:00+00', 70.5, 18.2, 31.2, 80, 'PRIVATE_MEASUREMENT_NOTE_MUST_NOT_LEAK');
 
 SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status, accepted_at, active_version_id) VALUES
@@ -84,7 +86,9 @@ RESET ROLE;
 SELECT ok(
   has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.get_coach_client_insights(uuid,date,date)', 'EXECUTE')
-  AND NOT has_function_privilege('anon', 'public.get_coach_client_insights(uuid,date,date)', 'EXECUTE'),
+  AND has_function_privilege('authenticated', 'public.get_coach_client_measurements(uuid,date,date)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.get_coach_client_insights(uuid,date,date)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.get_coach_client_measurements(uuid,date,date)', 'EXECUTE'),
   'insight RPCs are authenticated entry points only'
 );
 
@@ -187,9 +191,53 @@ SELECT ok(
   (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'measurements' = 'null'::JSONB),
   'basic insight fixes measurements to null'
 );
+RESET ROLE;
+ALTER TABLE public.measurements RENAME TO measurements_trap;
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
+  'the basic RPC remains usable when the measurements table is trapped'
+);
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
+  'P0001', 'COACH_CLIENT_INSIGHTS_UNAVAILABLE',
+  'an absent body-measurements consent reaches the generic guard before the trapped table can be selected'
+);
+RESET ROLE;
+ALTER TABLE public.measurements_trap RENAME TO measurements;
+SET LOCAL ROLE service_role;
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('f4000000-0000-4000-8000-000000000041', 'body_measurements', 'body-measurements-v1', 'f4000000-0000-4000-8000-000000000003');
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
+  'the relationship trainer can read body measurements only after separate current consent'
+);
+SELECT is(
+  (SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'measurements'->0->>'recordedOn'),
+  '2026-08-07',
+  'measurement dates use the client local calendar day'
+);
 SELECT ok(
-  to_regclass('public.measurements') IS NULL,
-  'the isolated fixture omits measurements so the successful basic RPC proves it did not read that table'
+  (SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)::TEXT NOT LIKE '%PRIVATE_MEASUREMENT_NOTE_MUST_NOT_LEAK%'),
+  'the minimal measurements payload never exposes private notes'
+);
+SELECT ok(
+  (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'relationship'->'activeScopes' @> '["body_measurements"]'::JSONB),
+  'the authorized basic payload names the current body-measurements scope for optional retrieval'
+);
+SELECT lives_ok(
+  $$SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 179, CURRENT_DATE)$$,
+  'measurements accepts an inclusive 180-calendar-day range'
+);
+SELECT throws_ok(
+  $$SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 180, CURRENT_DATE)$$,
+  'P0001', 'COACH_CLIENT_INSIGHTS_UNAVAILABLE',
+  'measurements rejects an inclusive 181-calendar-day range without a descriptive leak'
 );
 SELECT lives_ok(
   $$SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 179, CURRENT_DATE)$$,
@@ -210,6 +258,11 @@ SELECT throws_ok(
   'P0001', 'COACH_CLIENT_INSIGHTS_UNAVAILABLE',
   'another trainer receives the same generic unavailable response'
 );
+SELECT throws_ok(
+  $$SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
+  'P0001', 'COACH_CLIENT_INSIGHTS_UNAVAILABLE',
+  'another trainer receives the same generic unavailable body-measurements response'
+);
 RESET ROLE;
 
 SET LOCAL ROLE service_role;
@@ -225,12 +278,37 @@ SELECT throws_ok(
   'P0001', 'COACH_CLIENT_INSIGHTS_UNAVAILABLE',
   'a paused relationship is indistinguishable from unavailable'
 );
+SELECT throws_ok(
+  $$SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
+  'P0001', 'COACH_CLIENT_INSIGHTS_UNAVAILABLE',
+  'a paused relationship is indistinguishable from unavailable for body measurements'
+);
 RESET ROLE;
 
 SET LOCAL ROLE service_role;
 UPDATE public.coaching_relationships
 SET status = 'active', paused_at = NULL
 WHERE id = 'f4000000-0000-4000-8000-000000000041';
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
+  'basic detail remains available immediately before a separate body-consent revocation'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.coaching_consents
+SET revoked_at = NOW(), revoked_by = 'f4000000-0000-4000-8000-000000000003'
+WHERE relationship_id = 'f4000000-0000-4000-8000-000000000041' AND scope = 'body_measurements';
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
+  'P0001', 'COACH_CLIENT_INSIGHTS_UNAVAILABLE',
+  'revocation between detail and measurements makes the second request fail generically'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
 UPDATE public.coaching_consents
 SET revoked_at = NOW(), revoked_by = 'f4000000-0000-4000-8000-000000000003'
 WHERE relationship_id = 'f4000000-0000-4000-8000-000000000041' AND scope = 'training_profile';

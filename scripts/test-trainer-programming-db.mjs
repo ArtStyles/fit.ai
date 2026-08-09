@@ -63,6 +63,7 @@ CREATE TABLE public.plan_generation_events (id UUID PRIMARY KEY DEFAULT gen_rand
 CREATE TABLE public.posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), routine_snapshot JSONB);
 CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), workout_id UUID REFERENCES public.workouts(id), session_context_snapshot JSONB, completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), duration_minutes INTEGER, mood_rating INTEGER, notes TEXT);
 CREATE TABLE public.exercise_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), progress_log_id UUID NOT NULL REFERENCES public.progress_logs(id), exercise_id UUID REFERENCES public.exercises(id), sets_completed INTEGER, reps_completed INTEGER[], weights_kg NUMERIC[], rpe_values NUMERIC[], duration_seconds INTEGER, notes TEXT);
+CREATE TABLE public.measurements (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), weight_kg NUMERIC, body_fat_percentage NUMERIC, muscle_mass_kg NUMERIC, chest_cm NUMERIC, waist_cm NUMERIC, hips_cm NUMERIC, arms_cm NUMERIC, legs_cm NUMERIC, notes TEXT);
 CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
 `
 

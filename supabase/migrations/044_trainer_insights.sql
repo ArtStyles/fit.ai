@@ -302,6 +302,7 @@ BEGIN
     FROM public.coaching_consents AS consent
     WHERE consent.relationship_id = v_relationship_id
       AND consent.revoked_at IS NULL
+      AND consent.scope IN ('training_profile', 'body_measurements')
   ), assignment_rows AS (
     SELECT assignment.id, assignment.active_version_id
     FROM public.trainer_plan_assignments AS assignment
@@ -448,10 +449,81 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.get_coach_client_measurements(
+  p_client_id UUID,
+  p_from_date DATE,
+  p_to_date DATE
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_trainer_id UUID := auth.uid();
+  v_client_timezone TEXT;
+  v_result JSONB;
+BEGIN
+  IF v_trainer_id IS NULL
+    OR p_client_id IS NULL
+    OR p_from_date IS NULL
+    OR p_to_date IS NULL
+    OR p_to_date < p_from_date
+    OR p_to_date - p_from_date >= 180 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COACH_CLIENT_INSIGHTS_UNAVAILABLE';
+  END IF;
+
+  -- The scope helper rechecks authenticated trainer/profile and client status,
+  -- active relationship, current training-profile consent, and the separately
+  -- revocable body-measurements consent before this table is ever read.
+  IF NOT public.has_active_coaching_scope(v_trainer_id, p_client_id, 'body_measurements') THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COACH_CLIENT_INSIGHTS_UNAVAILABLE';
+  END IF;
+
+  SELECT CASE
+    WHEN client.timezone IS NOT NULL
+      AND EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names AS zone WHERE zone.name = client.timezone)
+    THEN client.timezone
+    ELSE 'America/Havana'
+  END
+  INTO v_client_timezone
+  FROM public.profiles AS client
+  WHERE client.id = p_client_id;
+
+  IF v_client_timezone IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COACH_CLIENT_INSIGHTS_UNAVAILABLE';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'schemaVersion', 1,
+    'measurements', COALESCE(jsonb_agg(jsonb_build_object(
+      'recordedOn', (measurement.recorded_at AT TIME ZONE v_client_timezone)::DATE,
+      'weightKg', measurement.weight_kg,
+      'bodyFatPercentage', measurement.body_fat_percentage,
+      'muscleMassKg', measurement.muscle_mass_kg,
+      'chestCm', measurement.chest_cm,
+      'waistCm', measurement.waist_cm,
+      'hipsCm', measurement.hips_cm,
+      'armsCm', measurement.arms_cm,
+      'legsCm', measurement.legs_cm
+    ) ORDER BY measurement.recorded_at DESC, measurement.id DESC), '[]'::JSONB)
+  )
+  INTO v_result
+  FROM public.measurements AS measurement
+  WHERE measurement.user_id = p_client_id
+    AND (measurement.recorded_at AT TIME ZONE v_client_timezone)::DATE BETWEEN p_from_date AND p_to_date;
+
+  RETURN v_result;
+END;
+$$;
+
 ALTER FUNCTION public.get_coach_clients_summary() OWNER TO postgres;
 ALTER FUNCTION public.get_coach_client_insights(UUID, DATE, DATE) OWNER TO postgres;
+ALTER FUNCTION public.get_coach_client_measurements(UUID, DATE, DATE) OWNER TO postgres;
 
 REVOKE ALL ON FUNCTION public.get_coach_clients_summary() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.get_coach_client_insights(UUID, DATE, DATE) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_coach_client_measurements(UUID, DATE, DATE) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_coach_clients_summary() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_coach_client_insights(UUID, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_coach_client_measurements(UUID, DATE, DATE) TO authenticated;

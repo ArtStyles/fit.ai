@@ -34,6 +34,22 @@ describe('adaptCoachClientInsights', () => {
     expect(() => adaptCoachClientInsights({ ...payload, sessions: [{ ...payload.sessions[0], workout: { id: 'workout-a' } }] })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
   })
 
+  it('exposes only recognized active scopes needed to gate optional data', () => {
+    const detail = adaptCoachClientInsights({
+      ...payload,
+      relationship: { ...payload.relationship, activeScopes: ['training_profile', 'body_measurements'] },
+    }, { rangeStart: '2026-08-03', rangeEnd: '2026-08-10', now: '2026-08-10T12:00:00.000Z' })
+
+    expect(detail.activeScopes).toEqual(['training_profile', 'body_measurements'])
+  })
+
+  it('rejects an incompatible active-scope payload with the generic error', () => {
+    expect(() => adaptCoachClientInsights({
+      ...payload,
+      relationship: { ...payload.relationship, activeScopes: ['training_profile', 'clinical_notes'] },
+    })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+  })
+
   it('derives the existing non-clinical high-RPE alert from two consecutive evidence sessions', () => {
     const detail = adaptCoachClientInsights({
       ...payload,

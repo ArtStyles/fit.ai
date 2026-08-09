@@ -22,7 +22,7 @@ describe('trainer insights migration', () => {
   })
 
   it('exposes summary and detail only through definer RPCs with a fixed search path', () => {
-    for (const functionName of ['get_coach_clients_summary', 'get_coach_client_insights']) {
+    for (const functionName of ['get_coach_clients_summary', 'get_coach_client_insights', 'get_coach_client_measurements']) {
       expect(migration).toMatch(new RegExp(
         `CREATE OR REPLACE FUNCTION public\\.${functionName}\\([\\s\\S]+?SECURITY DEFINER[\\s\\S]+?SET search_path = public, pg_temp`,
         'i',
@@ -30,6 +30,21 @@ describe('trainer insights migration', () => {
       expect(migration).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${functionName}`, 'i'))
       expect(databaseTypes).toContain(`${functionName}: {`)
     }
+  })
+
+  it('isolates measurements behind its own body-measurements consent guard and minimal projection', () => {
+    const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_client_measurements\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(rpc).toBeDefined()
+    const scopeGuard = rpc!.indexOf("has_active_coaching_scope(v_trainer_id, p_client_id, 'body_measurements')")
+    const measurementsRead = rpc!.indexOf('FROM public.measurements')
+    expect(scopeGuard).toBeGreaterThanOrEqual(0)
+    expect(measurementsRead).toBeGreaterThan(scopeGuard)
+    expect(rpc).toMatch(/p_to_date - p_from_date >= 180/i)
+    expect(rpc).toMatch(/recorded_at AT TIME ZONE v_client_timezone/i)
+    expect(rpc).toMatch(/'schemaVersion', 1/i)
+    expect(rpc).toMatch(/'weightKg'/)
+    expect(rpc).not.toMatch(/measurements\.notes|['"]notes['"]/i)
+    expect(rpc).not.toMatch(/SELECT\s+\*/i)
   })
 
   it('guards the detail before sensitive reads and returns one generic access error', () => {
@@ -41,6 +56,11 @@ describe('trainer insights migration', () => {
     expect(scopeGuard).toBeGreaterThanOrEqual(0)
     expect(sensitiveRead).toBeGreaterThan(scopeGuard)
     expect(rpc).toMatch(/RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COACH_CLIENT_INSIGHTS_UNAVAILABLE'/i)
+  })
+
+  it('limits the optional-data gate to recognized current consent scopes', () => {
+    const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_client_insights\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(rpc).toMatch(/consent\.scope IN \('training_profile', 'body_measurements'\)/i)
   })
 
   it('limits insight ranges, projects the versioned payload and never reads measurements', () => {
