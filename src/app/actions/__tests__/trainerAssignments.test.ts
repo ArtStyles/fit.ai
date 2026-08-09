@@ -109,4 +109,54 @@ describe('trainer assignment actions', () => {
     })
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
+
+  it('publishes a future-only revision through the atomic RPC', async () => {
+    const supabase = {
+      rpc: vi.fn(async () => ({
+        data: { assignment_id: ids.assignment, assignment_version_id: ids.version, workout_plan_id: ids.plan },
+        error: null,
+      })),
+    }
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { publishTrainerAssignmentRevision } = await import('../trainerAssignments')
+
+    await expect(publishTrainerAssignmentRevision(form({
+      assignmentId: ids.assignment,
+      templateId: ids.template,
+      changeSummary: 'Subimos una repetición en sentadilla.',
+      idempotencyKey: 'revision-attempt-1',
+      clientUserId: 'attacker',
+    }))).resolves.toEqual({
+      ok: true,
+      assignmentId: ids.assignment,
+      assignmentVersionId: ids.version,
+      workoutPlanId: ids.plan,
+    })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('publish_trainer_assignment_revision', {
+      p_assignment_id: ids.assignment,
+      p_template_id: ids.template,
+      p_change_summary: 'Subimos una repetición en sentadilla.',
+      p_idempotency_key: 'revision-attempt-1',
+    })
+    expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+    expect(revalidatePath).toHaveBeenCalledWith('/plan')
+  })
+
+  it('requires a non-blank summary before publishing a revision', async () => {
+    const supabase = { rpc: vi.fn() }
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { publishTrainerAssignmentRevision } = await import('../trainerAssignments')
+
+    await expect(publishTrainerAssignmentRevision(form({
+      assignmentId: ids.assignment,
+      templateId: ids.template,
+      changeSummary: '   ',
+      idempotencyKey: 'revision-attempt-2',
+    }))).resolves.toMatchObject({
+      ok: false,
+      fieldErrors: { changeSummary: expect.any(String) },
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
 })

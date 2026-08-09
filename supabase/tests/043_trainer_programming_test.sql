@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(86);
+SELECT plan(100);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -621,6 +621,67 @@ SELECT ok((SELECT is_active FROM public.workout_plans WHERE id = '99999999-0000-
 SELECT ok(NOT (SELECT is_active FROM public.workout_plans WHERE id = '99999999-0000-4000-8000-000000000083'), 'rollback keeps the professional plan inactive');
 SELECT ok((SELECT status = 'proposed' AND accepted_at IS NULL AND acceptance_idempotency_key IS NULL FROM public.trainer_plan_assignments WHERE id = '99999999-0000-4000-8000-000000000063') AND (SELECT status = 'proposed' FROM public.trainer_assignment_versions WHERE id = '99999999-0000-4000-8000-000000000073'), 'rollback leaves assignment and version proposed without acceptance state');
 SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '99999999-0000-4000-8000-000000000063') + (SELECT count(*) FROM public.product_notifications WHERE dedupe_key = 'coaching-assignment-accepted:99999999-0000-4000-8000-000000000063'), 0::bigint, 'rollback writes no partial audit or notification');
+
+-- A later revision is a new immutable snapshot: it switches only the current
+-- plan/version while the previous materialization remains historical data.
+RESET ROLE;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('dddddddd-0000-4000-8000-000000000001', 'revision-client@example.test', '{}'::jsonb);
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
+  ('dddddddd-0000-4000-8000-000000000001', 'https://example.test/revision-client.webp', TRUE, 'active');
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('dddddddd-0000-4000-8000-000000000011', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', 'dddddddd-0000-4000-8000-000000000001', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('dddddddd-0000-4000-8000-000000000011', 'training_profile', 'training-profile-v1', 'dddddddd-0000-4000-8000-000000000001');
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, source_template_id, status)
+VALUES ('dddddddd-0000-4000-8000-000000000021', 'dddddddd-0000-4000-8000-000000000011', '11111111-0000-4000-8000-000000000001', 'dddddddd-0000-4000-8000-000000000001', '11111111-0000-4000-8000-000000000051', 'active');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id)
+VALUES ('dddddddd-0000-4000-8000-000000000031', 'dddddddd-0000-4000-8000-000000000021', 1, '{"schemaVersion":1}'::jsonb, 'active', 'dddddddd-0000-4000-8000-000000000041');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id)
+VALUES ('dddddddd-0000-4000-8000-000000000041', 'dddddddd-0000-4000-8000-000000000001', 'Revision v1', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'dddddddd-0000-4000-8000-000000000011', 'dddddddd-0000-4000-8000-000000000021', 'dddddddd-0000-4000-8000-000000000031');
+UPDATE public.trainer_plan_assignments SET active_version_id = 'dddddddd-0000-4000-8000-000000000031' WHERE id = 'dddddddd-0000-4000-8000-000000000021';
+SET CONSTRAINTS ALL IMMEDIATE;
+SET CONSTRAINTS ALL DEFERRED;
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.publish_trainer_assignment_revision('dddddddd-0000-4000-8000-000000000021', '11111111-0000-4000-8000-000000000051', 'Aumentamos una repetición.', 'revision-publish-key')$$,
+  'trainer publishes a complete future-only revision atomically'
+);
+SELECT is((SELECT count(*) FROM public.trainer_assignment_versions WHERE assignment_id = 'dddddddd-0000-4000-8000-000000000021'), 2::bigint, 'revision creates exactly version N plus one');
+SELECT is((SELECT version.status FROM public.trainer_assignment_versions version WHERE version.id = 'dddddddd-0000-4000-8000-000000000031'), 'superseded', 'previous immutable version is superseded');
+SELECT ok((SELECT effective_to IS NOT NULL FROM public.trainer_assignment_versions WHERE id = 'dddddddd-0000-4000-8000-000000000031'), 'previous version receives an effective end');
+SELECT is((SELECT version_number FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.active_version_id = version.id WHERE assignment.id = 'dddddddd-0000-4000-8000-000000000021'), 2, 'assignment atomically points at the new active version');
+SELECT is((SELECT count(*) FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND plan.is_active), 2::bigint, 'revision fully materializes every template workout before activation');
+SELECT is((SELECT count(*) FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND plan.is_active), 3::bigint, 'revision fully materializes every template exercise before activation');
+SELECT is((SELECT count(*) FROM public.workout_plans WHERE trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND is_active), 1::bigint, 'revision leaves one current professional materialization');
+SELECT is((SELECT workout_plan_id FROM public.publish_trainer_assignment_revision('dddddddd-0000-4000-8000-000000000021', '11111111-0000-4000-8000-000000000051', 'Ignored retry summary', 'revision-publish-key')),
+  (SELECT materialized_plan_id FROM public.trainer_assignment_versions WHERE revision_idempotency_key = 'revision-publish-key'), 'revision retry returns its original materialization');
+SELECT is((SELECT count(*) FROM public.trainer_assignment_versions WHERE revision_idempotency_key = 'revision-publish-key'), 1::bigint, 'revision retry creates no duplicate version');
+SELECT throws_ok(
+  $$SELECT public.publish_trainer_assignment_revision('dddddddd-0000-4000-8000-000000000021', '11111111-0000-4000-8000-000000000051', '   ', 'revision-empty-summary')$$,
+  'TRAINER_ASSIGNMENT_REVISION_INVALID', 'revision requires a non-blank change summary'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+UPDATE public.coaching_relationships SET status = 'paused_by_platform', paused_at = NOW() WHERE id = 'dddddddd-0000-4000-8000-000000000011';
+SELECT is((SELECT status FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021'), 'frozen', 'platform pause freezes the active assignment without deleting its plan');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'dddddddd-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok($$SELECT public.resume_paused_coaching_relationship('dddddddd-0000-4000-8000-000000000011', 'dddddddd-0000-4000-8000-000000000012')$$, 'client confirmation resumes the paused relationship');
+SELECT is((SELECT status FROM public.trainer_plan_assignments WHERE id = 'dddddddd-0000-4000-8000-000000000021'), 'active', 'resume restores the last frozen assignment only after client confirmation');
 
 SELECT * FROM finish();
 ROLLBACK;

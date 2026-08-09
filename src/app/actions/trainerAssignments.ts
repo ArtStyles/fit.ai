@@ -8,6 +8,7 @@ type FieldErrors = Record<string, string>
 type Failure = { ok: false; error: string; fieldErrors?: FieldErrors }
 type ProposalResult = { ok: true; assignmentId: string; assignmentVersionId: string; workoutPlanId: string } | Failure
 type AcceptanceResult = { ok: true; assignmentId: string; workoutPlanId: string } | Failure
+type RevisionResult = { ok: true; assignmentId: string; assignmentVersionId: string; workoutPlanId: string } | Failure
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -85,4 +86,42 @@ export async function acceptTrainerAssignment(formData: FormData): Promise<Accep
   revalidatePath('/coaching')
   revalidatePath('/plan')
   return { ok: true, assignmentId: accepted.assignment_id, workoutPlanId: accepted.workout_plan_id }
+}
+
+/** Publishes an immutable replacement that only affects sessions authorized later. */
+export async function publishTrainerAssignmentRevision(formData: FormData): Promise<RevisionResult> {
+  const assignmentId = value(formData, 'assignmentId')
+  const templateId = value(formData, 'templateId')
+  const changeSummary = value(formData, 'changeSummary')
+  const idempotencyKey = value(formData, 'idempotencyKey')
+  const fieldErrors: FieldErrors = {}
+
+  if (!isUuid(assignmentId)) fieldErrors.assignmentId = 'La asignación no es válida.'
+  if (!isUuid(templateId)) fieldErrors.templateId = 'La rutina no es válida.'
+  if (!changeSummary) fieldErrors.changeSummary = 'Explica qué cambió para tu cliente.'
+  if (changeSummary.length > 1000) fieldErrors.changeSummary = 'El resumen no puede superar 1000 caracteres.'
+  if (!idempotencyKey || idempotencyKey.length > 200) fieldErrors.idempotencyKey = 'No se pudo identificar esta publicación. Inténtalo de nuevo.'
+  if (Object.keys(fieldErrors).length) return failure(fieldErrors, 'Revisa los datos de la revisión.')
+
+  const { supabase } = await requireActiveTrainerContext()
+  const { data, error } = await (supabase.rpc as any)('publish_trainer_assignment_revision', {
+    p_assignment_id: assignmentId,
+    p_template_id: templateId,
+    p_change_summary: changeSummary,
+    p_idempotency_key: idempotencyKey,
+  })
+  const revision = Array.isArray(data) ? data[0] : data
+  if (error || !revision?.assignment_id || !revision?.assignment_version_id || !revision?.workout_plan_id) {
+    return failure({}, 'No se pudo publicar la revisión. Verifica que el acompañamiento siga activo e inténtalo de nuevo.')
+  }
+
+  revalidatePath('/coaching')
+  revalidatePath('/coach/programs')
+  revalidatePath('/plan')
+  return {
+    ok: true,
+    assignmentId: revision.assignment_id,
+    assignmentVersionId: revision.assignment_version_id,
+    workoutPlanId: revision.workout_plan_id,
+  }
 }
