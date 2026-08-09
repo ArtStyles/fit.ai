@@ -537,6 +537,147 @@ export interface Database {
         Relationships: []
       }
 
+      trainer_program_templates: {
+        Row: {
+          id: string
+          trainer_user_id: string
+          name: string
+          goal: string | null
+          description: string | null
+          days_per_week: number
+          status: 'draft' | 'active' | 'archived'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          trainer_user_id: string
+          name: string
+          goal?: string | null
+          description?: string | null
+          days_per_week: number
+          status?: 'draft' | 'active' | 'archived'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_program_templates']['Insert']>
+        Relationships: []
+      }
+
+      trainer_template_workouts: {
+        Row: {
+          id: string
+          template_id: string
+          name: string
+          day_of_week: number
+          order_in_plan: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          template_id: string
+          name: string
+          day_of_week: number
+          order_in_plan: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_template_workouts']['Insert']>
+        Relationships: []
+      }
+
+      trainer_template_exercises: {
+        Row: {
+          id: string
+          template_workout_id: string
+          exercise_id: string
+          order_index: number
+          sets: number
+          reps: number
+          weight_kg: number | null
+          target_rpe: number | null
+          rest_seconds: number
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          template_workout_id: string
+          exercise_id: string
+          order_index: number
+          sets: number
+          reps: number
+          weight_kg?: number | null
+          target_rpe?: number | null
+          rest_seconds: number
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_template_exercises']['Insert']>
+        Relationships: []
+      }
+
+      trainer_plan_assignments: {
+        Row: {
+          id: string
+          relationship_id: string
+          trainer_user_id: string
+          client_user_id: string
+          source_template_id: string | null
+          status: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          accepted_at: string | null
+          active_version_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          relationship_id: string
+          trainer_user_id: string
+          client_user_id: string
+          source_template_id?: string | null
+          status?: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          accepted_at?: string | null
+          active_version_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_plan_assignments']['Insert']>
+        Relationships: []
+      }
+
+      trainer_assignment_versions: {
+        Row: {
+          id: string
+          assignment_id: string
+          version_number: number
+          snapshot: Json
+          change_summary: string | null
+          status: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          effective_from: string
+          effective_to: string | null
+          materialized_plan_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          assignment_id: string
+          version_number: number
+          snapshot: Json
+          change_summary?: string | null
+          status?: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          effective_from?: string
+          effective_to?: string | null
+          materialized_plan_id?: string | null
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_assignment_versions']['Insert']>
+        Relationships: []
+      }
+
       // ─── profiles ─────────────────────────────────────────────────────────
 
       profiles: {
@@ -1808,6 +1949,11 @@ export type TrainerServiceOffering = Database['public']['Tables']['trainer_servi
 export type CoachingRequest = Database['public']['Tables']['coaching_requests']['Row']
 export type CoachingRelationship = Database['public']['Tables']['coaching_relationships']['Row']
 export type CoachingConsent = Database['public']['Tables']['coaching_consents']['Row']
+export type TrainerProgramTemplate = Database['public']['Tables']['trainer_program_templates']['Row']
+export type TrainerTemplateWorkout = Database['public']['Tables']['trainer_template_workouts']['Row']
+export type TrainerTemplateExercise = Database['public']['Tables']['trainer_template_exercises']['Row']
+export type TrainerPlanAssignment = Database['public']['Tables']['trainer_plan_assignments']['Row']
+export type TrainerAssignmentVersion = Database['public']['Tables']['trainer_assignment_versions']['Row']
 
 // ─── Enum convenience types (migrations 004–005) ──────────────────────────────
 

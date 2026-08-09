@@ -1,0 +1,62 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+const migration = readFileSync(
+  new URL('../../../../supabase/migrations/043_trainer_programming.sql', import.meta.url),
+  'utf8',
+)
+const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
+
+const tables = [
+  'trainer_program_templates',
+  'trainer_template_workouts',
+  'trainer_template_exercises',
+  'trainer_plan_assignments',
+  'trainer_assignment_versions',
+]
+
+describe('trainer programming migration', () => {
+  it('creates the owned template and immutable assignment model under RLS', () => {
+    for (const table of tables) {
+      expect(migration).toMatch(new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`, 'i'))
+      expect(migration).toMatch(new RegExp(`ALTER TABLE public\\.${table} ENABLE ROW LEVEL SECURITY`, 'i'))
+      expect(migration).toMatch(new RegExp(`REVOKE ALL ON TABLE public\\.${table} FROM PUBLIC, anon, authenticated`, 'i'))
+      expect(databaseTypes).toContain(`${table}: {`)
+    }
+  })
+
+  it('keeps trainer templates attached to their active owner and exercises in the catalog', () => {
+    expect(migration).toMatch(/trainer_user_id UUID NOT NULL REFERENCES public\.profiles\(id\)/i)
+    expect(migration).toMatch(/REFERENCES public\.trainer_program_templates\(id\) ON DELETE CASCADE/i)
+    expect(migration).toMatch(/REFERENCES public\.exercises\(id\) ON DELETE RESTRICT/i)
+    expect(migration).toMatch(/trainer_program_templates: manage active owner[\s\S]+trainer_profile\.user_id = auth\.uid\(\)[\s\S]+trainer_profile\.status = 'active'[\s\S]+public\.is_account_active\(auth\.uid\(\)\)/i)
+  })
+
+  it('ties assignments to active coaching relationships and preserves version history', () => {
+    expect(migration).toMatch(/relationship_id UUID NOT NULL REFERENCES public\.coaching_relationships\(id\) ON DELETE RESTRICT/i)
+    expect(migration).toMatch(/client_user_id UUID NOT NULL REFERENCES public\.profiles\(id\) ON DELETE RESTRICT/i)
+    expect(migration).toMatch(/UNIQUE \(assignment_id, version_number\)/i)
+    expect(migration).toMatch(/effective_from TIMESTAMPTZ NOT NULL/i)
+    expect(migration).toMatch(/effective_to TIMESTAMPTZ/i)
+    expect(migration).toMatch(/effective_to IS NULL OR effective_to > effective_from/i)
+    expect(migration).toMatch(/snapshot JSONB NOT NULL/i)
+    expect(migration).toMatch(/status TEXT NOT NULL[\s\S]+\('proposed', 'active', 'superseded', 'frozen', 'cancelled'\)/i)
+    expect(migration).toMatch(/CREATE UNIQUE INDEX (?:IF NOT EXISTS )?trainer_plan_assignments_one_active_client[\s\S]+WHERE status = 'active'/i)
+  })
+
+  it('allows participant reads only while both accounts remain active and never grants direct snapshot mutation', () => {
+    expect(migration).toMatch(/trainer_plan_assignments: read active participants[\s\S]+auth\.uid\(\) = trainer_plan_assignments\.client_user_id OR auth\.uid\(\) = relationship\.trainer_user_id[\s\S]+public\.is_account_active\(trainer_plan_assignments\.client_user_id\)[\s\S]+public\.is_account_active\(relationship\.trainer_user_id\)/i)
+    expect(migration).toMatch(/trainer_assignment_versions: read active participants/i)
+    expect(migration).not.toMatch(/GRANT (?:INSERT|UPDATE|DELETE|ALL) ON TABLE public\.trainer_assignment_versions TO authenticated/i)
+    expect(migration).not.toMatch(/GRANT (?:INSERT|UPDATE|DELETE|ALL) ON TABLE public\.trainer_plan_assignments TO authenticated/i)
+  })
+
+  it('rejects mutable published snapshots and deletes of referenced versions', () => {
+    expect(migration).toMatch(/CREATE OR REPLACE FUNCTION public\.guard_trainer_assignment_version_immutability\(\)/i)
+    expect(migration).toMatch(/NEW\.snapshot IS DISTINCT FROM OLD\.snapshot[\s\S]+TRAINER_ASSIGNMENT_SNAPSHOT_IMMUTABLE/i)
+    expect(migration).toMatch(/CREATE OR REPLACE FUNCTION public\.guard_referenced_trainer_assignment_version_delete\(\)/i)
+    expect(migration).toMatch(/TRAINER_ASSIGNMENT_VERSION_REFERENCED/i)
+    expect(migration).toMatch(/CREATE TRIGGER trg_trainer_assignment_versions_immutable/i)
+    expect(migration).toMatch(/CREATE TRIGGER trg_trainer_assignment_versions_referenced_delete/i)
+  })
+})
