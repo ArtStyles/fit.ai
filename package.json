@@ -19,6 +19,7 @@
     "test:db:verification": "node scripts/test-trainer-verification-db.mjs",
     "test:db:relationships": "node scripts/test-trainer-relationships-db.mjs",
     "test:db:programming": "node scripts/test-trainer-programming-db.mjs",
+    "test:db:insights": "node scripts/test-trainer-programming-db.mjs",
     "test:e2e:seed": "tsx --env-file=.env.local scripts/seed-e2e-account.ts",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",

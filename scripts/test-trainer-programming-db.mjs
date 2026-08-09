@@ -7,9 +7,10 @@ import { waitForFinalDatabase } from './trainer-foundations-readiness.mjs'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
-const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql']
+const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '040_trainer_foundations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql', '044_trainer_insights.sql']
   .map(file => path.join(repoRoot, 'supabase', 'migrations', file))
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
+const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
 
 // This is the smallest faithful pre-041 surface: the auth/API roles come from
 // the Supabase image, while these legacy tables/functions are real dependencies
@@ -35,12 +36,17 @@ GRANT ALL ON TABLE public.product_notifications, public.professional_audit_logs 
 
 const planBootstrapSql = `
 ALTER TABLE public.profiles ADD COLUMN subscription_tier TEXT NOT NULL DEFAULT 'free';
+ALTER TABLE public.profiles ADD COLUMN full_name TEXT;
 ALTER TABLE public.profiles ADD COLUMN timezone TEXT;
 ALTER TABLE public.profiles ADD COLUMN days_per_week INTEGER;
 ALTER TABLE public.profiles ADD COLUMN session_duration_minutes INTEGER;
 ALTER TABLE public.profiles ADD COLUMN preferred_workout_days INTEGER[];
 ALTER TABLE public.profiles ADD COLUMN available_equipment TEXT[];
 ALTER TABLE public.profiles ADD COLUMN cardio_preferences TEXT[];
+ALTER TABLE public.profiles ADD COLUMN fitness_level TEXT;
+ALTER TABLE public.profiles ADD COLUMN primary_goal TEXT;
+ALTER TABLE public.profiles ADD COLUMN gym_type TEXT;
+ALTER TABLE public.profiles ADD COLUMN movement_limitations JSONB NOT NULL DEFAULT '[]'::JSONB;
 CREATE TABLE public.exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, name_es TEXT, muscle_groups TEXT[], muscle_groups_es TEXT[], is_compound BOOLEAN, is_public BOOLEAN NOT NULL DEFAULT TRUE);
 CREATE TABLE public.workout_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), name TEXT NOT NULL,
@@ -55,7 +61,7 @@ CREATE TABLE public.workouts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), use
 CREATE TABLE public.workout_exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), workout_id UUID NOT NULL REFERENCES public.workouts(id), exercise_id UUID REFERENCES public.exercises(id), order_index INTEGER, sets INTEGER, reps INTEGER, duration_seconds INTEGER, rest_seconds INTEGER, target_rpe INTEGER, weight_kg NUMERIC, notes TEXT, weight_suggestion_basis TEXT);
 CREATE TABLE public.plan_generation_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), mode TEXT NOT NULL, generator TEXT NOT NULL, success BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE public.posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), routine_snapshot JSONB);
-CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), workout_id UUID REFERENCES public.workouts(id), session_context_snapshot JSONB, completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), duration_minutes INTEGER, mood_rating INTEGER);
+CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), workout_id UUID REFERENCES public.workouts(id), session_context_snapshot JSONB, completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), duration_minutes INTEGER, mood_rating INTEGER, notes TEXT);
 CREATE TABLE public.exercise_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), progress_log_id UUID NOT NULL REFERENCES public.progress_logs(id), exercise_id UUID REFERENCES public.exercises(id), sets_completed INTEGER, reps_completed INTEGER[], weights_kg NUMERIC[], rpe_values NUMERIC[], duration_seconds INTEGER, notes TEXT);
 CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
 `
@@ -223,15 +229,20 @@ try {
   runPsql(readFileSync(migrationPaths[0], 'utf8'), 'applying migration 035 session save idempotency')
   runPsql(`BEGIN;\n${readFileSync(migrationPaths[1], 'utf8')}\nCOMMIT;`, 'applying migration 037 lifecycle')
   runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 038 session authorization')
-  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 041')
-  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'applying migration 042')
-  runPsql(readFileSync(migrationPaths[5], 'utf8'), 'applying migration 043')
-  runPsql(readFileSync(migrationPaths[5], 'utf8'), 'reapplying migration 043 for rerunnability')
+  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 040')
+  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'applying migration 041')
+  runPsql(readFileSync(migrationPaths[5], 'utf8'), 'applying migration 042')
+  runPsql(readFileSync(migrationPaths[6], 'utf8'), 'applying migration 043')
+  runPsql(readFileSync(migrationPaths[7], 'utf8'), 'applying migration 044')
+  runPsql(readFileSync(migrationPaths[6], 'utf8'), 'reapplying migration 043 for rerunnability')
+  runPsql(readFileSync(migrationPaths[7], 'utf8'), 'reapplying migration 044 for rerunnability')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
+  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running 044 pgTAP consent-bound insight suite')
+  if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
-  process.stdout.write('\n[trainer-programming-db] PASS: migration 043 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-044 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

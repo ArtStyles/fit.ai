@@ -159,6 +159,9 @@ SELECT is(
   'proposal retry returns the original materialized plan'
 );
 SELECT is((SELECT count(*) FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1'), 1::bigint, 'proposal retry creates no duplicate assignment');
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_type = 'trainer_plan_assignment' AND action = 'proposed'), 1::bigint, 'proposal records an audit event');
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-assignment-proposed:%'), 1::bigint, 'proposal notifies the client without private template data');
 -- The client, never the trainer or a submitted id, accepts the immutable first
