@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(31);
+SELECT plan(34);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -123,6 +123,18 @@ SELECT lives_ok(
 SELECT is(
   (SELECT library_slot FROM public.workout_plans WHERE id = '11111111-0000-4000-8000-000000000091'),
   'professional', 'trainer plans use the independent professional library slot'
+);
+SELECT throws_ok(
+  $$UPDATE public.trainer_assignment_versions SET materialized_plan_id = NULL WHERE id = '11111111-0000-4000-8000-000000000081'$$,
+  'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID', 'a materialized version cannot be detached from its professional plan'
+);
+SELECT throws_ok(
+  $$UPDATE public.trainer_plan_assignments SET client_user_id = '44444444-0000-4000-8000-000000000004' WHERE id = '11111111-0000-4000-8000-000000000071'$$,
+  'TRAINER_ASSIGNMENT_RELATIONSHIP_MISMATCH', 'a materialized assignment cannot be moved to another client'
+);
+SELECT throws_ok(
+  $$UPDATE public.workout_plans SET trainer_assignment_version_id = NULL WHERE id = '11111111-0000-4000-8000-000000000091'$$,
+  'TRAINER_ASSIGNED_PLAN_IDENTITY_INVALID', 'a materialized professional plan cannot lose its version reference'
 );
 SELECT throws_ok(
   $$INSERT INTO public.workout_plans (user_id, name, family_id, source_type, library_slot, prescription_locked)

@@ -7,7 +7,7 @@ import { waitForFinalDatabase } from './trainer-foundations-readiness.mjs'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
-const migrationPaths = ['041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql']
+const migrationPaths = ['037_atomic_plan_lifecycle.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql']
   .map(file => path.join(repoRoot, 'supabase', 'migrations', file))
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 
@@ -34,8 +34,27 @@ GRANT ALL ON TABLE public.product_notifications, public.professional_audit_logs 
 `
 
 const planBootstrapSql = `
+ALTER TABLE public.profiles ADD COLUMN subscription_tier TEXT NOT NULL DEFAULT 'free';
+ALTER TABLE public.profiles ADD COLUMN days_per_week INTEGER;
+ALTER TABLE public.profiles ADD COLUMN session_duration_minutes INTEGER;
+ALTER TABLE public.profiles ADD COLUMN preferred_workout_days INTEGER[];
+ALTER TABLE public.profiles ADD COLUMN available_equipment TEXT[];
+ALTER TABLE public.profiles ADD COLUMN cardio_preferences TEXT[];
 CREATE TABLE public.exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL);
-CREATE TABLE public.workout_plans (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), name TEXT NOT NULL);
+CREATE TABLE public.workout_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), name TEXT NOT NULL,
+  goal TEXT, duration_weeks INTEGER, days_per_week INTEGER, difficulty TEXT, is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  generated_by_ai BOOLEAN NOT NULL DEFAULT FALSE, ai_notes TEXT, week_number INTEGER NOT NULL DEFAULT 1,
+  plan_context TEXT NOT NULL DEFAULT 'first_plan', parent_plan_id UUID, source_type TEXT NOT NULL DEFAULT 'ai',
+  generation_metadata JSONB NOT NULL DEFAULT '{}'::jsonb, family_id UUID NOT NULL DEFAULT gen_random_uuid(),
+  generation_request_id UUID, retired_at TIMESTAMPTZ, superseded_at TIMESTAMPTZ, manually_updated_at TIMESTAMPTZ,
+  source_post_id UUID, source_user_id UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE public.workouts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), plan_id UUID REFERENCES public.workout_plans(id), name TEXT NOT NULL, focus TEXT, day_of_week INTEGER, order_in_plan INTEGER, estimated_duration_minutes INTEGER);
+CREATE TABLE public.workout_exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), workout_id UUID NOT NULL REFERENCES public.workouts(id), exercise_id UUID REFERENCES public.exercises(id), order_index INTEGER, sets INTEGER, reps INTEGER, duration_seconds INTEGER, rest_seconds INTEGER, target_rpe INTEGER, weight_kg NUMERIC, notes TEXT, weight_suggestion_basis TEXT);
+CREATE TABLE public.plan_generation_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), mode TEXT NOT NULL, generator TEXT NOT NULL, success BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE TABLE public.posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), routine_snapshot JSONB);
+CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
 `
 
 function docker(args, { input, print = true } = {}) {
@@ -79,11 +98,12 @@ try {
   const readiness = waitForDatabase()
   process.stdout.write(`[trainer-programming-db] database ready (${readiness.health}; ${readiness.diagnostic})\n`)
   runPsql(bootstrapSql, 'applying minimal pre-041 history')
-  runPsql(readFileSync(migrationPaths[0], 'utf8'), 'applying migration 041')
-  runPsql(readFileSync(migrationPaths[1], 'utf8'), 'applying migration 042')
   runPsql(planBootstrapSql, 'applying required plan and exercise history')
-  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 043')
-  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'reapplying migration 043 for rerunnability')
+  runPsql(`BEGIN;\n${readFileSync(migrationPaths[0], 'utf8')}\nCOMMIT;`, 'applying migration 037 lifecycle')
+  runPsql(readFileSync(migrationPaths[1], 'utf8'), 'applying migration 041')
+  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 042')
+  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 043')
+  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'reapplying migration 043 for rerunnability')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   process.stdout.write('\n[trainer-programming-db] PASS: migration 043 behavior and rerunnability passed\n')
