@@ -47,4 +47,28 @@ describe('adaptCoachClientInsights', () => {
       expect.objectContaining({ code: 'repeated_high_rpe' }),
     ]))
   })
+
+  it('keeps calendar occurrence claims aligned with adherence when timestamp offsets sort differently from instants', () => {
+    const detail = adaptCoachClientInsights({
+      ...payload,
+      prescribedWorkouts: [
+        { ...payload.prescribedWorkouts[0], dayOfWeek: 1 },
+        { ...payload.prescribedWorkouts[0], dayOfWeek: 3 },
+      ],
+      sessions: [
+        { ...payload.sessions[0], id: 'earlier-instant', completedAt: '2026-08-05T00:30:00.000+03:00' },
+        { ...payload.sessions[0], id: 'later-instant', completedAt: '2026-08-04T23:30:00.000-05:00' },
+      ],
+    }, { rangeStart: '2026-08-03', rangeEnd: '2026-08-05', now: '2026-08-06T12:00:00.000Z' })
+
+    expect(detail.adherence).toEqual({ prescribed: 2, completed: 2, missed: 0, pending: 0, adherencePercent: 100 })
+    expect(detail.occurrences.map(occurrence => occurrence.status)).toEqual(['completed', 'completed'])
+  })
+
+  it('rejects non-published assignment-version evidence even when the payload shape is otherwise valid', () => {
+    expect(() => adaptCoachClientInsights({
+      ...payload,
+      versions: [{ ...payload.versions[0], status: 'proposed' }],
+    })).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+  })
 })

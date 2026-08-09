@@ -22,8 +22,8 @@ export default async function CoachClientDetailPage({ params, searchParams }: {
   if (!UUID.test(params.clientId)) notFound()
   const weeks = selectedWeeks(searchParams?.weeks)
   const now = new Date()
-  const { supabase } = await requireActiveTrainerContext()
   try {
+    const { supabase } = await requireActiveTrainerContext()
     const detail = await getCoachClientInsights(supabase as any, {
       clientId: params.clientId, weeks, now,
       fromDate: utcDate(new Date(now.getTime() - (weeks * 7 + 2) * 24 * 60 * 60 * 1000)),

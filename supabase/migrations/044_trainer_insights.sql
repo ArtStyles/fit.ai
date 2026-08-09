@@ -306,6 +306,7 @@ BEGIN
     SELECT assignment.id, assignment.active_version_id
     FROM public.trainer_plan_assignments AS assignment
     WHERE assignment.relationship_id = v_relationship_id
+      AND assignment.status = 'active'
   ), versions AS (
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'id', version.id,
@@ -318,6 +319,7 @@ BEGIN
     ) ORDER BY version.effective_from ASC, version.version_number ASC, version.id ASC), '[]'::JSONB) AS value
     FROM public.trainer_assignment_versions AS version
     JOIN assignment_rows AS assignment ON assignment.id = version.assignment_id
+    WHERE version.status IN ('active', 'superseded')
   ), prescribed_workouts AS (
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'assignmentVersionId', version.id,
@@ -336,6 +338,7 @@ BEGIN
       ON materialized_workout.plan_id = version.materialized_plan_id
      AND materialized_workout.day_of_week = NULLIF(workout.value->>'dayOfWeek', '')::INTEGER
      AND materialized_workout.order_in_plan = NULLIF(workout.value->>'orderInPlan', '')::INTEGER
+    WHERE version.status IN ('active', 'superseded')
   ), trusted_sessions AS (
     SELECT
       progress_log.id,
@@ -361,6 +364,7 @@ BEGIN
     JOIN public.trainer_assignment_versions AS version
       ON version.id = plan.trainer_assignment_version_id
      AND version.materialized_plan_id = plan.id
+     AND version.status IN ('active', 'superseded')
     JOIN assignment_rows AS assignment
       ON assignment.id = version.assignment_id
      AND assignment.id = plan.trainer_assignment_id

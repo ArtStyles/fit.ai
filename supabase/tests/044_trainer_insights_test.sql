@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(26);
+SELECT plan(28);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('f4000000-0000-4000-8000-000000000001', 'insights-trainer@example.test', '{}'::JSONB),
@@ -53,6 +53,9 @@ SET CONSTRAINTS ALL IMMEDIATE;
 INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
   ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000091', 'Live workout name', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1),
   ('f4000000-0000-4000-8000-000000000102', 'f4000000-0000-4000-8000-000000000003', NULL, 'Personal workout', NULL, NULL);
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, effective_from, effective_to) VALUES
+  ('f4000000-0000-4000-8000-000000000072', 'f4000000-0000-4000-8000-000000000061', 2, '{"schemaVersion":1,"workouts":[]}'::JSONB, 'superseded', NOW() - INTERVAL '21 days', NOW() - INTERVAL '15 days'),
+  ('f4000000-0000-4000-8000-000000000073', 'f4000000-0000-4000-8000-000000000061', 3, '{"schemaVersion":1,"workouts":[]}'::JSONB, 'proposed', NOW(), NULL);
 INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
   ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000051', 1, 3, 8, 60);
 INSERT INTO public.progress_logs (id, user_id, client_session_id, workout_id, completed_at, duration_minutes, notes, session_context_snapshot) VALUES
@@ -115,6 +118,22 @@ SELECT is(
   (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->>'schemaVersion'),
   '1',
   'detail returns the versioned payload'
+);
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'versions') AS version(value)
+    WHERE version.value->>'id' = 'f4000000-0000-4000-8000-000000000073'
+  ),
+  'a proposed assignment version is excluded from consent-bound evidence'
+);
+SELECT ok(
+  2 = (
+    SELECT count(*)
+    FROM jsonb_array_elements(public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'versions') AS version(value)
+    WHERE version.value->>'id' IN ('f4000000-0000-4000-8000-000000000071', 'f4000000-0000-4000-8000-000000000072')
+  ),
+  'active and superseded published assignment history remains available for insight windows'
 );
 SELECT is(
   (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'sessions'->0->'workout'->>'name'),

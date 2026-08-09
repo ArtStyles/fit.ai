@@ -54,6 +54,13 @@ describe('trainer insights migration', () => {
     expect(rpc).toMatch(/session_context_snapshot/i)
   })
 
+  it('projects only active or superseded published assignment versions for the professional relationship', () => {
+    const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_client_insights\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(rpc).toBeDefined()
+    expect(rpc).toMatch(/assignment\.status\s*=\s*'active'/i)
+    expect(rpc).toMatch(/version\.status\s+IN\s*\(\s*'active'\s*,\s*'superseded'\s*\)/i)
+  })
+
   it('anchors professional evidence to a consumed authorization instead of a progress-log snapshot', () => {
     const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_client_insights\([\s\S]+?END;\n\$\$;/i)?.[0]
     expect(rpc).toBeDefined()

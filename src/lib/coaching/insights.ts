@@ -291,6 +291,8 @@ function parseDetailPayload(value: unknown) {
   const relationshipStartedAt = dateString(value.relationship.startedAt)
   const versions = value.versions.map(version => {
     if (!isRecord(version)) unavailable()
+    const status = requiredString(version.status)
+    if (status !== 'active' && status !== 'superseded') unavailable()
     return { id: requiredString(version.id), effectiveFrom: dateString(version.effectiveFrom), effectiveTo: dateOrNull(version.effectiveTo) }
   })
   const prescribedWorkouts = value.prescribedWorkouts.map(workout => {
@@ -326,7 +328,8 @@ function claimedOccurrenceIds(input: {
 }) {
   const claimed = new Set<string>()
   const now = new Date(input.now)
-  for (const session of [...input.sessions].sort((left, right) => left.completedAt.localeCompare(right.completedAt) || left.id.localeCompare(right.id))) {
+  for (const session of [...input.sessions].sort((left, right) =>
+    new Date(left.completedAt).getTime() - new Date(right.completedAt).getTime() || left.id.localeCompare(right.id))) {
     if (new Date(session.completedAt) > now) continue
     const completedDate = localDate(session.completedAt, input.timeZone)
     const occurrence = input.occurrences.find(candidate => !claimed.has(candidate.id)

@@ -29,4 +29,13 @@ describe('CoachClientDetailPage', () => {
     await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: { weeks: 'invalid' } })).rejects.toThrow('NOT_FOUND')
     expect(getCoachClientInsights).toHaveBeenCalledWith({}, expect.objectContaining({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', weeks: 4 }))
   })
+
+  it('converges a trainer-context authorization failure into the same notFound response', async () => {
+    getCoachClientInsights.mockClear()
+    requireActiveTrainerContext.mockRejectedValue(new Error('trainer context unavailable'))
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })).rejects.toThrow('NOT_FOUND')
+    expect(getCoachClientInsights).not.toHaveBeenCalled()
+  })
 })
