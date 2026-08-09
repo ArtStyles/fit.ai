@@ -2,18 +2,24 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(34);
+SELECT plan(40);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
   ('22222222-0000-4000-8000-000000000002', 'program-other@example.test', '{}'::jsonb),
   ('33333333-0000-4000-8000-000000000003', 'program-client@example.test', '{}'::jsonb),
-  ('44444444-0000-4000-8000-000000000004', 'program-outsider@example.test', '{}'::jsonb);
+  ('44444444-0000-4000-8000-000000000004', 'program-outsider@example.test', '{}'::jsonb),
+  ('55555555-0000-4000-8000-000000000005', 'engine-client@example.test', '{}'::jsonb),
+  ('66666666-0000-4000-8000-000000000006', 'manual-client@example.test', '{}'::jsonb),
+  ('77777777-0000-4000-8000-000000000007', 'clone-client@example.test', '{}'::jsonb);
 INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
   ('11111111-0000-4000-8000-000000000001', 'https://example.test/owner.webp', TRUE, 'active'),
   ('22222222-0000-4000-8000-000000000002', 'https://example.test/other.webp', TRUE, 'active'),
   ('33333333-0000-4000-8000-000000000003', 'https://example.test/client.webp', TRUE, 'active'),
-  ('44444444-0000-4000-8000-000000000004', 'https://example.test/outsider.webp', TRUE, 'active');
+  ('44444444-0000-4000-8000-000000000004', 'https://example.test/outsider.webp', TRUE, 'active'),
+  ('55555555-0000-4000-8000-000000000005', 'https://example.test/engine.webp', TRUE, 'active'),
+  ('66666666-0000-4000-8000-000000000006', 'https://example.test/manual.webp', TRUE, 'active'),
+  ('77777777-0000-4000-8000-000000000007', 'https://example.test/clone.webp', TRUE, 'active');
 INSERT INTO public.trainer_applications (id, user_id) VALUES
   ('11111111-0000-4000-8000-000000000011', '11111111-0000-4000-8000-000000000001'),
   ('22222222-0000-4000-8000-000000000012', '22222222-0000-4000-8000-000000000002');
@@ -87,6 +93,46 @@ INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_pe
 VALUES ('22222222-0000-4000-8000-000000000052', '22222222-0000-4000-8000-000000000002', 'Other template', 1);
 INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status)
 VALUES ('11111111-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '33333333-0000-4000-8000-000000000003', 'active');
+-- Three isolated clients exercise the real lifecycle RPCs against a genuine
+-- professional plan instead of a test-only quota shortcut.
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('55555555-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '55555555-0000-4000-8000-000000000005', 'active'),
+  ('66666666-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '66666666-0000-4000-8000-000000000006', 'active'),
+  ('77777777-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '77777777-0000-4000-8000-000000000007', 'active');
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, source_template_id) VALUES
+  ('55555555-0000-4000-8000-000000000071', '55555555-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000001', '55555555-0000-4000-8000-000000000005', '11111111-0000-4000-8000-000000000051'),
+  ('66666666-0000-4000-8000-000000000071', '66666666-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000001', '66666666-0000-4000-8000-000000000006', '11111111-0000-4000-8000-000000000051'),
+  ('77777777-0000-4000-8000-000000000071', '77777777-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000001', '77777777-0000-4000-8000-000000000007', '11111111-0000-4000-8000-000000000051');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, materialized_plan_id) VALUES
+  ('55555555-0000-4000-8000-000000000081', '55555555-0000-4000-8000-000000000071', 1, '{"schemaVersion":1}', '55555555-0000-4000-8000-000000000091'),
+  ('66666666-0000-4000-8000-000000000081', '66666666-0000-4000-8000-000000000071', 1, '{"schemaVersion":1}', '66666666-0000-4000-8000-000000000091'),
+  ('77777777-0000-4000-8000-000000000081', '77777777-0000-4000-8000-000000000071', 1, '{"schemaVersion":1}', '77777777-0000-4000-8000-000000000091');
+INSERT INTO public.workout_plans (id,user_id,name,family_id,source_type,library_slot,prescription_locked,trainer_relationship_id,trainer_assignment_id,trainer_assignment_version_id) VALUES
+  ('55555555-0000-4000-8000-000000000091','55555555-0000-4000-8000-000000000005','Pro engine',gen_random_uuid(),'trainer_assigned','professional',TRUE,'55555555-0000-4000-8000-000000000061','55555555-0000-4000-8000-000000000071','55555555-0000-4000-8000-000000000081'),
+  ('66666666-0000-4000-8000-000000000091','66666666-0000-4000-8000-000000000006','Pro manual',gen_random_uuid(),'trainer_assigned','professional',TRUE,'66666666-0000-4000-8000-000000000061','66666666-0000-4000-8000-000000000071','66666666-0000-4000-8000-000000000081'),
+  ('77777777-0000-4000-8000-000000000091','77777777-0000-4000-8000-000000000007','Pro clone',gen_random_uuid(),'trainer_assigned','professional',TRUE,'77777777-0000-4000-8000-000000000061','77777777-0000-4000-8000-000000000071','77777777-0000-4000-8000-000000000081');
+SET CONSTRAINTS ALL IMMEDIATE;
+INSERT INTO public.workout_plans (user_id,name,family_id) VALUES
+  ('55555555-0000-4000-8000-000000000005','Engine personal',gen_random_uuid()),
+  ('66666666-0000-4000-8000-000000000006','Manual personal',gen_random_uuid()),
+  ('77777777-0000-4000-8000-000000000007','Clone personal',gen_random_uuid());
+INSERT INTO public.posts (id,user_id,routine_snapshot) VALUES ('77777777-0000-4000-8000-000000000101','11111111-0000-4000-8000-000000000001','{"name":"Shared","workouts":[{"name":"Day","exercises":[]}]}');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '55555555-0000-4000-8000-000000000005', true); SELECT set_config('request.jwt.claim.role', 'authenticated', true); SET LOCAL ROLE authenticated;
+SELECT lives_ok($$SELECT public.create_engine_plan_v2('{"display_name":"Engine","days":[{"display_name":"Day","day_of_week":1,"day_number":1,"estimated_duration_minutes":30,"exercises":[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets":1,"reps":1,"rest_seconds":0}]}]}'::jsonb,'{}',1,'first_plan',NULL,'55555555-0000-4000-8000-000000000111')$$,'engine creates a second personal family beside a professional plan');
+SELECT throws_ok($$SELECT public.create_engine_plan_v2('{"display_name":"Third","days":[{"display_name":"Day","day_of_week":1,"day_number":1,"estimated_duration_minutes":30,"exercises":[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets":1,"reps":1,"rest_seconds":0}]}]}'::jsonb,'{}',1,'first_plan',NULL,'55555555-0000-4000-8000-000000000112')$$,'PLAN_FAMILY_LIMIT: free plan family limit reached','engine rejects a third personal family');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '66666666-0000-4000-8000-000000000006', true); SELECT set_config('request.jwt.claim.role', 'authenticated', true); SET LOCAL ROLE authenticated;
+SELECT lives_ok($$SELECT public.create_manual_plan_atomic('{"name":"Manual"}'::jsonb,'[{"name":"Day","day_of_week":1,"order_in_plan":1}]'::jsonb,FALSE)$$,'manual creates a second personal family beside a professional plan');
+SELECT throws_ok($$SELECT public.create_manual_plan_atomic('{"name":"Third"}'::jsonb,'[{"name":"Day","day_of_week":1,"order_in_plan":1}]'::jsonb,FALSE)$$,'PLAN_FAMILY_LIMIT: free plan family limit reached','manual rejects a third personal family');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '77777777-0000-4000-8000-000000000007', true); SELECT set_config('request.jwt.claim.role', 'authenticated', true); SET LOCAL ROLE authenticated;
+SELECT lives_ok($$SELECT public.clone_plan_from_post_atomic('77777777-0000-4000-8000-000000000101')$$,'clone creates a second personal family beside a professional plan');
+SELECT throws_ok($$SELECT public.clone_plan_from_post_atomic('77777777-0000-4000-8000-000000000101')$$,'PLAN_FAMILY_LIMIT: free plan family limit reached','clone rejects a third personal family');
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 SELECT throws_ok(
   $$INSERT INTO public.trainer_plan_assignments (relationship_id, trainer_user_id, client_user_id, source_template_id)
     VALUES ('11111111-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000001', '33333333-0000-4000-8000-000000000003', '22222222-0000-4000-8000-000000000052')$$,
@@ -102,6 +148,7 @@ VALUES ('11111111-0000-4000-8000-000000000071', '11111111-0000-4000-8000-0000000
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status)
 VALUES ('11111111-0000-4000-8000-000000000081', '11111111-0000-4000-8000-000000000071', 1, '{"schemaVersion":1}'::jsonb, 'active');
 UPDATE public.trainer_plan_assignments SET active_version_id = '11111111-0000-4000-8000-000000000081' WHERE id = '11111111-0000-4000-8000-000000000071';
+SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.workout_plans (
   id, user_id, name, family_id, source_type, library_slot, prescription_locked,
   trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id
@@ -199,7 +246,7 @@ RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
-SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 1::bigint, 'trainer participant can read assignment');
+SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 4::bigint, 'trainer participant can read every assigned client');
 RESET ROLE;
 
 SELECT set_config('request.jwt.claim.sub', '33333333-0000-4000-8000-000000000003', true);
