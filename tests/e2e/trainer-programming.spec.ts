@@ -64,6 +64,18 @@ test('trainer programming keeps immutable prescriptions across acceptance, revis
 
   const saved = await fixture.saveAuthorizedSessionWithActualResults(authorizationA)
   expect(saved.inserted).toBe(true)
+  expect(saved.retryProgressLogId).toBe(saved.progressLogId)
+  expect(saved.retryInserted).toBe(false)
+  expect(saved.progressLogCount).toBe(1)
+  expect(saved.exerciseLogCount).toBe(2)
+  expect(saved.consumedAtAfterRetry).toBe(saved.consumedAtBeforeRetry)
+  expect(saved.actualResult).toEqual({
+    setsCompleted: 2,
+    repsCompleted: [8, 9],
+    weightsKg: [42.5, 45],
+    rpeValues: [7, 8],
+    notes: 'Resultado real',
+  })
   expect(saved.skipNote).toBe('Saltado: dolor localizado.')
 
   await fixture.moveToDifferentPolicyDate()

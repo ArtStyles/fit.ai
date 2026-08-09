@@ -100,6 +100,20 @@ export type TrainerProgrammingFixture = TrainerRelationshipsFixture & {
   }>
   saveAuthorizedSessionWithActualResults(authorization: TrainerProgrammingAuthorization): Promise<{
     inserted: boolean
+    progressLogId: string
+    retryProgressLogId: string
+    retryInserted: boolean
+    progressLogCount: number
+    exerciseLogCount: number
+    consumedAtBeforeRetry: string | null
+    consumedAtAfterRetry: string | null
+    actualResult: {
+      setsCompleted: number
+      repsCompleted: number[]
+      weightsKg: number[]
+      rpeValues: number[]
+      notes: string | null
+    }
     skipNote: string | null
   }>
   moveToDifferentPolicyDate(): Promise<void>
@@ -681,7 +695,7 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
           .select('exercise_id').eq('workout_id', authorization.workoutId).order('order_index')
         assertNoError(rowsError, 'Reading professional prescription exercises')
         if (!rows || rows.length < 2) throw new Error('Professional execution fixture requires two prescribed exercises')
-        const saved = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', {
+        const payload = {
           p_client_session_id: authorization.clientSessionId,
           p_workout_id: authorization.workoutId,
           p_completed_at: new Date().toISOString(), p_duration_minutes: 32, p_mood_rating: 4,
@@ -690,13 +704,52 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
             { exercise_id: rows[1].exercise_id, sets_completed: 0, reps_completed: [], weights_kg: [], rpe_values: [], duration_seconds: null, notes: null, skip_reason: 'dolor localizado' },
           ],
           p_result_snapshot: { version: 1, prs: [], progressions: [] },
-        })
+        }
+        const saved = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', payload)
         assertNoError(saved.error, 'Saving professional session with actual results')
         const row = requireRpcRow<{ progress_log_id: string; inserted: boolean }>(saved.data, 'Saving professional session')
-        const { data: skipped, error: skippedError } = await (fixture.service.from('exercise_logs') as any)
-          .select('notes').eq('progress_log_id', row.progress_log_id).eq('exercise_id', rows[1].exercise_id).maybeSingle()
-        assertNoError(skippedError, 'Reading skipped professional exercise evidence')
-        return { inserted: row.inserted === true, skipNote: skipped?.notes ?? null }
+        const { data: authorizationBeforeRetry, error: authorizationBeforeRetryError } = await (fixture.service.from('session_authorizations') as any)
+          .select('consumed_at').eq('client_session_id', authorization.clientSessionId).eq('user_id', fixture.client.id).maybeSingle()
+        assertNoError(authorizationBeforeRetryError, 'Reading consumed professional authorization before retry')
+        if (!authorizationBeforeRetry?.consumed_at) throw new Error('Professional session save did not consume its authorization')
+
+        const retry = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', payload)
+        assertNoError(retry.error, 'Retrying professional session with the same client session id')
+        const retryRow = requireRpcRow<{ progress_log_id: string; inserted: boolean }>(retry.data, 'Retrying professional session')
+
+        const [{ data: authorizationAfterRetry, error: authorizationAfterRetryError }, { count: progressLogCount, error: progressCountError }, { data: exerciseLogs, error: exerciseLogsError }] = await Promise.all([
+          (fixture.service.from('session_authorizations') as any)
+            .select('consumed_at').eq('client_session_id', authorization.clientSessionId).eq('user_id', fixture.client.id).maybeSingle(),
+          (fixture.service.from('progress_logs') as any)
+            .select('id', { count: 'exact', head: true }).eq('user_id', fixture.client.id).eq('client_session_id', authorization.clientSessionId),
+          (fixture.service.from('exercise_logs') as any)
+            .select('exercise_id, sets_completed, reps_completed, weights_kg, rpe_values, notes').eq('progress_log_id', row.progress_log_id),
+        ])
+        assertNoError(authorizationAfterRetryError, 'Reading consumed professional authorization after retry')
+        assertNoError(progressCountError, 'Counting idempotent professional progress logs')
+        assertNoError(exerciseLogsError, 'Reading persisted professional exercise evidence')
+        const actual = (exerciseLogs ?? []).find((entry: any) => entry.exercise_id === rows[0].exercise_id)
+        const skipped = (exerciseLogs ?? []).find((entry: any) => entry.exercise_id === rows[1].exercise_id)
+        if (!actual || !skipped) throw new Error('Professional session evidence rows were not persisted exactly once')
+        const numeric = (value: unknown): number[] => Array.isArray(value) ? value.map(Number) : []
+        return {
+          inserted: row.inserted === true,
+          progressLogId: row.progress_log_id,
+          retryProgressLogId: retryRow.progress_log_id,
+          retryInserted: retryRow.inserted === true,
+          progressLogCount: progressLogCount ?? 0,
+          exerciseLogCount: exerciseLogs?.length ?? 0,
+          consumedAtBeforeRetry: authorizationBeforeRetry.consumed_at,
+          consumedAtAfterRetry: authorizationAfterRetry?.consumed_at ?? null,
+          actualResult: {
+            setsCompleted: Number(actual.sets_completed),
+            repsCompleted: numeric(actual.reps_completed),
+            weightsKg: numeric(actual.weights_kg),
+            rpeValues: numeric(actual.rpe_values),
+            notes: actual.notes ?? null,
+          },
+          skipNote: skipped.notes ?? null,
+        }
       },
       async moveToDifferentPolicyDate() {
         const { error } = await (fixture.service.from('profiles') as any).update({ timezone: revisionTimeZone }).eq('id', fixture.client.id)
