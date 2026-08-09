@@ -14,6 +14,8 @@ describe('trainer insights migration', () => {
     expect(migration).toMatch(/'activeClients'/)
     expect(migration).toMatch(/'pausedRelationships'/)
     expect(migration).toMatch(/'averageRpe'[\s\S]+?AVG\(/)
+    expect(migration).toMatch(/'lastProfessionalEvidenceAt'/)
+    expect(migration).not.toMatch(/lastPrescribedSessionAt|last_prescribed_session_at/i)
   })
 
   it('keeps weekly adherence evidence separate from a seven-day local activity-alert window', () => {

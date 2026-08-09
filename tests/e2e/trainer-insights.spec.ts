@@ -67,6 +67,7 @@ test('trainer insights shows only consent-bound prescribed evidence and cuts it 
   await page.goto('/coach/clients')
   const clientLink = page.locator(`a[href="/coach/clients/${fixture.client.id}"]`)
   await expect(clientLink).toBeVisible()
+  await expect(page.getByText(/Última evidencia profesional:/)).toBeVisible()
   await clientLink.click()
   await expect(page.getByRole('heading', { name: 'E2E client', exact: true })).toBeVisible()
   await expect(page.getByText(/Vista de solo lectura/)).toBeVisible()

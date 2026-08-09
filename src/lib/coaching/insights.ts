@@ -17,7 +17,7 @@ export type CoachClientSummary = {
   avatarUrl: string | null
   timeZone: string
   status: 'active'
-  lastPrescribedSessionAt: string | null
+  lastProfessionalEvidenceAt: string | null
   adherence: TrainerAdherence
   alerts: OperationalAlert[]
 }
@@ -169,24 +169,14 @@ function parseClient(value: unknown, now: string): CoachClientSummary {
     ...session,
     prescribed: alertMatches.has(session.id),
   }))
-  const latestCanonicalAlertValue = canonicalAlertSessions
-    .filter(session => session.prescribed)
-    .sort((left, right) => new Date(left.completedAt).getTime() - new Date(right.completedAt).getTime() || left.id.localeCompare(right.id))
-    .at(-1)?.completedAt ?? null
-  const latestCanonicalAlert = latestCanonicalAlertValue instanceof Date
-    ? latestCanonicalAlertValue.toISOString()
-    : latestCanonicalAlertValue
-  const projectedLastSessionAt = dateOrNull(value.lastPrescribedSessionAt)
-  const lastPrescribedSessionAt = projectedLastSessionAt !== null && localDate(projectedLastSessionAt, timeZone) >= alertStartDate
-    ? latestCanonicalAlert
-    : projectedLastSessionAt
+  const lastProfessionalEvidenceAt = dateOrNull(value.lastProfessionalEvidenceAt)
   return {
     clientId,
     fullName: nullableString(client.fullName),
     avatarUrl: nullableString(client.avatarUrl),
     timeZone,
     status: 'active',
-    lastPrescribedSessionAt,
+    lastProfessionalEvidenceAt,
     adherence,
     alerts: deriveOperationalAlerts({
       adherence,
@@ -210,7 +200,7 @@ export function adaptCoachClientsSummary(payload: unknown, now: Date | string = 
     counts,
     clients: clients.sort((left, right) =>
       right.alerts.length - left.alerts.length
-      || (right.lastPrescribedSessionAt ?? '').localeCompare(left.lastPrescribedSessionAt ?? '')
+      || (right.lastProfessionalEvidenceAt ?? '').localeCompare(left.lastProfessionalEvidenceAt ?? '')
       || left.clientId.localeCompare(right.clientId),
     ),
   }

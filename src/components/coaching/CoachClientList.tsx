@@ -6,8 +6,8 @@ import { useState } from 'react'
 import type { CoachClientSummary } from '@/lib/coaching/insights'
 import { trackEvent } from '@/lib/analytics/events'
 
-function sessionDate(value: string | null, timeZone: string) {
-  if (!value) return 'Aún no hay sesión prescrita registrada'
+function evidenceDate(value: string | null, timeZone: string) {
+  if (!value) return 'Aún no hay evidencia profesional registrada'
   return new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeZone }).format(new Date(value))
 }
 
@@ -43,7 +43,7 @@ export function CoachClientList({ clients }: { clients: readonly CoachClientSumm
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="font-semibold text-foreground">{client.fullName ?? 'Cliente'}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Última sesión prescrita: {sessionDate(client.lastPrescribedSessionAt, client.timeZone)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Última evidencia profesional: {evidenceDate(client.lastProfessionalEvidenceAt, client.timeZone)}</p>
           </div>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </div>

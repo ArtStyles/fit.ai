@@ -133,7 +133,7 @@ BEGIN
         WHERE progress_log.user_id = relationship.client_user_id
           AND assignment.relationship_id = relationship.id
           AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
-      ) AS last_prescribed_session_at,
+      ) AS last_professional_evidence_at,
        (
          SELECT jsonb_build_object(
            'rangeStart', week_window.start_date,
@@ -248,9 +248,9 @@ BEGIN
           'timezone', row.timezone
         ),
         'activeAssignmentVersionId', row.active_version_id,
-        'lastPrescribedSessionAt', row.last_prescribed_session_at,
+        'lastProfessionalEvidenceAt', row.last_professional_evidence_at,
          'adherenceInput', row.adherence_input
-      ) ORDER BY row.last_prescribed_session_at DESC NULLS LAST, row.started_at DESC, row.client_id), '[]'::JSONB)
+      ) ORDER BY row.last_professional_evidence_at DESC NULLS LAST, row.started_at DESC, row.client_id), '[]'::JSONB)
       FROM client_rows AS row
     )
   ) INTO v_result

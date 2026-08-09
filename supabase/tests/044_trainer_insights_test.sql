@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(44);
+SELECT plan(45);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('f4000000-0000-4000-8000-000000000001', 'insights-trainer@example.test', '{}'::JSONB),
@@ -120,6 +120,11 @@ SELECT is(
   (SELECT public.get_coach_clients_summary()->'counts'->>'activeClients'),
   '1',
   'summary exposes active and consented client counts without paused client detail'
+);
+SELECT ok(
+  (SELECT public.get_coach_clients_summary()->'clients'->0 ? 'lastProfessionalEvidenceAt'
+    AND NOT (public.get_coach_clients_summary()->'clients'->0 ? 'lastPrescribedSessionAt')),
+  'summary names the authorized maximum as professional evidence rather than a prescribed claimant'
 );
 SELECT ok(
   (SELECT (public.get_coach_clients_summary()->'clients'->0->'adherenceInput'->'sessions'->0->>'averageRpe')::NUMERIC BETWEEN 7.6 AND 7.7),

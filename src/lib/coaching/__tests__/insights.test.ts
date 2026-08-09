@@ -13,7 +13,7 @@ function payload(overrides: Record<string, unknown> = {}) {
         startedAt: '2026-07-01T10:00:00.000Z',
         client: { id: 'client-a', fullName: 'Actividad reciente', avatarUrl: null, timezone: 'America/Havana' },
         activeAssignmentVersionId: 'version-a',
-        lastPrescribedSessionAt: '2026-08-04T10:00:00.000Z',
+        lastProfessionalEvidenceAt: '2026-08-04T10:00:00.000Z',
         adherenceInput: {
           rangeStart: '2026-08-03', rangeEnd: '2026-08-10',
           versions: [{ id: 'version-a', effectiveFrom: '2026-07-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-a', isoDay: 1 }] }],
@@ -26,7 +26,7 @@ function payload(overrides: Record<string, unknown> = {}) {
         startedAt: '2026-06-01T10:00:00.000Z',
         client: { id: 'client-b', fullName: 'Requiere atención', avatarUrl: null, timezone: 'America/Havana' },
         activeAssignmentVersionId: 'version-b',
-        lastPrescribedSessionAt: '2026-08-01T10:00:00.000Z',
+        lastProfessionalEvidenceAt: '2026-08-01T10:00:00.000Z',
         adherenceInput: {
           rangeStart: '2026-07-20', rangeEnd: '2026-08-10',
           versions: [{ id: 'version-b', effectiveFrom: '2026-06-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-b', isoDay: 1 }] }],
@@ -82,7 +82,7 @@ describe('adaptCoachClientsSummary', () => {
         startedAt: '2026-07-01T10:00:00.000Z',
         client: { id: 'client-alert-window', fullName: 'Actividad domingo', avatarUrl: null, timezone: 'America/Havana' },
         activeAssignmentVersionId: 'version-alert-window',
-        lastPrescribedSessionAt: '2026-08-09T10:00:00.000Z',
+        lastProfessionalEvidenceAt: '2026-08-09T10:00:00.000Z',
         adherenceInput: {
           rangeStart: '2026-08-10T04:00:00.000Z', rangeEnd: '2026-08-10T04:00:00.000Z',
           versions: [{ id: 'version-alert-window', effectiveFrom: '2026-07-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-alert-window', isoDay: 1 }] }],
@@ -103,7 +103,7 @@ describe('adaptCoachClientsSummary', () => {
         startedAt: '2026-07-01T10:00:00.000Z',
         client: { id: 'client-local-monday', fullName: 'Lunes local', avatarUrl: null, timezone: 'America/Havana' },
         activeAssignmentVersionId: 'version-local-monday',
-        lastPrescribedSessionAt: null,
+        lastProfessionalEvidenceAt: null,
         adherenceInput: {
           rangeStart: '2026-08-10', rangeEnd: '2026-08-10',
           versions: [{ id: 'version-local-monday', effectiveFrom: '2026-07-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-local-monday', isoDay: 1 }] }],
@@ -123,7 +123,7 @@ describe('adaptCoachClientsSummary', () => {
         startedAt: '2026-07-01T10:00:00.000Z',
         client: { id: 'client-canonical-alerts', fullName: 'Alertas canónicas', avatarUrl: null, timezone: 'America/Havana' },
         activeAssignmentVersionId: 'version-canonical-alerts',
-        lastPrescribedSessionAt: '2026-08-07T10:00:00.000Z',
+        lastProfessionalEvidenceAt: '2026-08-07T10:00:00.000Z',
         adherenceInput: {
           rangeStart: '2026-08-10', rangeEnd: '2026-08-10',
           versions: [{ id: 'version-canonical-alerts', effectiveFrom: '2026-07-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-canonical-alerts', isoDay: 1 }] }],
@@ -139,6 +139,12 @@ describe('adaptCoachClientsSummary', () => {
 
     expect(summary.clients[0]?.alerts.map(alert => alert.code)).not.toContain('repeated_high_rpe')
     expect(summary.clients[0]?.alerts.map(alert => alert.code)).not.toContain('no_recent_prescribed_activity')
-    expect(summary.clients[0]?.lastPrescribedSessionAt).toBe('2026-08-05T10:00:00.000Z')
+    expect(summary.clients[0]?.lastProfessionalEvidenceAt).toBe('2026-08-07T10:00:00.000Z')
+  })
+
+  it('keeps professional additional evidence older than seven days under the accurate contract', () => {
+    const summary = adaptCoachClientsSummary(payload(), NOW)
+
+    expect(summary.clients.find(client => client.clientId === 'client-b')?.lastProfessionalEvidenceAt).toBe('2026-08-01T10:00:00.000Z')
   })
 })
