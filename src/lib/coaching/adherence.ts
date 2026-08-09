@@ -125,7 +125,7 @@ function offsetMilliseconds(date: Date, timeZone: string): number {
   return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - date.getTime()
 }
 
-function localDayStart(date: string, timeZone: string): Date | null {
+export function localCalendarDayStart(date: string, timeZone: string): Date | null {
   const parts = dateOnlyParts(date)
   if (!parts) return null
   const guess = Date.UTC(parts.year, parts.month - 1, parts.day)
@@ -134,7 +134,7 @@ function localDayStart(date: string, timeZone: string): Date | null {
 }
 
 function instantForWindow(value: InstantInput, timeZone: string): Date | null {
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return localDayStart(value, timeZone)
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return localCalendarDayStart(value, timeZone)
   return asDate(value)
 }
 
@@ -143,7 +143,7 @@ function versionForLocalDay(
   versions: readonly AssignmentVersionWindow[],
   timeZone: string,
 ): AssignmentVersionWindow | null {
-  const dayStart = localDayStart(localDate, timeZone)
+  const dayStart = localCalendarDayStart(localDate, timeZone)
   if (!dayStart) return null
   const candidates = versions.filter(version => {
     const from = instantForWindow(version.effectiveFrom, timeZone)
@@ -179,7 +179,7 @@ export function buildPrescribedOccurrences(input: {
   const lastDate = [rangeEnd, today].sort()[0]
   const occurrences: PrescribedOccurrence[] = []
   for (let date = rangeStart; date <= lastDate; date = addCalendarDays(date, 1)) {
-    const dayStart = localDayStart(date, timeZone)
+    const dayStart = localCalendarDayStart(date, timeZone)
     if (!dayStart || (relationshipEndedAt !== null && dayStart >= relationshipEndedAt)) continue
     const version = versionForLocalDay(date, input.versions, timeZone)
     if (!version) continue
