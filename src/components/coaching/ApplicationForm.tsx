@@ -376,7 +376,7 @@ export function ApplicationForm({
               {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
               {saving ? 'Guardando…' : 'Guardar borrador'}
             </button>
-            <button type="button" onClick={() => void reviewApplication()} disabled={saving || submitting} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
+            <button type="button" onClick={() => void reviewApplication()} disabled={saving || submitting} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
               <Send className="h-4 w-4" aria-hidden="true" /> Revisar y enviar
             </button>
           </div>
@@ -415,7 +415,7 @@ export function ApplicationForm({
           </dl>
           <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setPhase('editing')} disabled={submitting} className="min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Volver a editar</button>
-            <button type="button" onClick={() => void confirmSubmission()} disabled={!applicationId || submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
+            <button type="button" onClick={() => void confirmSubmission()} disabled={!applicationId || submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               {submitting ? 'Enviando…' : 'Confirmar y enviar'}
             </button>

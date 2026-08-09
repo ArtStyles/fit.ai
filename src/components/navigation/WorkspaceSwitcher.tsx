@@ -45,7 +45,7 @@ export function WorkspaceSwitcher({ workspace, variant }: WorkspaceSwitcherProps
                 value={option}
                 aria-pressed={selected}
                 className={cn(
-                  'min-h-10 w-full rounded-lg px-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring',
+                  'min-h-11 w-full rounded-lg px-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring',
                   selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
                 )}
               >

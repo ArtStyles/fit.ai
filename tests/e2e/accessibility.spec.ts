@@ -1,7 +1,10 @@
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
-import { expectNoHorizontalOverflow } from './helpers/acceptance'
+import {
+  auditCriticalAndSeriousAccessibility,
+  expectActionTargetsAtLeast44,
+  expectNoHorizontalOverflow,
+} from './helpers/acceptance'
 import { resetAndSignInAsE2EUser, signInAsE2EUser } from './helpers/auth'
 import { seedCoreProductFixture, seedCoreProgressHistory } from './helpers/core-product'
 
@@ -9,8 +12,7 @@ test.describe.configure({ mode: 'serial' })
 
 async function auditCurrentPage(page: Page) {
   await expect(page.locator('main')).toBeVisible()
-  const result = await new AxeBuilder({ page }).analyze()
-  expect(result.violations.filter(v => ['critical', 'serious'].includes(v.impact ?? ''))).toEqual([])
+  await auditCriticalAndSeriousAccessibility(page)
   await expectNoHorizontalOverflow(page)
 }
 
@@ -35,46 +37,6 @@ async function gotoAuthenticatedRoute(page: Page, path: string) {
     await signInAsE2EUser(page)
     await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 90_000 })
   }
-}
-
-async function expectTouchTargetsAtLeast44(page: Page) {
-  const failures = await page.evaluate(() => {
-    const selectors = [
-      'button',
-      'a[href]',
-      'input:not([type="hidden"])',
-      'select',
-      'textarea',
-      'summary',
-      '[role="button"]',
-      '[role="link"]',
-      '[role="tab"]',
-    ].join(',')
-
-    return Array.from(document.querySelectorAll<HTMLElement>(selectors))
-      .filter(element => {
-        const style = window.getComputedStyle(element)
-        const rect = element.getBoundingClientRect()
-        return style.display !== 'none' &&
-          style.visibility !== 'hidden' &&
-          !element.classList.contains('sr-only') &&
-          Number(style.opacity) !== 0 &&
-          rect.width > 0 &&
-          rect.height > 0
-      })
-      .map(element => {
-        const rect = element.getBoundingClientRect()
-        return {
-          label: element.getAttribute('aria-label') ?? element.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) ?? element.tagName,
-          tag: element.tagName.toLowerCase(),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        }
-      })
-      .filter(target => target.width < 44 || target.height < 44)
-  })
-
-  expect(failures).toEqual([])
 }
 
 for (const path of [
@@ -175,7 +137,7 @@ test('authenticated core routes meet route-level accessibility acceptance', asyn
     }
     await expectVisiblePrimaryAction(page, route.primary)
     if (route.namedMain) await expectNamedMain(page)
-    await expectTouchTargetsAtLeast44(page)
+    await expectActionTargetsAtLeast44(page)
     await auditCurrentPage(page)
   }
 })

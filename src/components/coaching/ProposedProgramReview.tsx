@@ -59,7 +59,7 @@ export function ProposedProgramReview({ proposal }: { proposal: ProposedProgramR
       <p>Al aceptar, esta será tu rutina principal. Podrás ejecutarla y registrar resultados, pero no modificar sus ejercicios ni indicaciones.</p>
       {error ? <p role="alert" className="mt-2 text-red-300">{error}</p> : null}
       {accepted ? <p role="status" className="mt-2 text-emerald-300">Rutina activada. Actualizando tu plan…</p> : null}
-      <button type="button" onClick={accept} disabled={isAccepting || accepted} className="mt-3 rounded-lg bg-violet-500 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+      <button type="button" onClick={accept} disabled={isAccepting || accepted} className="mt-3 min-h-11 rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
         {isAccepting ? 'Activando…' : accepted ? 'Rutina activada' : 'Aceptar rutina'}
       </button>
     </div>

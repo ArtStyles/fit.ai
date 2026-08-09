@@ -136,7 +136,7 @@ export function ApplicationTimeline({
                   href={actionableInterviewUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+                  className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
                 >
                   Abrir enlace seguro <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 </a>
