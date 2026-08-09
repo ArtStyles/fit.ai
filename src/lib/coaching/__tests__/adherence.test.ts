@@ -149,6 +149,43 @@ describe('calculateTrainerAdherence', () => {
       adherencePercent: 75,
     })
   })
+
+  it('matches eligible occurrences oldest first regardless of their input order', () => {
+    const unordered: PrescribedOccurrence[] = [
+      { id: 'newer', assignmentVersionId: 'v1', workoutId: 'w1', scheduledDate: '2026-05-06', graceEndsOn: '2026-05-08' },
+      { id: 'older', assignmentVersionId: 'v1', workoutId: 'w1', scheduledDate: '2026-05-04', graceEndsOn: '2026-05-06' },
+    ]
+    const sessions = [
+      { id: 'first', assignmentVersionId: 'v1', workoutId: 'w1', completedAt: '2026-05-06T10:00:00.000Z', source: 'professional' as const },
+      { id: 'second', assignmentVersionId: 'v1', workoutId: 'w1', completedAt: '2026-05-07T10:00:00.000Z', source: 'professional' as const },
+    ]
+
+    expect(calculateTrainerAdherence({ occurrences: unordered, sessions, timeZone: utc, now: '2026-05-09T12:00:00.000Z' }))
+      .toEqual({ prescribed: 2, completed: 2, missed: 0, pending: 0, adherencePercent: 100 })
+  })
+
+  it('does not count evidence completed after now', () => {
+    expect(calculateTrainerAdherence({
+      occurrences: [{ id: 'today', assignmentVersionId: 'v1', workoutId: 'w1', scheduledDate: '2026-05-04', graceEndsOn: '2026-05-06' }],
+      sessions: [{ id: 'future', assignmentVersionId: 'v1', workoutId: 'w1', completedAt: '2026-05-06T10:00:00.000Z', source: 'professional' }],
+      timeZone: utc,
+      now: '2026-05-05T12:00:00.000Z',
+    })).toEqual({ prescribed: 1, completed: 0, missed: 0, pending: 1, adherencePercent: 0 })
+  })
+
+  it('rejects an invalid IANA time zone instead of silently changing the client calendar', () => {
+    const invalid = 'Mars/Olympus'
+    expect(() => buildPrescribedOccurrences({
+      versions: [], workouts: [], timeZone: invalid,
+      rangeStart: '2026-05-01T00:00:00.000Z', rangeEnd: '2026-05-02T00:00:00.000Z', now: '2026-05-01T12:00:00.000Z',
+    })).toThrowError(new RangeError('INVALID_TIME_ZONE'))
+    expect(() => calculateTrainerAdherence({ occurrences: [], sessions: [], timeZone: invalid, now: '2026-05-01T12:00:00.000Z' }))
+      .toThrowError(new RangeError('INVALID_TIME_ZONE'))
+    expect(() => deriveOperationalAlerts({
+      adherence: { prescribed: 0, completed: 0, missed: 0, pending: 0, adherencePercent: 0 },
+      sessions: [], timeZone: invalid, now: '2026-05-01T12:00:00.000Z',
+    })).toThrowError(new RangeError('INVALID_TIME_ZONE'))
+  })
 })
 
 describe('deriveOperationalAlerts', () => {
@@ -179,5 +216,20 @@ describe('deriveOperationalAlerts', () => {
       now: '2026-05-20T12:00:00.000Z',
       sessions: [],
     }).map(alert => alert.code)).not.toContain('low_adherence')
+  })
+
+  it('ignores future session evidence for no-activity and repeated-high-RPE alerts', () => {
+    const alerts = deriveOperationalAlerts({
+      adherence: { prescribed: 2, completed: 0, missed: 2, pending: 0, adherencePercent: 0 },
+      timeZone: utc,
+      now: '2026-05-20T12:00:00.000Z',
+      relationshipStartedAt: '2026-05-01T10:00:00.000Z',
+      sessions: [
+        { id: 'future-one', assignmentVersionId: 'v1', workoutId: 'w1', completedAt: '2026-05-21T10:00:00.000Z', source: 'professional', averageRpe: 9.1 },
+        { id: 'future-two', assignmentVersionId: 'v1', workoutId: 'w2', completedAt: '2026-05-22T10:00:00.000Z', source: 'professional', averageRpe: 9.3 },
+      ],
+    })
+
+    expect(alerts.map(alert => alert.code)).toEqual(['no_recent_prescribed_activity', 'low_adherence'])
   })
 })

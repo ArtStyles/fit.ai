@@ -65,7 +65,7 @@ function validTimeZone(timeZone: string): string {
     new Intl.DateTimeFormat('en-US', { timeZone }).format()
     return timeZone
   } catch {
-    return 'UTC'
+    throw new RangeError('INVALID_TIME_ZONE')
   }
 }
 
@@ -238,6 +238,13 @@ export function calculateTrainerAdherence(input: {
   const nowDate = localDateAt(input.now, timeZone)
   if (!nowDate) return { prescribed: input.occurrences.length, completed: 0, missed: 0, pending: input.occurrences.length, adherencePercent: 0 }
   const claimedOccurrenceIds = new Set<string>()
+  const now = asDate(input.now)
+  if (!now) return { prescribed: input.occurrences.length, completed: 0, missed: 0, pending: input.occurrences.length, adherencePercent: 0 }
+  const orderedOccurrences = [...input.occurrences].sort((left, right) =>
+    left.scheduledDate.localeCompare(right.scheduledDate)
+    || left.graceEndsOn.localeCompare(right.graceEndsOn)
+    || left.id.localeCompare(right.id),
+  )
   const orderedSessions = [...input.sessions].sort((left, right) => {
     const leftAt = asDate(left.completedAt)?.getTime() ?? Number.POSITIVE_INFINITY
     const rightAt = asDate(right.completedAt)?.getTime() ?? Number.POSITIVE_INFINITY
@@ -246,9 +253,11 @@ export function calculateTrainerAdherence(input: {
 
   for (const session of orderedSessions) {
     if (session.source !== 'professional' || session.prescribed === false || !session.assignmentVersionId) continue
+    const completedAt = asDate(session.completedAt)
+    if (!completedAt || completedAt > now) continue
     const completedDate = localDateAt(session.completedAt, timeZone)
     if (!completedDate) continue
-    const occurrence = input.occurrences.find(candidate =>
+    const occurrence = orderedOccurrences.find(candidate =>
       !claimedOccurrenceIds.has(candidate.id)
       && candidate.assignmentVersionId === session.assignmentVersionId
       && candidate.workoutId === session.workoutId
@@ -286,7 +295,13 @@ export function deriveOperationalAlerts(input: {
   const now = asDate(input.now)
   if (!now) return []
   const prescribedSessions = input.sessions
-    .filter(session => session.source === 'professional' && session.prescribed !== false && asDate(session.completedAt) !== null)
+    .filter(session => {
+      const completedAt = asDate(session.completedAt)
+      return session.source === 'professional'
+        && session.prescribed !== false
+        && completedAt !== null
+        && completedAt <= now
+    })
     .sort((left, right) => (asDate(left.completedAt)?.getTime() ?? 0) - (asDate(right.completedAt)?.getTime() ?? 0) || left.id.localeCompare(right.id))
   const alerts: OperationalAlert[] = []
   const latest = prescribedSessions.at(-1)
