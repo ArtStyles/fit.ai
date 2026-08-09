@@ -18,25 +18,56 @@ type ClientInsightsAnalyticsProps = {
 
 type CoachInsightsAnalyticsProps = CoachOverviewAnalyticsProps | ClientInsightsAnalyticsProps
 
+/** Stable aggregate identity prevents equivalent parent prop objects from
+ * recording duplicate views while retaining meaningful count/period changes. */
+export function coachInsightsViewKey(props: CoachInsightsAnalyticsProps): string {
+  if (props.kind === 'overview') {
+    return `overview:${props.counts.activeClients}:${props.counts.pendingRequests}:${props.counts.pausedRelationships}`
+  }
+  return `client-insights:${props.weeks}:${props.prescribedSessionCount}:${props.evidenceSessionCount}:${props.measurementsShared}`
+}
+
 /** Sends only aggregate interaction metrics; client and relationship identifiers never enter analytics. */
 export function CoachInsightsAnalytics(props: CoachInsightsAnalyticsProps) {
+  const viewKey = coachInsightsViewKey(props)
+  const isOverview = props.kind === 'overview'
+  const activeClientCount = isOverview ? props.counts.activeClients : null
+  const pendingRequestCount = isOverview ? props.counts.pendingRequests : null
+  const pausedRelationshipCount = isOverview ? props.counts.pausedRelationships : null
+  const periodWeeks = !isOverview ? props.weeks : null
+  const prescribedSessionCount = !isOverview ? props.prescribedSessionCount : null
+  const evidenceSessionCount = !isOverview ? props.evidenceSessionCount : null
+  const measurementsShared = !isOverview ? props.measurementsShared : null
+
   useEffect(() => {
-    if (props.kind === 'overview') {
+    if (isOverview) {
+      if (activeClientCount === null || pendingRequestCount === null || pausedRelationshipCount === null) return
       void trackEvent('coach_overview_viewed', {
-        active_client_count: props.counts.activeClients,
-        pending_request_count: props.counts.pendingRequests,
-        paused_relationship_count: props.counts.pausedRelationships,
+        active_client_count: activeClientCount,
+        pending_request_count: pendingRequestCount,
+        paused_relationship_count: pausedRelationshipCount,
       })
       return
     }
 
+    if (periodWeeks === null || prescribedSessionCount === null || evidenceSessionCount === null || measurementsShared === null) return
     void trackEvent('coach_client_insights_viewed', {
-      period_weeks: props.weeks,
-      prescribed_session_count: props.prescribedSessionCount,
-      evidence_session_count: props.evidenceSessionCount,
-      measurements_shared: props.measurementsShared,
+      period_weeks: periodWeeks,
+      prescribed_session_count: prescribedSessionCount,
+      evidence_session_count: evidenceSessionCount,
+      measurements_shared: measurementsShared,
     })
-  }, [props])
+  }, [
+    viewKey,
+    isOverview,
+    activeClientCount,
+    pendingRequestCount,
+    pausedRelationshipCount,
+    evidenceSessionCount,
+    measurementsShared,
+    prescribedSessionCount,
+    periodWeeks,
+  ])
 
   return null
 }

@@ -50,6 +50,13 @@ test('trainer insights shows only consent-bound prescribed evidence and cuts it 
 
   const evidence = await fixture.prepareInsightsEvidence()
   expect(evidence.historicalProfessionalProgressLogId).not.toBe(evidence.currentProfessionalProgressLogId)
+  expect(evidence.historicalAssignmentVersionId).not.toBe(evidence.currentAssignmentVersionId)
+  const professionalSessionIds = await fixture.readProfessionalInsightSessionIds()
+  expect(professionalSessionIds).toEqual(expect.arrayContaining([
+    evidence.historicalProfessionalProgressLogId,
+    evidence.currentProfessionalProgressLogId,
+  ]))
+  expect(professionalSessionIds).not.toContain(evidence.personalProgressLogId)
 
   await page.context().clearCookies()
   await signIn(page, fixture.trainerA.email, fixture.password)
@@ -64,6 +71,11 @@ test('trainer insights shows only consent-bound prescribed evidence and cuts it 
   await expect(page.getByRole('heading', { name: 'E2E client', exact: true })).toBeVisible()
   await expect(page.getByText(/Vista de solo lectura/)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Evidencia de sesiones', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: evidence.historicalWorkoutName, exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: evidence.currentWorkoutName, exact: true })).toBeVisible()
+  await expect(page.locator('section[aria-labelledby="session-evidence-title"] article')).toHaveCount(evidence.professionalEvidenceCount)
+  await expect(page.getByText(/Sets: 2.*Reps: 8, 9.*RPE: 7, 8/)).toHaveCount(evidence.professionalEvidenceCount)
+  await expect(page.getByText(/sesiones prescritas \(/)).toBeVisible()
   await expect(page.getByText('Personal E2E session excluded from professional adherence.', { exact: true })).toHaveCount(0)
   await expect(page.locator('section[aria-labelledby="session-evidence-title"] button, section[aria-labelledby="session-evidence-title"] input, section[aria-labelledby="session-evidence-title"] textarea, section[aria-labelledby="session-evidence-title"] select')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Medidas corporales compartidas', exact: true })).toHaveCount(0)

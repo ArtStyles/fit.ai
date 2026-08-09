@@ -131,6 +131,11 @@ export type TrainerInsightsFixture = TrainerProgrammingFixture & {
     personalProgressLogId: string
     historicalProfessionalProgressLogId: string
     currentProfessionalProgressLogId: string
+    historicalAssignmentVersionId: string
+    currentAssignmentVersionId: string
+    historicalWorkoutName: string
+    currentWorkoutName: string
+    professionalEvidenceCount: number
     measurementWeightKg: number
   }>
   grantBodyMeasurements(): Promise<void>
@@ -138,6 +143,7 @@ export type TrainerInsightsFixture = TrainerProgrammingFixture & {
   endActiveRelationship(): Promise<void>
   suspendTrainer(): Promise<void>
   readClientInsightsError(): Promise<string>
+  readProfessionalInsightSessionIds(): Promise<string[]>
 }
 
 type TrainerRelationshipRows = {
@@ -533,14 +539,17 @@ export async function assertTrainerProgrammingE2EReady(): Promise<void> {
  * fixture write. The generic domain errors prove deployed RPCs without reading
  * a client row or leaking credentials into test output.
  */
-export async function assertTrainerInsightsE2EReady(): Promise<void> {
-  if (!isTrainerInsightsE2EEnabled(process.env)) {
-    throw new Error('Trainer insights E2E writes require E2E_TRAINER_INSIGHTS_ENABLED=true and dedicated-project reset acknowledgement')
-  }
+export const TRAINER_INSIGHTS_PREFLIGHT_ERROR = 'Trainer insights migrations 042, 043, and 044 must be deployed to the dedicated E2E project'
 
-  await assertTrainerProgrammingE2EReady()
-  const config = requireE2EConfig(process.env)
-  const service = adminClient(config)
+type TrainerInsightsReadOnlyClient = {
+  from(table: string): { select(columns: string): { limit(count: number): PromiseLike<{ error: QueryError }> } }
+  rpc(name: string, args?: Record<string, unknown>): PromiseLike<{ error: QueryError }>
+}
+
+type TrainerInsightsProbeResult = { tableError: QueryError; missingRpc: boolean }
+
+/** Contains the only network actions allowed before an Insights fixture write. */
+export async function probeTrainerInsightsReadOnly(service: TrainerInsightsReadOnlyClient): Promise<TrainerInsightsProbeResult> {
   const [tables, summary, detail, measurements] = await Promise.all([
     Promise.all([
       service.from('coaching_relationships').select('id, status').limit(1),
@@ -550,19 +559,60 @@ export async function assertTrainerInsightsE2EReady(): Promise<void> {
       service.from('measurements').select('id, recorded_at').limit(1),
     ]),
     service.rpc('get_coach_clients_summary'),
-    (service.rpc as any)('get_coach_client_insights', {
+    service.rpc('get_coach_client_insights', {
       p_client_id: null, p_from_date: null, p_to_date: null,
     }),
-    (service.rpc as any)('get_coach_client_measurements', {
+    service.rpc('get_coach_client_measurements', {
       p_client_id: null, p_from_date: null, p_to_date: null,
     }),
   ])
-  const tableError = tables.find(result => result.error)?.error
-  const missingRpc = [summary.error, detail.error, measurements.error].some(error =>
-    /Could not find the function|PGRST202/i.test(error?.message ?? ''))
-  if (tableError || missingRpc) {
-    throw new Error('Trainer insights migrations 042, 043, and 044 must be deployed to the dedicated E2E project')
+  return {
+    tableError: tables.find(result => result.error)?.error ?? null,
+    missingRpc: [summary.error, detail.error, measurements.error].some(error =>
+      /Could not find the function|PGRST202/i.test(error?.message ?? '')),
   }
+}
+
+/** Normalizes every incomplete 042–044 deployment into one safe, actionable error. */
+export async function assertTrainerInsightsSchemaReady(dependencies: {
+  assertPrerequisites: () => Promise<void>
+  probeReadOnly: () => Promise<TrainerInsightsProbeResult>
+}): Promise<void> {
+  try {
+    await dependencies.assertPrerequisites()
+    const probe = await dependencies.probeReadOnly()
+    if (probe.tableError || probe.missingRpc) throw new Error(TRAINER_INSIGHTS_PREFLIGHT_ERROR)
+  } catch {
+    throw new Error(TRAINER_INSIGHTS_PREFLIGHT_ERROR)
+  }
+}
+
+/** Preflight failure happens before seed or compensating cleanup can mutate a target. */
+export async function runTrainerInsightsFixtureAfterPreflight<T>(input: {
+  preflight: () => Promise<void>
+  seed: () => Promise<T>
+  cleanup?: () => Promise<void>
+}): Promise<T> {
+  await input.preflight()
+  try {
+    return await input.seed()
+  } catch (error) {
+    if (input.cleanup) await input.cleanup()
+    throw error
+  }
+}
+
+export async function assertTrainerInsightsE2EReady(): Promise<void> {
+  if (!isTrainerInsightsE2EEnabled(process.env)) {
+    throw new Error('Trainer insights E2E writes require E2E_TRAINER_INSIGHTS_ENABLED=true and dedicated-project reset acknowledgement')
+  }
+
+  const config = requireE2EConfig(process.env)
+  const service = adminClient(config)
+  await assertTrainerInsightsSchemaReady({
+    assertPrerequisites: assertTrainerProgrammingE2EReady,
+    probeReadOnly: () => probeTrainerInsightsReadOnly(service as unknown as TrainerInsightsReadOnlyClient),
+  })
 }
 
 function requireRpcRow<T>(data: T[] | null, operation: string): T {
@@ -724,7 +774,10 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
           .update({ name }).eq('id', latestProposal.templateId).eq('trainer_user_id', fixture.trainerA.id)
         assertNoError(changedTemplate.error, 'Updating trainer template for revision')
         const revisedDay = await (fixture.trainerA.client.from('trainer_template_workouts') as any)
-          .update({ day_of_week: templateDayForMaterializedWeekday(isoTodayForTimeZone(revisionTimeZone)) })
+          .update({
+            name: 'E2E Día profesional V2',
+            day_of_week: templateDayForMaterializedWeekday(isoTodayForTimeZone(revisionTimeZone)),
+          })
           .eq('id', latestTemplateWorkoutId).eq('template_id', latestProposal.templateId)
         assertNoError(revisedDay.error, 'Updating trainer template day for revision B')
         const published = await (fixture.trainerA.client.rpc as any)('publish_trainer_assignment_revision', {
@@ -828,8 +881,10 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
  * by the insights browser journey. It is intentionally callable only after a
  * real client acceptance, so every professional log has a consumed lease. */
 export async function seedTrainerInsightsFixture(scope: string): Promise<TrainerInsightsFixture> {
-  await assertTrainerInsightsE2EReady()
-  const fixture = await seedTrainerProgrammingFixture(scope)
+  const fixture = await runTrainerInsightsFixtureAfterPreflight({
+    preflight: assertTrainerInsightsE2EReady,
+    seed: () => seedTrainerProgrammingFixture(scope),
+  })
   return {
     ...fixture,
     async prepareInsightsEvidence() {
@@ -852,6 +907,9 @@ export async function seedTrainerInsightsFixture(scope: string): Promise<Trainer
       if (revision.versionNumber !== 2) throw new Error('Insights fixture requires a historical and a current professional version')
       const currentAuthorization = await fixture.authorizeCurrentProfessionalSession()
       const current = await fixture.saveAuthorizedSessionWithActualResults(currentAuthorization)
+      if (historicalAuthorization.assignmentVersionId === currentAuthorization.assignmentVersionId) {
+        throw new Error('Insights fixture requires distinct historical and current assignment versions')
+      }
       const measurementWeightKg = 72.4
       const { error: measurementError } = await (fixture.service.from('measurements') as any).insert({
         id: randomUUID(),
@@ -872,6 +930,11 @@ export async function seedTrainerInsightsFixture(scope: string): Promise<Trainer
         personalProgressLogId,
         historicalProfessionalProgressLogId: historical.progressLogId,
         currentProfessionalProgressLogId: current.progressLogId,
+        historicalAssignmentVersionId: historicalAuthorization.assignmentVersionId,
+        currentAssignmentVersionId: currentAuthorization.assignmentVersionId,
+        historicalWorkoutName: 'E2E Día profesional',
+        currentWorkoutName: 'E2E Día profesional V2',
+        professionalEvidenceCount: 2,
         measurementWeightKg,
       }
     },
@@ -915,6 +978,20 @@ export async function seedTrainerInsightsFixture(scope: string): Promise<Trainer
       })
       if (!result.error?.message) throw new Error('Insights read unexpectedly succeeded after access was removed')
       return result.error.message
+    },
+    async readProfessionalInsightSessionIds() {
+      const toDate = new Date().toISOString().slice(0, 10)
+      const fromDate = new Date(Date.now() - 84 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const result = await (fixture.trainerA.client.rpc as any)('get_coach_client_insights', {
+        p_client_id: fixture.client.id,
+        p_from_date: fromDate,
+        p_to_date: toDate,
+      })
+      assertNoError(result.error, 'Reading consent-bound professional Insights evidence')
+      if (!Array.isArray(result.data?.sessions) || result.data.sessions.some((session: unknown) => typeof session !== 'object' || session === null || typeof (session as { id?: unknown }).id !== 'string')) {
+        throw new Error('Insights fixture received an invalid professional evidence projection')
+      }
+      return result.data.sessions.map((session: { id: string }) => session.id)
     },
   }
 }

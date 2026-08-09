@@ -154,6 +154,31 @@ describe('POST /api/analytics', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ user_id: null }))
   })
 
+  it('stores coach aggregates without an actor identity or persistent cookie', async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null })
+    const from = vi.fn(() => ({ insert }))
+    createServiceClientMock.mockReturnValue({ from })
+
+    const response = await POST(request({
+      name: 'coach_client_insights_viewed',
+      properties: {
+        period_weeks: 4,
+        prescribed_session_count: 8,
+        evidence_session_count: 6,
+        measurements_shared: false,
+      },
+    }, { cookie: `fitai-anonymous-id=${VALID_UUID}` }))
+
+    expect(response.status).toBe(202)
+    expect(createClientMock).not.toHaveBeenCalled()
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      event_name: 'coach_client_insights_viewed',
+      user_id: null,
+      anonymous_id: '00000000-0000-4000-8000-000000000000',
+    }))
+    expect(response.headers.get('set-cookie')).toBeNull()
+  })
+
   it('sets a server-generated HttpOnly SameSite=Lax UUID cookie when absent', async () => {
     const { insert } = installSupabaseMocks({ userId: '' })
 

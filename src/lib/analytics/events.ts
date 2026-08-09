@@ -25,6 +25,11 @@ export const ANALYTICS_SCREENS = ['landing', 'register', 'onboarding'] as const
 export const ANALYTICS_DURATION_BUCKETS = ['short', 'medium', 'long'] as const
 export const ANALYTICS_INSIGHT_PERIODS = [4, 12] as const
 export const ANALYTICS_ALERT_FILTERS = ['all', 'attention'] as const
+export const COACH_AGGREGATE_EVENTS = [
+  'coach_overview_viewed',
+  'coach_client_insights_viewed',
+  'coach_alert_filter_used',
+] as const
 
 export type AnalyticsProperties = {
   locale?: (typeof ANALYTICS_LOCALES)[number]
@@ -67,6 +72,12 @@ const EVENT_NAMES = new Set<AnalyticsEventName>([
   'coach_client_insights_viewed',
   'coach_alert_filter_used',
 ])
+
+const COACH_AGGREGATE_EVENT_NAMES = new Set<AnalyticsEventName>(COACH_AGGREGATE_EVENTS)
+
+export function isCoachAggregateEvent(name: AnalyticsEventName): boolean {
+  return COACH_AGGREGATE_EVENT_NAMES.has(name)
+}
 
 const PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
   'locale',
