@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(81);
+SELECT plan(86);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -572,6 +572,55 @@ SELECT ok(NOT (SELECT (result->>'ok')::boolean FROM proposal_race_results WHERE 
 SELECT ok(NOT (SELECT (result->>'ok')::boolean FROM proposal_race_results WHERE operation = 'propose') OR ((SELECT status FROM public.coaching_relationships WHERE id = '88888888-0000-4000-8000-000000000061') = 'paused_by_platform' AND NOT EXISTS (SELECT 1 FROM public.coaching_consents WHERE relationship_id = '88888888-0000-4000-8000-000000000061' AND revoked_at IS NULL)), 'a winning proposal is immediately suspension-consistent');
 SELECT dblink_disconnect('proposal_race_propose');
 SELECT dblink_disconnect('proposal_race_suspend');
+
+-- Fixture for the notification-failure rollback test below. The real dblink
+-- acceptance race is run after this pgTAP transaction rolls back, so both
+-- independent sessions observe committed state.
+RESET ROLE;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('99999999-0000-4000-8000-000000000001', 'accept-race-trainer@example.test', '{}'::jsonb),
+  ('99999999-0000-4000-8000-000000000003', 'accept-failure-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
+  ('99999999-0000-4000-8000-000000000001', 'https://example.test/race-trainer.webp', TRUE, 'active'),
+  ('99999999-0000-4000-8000-000000000003', 'https://example.test/failure-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id) VALUES ('99999999-0000-4000-8000-000000000111', '99999999-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('99999999-0000-4000-8000-000000000121', '99999999-0000-4000-8000-000000000001', '99999999-0000-4000-8000-000000000111', 'accept-race-trainer', 'active', 'Acceptance trainer', 'Race', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('99999999-0000-4000-8000-000000000131', '99999999-0000-4000-8000-000000000121', 'Acceptance service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('99999999-0000-4000-8000-000000000142', '99999999-0000-4000-8000-000000000131', '99999999-0000-4000-8000-000000000001', '99999999-0000-4000-8000-000000000003', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('99999999-0000-4000-8000-000000000142', 'training_profile', 'training-profile-v1', '99999999-0000-4000-8000-000000000003');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active) VALUES
+  ('99999999-0000-4000-8000-000000000052', '99999999-0000-4000-8000-000000000003', 'Failure personal', gen_random_uuid(), TRUE);
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
+  ('99999999-0000-4000-8000-000000000063', '99999999-0000-4000-8000-000000000142', '99999999-0000-4000-8000-000000000001', '99999999-0000-4000-8000-000000000003', 'proposed');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  ('99999999-0000-4000-8000-000000000073', '99999999-0000-4000-8000-000000000063', 1, '{"schemaVersion":1}'::jsonb, 'proposed', '99999999-0000-4000-8000-000000000083');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
+  ('99999999-0000-4000-8000-000000000083', '99999999-0000-4000-8000-000000000003', 'Failure pro', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, '99999999-0000-4000-8000-000000000142', '99999999-0000-4000-8000-000000000063', '99999999-0000-4000-8000-000000000073');
+SET CONSTRAINTS ALL IMMEDIATE;
+
+-- A notification failure happens after the old plan would normally be
+-- deactivated. The transaction must roll every preceding mutation back.
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '99999999-0000-4000-8000-000000000003', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT set_config('app.test_fail_acceptance_notification', 'on', true);
+SELECT throws_ok(
+  $$SELECT public.accept_trainer_assignment('99999999-0000-4000-8000-000000000063', 'accept-failure-key')$$,
+  'TEST_ACCEPTANCE_NOTIFICATION_FAILURE', 'notification failure aborts acceptance after activation work begins'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+SELECT ok((SELECT is_active FROM public.workout_plans WHERE id = '99999999-0000-4000-8000-000000000052'), 'rollback restores the previous personal plan as active');
+SELECT ok(NOT (SELECT is_active FROM public.workout_plans WHERE id = '99999999-0000-4000-8000-000000000083'), 'rollback keeps the professional plan inactive');
+SELECT ok((SELECT status = 'proposed' AND accepted_at IS NULL AND acceptance_idempotency_key IS NULL FROM public.trainer_plan_assignments WHERE id = '99999999-0000-4000-8000-000000000063') AND (SELECT status = 'proposed' FROM public.trainer_assignment_versions WHERE id = '99999999-0000-4000-8000-000000000073'), 'rollback leaves assignment and version proposed without acceptance state');
+SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '99999999-0000-4000-8000-000000000063') + (SELECT count(*) FROM public.product_notifications WHERE dedupe_key = 'coaching-assignment-accepted:99999999-0000-4000-8000-000000000063'), 0::bigint, 'rollback writes no partial audit or notification');
 
 SELECT * FROM finish();
 ROLLBACK;

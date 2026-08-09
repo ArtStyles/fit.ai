@@ -57,6 +57,70 @@ CREATE TABLE public.posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_i
 CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
 `
 
+// This runs after the pgTAP transaction rolls back. dblink sessions therefore
+// observe a committed fixture, which is essential for a real acceptance race.
+const acceptanceRaceSql = `
+CREATE EXTENSION IF NOT EXISTS dblink;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('cccccccc-0000-4000-8000-000000000001', 'accept-race-trainer@example.test', '{}'::jsonb),
+  ('cccccccc-0000-4000-8000-000000000002', 'accept-race-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
+  ('cccccccc-0000-4000-8000-000000000001', 'https://example.test/race-trainer.webp', TRUE, 'active'),
+  ('cccccccc-0000-4000-8000-000000000002', 'https://example.test/race-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id) VALUES ('cccccccc-0000-4000-8000-000000000011', 'cccccccc-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('cccccccc-0000-4000-8000-000000000021', 'cccccccc-0000-4000-8000-000000000001', 'cccccccc-0000-4000-8000-000000000011', 'accept-race-trainer', 'active', 'Acceptance trainer', 'Race', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('cccccccc-0000-4000-8000-000000000031', 'cccccccc-0000-4000-8000-000000000021', 'Acceptance service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('cccccccc-0000-4000-8000-000000000041', 'cccccccc-0000-4000-8000-000000000031', 'cccccccc-0000-4000-8000-000000000001', 'cccccccc-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('cccccccc-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'cccccccc-0000-4000-8000-000000000002');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active) VALUES
+  ('cccccccc-0000-4000-8000-000000000051', 'cccccccc-0000-4000-8000-000000000002', 'Race personal', gen_random_uuid(), TRUE);
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
+  ('cccccccc-0000-4000-8000-000000000061', 'cccccccc-0000-4000-8000-000000000041', 'cccccccc-0000-4000-8000-000000000001', 'cccccccc-0000-4000-8000-000000000002', 'proposed');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  ('cccccccc-0000-4000-8000-000000000071', 'cccccccc-0000-4000-8000-000000000061', 1, '{"schemaVersion":1}'::jsonb, 'proposed', 'cccccccc-0000-4000-8000-000000000081');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
+  ('cccccccc-0000-4000-8000-000000000081', 'cccccccc-0000-4000-8000-000000000002', 'Race professional', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'cccccccc-0000-4000-8000-000000000041', 'cccccccc-0000-4000-8000-000000000061', 'cccccccc-0000-4000-8000-000000000071');
+COMMIT;
+SELECT pg_advisory_lock(hashtextextended('cccccccc-0000-4000-8000-000000000002', 0));
+SELECT dblink_connect('accept_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('accept_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('accept_a', $$SET request.jwt.claim.sub = 'cccccccc-0000-4000-8000-000000000002'$$);
+SELECT dblink_exec('accept_a', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('accept_a', 'SET ROLE authenticated');
+SELECT dblink_exec('accept_b', $$SET request.jwt.claim.sub = 'cccccccc-0000-4000-8000-000000000002'$$);
+SELECT dblink_exec('accept_b', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('accept_b', 'SET ROLE authenticated');
+SELECT dblink_exec('accept_a', $$CREATE FUNCTION pg_temp.try_accept_a() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM public.accept_trainer_assignment('cccccccc-0000-4000-8000-000000000061', 'race-key-a'); RETURN jsonb_build_object('ok', true); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok', false, 'sqlstate', SQLSTATE, 'message', SQLERRM); END; $f$;$$);
+SELECT dblink_exec('accept_b', $$CREATE FUNCTION pg_temp.try_accept_b() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM public.accept_trainer_assignment('cccccccc-0000-4000-8000-000000000061', 'race-key-b'); RETURN jsonb_build_object('ok', true); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok', false, 'sqlstate', SQLSTATE, 'message', SQLERRM); END; $f$;$$);
+SELECT dblink_send_query('accept_a', 'SELECT pg_temp.try_accept_a()');
+SELECT dblink_send_query('accept_b', 'SELECT pg_temp.try_accept_b()');
+DO $$ DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds'; BEGIN LOOP EXIT WHEN dblink_is_busy('accept_a') = 1 AND dblink_is_busy('accept_b') = 1; IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'acceptance race did not dispatch'; END IF; PERFORM pg_sleep(0.01); END LOOP; END; $$;
+SELECT pg_advisory_unlock(hashtextextended('cccccccc-0000-4000-8000-000000000002', 0));
+CREATE TEMP TABLE acceptance_race_results (result JSONB NOT NULL);
+INSERT INTO acceptance_race_results SELECT result FROM dblink_get_result('accept_a') AS response(result JSONB);
+INSERT INTO acceptance_race_results SELECT result FROM dblink_get_result('accept_b') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM acceptance_race_results WHERE result->>'sqlstate' = '40P01') <> 0 THEN RAISE EXCEPTION 'acceptance race deadlocked'; END IF;
+  IF (SELECT count(*) FROM acceptance_race_results WHERE (result->>'ok')::boolean) <> 1 THEN RAISE EXCEPTION 'acceptance race did not produce exactly one winner: %', (SELECT string_agg(result::text, ' | ') FROM acceptance_race_results); END IF;
+  IF (SELECT count(*) FROM acceptance_race_results WHERE NOT COALESCE((result->>'ok')::boolean, false) AND result->>'message' LIKE '%TRAINER_ASSIGNMENT_NOT_PROPOSED%') <> 1 THEN RAISE EXCEPTION 'acceptance race loser was not deterministically rejected: %', (SELECT string_agg(result::text, ' | ') FROM acceptance_race_results); END IF;
+  IF (SELECT count(*) FROM public.trainer_plan_assignments WHERE id = 'cccccccc-0000-4000-8000-000000000061' AND status = 'active') <> 1 THEN RAISE EXCEPTION 'acceptance race did not activate assignment'; END IF;
+  IF (SELECT count(*) FROM public.workout_plans WHERE user_id = 'cccccccc-0000-4000-8000-000000000002' AND is_active AND library_slot = 'professional') <> 1 THEN RAISE EXCEPTION 'acceptance race did not leave professional winner active'; END IF;
+  IF (SELECT is_active FROM public.workout_plans WHERE id = 'cccccccc-0000-4000-8000-000000000051') THEN RAISE EXCEPTION 'acceptance race did not preserve prior plan as inactive'; END IF;
+  IF (SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = 'cccccccc-0000-4000-8000-000000000061' AND action = 'accepted') <> 1 THEN RAISE EXCEPTION 'acceptance race audit duplication'; END IF;
+  IF (SELECT count(*) FROM public.product_notifications WHERE user_id = 'cccccccc-0000-4000-8000-000000000001' AND dedupe_key = 'coaching-assignment-accepted:cccccccc-0000-4000-8000-000000000061') <> 1 THEN RAISE EXCEPTION 'acceptance race notification duplication'; END IF;
+END;
+$$;
+SELECT dblink_disconnect('accept_a');
+SELECT dblink_disconnect('accept_b');
+`
+
 function docker(args, { input, print = true } = {}) {
   const result = spawnSync('docker', args, { cwd: repoRoot, encoding: 'utf8', input, maxBuffer: 20 * 1024 * 1024 })
   if (print) {
@@ -106,6 +170,7 @@ try {
   runPsql(readFileSync(migrationPaths[3], 'utf8'), 'reapplying migration 043 for rerunnability')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
+  runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
   process.stdout.write('\n[trainer-programming-db] PASS: migration 043 behavior and rerunnability passed\n')
 } finally {
   if (started) {

@@ -722,6 +722,10 @@ AS $$
 DECLARE
   notification public.product_notifications%ROWTYPE;
 BEGIN
+  IF current_setting('app.test_fail_acceptance_notification', true) = 'on'
+    AND p_dedupe_key LIKE 'coaching-assignment-accepted:%' THEN
+    RAISE EXCEPTION 'TEST_ACCEPTANCE_NOTIFICATION_FAILURE';
+  END IF;
   INSERT INTO public.product_notifications (user_id, type, title, body, url, payload, dedupe_key)
   VALUES (p_user_id, p_type, p_title, p_body, p_url, COALESCE(p_payload, '{}'::JSONB), p_dedupe_key)
   ON CONFLICT (user_id, dedupe_key) DO NOTHING
