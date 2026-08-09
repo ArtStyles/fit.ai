@@ -40,15 +40,15 @@ async function invokeConsentAction(
   }
 }
 
-export function grantBodyMeasurementsConsent(formData: FormData) {
+export async function grantBodyMeasurementsConsent(formData: FormData) {
   return invokeConsentAction('grant_body_measurements_consent', formData)
 }
 
-export function revokeBodyMeasurementsConsent(formData: FormData) {
+export async function revokeBodyMeasurementsConsent(formData: FormData) {
   return invokeConsentAction('revoke_body_measurements_consent', formData)
 }
 
-export function revokeTrainingProfileConsent(formData: FormData) {
+export async function revokeTrainingProfileConsent(formData: FormData) {
   return invokeConsentAction('revoke_training_profile_consent', formData)
 }
 
@@ -80,10 +80,10 @@ async function invokeRelationshipAction(
   }
 }
 
-export function endCoachingRelationship(formData: FormData) {
+export async function endCoachingRelationship(formData: FormData) {
   return invokeRelationshipAction('end_coaching_relationship', formData)
 }
 
-export function resumePausedCoachingRelationship(formData: FormData) {
+export async function resumePausedCoachingRelationship(formData: FormData) {
   return invokeRelationshipAction('resume_paused_coaching_relationship', formData)
 }
