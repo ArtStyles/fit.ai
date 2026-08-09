@@ -49,6 +49,11 @@ export function isTrainerInsightsE2EEnabled(env: NodeJS.ProcessEnv): boolean {
     && env.E2E_TRAINER_INSIGHTS_ENABLED === 'true'
 }
 
+export function isTrainerSecurityE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return isTrainerInsightsE2EEnabled(env)
+    && env.E2E_TRAINER_SECURITY_ENABLED === 'true'
+}
+
 export type TrainerRelationshipsFixture = {
   client: { id: string; email: string; client: SupabaseClient }
   trainerA: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string; professionalName: string }
@@ -80,13 +85,14 @@ type TrainerProgrammingProposal = {
   assignmentId: string
   assignmentVersionId: string
   planId: string
+  proposalIdempotencyKey: string
 }
 
 export type TrainerProgrammingFixture = TrainerRelationshipsFixture & {
   password: string
   relationshipId: string
   personalPlanId: string
-  createTemplateAndPropose(name: string): Promise<TrainerProgrammingProposal>
+  createTemplateAndPropose(name: string, idempotencyKey?: string): Promise<TrainerProgrammingProposal>
   readAcceptedAssignment(assignmentId: string): Promise<{
     planId: string
     personalPlanIsActive: boolean
@@ -690,7 +696,7 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
       password: config.password,
       relationshipId: relationship.relationshipId,
       personalPlanId,
-      async createTemplateAndPropose(name) {
+      async createTemplateAndPropose(name, requestedIdempotencyKey) {
         const templateId = randomUUID()
         const templateWorkoutId = randomUUID()
         const templateExercises = [randomUUID(), randomUUID()]
@@ -712,15 +718,16 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
           { id: templateExercises[1], template_workout_id: templateWorkoutId, exercise_id: catalog[1].id, order_index: 2, sets: 2, reps: 10, weight_kg: 20, target_rpe: 6, rest_seconds: 45, notes: 'Puede omitirse con motivo.' },
         ])
         assertNoError(createdExercises.error, 'Creating trainer template exercises')
+        const proposalIdempotencyKey = requestedIdempotencyKey ?? randomUUID()
         const proposed = await (fixture.trainerA.client.rpc as any)('propose_trainer_assignment', {
           p_relationship_id: relationship.relationshipId,
           p_template_id: templateId,
           p_change_summary: 'Primera prescripción profesional.',
-          p_idempotency_key: randomUUID(),
+          p_idempotency_key: proposalIdempotencyKey,
         })
         assertNoError(proposed.error, 'Proposing trainer assignment')
         const row = requireRpcRow<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>(proposed.data, 'Proposing trainer assignment')
-        latestProposal = { templateId, assignmentId: row.assignment_id, assignmentVersionId: row.assignment_version_id, planId: row.workout_plan_id }
+        latestProposal = { templateId, assignmentId: row.assignment_id, assignmentVersionId: row.assignment_version_id, planId: row.workout_plan_id, proposalIdempotencyKey }
         programmingPublished = true
         return latestProposal
       },
@@ -1126,7 +1133,7 @@ function templateDayForMaterializedWeekday(weekday: number): number {
   return weekday === 7 ? 1 : weekday + 1
 }
 
-function adminClient(config: E2ESeedConfig): SupabaseClient {
+export function adminClient(config: E2ESeedConfig): SupabaseClient {
   return createClient(config.supabaseUrl, config.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
@@ -1164,6 +1171,10 @@ async function firstPublicStrengthExercise(supabase: SupabaseClient): Promise<{
     muscle_groups_es: string[] | null
     is_compound: boolean | null
   }
+}
+
+export function createTrainerE2EAdminClient(): SupabaseClient {
+  return adminClient(requireE2EConfig(process.env))
 }
 
 async function publicStrengthExercises(

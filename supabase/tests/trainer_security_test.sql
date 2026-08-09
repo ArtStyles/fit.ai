@@ -1,0 +1,328 @@
+\set ON_ERROR_STOP on
+
+CREATE EXTENSION IF NOT EXISTS dblink;
+
+DO $$
+BEGIN
+  IF public.trainer_security_preflight() <> 45 THEN
+    RAISE EXCEPTION 'trainer security preflight returned the wrong migration';
+  END IF;
+END;
+$$;
+
+-- security_two_trainer_accept_a / security_two_trainer_accept_b are executed
+-- by test-trainer-relationships-db.mjs immediately before this supplemental
+-- suite. That runner uses two authenticated dblink actors and checks exactly
+-- one accepted request, one active relationship, loser cancellation and retry.
+-- Keep aliases here so the aggregate security contract names every race.
+SELECT 'security_two_trainer_accept_a' AS completed_race_actor
+UNION ALL SELECT 'security_two_trainer_accept_b';
+
+-- Shared committed fixture for the idempotent proposal and the
+-- accept/publish/suspend race. postgres seeds only the fixture/admin boundary;
+-- every operation below runs as an authenticated actor, except the explicit
+-- administrative suspension boundary.
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('76000000-0000-4000-8000-000000000001', 'security-trainer@example.test', '{}'::jsonb),
+  ('76000000-0000-4000-8000-000000000002', 'security-client@example.test', '{}'::jsonb),
+  ('76000000-0000-4000-8000-000000000003', 'security-admin@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status, is_admin) VALUES
+  ('76000000-0000-4000-8000-000000000001', 'https://example.test/security-trainer.webp', TRUE, 'active', FALSE),
+  ('76000000-0000-4000-8000-000000000002', 'https://example.test/security-client.webp', TRUE, 'active', FALSE),
+  ('76000000-0000-4000-8000-000000000003', 'https://example.test/security-admin.webp', TRUE, 'active', TRUE);
+INSERT INTO public.trainer_applications (id, user_id) VALUES
+  ('76000000-0000-4000-8000-000000000011', '76000000-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('76000000-0000-4000-8000-000000000021', '76000000-0000-4000-8000-000000000001', '76000000-0000-4000-8000-000000000011', 'security-trainer', 'active', 'Security trainer', 'Security fixture', 'Security evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('76000000-0000-4000-8000-000000000031', '76000000-0000-4000-8000-000000000021', 'Security service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('76000000-0000-4000-8000-000000000041', '76000000-0000-4000-8000-000000000031', '76000000-0000-4000-8000-000000000001', '76000000-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('76000000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', '76000000-0000-4000-8000-000000000002');
+INSERT INTO public.exercises (id, name, name_es, muscle_groups, muscle_groups_es, is_compound) VALUES
+  ('76000000-0000-4000-8000-000000000051', 'Security squat', 'Sentadilla security', ARRAY['quadriceps'], ARRAY['cuadriceps'], TRUE);
+INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_per_week) VALUES
+  ('76000000-0000-4000-8000-000000000061', '76000000-0000-4000-8000-000000000001', 'Security program', 1);
+INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES
+  ('76000000-0000-4000-8000-000000000071', '76000000-0000-4000-8000-000000000061', 'Security day', 1, 1);
+INSERT INTO public.trainer_template_exercises (id, template_workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
+  ('76000000-0000-4000-8000-000000000081', '76000000-0000-4000-8000-000000000071', '76000000-0000-4000-8000-000000000051', 1, 3, 8, 60);
+
+SELECT dblink_connect('security_idempotent_proposal_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('security_idempotent_proposal_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec(name, $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000001'$$)
+FROM (VALUES ('security_idempotent_proposal_a'), ('security_idempotent_proposal_b')) AS actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
+FROM (VALUES ('security_idempotent_proposal_a'), ('security_idempotent_proposal_b')) AS actor(name);
+SELECT dblink_exec(name, 'SET ROLE authenticated')
+FROM (VALUES ('security_idempotent_proposal_a'), ('security_idempotent_proposal_b')) AS actor(name);
+SELECT dblink_exec(name, format($sql$
+  CREATE FUNCTION pg_temp.try_security_proposal() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE row RECORD;
+  BEGIN
+    SELECT * INTO row FROM public.propose_trainer_assignment(
+      '76000000-0000-4000-8000-000000000041',
+      '76000000-0000-4000-8000-000000000061', NULL, 'security-same-proposal-key');
+    RETURN jsonb_build_object('ok', true, 'assignmentId', row.assignment_id,
+      'versionId', row.assignment_version_id, 'planId', row.workout_plan_id);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', false, 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END; $f$;
+$sql$)) FROM (VALUES ('security_idempotent_proposal_a'), ('security_idempotent_proposal_b')) AS actor(name);
+SELECT dblink_send_query('security_idempotent_proposal_a', 'SELECT pg_temp.try_security_proposal()');
+SELECT dblink_send_query('security_idempotent_proposal_b', 'SELECT pg_temp.try_security_proposal()');
+CREATE TEMP TABLE security_proposal_results (result JSONB NOT NULL);
+INSERT INTO security_proposal_results SELECT result FROM dblink_get_result('security_idempotent_proposal_a') AS response(result JSONB);
+INSERT INTO security_proposal_results SELECT result FROM dblink_get_result('security_idempotent_proposal_b') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM security_proposal_results WHERE (result->>'ok')::BOOLEAN) <> 2
+    OR (SELECT count(DISTINCT result->>'assignmentId') FROM security_proposal_results) <> 1
+    OR (SELECT count(DISTINCT result->>'versionId') FROM security_proposal_results) <> 1
+    OR (SELECT count(DISTINCT result->>'planId') FROM security_proposal_results) <> 1 THEN
+    RAISE EXCEPTION 'idempotent proposal retries did not return one complete object: %',
+      (SELECT string_agg(result::TEXT, ' | ') FROM security_proposal_results);
+  END IF;
+  IF (SELECT count(*) FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'security-same-proposal-key') <> 1
+    OR (SELECT count(*) FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'security-same-proposal-key') <> 1
+    OR (SELECT count(*) FROM public.workout_plans plan JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'security-same-proposal-key') <> 1 THEN
+    RAISE EXCEPTION 'idempotent proposal left duplicate or partial rows';
+  END IF;
+END;
+$$;
+SELECT dblink_disconnect('security_idempotent_proposal_a');
+SELECT dblink_disconnect('security_idempotent_proposal_b');
+
+-- Suspend wins a forced three-way interleave. Accept and publish must recheck
+-- after the administrative lock commits, fail closed, and leave no active plan.
+SELECT pg_advisory_lock(hashtextextended('76000000-0000-4000-8000-000000000002', 0));
+SELECT dblink_connect('security_accept_publish_suspend_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('security_accept_publish_suspend_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('security_accept_publish_suspend_admin', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('security_accept_publish_suspend_a', $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000002'$$);
+SELECT dblink_exec('security_accept_publish_suspend_a', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('security_accept_publish_suspend_a', 'SET ROLE authenticated');
+SELECT dblink_exec('security_accept_publish_suspend_b', $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000001'$$);
+SELECT dblink_exec('security_accept_publish_suspend_b', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('security_accept_publish_suspend_b', 'SET ROLE authenticated');
+SELECT dblink_exec('security_accept_publish_suspend_admin', $$SET request.jwt.claim.role = 'service_role'$$);
+SELECT dblink_exec('security_accept_publish_suspend_admin', 'SET ROLE service_role');
+SELECT dblink_exec('security_accept_publish_suspend_a', $$CREATE FUNCTION pg_temp.try_security_accept() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM public.accept_trainer_assignment((SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key='security-same-proposal-key'), 'security-accept-key'); RETURN '{"ok":true}'::jsonb; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+SELECT dblink_exec('security_accept_publish_suspend_b', $$CREATE FUNCTION pg_temp.try_security_publish() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM public.publish_trainer_assignment_revision((SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key='security-same-proposal-key'), '76000000-0000-4000-8000-000000000061', 'Concurrent publish', 'security-publish-key'); RETURN '{"ok":true}'::jsonb; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+SELECT dblink_send_query('security_accept_publish_suspend_a', 'SELECT pg_temp.try_security_accept()');
+SELECT dblink_send_query('security_accept_publish_suspend_b', 'SELECT pg_temp.try_security_publish()');
+SELECT dblink_exec('security_accept_publish_suspend_admin', $$DO $f$ BEGIN PERFORM public.suspend_account_and_professional('76000000-0000-4000-8000-000000000001','76000000-0000-4000-8000-000000000003','Security race suspension',NULL); END;$f$;$$);
+SELECT pg_advisory_unlock(hashtextextended('76000000-0000-4000-8000-000000000002', 0));
+CREATE TEMP TABLE security_accept_results (actor TEXT, result JSONB);
+INSERT INTO security_accept_results SELECT 'accept', result FROM dblink_get_result('security_accept_publish_suspend_a') AS response(result JSONB);
+INSERT INTO security_accept_results SELECT 'publish', result FROM dblink_get_result('security_accept_publish_suspend_b') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT account_status FROM public.profiles WHERE id='76000000-0000-4000-8000-000000000001') <> 'suspended'
+    OR EXISTS (SELECT 1 FROM public.workout_plans WHERE user_id='76000000-0000-4000-8000-000000000002' AND is_active)
+    OR EXISTS (SELECT 1 FROM public.trainer_assignment_versions WHERE assignment_id=(SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key='security-same-proposal-key') AND materialized_plan_id IS NULL) THEN
+    RAISE EXCEPTION 'accept/publish/suspend race left active or partial state';
+  END IF;
+  IF EXISTS (SELECT 1 FROM security_accept_results WHERE (result->>'ok')::BOOLEAN) THEN
+    RAISE EXCEPTION 'accept or publish succeeded after suspension won: %', (SELECT string_agg(result::TEXT,' | ') FROM security_accept_results);
+  END IF;
+END;
+$$;
+SELECT dblink_disconnect('security_accept_publish_suspend_a');
+SELECT dblink_disconnect('security_accept_publish_suspend_b');
+SELECT dblink_disconnect('security_accept_publish_suspend_admin');
+
+-- Two revision attempts use distinct connections for one actor. They serialize
+-- in SQL and receive distinct version numbers; exactly one final version/plan
+-- remains active and every version has a complete materialization.
+SELECT dblink_connect('security_revision_n_plus_one_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('security_revision_n_plus_one_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec(name, $$SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000001'$$)
+FROM (VALUES ('security_revision_n_plus_one_a'), ('security_revision_n_plus_one_b')) actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
+FROM (VALUES ('security_revision_n_plus_one_a'), ('security_revision_n_plus_one_b')) actor(name);
+SELECT dblink_exec(name, 'SET ROLE authenticated')
+FROM (VALUES ('security_revision_n_plus_one_a'), ('security_revision_n_plus_one_b')) actor(name);
+SELECT dblink_exec('security_revision_n_plus_one_a', $$CREATE FUNCTION pg_temp.try_revision() RETURNS JSONB LANGUAGE plpgsql AS $f$ DECLARE r RECORD; BEGIN SELECT * INTO r FROM public.publish_trainer_assignment_revision('eeeeeeee-0000-4000-8000-000000000091','eeeeeeee-0000-4000-8000-000000000061','Concurrent revision A','security-revision-a'); RETURN jsonb_build_object('ok',true,'versionId',r.assignment_version_id); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+SELECT dblink_exec('security_revision_n_plus_one_b', $$CREATE FUNCTION pg_temp.try_revision() RETURNS JSONB LANGUAGE plpgsql AS $f$ DECLARE r RECORD; BEGIN SELECT * INTO r FROM public.publish_trainer_assignment_revision('eeeeeeee-0000-4000-8000-000000000091','eeeeeeee-0000-4000-8000-000000000061','Concurrent revision B','security-revision-b'); RETURN jsonb_build_object('ok',true,'versionId',r.assignment_version_id); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+SELECT dblink_send_query('security_revision_n_plus_one_a', 'SELECT pg_temp.try_revision()');
+SELECT dblink_send_query('security_revision_n_plus_one_b', 'SELECT pg_temp.try_revision()');
+CREATE TEMP TABLE security_revision_results (result JSONB);
+INSERT INTO security_revision_results SELECT result FROM dblink_get_result('security_revision_n_plus_one_a') AS response(result JSONB);
+INSERT INTO security_revision_results SELECT result FROM dblink_get_result('security_revision_n_plus_one_b') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM security_revision_results WHERE (result->>'ok')::BOOLEAN) <> 2
+    OR (SELECT count(DISTINCT version_number) FROM public.trainer_assignment_versions WHERE revision_idempotency_key IN ('security-revision-a','security-revision-b')) <> 2
+    OR (SELECT count(*) FROM public.trainer_assignment_versions WHERE assignment_id='eeeeeeee-0000-4000-8000-000000000091' AND status='active') <> 1
+    OR (SELECT count(*) FROM public.workout_plans WHERE user_id='eeeeeeee-0000-4000-8000-000000000002' AND is_active) <> 1
+    OR EXISTS (SELECT 1 FROM public.trainer_assignment_versions WHERE revision_idempotency_key IN ('security-revision-a','security-revision-b') AND materialized_plan_id IS NULL) THEN
+    RAISE EXCEPTION 'revision race violated unique/completeness invariants: %', (SELECT string_agg(result::TEXT,' | ') FROM security_revision_results);
+  END IF;
+END;
+$$;
+SELECT dblink_disconnect('security_revision_n_plus_one_a');
+SELECT dblink_disconnect('security_revision_n_plus_one_b');
+
+-- End wins the relationship lock before the evidence reader. The reader must
+-- block, re-evaluate after commit, and return the same generic unavailable code.
+SELECT dblink_connect('security_end_read_evidence_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('security_end_read_evidence_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec(name, $$SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000001'$$)
+FROM (VALUES ('security_end_read_evidence_a'), ('security_end_read_evidence_b')) actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
+FROM (VALUES ('security_end_read_evidence_a'), ('security_end_read_evidence_b')) actor(name);
+SELECT dblink_exec('security_end_read_evidence_b', 'SET ROLE authenticated');
+SELECT dblink_exec('security_end_read_evidence_b', $$CREATE FUNCTION pg_temp.try_evidence() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN RETURN jsonb_build_object('ok',true,'payload',public.get_coach_client_insights('eeeeeeee-0000-4000-8000-000000000002',CURRENT_DATE-30,CURRENT_DATE)); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+SELECT dblink_exec('security_end_read_evidence_a', $$BEGIN; DO $f$ BEGIN PERFORM 1 FROM public.coaching_relationships WHERE id='eeeeeeee-0000-4000-8000-000000000041' FOR UPDATE; END;$f$; SET ROLE authenticated$$);
+SELECT dblink_send_query('security_end_read_evidence_b', 'SELECT pg_temp.try_evidence()');
+SELECT dblink_exec('security_end_read_evidence_a', $$DO $f$ BEGIN PERFORM public.end_coaching_relationship('eeeeeeee-0000-4000-8000-000000000041','Security end/read race',gen_random_uuid()); END;$f$; COMMIT$$);
+CREATE TEMP TABLE security_end_read_results (result JSONB);
+INSERT INTO security_end_read_results SELECT result FROM dblink_get_result('security_end_read_evidence_b') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT result->>'message' FROM security_end_read_results) <> 'COACH_CLIENT_INSIGHTS_UNAVAILABLE'
+    OR (SELECT status FROM public.coaching_relationships WHERE id='eeeeeeee-0000-4000-8000-000000000041') <> 'ended' THEN
+    RAISE EXCEPTION 'end/read evidence did not fail closed: %', (SELECT result FROM security_end_read_results);
+  END IF;
+END;
+$$;
+SELECT dblink_disconnect('security_end_read_evidence_a');
+SELECT dblink_disconnect('security_end_read_evidence_b');
+
+-- A committed foreign request and credential let an unrelated authenticated
+-- actor compare the real applicant/request RPC response with a missing UUID.
+INSERT INTO public.trainer_application_credentials (
+  id, application_id, credential_type, title, external_url
+) VALUES (
+  'cccccccc-0000-4000-8000-000000000091',
+  'cccccccc-0000-4000-8000-000000000011',
+  'link', 'Foreign security credential', 'https://example.test/credential'
+);
+INSERT INTO public.coaching_requests (
+  id, service_id, trainer_user_id, client_user_id, message,
+  training_profile_consent_version, idempotency_key, status, decided_at
+) VALUES (
+  'cccccccc-0000-4000-8000-000000000101',
+  'cccccccc-0000-4000-8000-000000000031',
+  'cccccccc-0000-4000-8000-000000000001',
+  'cccccccc-0000-4000-8000-000000000002',
+  'Foreign completed request', 'training-profile-v1',
+  'cccccccc-0000-4000-8000-000000000102', 'cancelled', NOW()
+);
+INSERT INTO public.progress_logs (id, user_id, completed_at, notes) VALUES (
+  'cccccccc-0000-4000-8000-000000000111',
+  'cccccccc-0000-4000-8000-000000000002', NOW(), 'Foreign private progress'
+);
+
+CREATE TEMP TABLE security_idor_before AS
+SELECT jsonb_build_object(
+  'applications', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.trainer_applications) row),
+  'credentials', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,application_id FROM public.trainer_application_credentials) row),
+  'requests', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_requests) row),
+  'relationships', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_relationships) row),
+  'templates', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,name FROM public.trainer_program_templates) row),
+  'assignments', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,active_version_id FROM public.trainer_plan_assignments) row),
+  'plans', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,is_active,name FROM public.workout_plans) row),
+  'progress', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,notes FROM public.progress_logs) row)
+) AS snapshot;
+
+CREATE OR REPLACE FUNCTION pg_temp.security_try(p_sql TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE value JSONB;
+BEGIN
+  EXECUTE 'SELECT to_jsonb(result) FROM (' || p_sql || ') result' INTO value;
+  RETURN jsonb_build_object('ok', TRUE, 'data', value);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('ok', FALSE, 'sqlstate', SQLSTATE, 'message', SQLERRM);
+END;
+$$;
+
+CREATE TEMP TABLE security_idor_results (
+  field TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('foreign','missing')),
+  result JSONB NOT NULL,
+  PRIMARY KEY (field, kind)
+);
+GRANT SELECT, INSERT ON security_idor_results TO authenticated;
+
+-- IDOR:applicationId / IDOR:credentialId / IDOR:requestId /
+-- IDOR:relationshipId / IDOR:clientId use their real domain RPCs.
+SELECT set_config('request.jwt.claim.sub', 'eeeeeeee-0000-4000-8000-000000000001', false);
+SELECT set_config('request.jwt.claim.role', 'authenticated', false);
+SET ROLE authenticated;
+INSERT INTO security_idor_results VALUES
+  ('applicationId','foreign',pg_temp.security_try($q$SELECT public.submit_trainer_application('cccccccc-0000-4000-8000-000000000011')$q$)),
+  ('applicationId','missing',pg_temp.security_try($q$SELECT public.submit_trainer_application('ffffffff-0000-4000-8000-000000000011')$q$)),
+  ('credentialId','foreign',pg_temp.security_try($q$SELECT public.prepare_trainer_credential_removal('cccccccc-0000-4000-8000-000000000011','cccccccc-0000-4000-8000-000000000091')$q$)),
+  ('credentialId','missing',pg_temp.security_try($q$SELECT public.prepare_trainer_credential_removal('ffffffff-0000-4000-8000-000000000011','ffffffff-0000-4000-8000-000000000091')$q$)),
+  ('requestId','foreign',pg_temp.security_try($q$SELECT public.accept_coaching_request('cccccccc-0000-4000-8000-000000000101',gen_random_uuid())$q$)),
+  ('requestId','missing',pg_temp.security_try($q$SELECT public.accept_coaching_request('ffffffff-0000-4000-8000-000000000101',gen_random_uuid())$q$)),
+  ('relationshipId','foreign',pg_temp.security_try($q$SELECT public.end_coaching_relationship('cccccccc-0000-4000-8000-000000000041',NULL,gen_random_uuid())$q$)),
+  ('relationshipId','missing',pg_temp.security_try($q$SELECT public.end_coaching_relationship('ffffffff-0000-4000-8000-000000000041',NULL,gen_random_uuid())$q$)),
+  ('clientId','foreign',pg_temp.security_try($q$SELECT public.get_coach_client_insights('cccccccc-0000-4000-8000-000000000002',CURRENT_DATE-30,CURRENT_DATE)$q$)),
+  ('clientId','missing',pg_temp.security_try($q$SELECT public.get_coach_client_insights('ffffffff-0000-4000-8000-000000000002',CURRENT_DATE-30,CURRENT_DATE)$q$));
+RESET ROLE;
+
+-- IDOR:templateId reaches the template guard through the actor's own active
+-- relationship. IDOR:assignmentId reaches the assignment ownership guard.
+SELECT set_config('request.jwt.claim.sub', 'cccccccc-0000-4000-8000-000000000001', false);
+SET ROLE authenticated;
+INSERT INTO security_idor_results VALUES
+  ('templateId','foreign',pg_temp.security_try($q$SELECT public.propose_trainer_assignment('cccccccc-0000-4000-8000-000000000041','eeeeeeee-0000-4000-8000-000000000061',NULL,'idor-template-foreign')$q$)),
+  ('templateId','missing',pg_temp.security_try($q$SELECT public.propose_trainer_assignment('cccccccc-0000-4000-8000-000000000041','ffffffff-0000-4000-8000-000000000061',NULL,'idor-template-missing')$q$));
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'eeeeeeee-0000-4000-8000-000000000001', false);
+SET ROLE authenticated;
+INSERT INTO security_idor_results VALUES
+  ('assignmentId','foreign',pg_temp.security_try($q$SELECT public.publish_trainer_assignment_revision('cccccccc-0000-4000-8000-000000000061','eeeeeeee-0000-4000-8000-000000000061','IDOR foreign','idor-assignment-foreign')$q$)),
+  ('assignmentId','missing',pg_temp.security_try($q$SELECT public.publish_trainer_assignment_revision('ffffffff-0000-4000-8000-000000000061','eeeeeeee-0000-4000-8000-000000000061','IDOR missing','idor-assignment-missing')$q$)),
+  -- IDOR:planId and IDOR:progressLogId exercise the real RLS DML boundary.
+  ('planId','foreign',pg_temp.security_try($q$WITH changed AS (UPDATE public.workout_plans SET name='IDOR blocked' WHERE id='cccccccc-0000-4000-8000-000000000081' RETURNING id) SELECT count(*) AS changed FROM changed$q$)),
+  ('planId','missing',pg_temp.security_try($q$WITH changed AS (UPDATE public.workout_plans SET name='IDOR blocked' WHERE id='ffffffff-0000-4000-8000-000000000081' RETURNING id) SELECT count(*) AS changed FROM changed$q$)),
+  ('progressLogId','foreign',pg_temp.security_try($q$WITH changed AS (UPDATE public.progress_logs SET notes='IDOR blocked' WHERE id='cccccccc-0000-4000-8000-000000000111' RETURNING id) SELECT count(*) AS changed FROM changed$q$)),
+  ('progressLogId','missing',pg_temp.security_try($q$WITH changed AS (UPDATE public.progress_logs SET notes='IDOR blocked' WHERE id='ffffffff-0000-4000-8000-000000000081' RETURNING id) SELECT count(*) AS changed FROM changed$q$));
+RESET ROLE;
+
+DO $$
+DECLARE mismatch RECORD; after_snapshot JSONB;
+BEGIN
+  SELECT foreign_result.field, foreign_result.result AS foreign_result, missing_result.result AS missing_result
+  INTO mismatch
+  FROM security_idor_results foreign_result
+  JOIN security_idor_results missing_result USING (field)
+  WHERE foreign_result.kind='foreign' AND missing_result.kind='missing'
+    AND foreign_result.result IS DISTINCT FROM missing_result.result
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'IDOR % distinguished foreign from missing: % <> %', mismatch.field, mismatch.foreign_result, mismatch.missing_result;
+  END IF;
+  IF (SELECT count(DISTINCT field) FROM security_idor_results) <> 9 THEN
+    RAISE EXCEPTION 'IDOR suite did not execute all nine identifiers';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'applications', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.trainer_applications) row),
+    'credentials', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,application_id FROM public.trainer_application_credentials) row),
+    'requests', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_requests) row),
+    'relationships', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_relationships) row),
+    'templates', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,name FROM public.trainer_program_templates) row),
+    'assignments', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,active_version_id FROM public.trainer_plan_assignments) row),
+    'plans', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,is_active,name FROM public.workout_plans) row),
+    'progress', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,notes FROM public.progress_logs) row)
+  ) INTO after_snapshot;
+  IF after_snapshot IS DISTINCT FROM (SELECT snapshot FROM security_idor_before) THEN
+    RAISE EXCEPTION 'IDOR attempts changed protected rows';
+  END IF;
+END;
+$$;
+
+SELECT field AS verified_idor, result
+FROM security_idor_results
+WHERE kind='foreign'
+ORDER BY field;
+
+SELECT 'trainer security supplemental races and IDOR effects passed' AS result;

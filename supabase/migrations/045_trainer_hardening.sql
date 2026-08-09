@@ -184,3 +184,16 @@ REVOKE ALL ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB)
   TO service_role;
+
+-- Read-only deployment marker used before destructive E2E fixture setup.  A
+-- constant SQL function has no table or sequence side effects and distinguishes
+-- a complete 045 deployment from a database that stopped at Insights (044).
+CREATE OR REPLACE FUNCTION public.trainer_security_preflight()
+RETURNS INTEGER
+LANGUAGE sql
+STABLE
+SET search_path = public, pg_temp
+AS $$ SELECT 45 $$;
+
+REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.trainer_security_preflight() TO authenticated, service_role;

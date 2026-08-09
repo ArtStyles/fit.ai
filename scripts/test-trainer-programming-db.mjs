@@ -7,6 +7,7 @@ import { loadLegacyOwnerBoundary } from './trainer-authorization-production-boun
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const authorizationMode = process.argv.includes('--authorization')
+const securityMode = process.argv.includes('--security')
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
 const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '040_trainer_foundations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql', '044_trainer_insights.sql', '045_trainer_hardening.sql']
@@ -14,6 +15,7 @@ const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lif
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
+const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 
 // This is the smallest faithful pre-041 surface: the auth/API roles come from
 // the Supabase image, while these legacy tables/functions are real dependencies
@@ -324,6 +326,9 @@ try {
   if (!authorizationMode) {
     runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening after insight regressions')
     runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
+  }
+  if (securityMode) {
+    runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
   process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-045 behavior and rerunnability passed\n')
 } finally {

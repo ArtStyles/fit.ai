@@ -21,6 +21,7 @@
     "test:db:programming": "node scripts/test-trainer-programming-db.mjs",
     "test:db:insights": "node scripts/test-trainer-programming-db.mjs",
     "test:db:trainers": "node scripts/test-trainer-programming-db.mjs --authorization",
+    "test:db:trainer-security": "node scripts/test-trainer-security-db.mjs",
     "test:e2e:seed": "tsx --env-file=.env.local scripts/seed-e2e-account.ts",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
