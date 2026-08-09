@@ -1,0 +1,32 @@
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+import { CoachClientList } from '../CoachClientList'
+
+const clients = [{
+  clientId: 'client-a',
+  fullName: 'Ada Cliente',
+  avatarUrl: null,
+  status: 'active' as const,
+  lastPrescribedSessionAt: '2026-08-09T10:00:00.000Z',
+  adherence: { prescribed: 3, completed: 2, missed: 1, pending: 0, adherencePercent: 67 },
+  alerts: [{ code: 'low_adherence' as const, message: 'La adherencia reciente está por debajo del 50%.' }],
+}]
+
+describe('CoachClientList', () => {
+  it('renders a non-clinical active-client card that navigates only by client id', () => {
+    const html = renderToStaticMarkup(<CoachClientList clients={clients} />)
+
+    expect(html).toContain('Ada Cliente')
+    expect(html).toContain('2 de 3 sesiones prescritas')
+    expect(html).toContain('Atención operativa')
+    expect(html).toContain('href="/coach/clients/client-a"')
+    expect(html).not.toMatch(/diagnóstico|lesión|tratamiento|médic|email|teléfono|nota|medida/i)
+  })
+
+  it('renders the real empty state when no active consented client is available', () => {
+    const html = renderToStaticMarkup(<CoachClientList clients={[]} />)
+
+    expect(html).toContain('Todavía no tienes clientes activos')
+    expect(html).not.toContain('/coach/clients/')
+  })
+})

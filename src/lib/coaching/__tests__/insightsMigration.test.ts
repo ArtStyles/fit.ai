@@ -8,6 +8,13 @@ const migration = readFileSync(
 const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
 
 describe('trainer insights migration', () => {
+  it('projects aggregate request/relationship counts and trusted average RPE without exposing session text', () => {
+    expect(migration).toMatch(/'pendingRequests'/)
+    expect(migration).toMatch(/'activeClients'/)
+    expect(migration).toMatch(/'pausedRelationships'/)
+    expect(migration).toMatch(/'averageRpe'[\s\S]+?AVG\(/)
+  })
+
   it('exposes summary and detail only through definer RPCs with a fixed search path', () => {
     for (const functionName of ['get_coach_clients_summary', 'get_coach_client_insights']) {
       expect(migration).toMatch(new RegExp(

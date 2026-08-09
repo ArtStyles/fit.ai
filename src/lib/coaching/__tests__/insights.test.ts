@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest'
+import { adaptCoachClientsSummary } from '../insights'
+
+const NOW = '2026-08-10T12:00:00.000Z'
+
+function payload(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    counts: { pendingRequests: 2, activeClients: 2, pausedRelationships: 1 },
+    clients: [
+      {
+        relationshipId: 'relationship-a',
+        startedAt: '2026-07-01T10:00:00.000Z',
+        client: { id: 'client-a', fullName: 'Actividad reciente', avatarUrl: null, timezone: 'America/Havana' },
+        activeAssignmentVersionId: 'version-a',
+        lastPrescribedSessionAt: '2026-08-09T10:00:00.000Z',
+        adherenceInput: {
+          rangeStart: '2026-08-03', rangeEnd: '2026-08-10',
+          versions: [{ id: 'version-a', effectiveFrom: '2026-07-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-a', isoDay: 1 }] }],
+          sessions: [{ id: 'session-a', assignmentVersionId: 'version-a', workoutId: 'workout-a', completedAt: '2026-08-03T10:00:00.000Z', averageRpe: 7 }],
+        },
+      },
+      {
+        relationshipId: 'relationship-b',
+        startedAt: '2026-06-01T10:00:00.000Z',
+        client: { id: 'client-b', fullName: 'Requiere atención', avatarUrl: null, timezone: 'America/Havana' },
+        activeAssignmentVersionId: 'version-b',
+        lastPrescribedSessionAt: '2026-08-01T10:00:00.000Z',
+        adherenceInput: {
+          rangeStart: '2026-07-20', rangeEnd: '2026-08-10',
+          versions: [{ id: 'version-b', effectiveFrom: '2026-06-01T00:00:00.000Z', effectiveTo: null, workouts: [{ id: 'workout-b', isoDay: 1 }] }],
+          sessions: [
+            { id: 'session-b1', assignmentVersionId: 'version-b', workoutId: 'workout-b', completedAt: '2026-07-20T10:00:00.000Z', averageRpe: 9 },
+            { id: 'session-b2', assignmentVersionId: 'version-b', workoutId: 'workout-b', completedAt: '2026-07-27T10:00:00.000Z', averageRpe: 9 },
+          ],
+        },
+      },
+    ],
+    ...overrides,
+  }
+}
+
+describe('adaptCoachClientsSummary', () => {
+  it('rejects an unversioned or malformed summary rather than inventing client access', () => {
+    expect(() => adaptCoachClientsSummary({ schemaVersion: 2, clients: [] }, NOW)).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+    expect(() => adaptCoachClientsSummary({ schemaVersion: 1, counts: {}, clients: [{ client: { id: 'x' } }] }, NOW)).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+  })
+
+  it('calculates weekly adherence and deterministically puts operational alerts before recent activity', () => {
+    const summary = adaptCoachClientsSummary(payload(), NOW)
+
+    expect(summary.counts).toEqual({ pendingRequests: 2, activeClients: 2, pausedRelationships: 1 })
+    expect(summary.clients.map(client => client.clientId)).toEqual(['client-b', 'client-a'])
+    expect(summary.clients[0]).toMatchObject({
+      status: 'active',
+      adherence: { prescribed: 3, completed: 2, missed: 1, pending: 0, adherencePercent: 67 },
+    })
+    expect(summary.clients[0]?.alerts.map(alert => alert.code)).toEqual(['no_recent_prescribed_activity', 'repeated_high_rpe'])
+  })
+
+  it('keeps paused relationships as aggregate-only information without a client detail row', () => {
+    const summary = adaptCoachClientsSummary(payload({
+      counts: { pendingRequests: 0, activeClients: 0, pausedRelationships: 3 },
+      clients: [],
+    }), NOW)
+
+    expect(summary.counts).toEqual({ pendingRequests: 0, activeClients: 0, pausedRelationships: 3 })
+    expect(summary.clients).toEqual([])
+    expect(JSON.stringify(summary)).not.toMatch(/email|phone|contact|notes|measurement/i)
+  })
+})

@@ -1,10 +1,20 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { requireActiveTrainerContext } = vi.hoisted(() => ({
+const { requireActiveTrainerContext, summaryRpc } = vi.hoisted(() => {
+  const summaryRpc = vi.fn().mockResolvedValue({
+    data: {
+      schemaVersion: 1,
+      counts: { pendingRequests: 0, activeClients: 0, pausedRelationships: 0 },
+      clients: [],
+    },
+    error: null,
+  })
+  return {
   requireActiveTrainerContext: vi.fn().mockResolvedValue({
     user: { id: 'trainer-user-1' },
     supabase: {
+      rpc: summaryRpc,
       from: () => {
         const query: any = {
           select: () => query,
@@ -20,7 +30,9 @@ const { requireActiveTrainerContext } = vi.hoisted(() => ({
     profile: { language: 'es' },
     trainerProfile: { id: 'trainer-profile-1', status: 'active' },
   }),
-}))
+  summaryRpc,
+  }
+})
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/coaching/access', () => ({ requireActiveTrainerContext }))
@@ -190,5 +202,14 @@ describe('professional workspace routes', () => {
     const html = renderToStaticMarkup(await Page())
 
     expect(html).not.toContain('href="/dashboard"')
+  })
+
+  it.each(['../page', '../clients/page'] as const)('loads %s from exactly one summary RPC', async modulePath => {
+    const Page = (await import(modulePath)).default
+
+    await Page()
+
+    expect(summaryRpc).toHaveBeenCalledTimes(1)
+    expect(summaryRpc).toHaveBeenCalledWith('get_coach_clients_summary')
   })
 })

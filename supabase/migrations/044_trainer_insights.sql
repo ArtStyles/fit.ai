@@ -45,13 +45,27 @@ BEGIN
     SELECT relationship.id, relationship.client_user_id, relationship.started_at
     FROM public.coaching_relationships AS relationship
     JOIN public.profiles AS client_account ON client_account.id = relationship.client_user_id
-    JOIN public.coaching_consents AS training_consent
-      ON training_consent.relationship_id = relationship.id
-     AND training_consent.scope = 'training_profile'
-     AND training_consent.revoked_at IS NULL
     WHERE relationship.trainer_user_id = v_trainer_id
       AND relationship.status = 'active'
       AND client_account.account_status = 'active'
+      AND EXISTS (
+        SELECT 1
+        FROM public.coaching_consents AS training_consent
+        WHERE training_consent.relationship_id = relationship.id
+          AND training_consent.scope = 'training_profile'
+          AND training_consent.revoked_at IS NULL
+      )
+  ), summary_counts AS (
+    SELECT
+      (SELECT COUNT(*)
+       FROM public.coaching_requests AS request
+       WHERE request.trainer_user_id = v_trainer_id
+         AND request.status = 'pending') AS pending_requests,
+      (SELECT COUNT(*) FROM scoped_relationships) AS active_clients,
+      (SELECT COUNT(*)
+       FROM public.coaching_relationships AS relationship
+       WHERE relationship.trainer_user_id = v_trainer_id
+         AND relationship.status = 'paused_by_platform') AS paused_relationships
   ), client_rows AS (
     SELECT
       relationship.id AS relationship_id,
@@ -130,7 +144,14 @@ BEGIN
                'id', progress_log.id,
                'assignmentVersionId', version.id,
                'workoutId', session_authorization.workout_id,
-               'completedAt', progress_log.completed_at
+               'completedAt', progress_log.completed_at,
+               'averageRpe', (
+                 SELECT AVG(rpe.value::NUMERIC)
+                 FROM public.exercise_logs AS exercise_log
+                 CROSS JOIN LATERAL unnest(exercise_log.rpe_values) AS rpe(value)
+                 WHERE exercise_log.progress_log_id = progress_log.id
+                   AND rpe.value IS NOT NULL
+               )
              ) ORDER BY progress_log.completed_at ASC, progress_log.id ASC)
              FROM public.progress_logs AS progress_log
              JOIN public.session_authorizations AS session_authorization
@@ -167,21 +188,29 @@ BEGIN
   )
   SELECT jsonb_build_object(
     'schemaVersion', 1,
-    'clients', COALESCE(jsonb_agg(jsonb_build_object(
-      'relationshipId', row.relationship_id,
-      'startedAt', row.started_at,
-      'client', jsonb_build_object(
-        'id', row.client_id,
-        'fullName', row.full_name,
-        'avatarUrl', row.avatar_url,
-        'timezone', row.timezone
-      ),
-      'activeAssignmentVersionId', row.active_version_id,
-      'lastPrescribedSessionAt', row.last_prescribed_session_at,
-       'adherenceInput', row.adherence_input
-    ) ORDER BY row.last_prescribed_session_at DESC NULLS LAST, row.started_at DESC, row.client_id), '[]'::JSONB)
+    'counts', jsonb_build_object(
+      'pendingRequests', counts.pending_requests,
+      'activeClients', counts.active_clients,
+      'pausedRelationships', counts.paused_relationships
+    ),
+    'clients', (
+      SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'relationshipId', row.relationship_id,
+        'startedAt', row.started_at,
+        'client', jsonb_build_object(
+          'id', row.client_id,
+          'fullName', row.full_name,
+          'avatarUrl', row.avatar_url,
+          'timezone', row.timezone
+        ),
+        'activeAssignmentVersionId', row.active_version_id,
+        'lastPrescribedSessionAt', row.last_prescribed_session_at,
+         'adherenceInput', row.adherence_input
+      ) ORDER BY row.last_prescribed_session_at DESC NULLS LAST, row.started_at DESC, row.client_id), '[]'::JSONB)
+      FROM client_rows AS row
+    )
   ) INTO v_result
-  FROM client_rows AS row;
+  FROM summary_counts AS counts;
 
   RETURN v_result;
 END;
