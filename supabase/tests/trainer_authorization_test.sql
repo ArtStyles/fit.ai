@@ -104,7 +104,7 @@ SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  '49961f79a40094650b7632f6929c9e47',
+  'e3b5913c8073fb1b7a1e8bebcc8106d2',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -115,6 +115,8 @@ SELECT ok(NOT EXISTS (
 SELECT ok(
   has_function_privilege('service_role', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])', 'EXECUTE')
+  AND NOT has_function_privilege('authenticated', 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.require_active_coaching_admin(uuid)', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND NOT has_function_privilege('service_role', 'public.get_coach_clients_summary()', 'EXECUTE')
@@ -129,7 +131,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  '50b12e2834c5affd5729c3cf216f44ee',
+  'ca5fd1fb5de789d16af77d89118b55f8',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
 );
 

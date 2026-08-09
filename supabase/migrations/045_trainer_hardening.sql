@@ -185,6 +185,109 @@ REVOKE ALL ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT
 GRANT EXECUTE ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB)
   TO service_role;
 
+-- Exact, reversible cleanup for opt-in trainer-security fixtures. This is not
+-- a project reset: every target must be named explicitly and carry the same
+-- E2E run marker in auth metadata. The service-role grant lets the server-side
+-- E2E harness remove immutable professional materializations in dependency
+-- order without weakening any authenticated production boundary.
+CREATE OR REPLACE FUNCTION public.cleanup_trainer_security_e2e_fixture(
+  p_run_id TEXT,
+  p_user_ids UUID[]
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+  v_expected INTEGER;
+  v_matched INTEGER;
+  v_deleted INTEGER;
+BEGIN
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'TRAINER_SECURITY_CLEANUP_SERVICE_REQUIRED';
+  END IF;
+  IF p_run_id IS NULL OR btrim(p_run_id) = '' OR cardinality(p_user_ids) IS NULL OR cardinality(p_user_ids) = 0 THEN
+    RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_SCOPE_REQUIRED';
+  END IF;
+
+  SELECT count(*) INTO v_expected FROM (SELECT DISTINCT unnest(p_user_ids) AS id) target;
+  SELECT count(*) INTO v_matched
+  FROM auth.users target
+  WHERE target.id = ANY(p_user_ids)
+    AND target.raw_user_meta_data ->> 'e2e_run_id' = p_run_id;
+  IF v_matched <> v_expected THEN
+    RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_SCOPE_MISMATCH';
+  END IF;
+
+  SET CONSTRAINTS ALL DEFERRED;
+  PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+
+  DELETE FROM public.session_authorizations lease WHERE lease.user_id = ANY(p_user_ids);
+  DELETE FROM public.exercise_logs log USING public.progress_logs progress
+    WHERE log.progress_log_id = progress.id AND progress.user_id = ANY(p_user_ids);
+  DELETE FROM public.progress_logs progress WHERE progress.user_id = ANY(p_user_ids);
+  DELETE FROM public.measurements measurement WHERE measurement.user_id = ANY(p_user_ids);
+
+  UPDATE public.trainer_plan_assignments assignment
+  SET active_version_id = NULL
+  WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids);
+  UPDATE public.trainer_assignment_versions version
+  SET materialized_plan_id = NULL
+  WHERE version.assignment_id IN (
+    SELECT assignment.id FROM public.trainer_plan_assignments assignment
+    WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids)
+  );
+  DELETE FROM public.workout_exercises exercise
+  WHERE exercise.workout_id IN (
+    SELECT workout.id FROM public.workouts workout WHERE workout.user_id = ANY(p_user_ids)
+  );
+  DELETE FROM public.workouts workout WHERE workout.user_id = ANY(p_user_ids);
+  DELETE FROM public.workout_plans plan WHERE plan.user_id = ANY(p_user_ids);
+  DELETE FROM public.trainer_assignment_versions version
+  WHERE version.assignment_id IN (
+    SELECT assignment.id FROM public.trainer_plan_assignments assignment
+    WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids)
+  );
+  DELETE FROM public.trainer_plan_assignments assignment
+  WHERE assignment.client_user_id = ANY(p_user_ids) OR assignment.trainer_user_id = ANY(p_user_ids);
+  DELETE FROM public.trainer_program_templates template WHERE template.trainer_user_id = ANY(p_user_ids);
+
+  DELETE FROM public.coaching_consents consent
+  WHERE consent.relationship_id IN (
+    SELECT relationship.id FROM public.coaching_relationships relationship
+    WHERE relationship.client_user_id = ANY(p_user_ids) OR relationship.trainer_user_id = ANY(p_user_ids)
+  );
+  DELETE FROM public.coaching_relationships relationship
+  WHERE relationship.client_user_id = ANY(p_user_ids) OR relationship.trainer_user_id = ANY(p_user_ids);
+  DELETE FROM public.coaching_requests request
+  WHERE request.client_user_id = ANY(p_user_ids) OR request.trainer_user_id = ANY(p_user_ids);
+
+  DELETE FROM public.trainer_service_offerings service
+  WHERE service.trainer_profile_id IN (
+    SELECT profile.id FROM public.trainer_profiles profile WHERE profile.user_id = ANY(p_user_ids)
+  );
+  DELETE FROM public.trainer_profiles profile WHERE profile.user_id = ANY(p_user_ids);
+  DELETE FROM public.trainer_applications application WHERE application.user_id = ANY(p_user_ids);
+
+  DELETE FROM public.product_notifications notification WHERE notification.user_id = ANY(p_user_ids);
+  DELETE FROM public.product_push_tokens token WHERE token.user_id = ANY(p_user_ids);
+  DELETE FROM public.product_notification_preferences preference WHERE preference.user_id = ANY(p_user_ids);
+  DELETE FROM public.professional_audit_logs audit
+  WHERE audit.actor_user_id = ANY(p_user_ids) OR audit.subject_user_id = ANY(p_user_ids);
+  DELETE FROM public.admin_audit_logs audit
+  WHERE audit.admin_user_id = ANY(p_user_ids) OR audit.target_user_id = ANY(p_user_ids);
+
+  DELETE FROM auth.users target WHERE target.id = ANY(p_user_ids);
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  IF v_deleted <> v_expected THEN RAISE EXCEPTION 'TRAINER_SECURITY_CLEANUP_INCOMPLETE'; END IF;
+  RETURN v_deleted;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.cleanup_trainer_security_e2e_fixture(TEXT, UUID[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cleanup_trainer_security_e2e_fixture(TEXT, UUID[]) TO service_role;
+
 -- Read-only deployment marker used before destructive E2E fixture setup. It
 -- derives readiness from the catalogs so a partial/invalid deployment cannot
 -- pass merely because this marker function itself exists.
@@ -201,7 +304,8 @@ BEGIN
     OR to_regprocedure('public.propose_trainer_assignment(uuid,uuid,text,text)') IS NULL
     OR to_regprocedure('public.accept_trainer_assignment(uuid,text)') IS NULL
     OR to_regprocedure('public.publish_trainer_assignment_revision(uuid,uuid,text,text)') IS NULL
-    OR to_regprocedure('public.get_coach_client_insights(uuid,date,date)') IS NULL THEN
+    OR to_regprocedure('public.get_coach_client_insights(uuid,date,date)') IS NULL
+    OR to_regprocedure('public.cleanup_trainer_security_e2e_fixture(text,uuid[])') IS NULL THEN
     RAISE EXCEPTION 'TRAINER_SECURITY_SCHEMA_INCOMPLETE';
   END IF;
   RETURN 45;

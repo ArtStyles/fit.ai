@@ -66,6 +66,8 @@ DECLARE
   b_result UUID;
   a_error TEXT;
   b_error TEXT;
+  acceptance_actor_pids INTEGER[];
+  blocked_actor_count INTEGER := 0;
 BEGIN
   PERFORM dblink_connect('accept_a', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
   PERFORM dblink_connect('accept_b', 'host=localhost port=5432 dbname=postgres user=postgres password=postgres');
@@ -75,8 +77,28 @@ BEGIN
   PERFORM dblink_exec('accept_b', $query$SET request.jwt.claim.sub = '92000000-0000-4000-8000-000000000002'$query$);
   PERFORM dblink_exec('accept_b', $query$SET request.jwt.claim.role = 'authenticated'$query$);
   PERFORM dblink_exec('accept_b', 'SET ROLE authenticated');
+  SELECT array_agg(pid ORDER BY pid) INTO acceptance_actor_pids
+  FROM (
+    SELECT pid FROM dblink('accept_a', 'SELECT pg_backend_pid()') AS actor(pid INTEGER)
+    UNION ALL
+    SELECT pid FROM dblink('accept_b', 'SELECT pg_backend_pid()') AS actor(pid INTEGER)
+  ) actors;
+  PERFORM pg_advisory_lock(hashtextextended('93000000-0000-4000-8000-000000000003', 0));
   PERFORM dblink_send_query('accept_a', $query$SELECT relationship_id FROM public.accept_coaching_request('97000000-0000-4000-8000-000000000001', '99000000-0000-4000-8000-000000000001')$query$);
   PERFORM dblink_send_query('accept_b', $query$SELECT relationship_id FROM public.accept_coaching_request('97000000-0000-4000-8000-000000000002', '99000000-0000-4000-8000-000000000002')$query$);
+  FOR attempt IN 1..200 LOOP
+    SELECT count(*) INTO blocked_actor_count
+    FROM pg_stat_activity
+    WHERE pid = ANY(acceptance_actor_pids)
+      AND state = 'active'
+      AND wait_event_type = 'Lock';
+    EXIT WHEN blocked_actor_count = 2;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+  IF blocked_actor_count <> 2 THEN
+    RAISE EXCEPTION 'expected two blocked acceptance actors; observed % for exact pids %', blocked_actor_count, acceptance_actor_pids;
+  END IF;
+  PERFORM pg_advisory_unlock(hashtextextended('93000000-0000-4000-8000-000000000003', 0));
   SELECT relationship_id INTO a_result FROM dblink_get_result('accept_a', false) AS result(relationship_id UUID);
   SELECT relationship_id INTO b_result FROM dblink_get_result('accept_b', false) AS result(relationship_id UUID);
   a_error := dblink_error_message('accept_a');

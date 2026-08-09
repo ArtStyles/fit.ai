@@ -91,7 +91,7 @@ describe('trainer security E2E deployment boundary', () => {
     const cleanup = vi.fn().mockResolvedValue(undefined)
 
     await expect(runPreparedTrainerSecurityRace({
-      prepare: async () => ({ cleanup, resetPolicy: 'dedicated-project-reset' as const }),
+      prepare: async () => ({ cleanup }),
       exercise: async () => { throw new Error('assertion failed') },
     })).rejects.toThrow('assertion failed')
 

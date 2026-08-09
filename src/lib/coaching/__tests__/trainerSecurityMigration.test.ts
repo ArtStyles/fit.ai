@@ -17,10 +17,13 @@ describe('trainer security migration marker', () => {
       'accept_trainer_assignment(uuid,text)',
       'publish_trainer_assignment_revision(uuid,uuid,text,text)',
       'get_coach_client_insights(uuid,date,date)',
+      'cleanup_trainer_security_e2e_fixture(text,uuid[])',
     ]) expect(migration).toContain(`to_regprocedure('public.${signature}')`)
     expect(migration).toMatch(/RAISE EXCEPTION 'TRAINER_SECURITY_SCHEMA_INCOMPLETE'/i)
     expect(migration).toMatch(/RETURN 45/i)
     expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.trainer_security_preflight\(\) FROM PUBLIC, anon/i)
     expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION public\.trainer_security_preflight\(\) TO authenticated, service_role/i)
+    expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.cleanup_trainer_security_e2e_fixture\(TEXT, UUID\[\]\) FROM PUBLIC, anon, authenticated/i)
+    expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION public\.cleanup_trainer_security_e2e_fixture\(TEXT, UUID\[\]\) TO service_role/i)
   })
 })

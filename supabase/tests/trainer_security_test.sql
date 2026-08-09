@@ -145,7 +145,7 @@ SELECT dblink_disconnect('security_idempotent_proposal_b');
 SELECT pg_advisory_lock(hashtextextended('76000000-0000-4000-8000-000000000002', 0));
 SELECT dblink_connect('security_accept_publish_suspend_a', 'dbname=postgres user=supabase_admin');
 SELECT dblink_connect('security_accept_publish_suspend_b', 'dbname=postgres user=supabase_admin');
-SELECT dblink_connect('security_accept_publish_suspend_admin', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('security_accept_publish_suspend_db_boundary', 'dbname=postgres user=supabase_admin');
 SELECT dblink_exec('security_accept_publish_suspend_a', $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000002'$$);
 SELECT dblink_exec('security_accept_publish_suspend_a', $$SET request.jwt.claim.role = 'authenticated'$$);
 SELECT dblink_exec('security_accept_publish_suspend_a', 'SET ROLE authenticated');
@@ -169,14 +169,23 @@ BEGIN
 END;
 $$;
 RESET ROLE;
-SELECT dblink_exec('security_accept_publish_suspend_admin', $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000003'$$);
-SELECT dblink_exec('security_accept_publish_suspend_admin', $$SET request.jwt.claim.role = 'service_role'$$);
-SELECT dblink_exec('security_accept_publish_suspend_admin', 'SET ROLE service_role');
+-- SQL can prove the service-role database serialization half but cannot prove
+-- bearer authentication over HTTP. The E2E route tests the preceding
+-- authenticated-admin -> server-only boundary without granting this RPC to
+-- authenticated. Do not describe this dblink actor as the admin itself.
+SELECT dblink_exec('security_accept_publish_suspend_db_boundary', $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000003'$$);
+SELECT dblink_exec('security_accept_publish_suspend_db_boundary', $$SET request.jwt.claim.role = 'service_role'$$);
+SELECT dblink_exec('security_accept_publish_suspend_db_boundary', 'SET ROLE service_role');
 SELECT dblink_exec('security_accept_publish_suspend_a', $$CREATE FUNCTION pg_temp.try_security_accept() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM public.accept_trainer_assignment((SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key='security-same-proposal-key'), 'security-accept-key'); RETURN '{"ok":true}'::jsonb; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
 SELECT dblink_exec('security_accept_publish_suspend_b', $$CREATE FUNCTION pg_temp.try_security_publish() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM public.publish_trainer_assignment_revision((SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key='security-same-proposal-key'), '76000000-0000-4000-8000-000000000061', 'Concurrent publish', 'security-publish-key'); RETURN '{"ok":true}'::jsonb; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+CREATE TEMP TABLE security_accept_publish_pids AS
+SELECT pid FROM dblink('security_accept_publish_suspend_a', 'SELECT pg_backend_pid()') response(pid INTEGER)
+UNION ALL
+SELECT pid FROM dblink('security_accept_publish_suspend_b', 'SELECT pg_backend_pid()') response(pid INTEGER);
 SELECT dblink_send_query('security_accept_publish_suspend_a', 'SELECT pg_temp.try_security_accept()');
 SELECT dblink_send_query('security_accept_publish_suspend_b', 'SELECT pg_temp.try_security_publish()');
-SELECT dblink_exec('security_accept_publish_suspend_admin', $$DO $f$ BEGIN PERFORM public.suspend_account_and_professional('76000000-0000-4000-8000-000000000001','76000000-0000-4000-8000-000000000003','Security race suspension',NULL); END;$f$;$$);
+SELECT pg_temp.wait_for_security_lock(ARRAY(SELECT pid FROM security_accept_publish_pids), 2);
+SELECT dblink_exec('security_accept_publish_suspend_db_boundary', $$DO $f$ BEGIN PERFORM public.suspend_account_and_professional('76000000-0000-4000-8000-000000000001','76000000-0000-4000-8000-000000000003','Security race suspension',NULL); END;$f$;$$);
 SELECT pg_advisory_unlock(hashtextextended('76000000-0000-4000-8000-000000000002', 0));
 CREATE TEMP TABLE security_accept_results (actor TEXT, result JSONB);
 INSERT INTO security_accept_results SELECT 'accept', result FROM dblink_get_result('security_accept_publish_suspend_a') AS response(result JSONB);
@@ -195,7 +204,7 @@ END;
 $$;
 SELECT dblink_disconnect('security_accept_publish_suspend_a');
 SELECT dblink_disconnect('security_accept_publish_suspend_b');
-SELECT dblink_disconnect('security_accept_publish_suspend_admin');
+SELECT dblink_disconnect('security_accept_publish_suspend_db_boundary');
 
 -- Two revision attempts use distinct connections for one actor. They serialize
 -- in SQL and receive distinct version numbers; exactly one final version/plan
@@ -411,5 +420,54 @@ SELECT field AS verified_idor, result
 FROM security_idor_results
 WHERE kind='foreign'
 ORDER BY field;
+
+-- Published fixture cleanup is an exact-user operation, not a project reset.
+-- It rejects authenticated callers and removes an immutable materialization
+-- only when every named auth user carries the requested E2E run marker.
+SELECT set_config('request.jwt.claim.sub', '76000000-0000-4000-8000-000000000003', false);
+SELECT set_config('request.jwt.claim.role', 'authenticated', false);
+SET ROLE authenticated;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.cleanup_trainer_security_e2e_fixture(
+      'security-sql-run',
+      ARRAY['76000000-0000-4000-8000-000000000001'::UUID]
+    );
+    RAISE EXCEPTION 'authenticated caller reached trainer security cleanup';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END;
+$$;
+RESET ROLE;
+
+UPDATE auth.users
+SET raw_user_meta_data = jsonb_build_object('e2e_run_id', 'security-sql-run')
+WHERE id = ANY(ARRAY[
+  '76000000-0000-4000-8000-000000000001'::UUID,
+  '76000000-0000-4000-8000-000000000002'::UUID,
+  '76000000-0000-4000-8000-000000000003'::UUID
+]);
+SELECT set_config('request.jwt.claim.role', 'service_role', false);
+SET ROLE service_role;
+SELECT public.cleanup_trainer_security_e2e_fixture(
+  'security-sql-run',
+  ARRAY[
+    '76000000-0000-4000-8000-000000000001'::UUID,
+    '76000000-0000-4000-8000-000000000002'::UUID,
+    '76000000-0000-4000-8000-000000000003'::UUID
+  ]
+);
+RESET ROLE;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM auth.users WHERE id::TEXT LIKE '76000000-0000-4000-8000-%')
+    OR EXISTS (SELECT 1 FROM public.trainer_plan_assignments WHERE trainer_user_id::TEXT LIKE '76000000-0000-4000-8000-%')
+    OR EXISTS (SELECT 1 FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id=version.assignment_id WHERE assignment.trainer_user_id::TEXT LIKE '76000000-0000-4000-8000-%')
+    OR EXISTS (SELECT 1 FROM public.workout_plans WHERE user_id='76000000-0000-4000-8000-000000000002') THEN
+    RAISE EXCEPTION 'trainer security exact fixture cleanup left published rows or users';
+  END IF;
+END;
+$$;
 
 SELECT 'trainer security supplemental races and IDOR effects passed' AS result;

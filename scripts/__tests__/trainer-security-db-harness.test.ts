@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 
 const runnerUrl = new URL('../test-trainer-security-db.mjs', import.meta.url)
+const relationshipsRunnerUrl = new URL('../test-trainer-relationships-db.mjs', import.meta.url)
 const sqlUrl = new URL('../../supabase/tests/trainer_security_test.sql', import.meta.url)
 
 describe('trainer security database harness', () => {
@@ -43,5 +44,30 @@ describe('trainer security database harness', () => {
       'trainer_assignment_versions', 'workouts', 'workout_exercises',
       'coaching_consents', 'product_notifications', 'professional_audit_logs',
     ]) expect(source).toMatch(new RegExp(`'${dependency}'\\s*,`))
+  })
+
+  it('proves both two-trainer accept backends are lock-waiting before releasing them', async () => {
+    const source = await readFile(relationshipsRunnerUrl, 'utf8')
+    expect(source).toContain('acceptance_actor_pids')
+    expect(source).toContain("wait_event_type = 'Lock'")
+    expect(source).toContain('pid = ANY(acceptance_actor_pids)')
+    const dispatch = source.indexOf("dblink_send_query('accept_b'")
+    const observed = source.indexOf('expected two blocked acceptance actors')
+    const released = source.indexOf("pg_advisory_unlock(hashtextextended('93000000-0000-4000-8000-000000000003'")
+    expect(dispatch).toBeGreaterThan(-1)
+    expect(observed).toBeGreaterThan(dispatch)
+    expect(released).toBeGreaterThan(observed)
+  })
+
+  it('waits for exact accept/publish PIDs before invoking the database half of suspension', async () => {
+    const source = await readFile(sqlUrl, 'utf8')
+    expect(source).toContain('security_accept_publish_pids')
+    expect(source).toContain('security_accept_publish_suspend_db_boundary')
+    const observed = source.indexOf('wait_for_security_lock(ARRAY(SELECT pid FROM security_accept_publish_pids), 2)')
+    const suspended = source.indexOf("dblink_exec('security_accept_publish_suspend_db_boundary', $$DO", observed)
+    const released = source.indexOf("pg_advisory_unlock(hashtextextended('76000000-0000-4000-8000-000000000002'", observed)
+    expect(observed).toBeGreaterThan(-1)
+    expect(suspended).toBeGreaterThan(observed)
+    expect(released).toBeGreaterThan(suspended)
   })
 })

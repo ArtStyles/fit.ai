@@ -17,6 +17,7 @@ describe('relationships database race harness', () => {
 
   it('exercises real suspension races against accept and resume without sleep-based timing', async () => {
     const source = await readFile(harnessUrl, 'utf8')
+    const suspensionSource = source.slice(source.indexOf('const suspensionAcceptRaceFixtureSql'))
 
     expect(source).toContain("dblink_send_query('suspend_accept_trainer'")
     expect(source).toContain("dblink_send_query('suspend_accept_admin'")
@@ -28,6 +29,6 @@ describe('relationships database race harness', () => {
     expect(source).toContain('COACHING_SUSPEND_RESUME_INTERLEAVE_NOT_REACHED')
     expect(source).toContain('COACHING_SUSPEND_RESUME_DEADLOCK')
     expect(source).toContain('COACHING_SUSPEND_RESUME_TRAINER_NOT_SUSPENDED')
-    expect(source).not.toMatch(/pg_sleep|setTimeout/)
+    expect(suspensionSource).not.toMatch(/pg_sleep|setTimeout/)
   })
 })

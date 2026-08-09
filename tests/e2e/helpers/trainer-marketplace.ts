@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   cleanupTrainerRelationshipsFixture,
+  isTrainerSecurityE2EEnabled,
   seedTrainerInsightsFixture,
   seedTrainerProgrammingFixture,
   seedTrainerRelationshipsFixture,
+  type TrainerProgrammingFixture,
 } from './core-product'
 
 type QueryError = { code?: string; message?: string } | null
@@ -124,7 +126,6 @@ export type PreparedSecurityRace = {
   actors: Record<string, SupabaseClient>
   run: Record<string, () => PromiseLike<RpcResult>>
   inspect: () => Promise<Record<string, unknown>>
-  resetPolicy: 'ordinary-cleanup' | 'dedicated-project-reset'
   cleanup: () => Promise<void>
 }
 
@@ -135,7 +136,7 @@ export type PreparedIdorSecurityRace = PreparedSecurityRace & {
 }
 
 export async function runPreparedTrainerSecurityRace<
-  R extends { cleanup: () => Promise<void>; resetPolicy: 'ordinary-cleanup' | 'dedicated-project-reset' },
+  R extends { cleanup: () => Promise<void> },
   T,
 >(input: { prepare: () => Promise<R>; exercise: (race: R) => Promise<T> }): Promise<T> {
   const race = await input.prepare()
@@ -144,6 +145,41 @@ export async function runPreparedTrainerSecurityRace<
   } finally {
     await race.cleanup()
   }
+}
+
+export async function runPublishedSecurityPreparation<T>(input: {
+  prepare: () => Promise<T>
+  cleanup: () => Promise<void>
+}): Promise<T> {
+  try {
+    return await input.prepare()
+  } catch (error) {
+    await input.cleanup()
+    throw error
+  }
+}
+
+type PublishedSecurityFixture = Pick<TrainerProgrammingFixture, 'service' | 'runId' | 'created'>
+
+export async function cleanupTrainerSecurityPublishedFixtures(
+  fixtures: PublishedSecurityFixture[],
+): Promise<number> {
+  if (!isTrainerSecurityE2EEnabled(process.env)) {
+    throw new Error('Published cleanup requires the dedicated trainer security cleanup opt-in')
+  }
+  if (!fixtures.length) return 0
+  const runId = fixtures[0].runId
+  if (!runId || fixtures.some(fixture => fixture.runId !== runId)) {
+    throw new Error('Published cleanup requires one exact E2E run id')
+  }
+  const userIds = Array.from(new Set(fixtures.flatMap(fixture => fixture.created.userIds)))
+  if (!userIds.length) return 0
+  const { data, error } = await (fixtures[0].service.rpc as any)('cleanup_trainer_security_e2e_fixture', {
+    p_run_id: runId,
+    p_user_ids: userIds,
+  })
+  if (error) throw new Error(`Cleaning published trainer security fixtures failed: ${error.message ?? 'unknown error'}`)
+  return Number(data ?? 0)
 }
 
 async function signOutSecurityActors(actors: Record<string, SupabaseClient>): Promise<void> {
@@ -187,8 +223,7 @@ export async function prepareTwoTrainerAcceptRace(scope: string, password: strin
         ])
         return { relationships, requests }
       },
-      resetPolicy: 'ordinary-cleanup',
-      cleanup: async () => {
+    cleanup: async () => {
         await signOutSecurityActors(actors)
         await cleanupTrainerRelationshipsFixture(fixture)
       },
@@ -202,8 +237,10 @@ export async function prepareTwoTrainerAcceptRace(scope: string, password: strin
 
 async function programmingRace(scope: string) {
   const actors: Record<string, SupabaseClient> = {}
-  try {
-    const fixture = await seedTrainerProgrammingFixture(scope, { skipReadiness: true })
+  let fixture: TrainerProgrammingFixture | undefined
+  return runPublishedSecurityPreparation({
+    prepare: async () => {
+    fixture = await seedTrainerProgrammingFixture(scope, { skipReadiness: true })
     Object.assign(actors, {
       fixtureTrainer: fixture.trainerA.client,
       fixtureClient: fixture.client.client,
@@ -218,10 +255,12 @@ async function programmingRace(scope: string) {
     const admin = await independentActor(fixture.admin.email, fixture.password)
     actors.admin = admin
     return { fixture, proposal, trainerA, trainerB, client, admin, actors }
-  } catch (error) {
-    await signOutSecurityActors(actors)
-    throw error
-  }
+    },
+    cleanup: async () => {
+      await signOutSecurityActors(actors)
+      if (fixture) await cleanupTrainerSecurityPublishedFixtures([fixture])
+    },
+  })
 }
 
 async function suspendThroughAuthenticatedAdmin(
@@ -266,8 +305,10 @@ export async function prepareIdempotentProposalRace(scope: string): Promise<Prep
       ])
       return { assignments, versions, plans }
     },
-    resetPolicy: 'dedicated-project-reset',
-    cleanup: () => signOutSecurityActors(actors),
+    cleanup: async () => {
+      await signOutSecurityActors(actors)
+      await cleanupTrainerSecurityPublishedFixtures([prepared.fixture])
+    },
   }
 }
 
@@ -293,17 +334,23 @@ export async function prepareAcceptPublishSuspendRace(scope: string): Promise<Pr
       ])
       return { account, trainerProfile, relationship, consents, assignments, versions, plans }
     },
-    resetPolicy: 'dedicated-project-reset',
-    cleanup: () => signOutSecurityActors(actors),
+    cleanup: async () => {
+      await signOutSecurityActors(actors)
+      await cleanupTrainerSecurityPublishedFixtures([prepared.fixture])
+    },
   }
 }
 
 export async function prepareRevisionRace(scope: string): Promise<PreparedSecurityRace> {
   const prepared = await programmingRace(scope)
-  const accepted = await (prepared.client.rpc as any)('accept_trainer_assignment', { p_assignment_id: prepared.proposal.assignmentId, p_idempotency_key: `accept-${scope}` })
-  if (accepted.error) {
+  let accepted: RpcResult
+  try {
+    accepted = await (prepared.client.rpc as any)('accept_trainer_assignment', { p_assignment_id: prepared.proposal.assignmentId, p_idempotency_key: `accept-${scope}` })
+    if (accepted.error) throw new Error('Could not prepare revision race')
+  } catch (error) {
     await signOutSecurityActors(prepared.actors)
-    throw new Error('Could not prepare revision race')
+    await cleanupTrainerSecurityPublishedFixtures([prepared.fixture])
+    throw error
   }
   const revision = (client: SupabaseClient, suffix: string) => () => (client.rpc as any)('publish_trainer_assignment_revision', {
     p_assignment_id: prepared.proposal.assignmentId, p_template_id: prepared.proposal.templateId,
@@ -320,8 +367,10 @@ export async function prepareRevisionRace(scope: string): Promise<PreparedSecuri
       ])
       return { versions, plans }
     },
-    resetPolicy: 'dedicated-project-reset',
-    cleanup: () => signOutSecurityActors(actors),
+    cleanup: async () => {
+      await signOutSecurityActors(actors)
+      await cleanupTrainerSecurityPublishedFixtures([prepared.fixture])
+    },
   }
 }
 
@@ -358,11 +407,14 @@ export async function prepareEndReadEvidenceRace(scope: string): Promise<Prepare
       const assignmentIds = new Set((assignments ?? []).map((assignment: { id: string }) => assignment.id))
       return { relationship, consents, assignments, versions: (versions ?? []).filter((version: { assignment_id: string }) => assignmentIds.has(version.assignment_id)), plans }
     },
-    resetPolicy: 'dedicated-project-reset',
-    cleanup: () => signOutSecurityActors(actors),
+    cleanup: async () => {
+      await signOutSecurityActors(actors)
+      await cleanupTrainerSecurityPublishedFixtures([fixture])
+    },
   }
   } catch (error) {
     await signOutSecurityActors(actors)
+    await cleanupTrainerSecurityPublishedFixtures([fixture])
     throw error
   }
 }
@@ -373,60 +425,109 @@ async function snapshotRows(query: PromiseLike<{ data: unknown; error: QueryErro
   return Array.isArray(data) ? data : data ? [data] : []
 }
 
+type TrainerSecuritySnapshotFixture = Pick<
+  TrainerProgrammingFixture,
+  'client' | 'trainerA' | 'trainerB' | 'admin' | 'relationshipId'
+>
+
+export function buildTrainerSecuritySnapshotScope(
+  attacker: TrainerSecuritySnapshotFixture,
+  foreign: TrainerSecuritySnapshotFixture,
+): {
+  userIds: string[]
+  applicationIds: string[]
+  trainerProfileIds: string[]
+  relationshipIds: string[]
+} {
+  return {
+    userIds: [
+      attacker.client.id, attacker.trainerA.id, attacker.trainerB.id, attacker.admin.id,
+      foreign.client.id, foreign.trainerA.id, foreign.trainerB.id, foreign.admin.id,
+    ],
+    applicationIds: [
+      attacker.trainerA.applicationId, attacker.trainerB.applicationId,
+      foreign.trainerA.applicationId, foreign.trainerB.applicationId,
+    ],
+    trainerProfileIds: [
+      attacker.trainerA.profileId, attacker.trainerB.profileId,
+      foreign.trainerA.profileId, foreign.trainerB.profileId,
+    ],
+    relationshipIds: [attacker.relationshipId, foreign.relationshipId],
+  }
+}
+
+export async function readPersistedForeignIdorDependencies(
+  service: SupabaseClient,
+  input: { relationshipId: string; trainerProfileIds: string[] },
+): Promise<{ requestId: string; serviceRows: unknown[] }> {
+  const relationship = await (service.from('coaching_relationships') as any)
+    .select('source_request_id,service_id').eq('id', input.relationshipId).single()
+  if (relationship.error || !relationship.data?.source_request_id) {
+    throw new Error('Foreign IDOR relationship has no persisted source request')
+  }
+  const serviceRows = await snapshotRows(
+    (service.from('trainer_service_offerings') as any)
+      .select('*').in('trainer_profile_id', input.trainerProfileIds).order('id'),
+    'foreign service offerings',
+  )
+  return { requestId: relationship.data.source_request_id, serviceRows }
+}
+
 export async function prepareAuthoritativeIdorRace(scope: string): Promise<PreparedIdorSecurityRace> {
   const preparationActors: Record<string, SupabaseClient> = {}
+  let attacker: Awaited<ReturnType<typeof programmingRace>> | undefined
+  let foreign: Awaited<ReturnType<typeof seedTrainerInsightsFixture>> | undefined
   try {
-  const attacker = await programmingRace(`${scope}-attacker`)
+  attacker = await programmingRace(`${scope}-attacker`)
   Object.assign(preparationActors, attacker.actors)
-  const foreign = await seedTrainerInsightsFixture(`${scope}-foreign`, { skipReadiness: true })
+  foreign = await seedTrainerInsightsFixture(`${scope}-foreign`, { skipReadiness: true })
+  const readyAttacker = attacker
+  const readyForeign = foreign
   Object.assign(preparationActors, {
-    foreignTrainer: foreign.trainerA.client,
-    foreignClient: foreign.client.client,
+    foreignTrainer: readyForeign.trainerA.client,
+    foreignClient: readyForeign.client.client,
   })
-  const foreignProposal = await foreign.createTemplateAndPropose('Foreign IDOR program', `proposal-${scope}-foreign`)
-  const accepted = await (foreign.client.client.rpc as any)('accept_trainer_assignment', {
+  const foreignProposal = await readyForeign.createTemplateAndPropose('Foreign IDOR program', `proposal-${scope}-foreign`)
+  const accepted = await (readyForeign.client.client.rpc as any)('accept_trainer_assignment', {
     p_assignment_id: foreignProposal.assignmentId,
     p_idempotency_key: `accept-${scope}-foreign`,
   })
   if (accepted.error) throw new Error('Could not accept the foreign IDOR assignment')
-  const evidence = await foreign.prepareInsightsEvidence()
+  const evidence = await readyForeign.prepareInsightsEvidence()
   const credentialId = randomUUID()
-  const credential = await (foreign.service.from('trainer_application_credentials') as any).insert({
+  const credential = await (readyForeign.service.from('trainer_application_credentials') as any).insert({
     id: credentialId,
-    application_id: foreign.trainerA.applicationId,
+    application_id: readyForeign.trainerA.applicationId,
     credential_type: 'link',
     title: 'Foreign IDOR credential',
     external_url: 'https://example.test/foreign-credential',
   })
   if (credential.error) throw new Error('Could not create the foreign IDOR credential')
-  const request = await (foreign.client.client.rpc as any)('create_coaching_request', {
-    service_id: foreign.trainerB.serviceId,
-    message: 'Foreign IDOR request',
-    consent_version: 'training-profile-v1',
-    idempotency_key: randomUUID(),
+  const foreignDependencies = await readPersistedForeignIdorDependencies(readyForeign.service, {
+    relationshipId: readyForeign.relationshipId,
+    trainerProfileIds: [readyForeign.trainerA.profileId, readyForeign.trainerB.profileId],
   })
-  if (request.error || !request.data?.[0]?.request_id) throw new Error('Could not create the foreign IDOR request')
-  const requestId = request.data[0].request_id as string
-  const activeAssignment = await (foreign.service.from('trainer_plan_assignments') as any)
+  const requestId = foreignDependencies.requestId
+  const activeAssignment = await (readyForeign.service.from('trainer_plan_assignments') as any)
     .select('active_version_id').eq('id', foreignProposal.assignmentId).single()
   if (activeAssignment.error || !activeAssignment.data?.active_version_id) throw new Error('Foreign IDOR assignment has no active version')
-  const activeVersion = await (foreign.service.from('trainer_assignment_versions') as any)
+  const activeVersion = await (readyForeign.service.from('trainer_assignment_versions') as any)
     .select('materialized_plan_id').eq('id', activeAssignment.data.active_version_id).single()
   if (activeVersion.error || !activeVersion.data?.materialized_plan_id) throw new Error('Foreign IDOR version has no materialized plan')
 
   const foreignIds: Record<TrainerSecurityIdField, string> = {
-    applicationId: foreign.trainerA.applicationId,
+    applicationId: readyForeign.trainerA.applicationId,
     credentialId,
     requestId,
-    relationshipId: foreign.relationshipId,
-    clientId: foreign.client.id,
+    relationshipId: readyForeign.relationshipId,
+    clientId: readyForeign.client.id,
     templateId: foreignProposal.templateId,
     assignmentId: foreignProposal.assignmentId,
     planId: activeVersion.data.materialized_plan_id,
     progressLogId: evidence.currentProfessionalProgressLogId,
   }
   const missingIds = Object.fromEntries(TRAINER_SECURITY_ID_FIELDS.map(field => [field, randomUUID()])) as Record<TrainerSecurityIdField, string>
-  const actor = attacker.trainerA
+  const actor = readyAttacker.trainerA
   const idFor = (field: TrainerSecurityIdField, kind: 'foreign' | 'missing') =>
     kind === 'foreign' ? foreignIds[field] : missingIds[field]
   const attempt = async (field: TrainerSecurityIdField, kind: 'foreign' | 'missing'): Promise<RpcResult> => {
@@ -441,14 +542,14 @@ export async function prepareAuthoritativeIdorRace(scope: string): Promise<Prepa
       case 'relationshipId': return (actor.rpc as any)('end_coaching_relationship', { p_relationship_id: id, p_reason: null, p_idempotency_key: randomUUID() })
       case 'clientId': return (actor.rpc as any)('get_coach_client_insights', { p_client_id: id, p_from_date: '2026-07-01', p_to_date: '2026-08-01' })
       case 'templateId': return (actor.rpc as any)('propose_trainer_assignment', {
-        p_relationship_id: attacker.fixture.relationshipId,
+        p_relationship_id: readyAttacker.fixture.relationshipId,
         p_template_id: id,
         p_change_summary: null,
         p_idempotency_key: randomUUID(),
       })
       case 'assignmentId': return (actor.rpc as any)('publish_trainer_assignment_revision', {
         p_assignment_id: id,
-        p_template_id: attacker.proposal.templateId,
+        p_template_id: readyAttacker.proposal.templateId,
         p_change_summary: 'Blocked IDOR revision',
         p_idempotency_key: randomUUID(),
       })
@@ -458,39 +559,67 @@ export async function prepareAuthoritativeIdorRace(scope: string): Promise<Prepa
   }
 
   const inspect = async (): Promise<Record<string, unknown>> => {
-    const service = foreign.service
-    const assignmentIds = [foreignIds.assignmentId]
+    const service = readyForeign.service
+    const snapshotScope = buildTrainerSecuritySnapshotScope(readyAttacker.fixture, readyForeign)
+    const relationships = await snapshotRows(
+      (service.from('coaching_relationships') as any).select('*')
+        .or(`client_user_id.in.(${snapshotScope.userIds.join(',')}),trainer_user_id.in.(${snapshotScope.userIds.join(',')})`)
+        .order('id'),
+      'relationships',
+    )
+    const relationshipIds = (relationships as Array<{ id: string }>).map(row => row.id)
+    const templates = await snapshotRows(
+      (service.from('trainer_program_templates') as any).select('*').in('trainer_user_id', snapshotScope.userIds).order('id'),
+      'templates',
+    )
+    const templateIds = (templates as Array<{ id: string }>).map(row => row.id)
+    const assignments = await snapshotRows(
+      (service.from('trainer_plan_assignments') as any).select('*').in('relationship_id', relationshipIds).order('id'),
+      'assignments',
+    )
+    const assignmentIds = (assignments as Array<{ id: string }>).map(row => row.id)
     const versions = await snapshotRows((service.from('trainer_assignment_versions') as any).select('*').in('assignment_id', assignmentIds).order('id'), 'versions')
-    const planIds = (versions as Array<{ materialized_plan_id?: string | null }>).map(row => row.materialized_plan_id).filter((id): id is string => Boolean(id))
+    const plans = await snapshotRows(
+      (service.from('workout_plans') as any).select('*').in('user_id', snapshotScope.userIds).order('id'),
+      'plans',
+    )
+    const planIds = (plans as Array<{ id: string }>).map(row => row.id)
     const workouts = await snapshotRows((service.from('workouts') as any).select('*').in('plan_id', planIds).order('id'), 'workouts')
     const workoutIds = (workouts as Array<{ id: string }>).map(row => row.id)
-    const templateWorkouts = await snapshotRows((service.from('trainer_template_workouts') as any).select('*').eq('template_id', foreignIds.templateId).order('id'), 'template workouts')
+    const templateWorkouts = await snapshotRows((service.from('trainer_template_workouts') as any).select('*').in('template_id', templateIds).order('id'), 'template workouts')
     const templateWorkoutIds = (templateWorkouts as Array<{ id: string }>).map(row => row.id)
-    const involvedUsers = [foreign.trainerA.id, foreign.client.id]
+    const progressLogs = await snapshotRows(
+      (service.from('progress_logs') as any).select('*').in('user_id', snapshotScope.userIds).order('id'),
+      'progress logs',
+    )
+    const progressLogIds = (progressLogs as Array<{ id: string }>).map(row => row.id)
     return {
-      applications: await snapshotRows((service.from('trainer_applications') as any).select('*').eq('id', foreignIds.applicationId).order('id'), 'applications'),
-      credentials: await snapshotRows((service.from('trainer_application_credentials') as any).select('*').eq('id', foreignIds.credentialId).order('id'), 'credentials'),
-      credentialCleanup: await snapshotRows((service.from('trainer_credential_storage_cleanup') as any).select('*').eq('application_id', foreignIds.applicationId).order('id'), 'credential cleanup'),
-      applicationEvents: await snapshotRows((service.from('trainer_application_events') as any).select('*').eq('application_id', foreignIds.applicationId).order('id'), 'application events'),
-      interviews: await snapshotRows((service.from('trainer_interviews') as any).select('*').eq('application_id', foreignIds.applicationId).order('id'), 'interviews'),
-      trainerProfiles: await snapshotRows((service.from('trainer_profiles') as any).select('*').eq('source_application_id', foreignIds.applicationId).order('id'), 'trainer profiles'),
-      serviceOfferings: await snapshotRows((service.from('trainer_service_offerings') as any).select('*').in('trainer_id', [foreign.trainerA.id, foreign.trainerB.id]).order('id'), 'service offerings'),
-      requests: await snapshotRows((service.from('coaching_requests') as any).select('*').eq('id', foreignIds.requestId).order('id'), 'requests'),
-      relationships: await snapshotRows((service.from('coaching_relationships') as any).select('*').eq('id', foreignIds.relationshipId).order('id'), 'relationships'),
-      consents: await snapshotRows((service.from('coaching_consents') as any).select('*').eq('relationship_id', foreignIds.relationshipId).order('id'), 'consents'),
-      templates: await snapshotRows((service.from('trainer_program_templates') as any).select('*').eq('id', foreignIds.templateId).order('id'), 'templates'),
+      accounts: await snapshotRows((service.from('profiles') as any).select('*').in('id', snapshotScope.userIds).order('id'), 'accounts'),
+      applications: await snapshotRows((service.from('trainer_applications') as any).select('*').in('id', snapshotScope.applicationIds).order('id'), 'applications'),
+      credentials: await snapshotRows((service.from('trainer_application_credentials') as any).select('*').in('application_id', snapshotScope.applicationIds).order('id'), 'credentials'),
+      credentialCleanup: await snapshotRows((service.from('trainer_credential_storage_cleanup') as any).select('*').in('application_id', snapshotScope.applicationIds).order('id'), 'credential cleanup'),
+      applicationEvents: await snapshotRows((service.from('trainer_application_events') as any).select('*').in('application_id', snapshotScope.applicationIds).order('id'), 'application events'),
+      interviews: await snapshotRows((service.from('trainer_interviews') as any).select('*').in('application_id', snapshotScope.applicationIds).order('id'), 'interviews'),
+      trainerProfiles: await snapshotRows((service.from('trainer_profiles') as any).select('*').in('id', snapshotScope.trainerProfileIds).order('id'), 'trainer profiles'),
+      serviceOfferings: await snapshotRows((service.from('trainer_service_offerings') as any).select('*').in('trainer_profile_id', snapshotScope.trainerProfileIds).order('id'), 'service offerings'),
+      requests: await snapshotRows((service.from('coaching_requests') as any).select('*').in('client_user_id', snapshotScope.userIds).order('id'), 'requests'),
+      relationships,
+      consents: await snapshotRows((service.from('coaching_consents') as any).select('*').in('relationship_id', relationshipIds).order('id'), 'consents'),
+      templates,
       templateWorkouts,
       templateExercises: await snapshotRows((service.from('trainer_template_exercises') as any).select('*').in('template_workout_id', templateWorkoutIds).order('id'), 'template exercises'),
-      assignments: await snapshotRows((service.from('trainer_plan_assignments') as any).select('*').in('id', assignmentIds).order('id'), 'assignments'),
+      assignments,
       versions,
-      plans: await snapshotRows((service.from('workout_plans') as any).select('*').in('id', planIds).order('id'), 'plans'),
+      plans,
       workouts,
       workoutExercises: await snapshotRows((service.from('workout_exercises') as any).select('*').in('workout_id', workoutIds).order('id'), 'workout exercises'),
-      progressLogs: await snapshotRows((service.from('progress_logs') as any).select('*').eq('id', foreignIds.progressLogId).order('id'), 'progress logs'),
-      exerciseLogs: await snapshotRows((service.from('exercise_logs') as any).select('*').eq('progress_log_id', foreignIds.progressLogId).order('id'), 'exercise logs'),
-      notifications: await snapshotRows((service.from('product_notifications') as any).select('*').in('user_id', involvedUsers).order('id'), 'notifications'),
-      auditByActor: await snapshotRows((service.from('professional_audit_logs') as any).select('*').in('actor_user_id', involvedUsers).order('id'), 'actor audits'),
-      auditBySubject: await snapshotRows((service.from('professional_audit_logs') as any).select('*').in('subject_user_id', involvedUsers).order('id'), 'subject audits'),
+      sessionAuthorizations: await snapshotRows((service.from('session_authorizations') as any).select('*').in('user_id', snapshotScope.userIds).order('client_session_id'), 'session authorizations'),
+      progressLogs,
+      exerciseLogs: await snapshotRows((service.from('exercise_logs') as any).select('*').in('progress_log_id', progressLogIds).order('id'), 'exercise logs'),
+      measurements: await snapshotRows((service.from('measurements') as any).select('*').in('user_id', snapshotScope.userIds).order('id'), 'measurements'),
+      notifications: await snapshotRows((service.from('product_notifications') as any).select('*').in('user_id', snapshotScope.userIds).order('id'), 'notifications'),
+      auditByActor: await snapshotRows((service.from('professional_audit_logs') as any).select('*').in('actor_user_id', snapshotScope.userIds).order('id'), 'actor audits'),
+      auditBySubject: await snapshotRows((service.from('professional_audit_logs') as any).select('*').in('subject_user_id', snapshotScope.userIds).order('id'), 'subject audits'),
     }
   }
   const actors = preparationActors
@@ -498,14 +627,18 @@ export async function prepareAuthoritativeIdorRace(scope: string): Promise<Prepa
     actors,
     run: {},
     inspect,
-    resetPolicy: 'dedicated-project-reset',
-    cleanup: () => signOutSecurityActors(actors),
+    cleanup: async () => {
+      await signOutSecurityActors(actors)
+      await cleanupTrainerSecurityPublishedFixtures([readyAttacker.fixture, readyForeign])
+    },
     foreignIds,
     missingIds,
     attempt,
   }
   } catch (error) {
     await signOutSecurityActors(preparationActors)
+    const published = [attacker?.fixture, foreign].filter((fixture): fixture is TrainerProgrammingFixture => Boolean(fixture))
+    if (published.length) await cleanupTrainerSecurityPublishedFixtures(published)
     throw error
   }
 }
