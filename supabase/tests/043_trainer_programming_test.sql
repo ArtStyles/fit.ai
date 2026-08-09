@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(40);
+SELECT plan(46);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -51,6 +51,40 @@ SELECT lives_ok(
 SELECT lives_ok(
   $$DELETE FROM public.trainer_program_templates WHERE id = '11111111-0000-4000-8000-000000000053'$$,
   'active trainer can delete an unassigned owned template'
+);
+RESET ROLE;
+
+-- The editor reorders through locked SECURITY DEFINER RPCs: every persisted
+-- row must be represented exactly once, and an outsider cannot invoke them.
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES
+  ('11111111-0000-4000-8000-000000000054', '11111111-0000-4000-8000-000000000051', 'Order one', 1, 1),
+  ('11111111-0000-4000-8000-000000000055', '11111111-0000-4000-8000-000000000051', 'Order two', 2, 2);
+INSERT INTO public.trainer_template_exercises (id, template_workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
+  ('11111111-0000-4000-8000-000000000056', '11111111-0000-4000-8000-000000000055', '11111111-0000-4000-8000-000000000041', 1, 3, 10, 60),
+  ('11111111-0000-4000-8000-000000000057', '11111111-0000-4000-8000-000000000055', '11111111-0000-4000-8000-000000000041', 2, 3, 8, 60);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.reorder_trainer_template_workouts('11111111-0000-4000-8000-000000000051', ARRAY['11111111-0000-4000-8000-000000000055'::uuid, '11111111-0000-4000-8000-000000000054'::uuid])$$,
+  'owner reorders every workout atomically through the template RPC'
+);
+SELECT is((SELECT order_in_plan FROM public.trainer_template_workouts WHERE id = '11111111-0000-4000-8000-000000000055'), 1, 'atomic reorder updates the complete permutation');
+SELECT throws_ok(
+  $$SELECT public.reorder_trainer_template_workouts('11111111-0000-4000-8000-000000000051', ARRAY['11111111-0000-4000-8000-000000000054'::uuid])$$,
+  'TRAINER_TEMPLATE_REORDER_INCOMPLETE', 'partial reorder rolls back instead of leaving duplicate or missing order values'
+);
+SELECT lives_ok(
+  $$SELECT public.reorder_trainer_template_exercises('11111111-0000-4000-8000-000000000055', ARRAY['11111111-0000-4000-8000-000000000057'::uuid, '11111111-0000-4000-8000-000000000056'::uuid])$$,
+  'owner reorders every exercise atomically through the workout RPC'
+);
+SELECT is((SELECT order_index FROM public.trainer_template_exercises WHERE id = '11111111-0000-4000-8000-000000000057'), 1, 'exercise reorder updates the complete permutation');
+SELECT throws_ok(
+  $$SELECT public.reorder_trainer_template_exercises('11111111-0000-4000-8000-000000000055', ARRAY['11111111-0000-4000-8000-000000000056'::uuid])$$,
+  'TRAINER_TEMPLATE_REORDER_INCOMPLETE', 'partial exercise reorder rolls back without persisting an invalid order'
 );
 RESET ROLE;
 

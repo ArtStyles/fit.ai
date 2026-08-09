@@ -570,6 +570,97 @@ GRANT ALL ON TABLE public.trainer_template_exercises TO service_role;
 GRANT ALL ON TABLE public.trainer_plan_assignments TO service_role;
 GRANT ALL ON TABLE public.trainer_assignment_versions TO service_role;
 
+-- Reordering uses a single locked transaction. The constraints are deferred
+-- only inside these RPCs, so a client can never observe a duplicate order.
+ALTER TABLE public.trainer_template_workouts
+  DROP CONSTRAINT IF EXISTS trainer_template_workouts_template_order_unique;
+ALTER TABLE public.trainer_template_workouts
+  ADD CONSTRAINT trainer_template_workouts_template_order_unique
+  UNIQUE (template_id, order_in_plan) DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE public.trainer_template_exercises
+  DROP CONSTRAINT IF EXISTS trainer_template_exercises_workout_order_unique;
+ALTER TABLE public.trainer_template_exercises
+  ADD CONSTRAINT trainer_template_exercises_workout_order_unique
+  UNIQUE (template_workout_id, order_index) DEFERRABLE INITIALLY IMMEDIATE;
+
+CREATE OR REPLACE FUNCTION public.reorder_trainer_template_workouts(
+  p_template_id UUID,
+  p_workout_ids UUID[]
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_ids UUID[];
+  v_expected UUID[];
+BEGIN
+  IF auth.uid() IS NULL OR NOT public.is_account_active(auth.uid()) OR NOT EXISTS (
+    SELECT 1 FROM public.trainer_program_templates template
+    JOIN public.trainer_profiles profile ON profile.user_id = template.trainer_user_id
+    WHERE template.id = p_template_id AND template.trainer_user_id = auth.uid() AND profile.status = 'active'
+  ) THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  IF p_workout_ids IS NULL OR cardinality(p_workout_ids) IS NULL OR cardinality(p_workout_ids) = 0
+    OR cardinality(p_workout_ids) <> cardinality(ARRAY(SELECT DISTINCT item FROM unnest(p_workout_ids) AS item)) THEN
+    RAISE EXCEPTION 'TRAINER_TEMPLATE_REORDER_INVALID';
+  END IF;
+  PERFORM 1 FROM public.trainer_program_templates WHERE id = p_template_id FOR UPDATE;
+  WITH locked_workouts AS (
+    SELECT id FROM public.trainer_template_workouts WHERE template_id = p_template_id FOR UPDATE
+  ) SELECT array_agg(id ORDER BY id) INTO v_expected FROM locked_workouts;
+  SELECT array_agg(id ORDER BY id) INTO v_ids FROM unnest(p_workout_ids) AS id;
+  IF v_expected IS NULL OR v_expected IS DISTINCT FROM v_ids THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_REORDER_INCOMPLETE'; END IF;
+  SET CONSTRAINTS trainer_template_workouts_template_order_unique DEFERRED;
+  UPDATE public.trainer_template_workouts workout
+  SET order_in_plan = array_position(p_workout_ids, workout.id)
+  WHERE workout.template_id = p_template_id;
+  RETURN jsonb_build_object('template_id', p_template_id, 'changed', TRUE);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reorder_trainer_template_exercises(
+  p_template_workout_id UUID,
+  p_template_exercise_ids UUID[]
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_ids UUID[];
+  v_expected UUID[];
+BEGIN
+  IF auth.uid() IS NULL OR NOT public.is_account_active(auth.uid()) OR NOT EXISTS (
+    SELECT 1 FROM public.trainer_template_workouts workout
+    JOIN public.trainer_program_templates template ON template.id = workout.template_id
+    JOIN public.trainer_profiles profile ON profile.user_id = template.trainer_user_id
+    WHERE workout.id = p_template_workout_id AND template.trainer_user_id = auth.uid() AND profile.status = 'active'
+  ) THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_OWNER_REQUIRED'; END IF;
+  IF p_template_exercise_ids IS NULL OR cardinality(p_template_exercise_ids) IS NULL OR cardinality(p_template_exercise_ids) = 0
+    OR cardinality(p_template_exercise_ids) <> cardinality(ARRAY(SELECT DISTINCT item FROM unnest(p_template_exercise_ids) AS item)) THEN
+    RAISE EXCEPTION 'TRAINER_TEMPLATE_REORDER_INVALID';
+  END IF;
+  PERFORM 1 FROM public.trainer_template_workouts WHERE id = p_template_workout_id FOR UPDATE;
+  WITH locked_exercises AS (
+    SELECT id FROM public.trainer_template_exercises WHERE template_workout_id = p_template_workout_id FOR UPDATE
+  ) SELECT array_agg(id ORDER BY id) INTO v_expected FROM locked_exercises;
+  SELECT array_agg(id ORDER BY id) INTO v_ids FROM unnest(p_template_exercise_ids) AS id;
+  IF v_expected IS NULL OR v_expected IS DISTINCT FROM v_ids THEN RAISE EXCEPTION 'TRAINER_TEMPLATE_REORDER_INCOMPLETE'; END IF;
+  SET CONSTRAINTS trainer_template_exercises_workout_order_unique DEFERRED;
+  UPDATE public.trainer_template_exercises exercise
+  SET order_index = array_position(p_template_exercise_ids, exercise.id)
+  WHERE exercise.template_workout_id = p_template_workout_id;
+  RETURN jsonb_build_object('template_workout_id', p_template_workout_id, 'changed', TRUE);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.reorder_trainer_template_workouts(UUID, UUID[]) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.reorder_trainer_template_exercises(UUID, UUID[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.reorder_trainer_template_workouts(UUID, UUID[]) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.reorder_trainer_template_exercises(UUID, UUID[]) TO authenticated, service_role;
+
 
 -- Preserve the Phase 3 atomic contracts while excluding professional
 -- materializations from personal-library quota checks.
