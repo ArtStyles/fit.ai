@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(124);
+SELECT plan(126);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -817,6 +817,19 @@ SELECT ok(
   ),
   'authenticated clients cannot bypass v3 locked-plan validation through v2'
 );
+SELECT ok(
+  NOT has_function_privilege(
+    'authenticated',
+    'public.save_session_log_atomic(uuid,uuid,timestamptz,integer,integer,jsonb,jsonb)'::regprocedure,
+    'EXECUTE'
+  ),
+  'authenticated clients cannot bypass v3 locked-plan validation through v1'
+);
+SELECT throws_ok(
+  $$SELECT public.save_session_log_atomic('f1111111-0000-4000-8000-000000000041', 'f1111111-0000-4000-8000-000000000031', NOW(), 40, 8, '[]'::jsonb, '{"version":1,"prs":[],"progressions":[]}'::jsonb)$$,
+  'permission denied for function save_session_log_atomic',
+  'a direct v1 invocation cannot bypass locked-plan v3 validation'
+);
 SELECT is(
   (
     SELECT inserted
@@ -824,12 +837,12 @@ SELECT is(
       'f1111111-0000-4000-8000-000000000041',
       'f1111111-0000-4000-8000-000000000031',
       NOW(), 40, 8,
-      '[{"exercise_id":"11111111-0000-4000-8000-000000000041","sets_completed":2,"reps_completed":[8,9],"weights_kg":[80,82.5],"rpe_values":[7,8],"duration_seconds":null,"notes":"Retry","skip_reason":null}]'::jsonb,
+      '[{"exercise_id":"f1111111-0000-4000-8000-000000000011","sets_completed":0,"reps_completed":[],"weights_kg":[],"rpe_values":[],"duration_seconds":null,"notes":null,"skip_reason":""},{"exercise_id":"f1111111-0000-4000-8000-000000000011","sets_completed":1,"reps_completed":[1],"weights_kg":[1],"rpe_values":[1],"duration_seconds":null,"notes":null,"skip_reason":null}]'::jsonb,
       '{"version":1,"prs":[],"progressions":[]}'::jsonb
     )
   ),
   FALSE,
-  'locked v3 retries preserve v2 idempotency after the authorization is consumed'
+  'a malformed locked v3 retry preserves the original v2 idempotent result after consumption'
 );
 
 RESET ROLE;

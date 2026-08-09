@@ -1620,6 +1620,23 @@ BEGIN
     RAISE EXCEPTION 'SESSION_AUTHORIZATION_MISMATCH';
   END IF;
 
+  -- A consumed claim is an idempotent retry, not a second execution. Delegate
+  -- before inspecting mutable plan state or the retry payload so a malformed
+  -- offline retry always receives the original immutable result.
+  IF v_authorization.consumed_at IS NOT NULL THEN
+    RETURN QUERY
+    SELECT * FROM public.save_session_log_atomic_v2(
+      p_client_session_id,
+      p_workout_id,
+      p_completed_at,
+      p_duration_minutes,
+      p_mood_rating,
+      p_exercise_logs,
+      p_result_snapshot
+    );
+    RETURN;
+  END IF;
+
   SELECT * INTO v_authorized_plan
   FROM public.workout_plans
   WHERE id = v_authorization.plan_id
@@ -1742,6 +1759,16 @@ GRANT EXECUTE ON FUNCTION public.save_session_log_atomic_v3(UUID, UUID, TIMESTAM
 -- validation above by invoking the previous RPC name.
 REVOKE EXECUTE ON FUNCTION public.save_session_log_atomic_v2(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB)
   FROM authenticated;
+
+DO $$
+BEGIN
+  -- 035 may be absent in exceptionally old/minimal installations. Do not make
+  -- this rerunnable Phase 4 migration depend on its legacy RPC existing.
+  IF to_regprocedure('public.save_session_log_atomic(uuid,uuid,timestamp with time zone,integer,integer,jsonb,jsonb)') IS NOT NULL THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.save_session_log_atomic(UUID, UUID, TIMESTAMPTZ, INTEGER, INTEGER, JSONB, JSONB) FROM authenticated';
+  END IF;
+END;
+$$;
 
 
 -- Preserve the Phase 3 atomic contracts while excluding professional

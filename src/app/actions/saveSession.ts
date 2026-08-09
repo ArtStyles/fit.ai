@@ -671,6 +671,28 @@ function isPrescriptionLockedAuthorization(value: unknown): boolean {
     (plan as { prescriptionLocked?: unknown }).prescriptionLocked === true)
 }
 
+type SchemaLookupError = { code?: string | null; message?: string | null }
+
+function isMissingSchemaRelation(error: SchemaLookupError | null | undefined, relation: string): boolean {
+  if (!error || !['PGRST205', '42P01'].includes(error.code ?? '')) return false
+  return new RegExp(`(?:public\\.)?${relation}(?![A-Za-z0-9_])`, 'i').test(error.message ?? '')
+}
+
+function isMissingSchemaColumn(error: SchemaLookupError | null | undefined, column: string): boolean {
+  if (!error || !['PGRST204', '42703'].includes(error.code ?? '')) return false
+  return new RegExp(`\\b${column}\\b`, 'i').test(error.message ?? '')
+}
+
+function lockedSessionSaveUpgradeResult() {
+  return {
+    success: false,
+    progressLogId: null,
+    prs: [],
+    progressions: [],
+    error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesión de forma segura.',
+  }
+}
+
 function isMissingProgressLogColumn(
   error: { message: string } | null,
   column: 'client_session_id' | 'session_result_snapshot' | 'session_context_snapshot' | 'session_detail_backup',
@@ -995,12 +1017,55 @@ export async function saveSession(
   }
 
   if (isMissingAtomicSaveRpc(persistenceError, 'save_session_log_atomic_v3')) {
-    const { data: authorization } = await (supabase
+    const authorizationLookup = await (supabase
       .from('session_authorizations') as any)
-      .select('session_context_snapshot')
+      .select('plan_id, session_context_snapshot')
       .eq('client_session_id', payload.clientSessionId)
       .eq('user_id', user.id)
-      .maybeSingle() as { data: { session_context_snapshot: unknown } | null }
+      .maybeSingle() as {
+        data: { plan_id: unknown; session_context_snapshot: unknown } | null
+        error?: SchemaLookupError | null
+      }
+
+    let mayUseLegacyAtomicFallback = false
+    if (isMissingSchemaRelation(authorizationLookup.error, 'session_authorizations')) {
+      // Pre-038 databases never issued authorizations. They are the only
+      // legitimate v1/v2 fallback path after v3 is absent.
+      mayUseLegacyAtomicFallback = true
+    } else if (authorizationLookup.error || !authorizationLookup.data) {
+      return lockedSessionSaveUpgradeResult()
+    } else {
+      const authorization = authorizationLookup.data
+      if (isPrescriptionLockedAuthorization(authorization.session_context_snapshot)) {
+        return lockedSessionSaveUpgradeResult()
+      }
+
+      if (typeof authorization.plan_id !== 'string' || !isUuid(authorization.plan_id)) {
+        return lockedSessionSaveUpgradeResult()
+      }
+
+      const planLookup = await (supabase
+        .from('workout_plans') as any)
+        .select('id, prescription_locked')
+        .eq('id', authorization.plan_id)
+        .eq('user_id', user.id)
+        .maybeSingle() as {
+          data: { id: string; prescription_locked?: boolean | null } | null
+          error?: SchemaLookupError | null
+        }
+
+      if (isMissingSchemaColumn(planLookup.error, 'prescription_locked')) {
+        // A 038-era personal authorization has no professional lock column.
+        // Snapshot lock evidence is still checked below before allowing v2.
+        mayUseLegacyAtomicFallback = true
+      } else if (planLookup.error || !planLookup.data || planLookup.data.prescription_locked === true) {
+        return lockedSessionSaveUpgradeResult()
+      } else {
+        mayUseLegacyAtomicFallback = true
+      }
+    }
+
+    const authorization = authorizationLookup.data
 
     if (isPrescriptionLockedAuthorization(authorization?.session_context_snapshot)) {
       return {
@@ -1011,6 +1076,8 @@ export async function saveSession(
         error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesiÃ³n de forma segura.',
       }
     }
+
+    if (!mayUseLegacyAtomicFallback) return lockedSessionSaveUpgradeResult()
 
     const v2Result = await (supabase as any).rpc(
       'save_session_log_atomic_v2',

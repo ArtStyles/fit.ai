@@ -41,7 +41,17 @@ function createSupabaseMock(results: Record<string, { data: unknown; error?: unk
         data: { user: { id: 'user-1' } },
       })),
     },
-    from: vi.fn((table: string) => query(queues[table]?.shift() ?? { data: null })),
+    from: vi.fn((table: string) => query(queues[table]?.shift() ?? (
+      table === 'session_authorizations'
+        ? {
+            data: null,
+            error: {
+              code: 'PGRST205',
+              message: "Could not find the table 'public.session_authorizations' in the schema cache",
+            },
+          }
+        : { data: null }
+    ))),
     rpc: vi.fn(() => Promise.resolve({
       data: null,
       error: {
@@ -393,6 +403,7 @@ describe('saveSession idempotency', () => {
     const supabase: any = createSupabaseMock({
       progress_logs: [{ data: null }],
       session_authorizations: [{ data: {
+        plan_id: '22222222-2222-4222-8222-222222222222',
         session_context_snapshot: {
           version: 1,
           workout: { id: payload.workoutId, name: 'Piernas', focus: null, dayOfWeek: 3 },
@@ -420,10 +431,64 @@ describe('saveSession idempotency', () => {
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: false,
-      error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesiÃ³n de forma segura.',
+      error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesión de forma segura.',
     })
     expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.any(Object))
     expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
+    expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic', expect.any(Object))
+  })
+
+  it('fails closed when a legacy authorization omits its lock flag but the server plan is locked', async () => {
+    const supabase: any = createSupabaseMock({
+      progress_logs: [{ data: null }],
+      session_authorizations: [{ data: {
+        plan_id: '22222222-2222-4222-8222-222222222222',
+        session_context_snapshot: {
+          version: 1,
+          plan: { id: '22222222-2222-4222-8222-222222222222' },
+          workout: { id: payload.workoutId },
+          exercises: [],
+        },
+      }}],
+      workout_plans: [{ data: {
+        id: '22222222-2222-4222-8222-222222222222',
+        prescription_locked: true,
+      }}],
+    })
+    supabase.rpc = vi.fn((name: string) => Promise.resolve({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: `Could not find the function public.${name} in the schema cache`,
+      },
+    }))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: false })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.any(Object))
+    expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
+    expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic', expect.any(Object))
+  })
+
+  it('keeps the v2 fallback for a genuinely pre-authorization personal schema', async () => {
+    const supabase = successfulSaveMock()
+    supabase.rpc = vi.fn((name: string) => Promise.resolve(name === 'save_session_log_atomic_v3'
+      ? {
+          data: null,
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find the function public.save_session_log_atomic_v3 in the schema cache',
+          },
+        }
+      : { data: [{ progress_log_id: 'legacy-v2', inserted: true, result_snapshot: storedSnapshot }], error: null },
+    ))
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession(payload)).resolves.toMatchObject({ success: true, progressLogId: 'legacy-v2' })
+
+    expect(supabase.from).toHaveBeenCalledWith('session_authorizations')
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
     expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic', expect.any(Object))
   })
 

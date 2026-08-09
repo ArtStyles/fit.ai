@@ -7,7 +7,7 @@ import { waitForFinalDatabase } from './trainer-foundations-readiness.mjs'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
-const migrationPaths = ['037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql']
+const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql']
   .map(file => path.join(repoRoot, 'supabase', 'migrations', file))
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 
@@ -55,8 +55,7 @@ CREATE TABLE public.workouts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), use
 CREATE TABLE public.workout_exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), workout_id UUID NOT NULL REFERENCES public.workouts(id), exercise_id UUID REFERENCES public.exercises(id), order_index INTEGER, sets INTEGER, reps INTEGER, duration_seconds INTEGER, rest_seconds INTEGER, target_rpe INTEGER, weight_kg NUMERIC, notes TEXT, weight_suggestion_basis TEXT);
 CREATE TABLE public.plan_generation_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), mode TEXT NOT NULL, generator TEXT NOT NULL, success BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE public.posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), routine_snapshot JSONB);
-CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), workout_id UUID REFERENCES public.workouts(id), client_session_id UUID, session_result_snapshot JSONB, session_context_snapshot JSONB, completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), duration_minutes INTEGER, mood_rating INTEGER);
-CREATE UNIQUE INDEX progress_logs_user_client_session_unique ON public.progress_logs(user_id, client_session_id) WHERE client_session_id IS NOT NULL;
+CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), workout_id UUID REFERENCES public.workouts(id), session_context_snapshot JSONB, completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), duration_minutes INTEGER, mood_rating INTEGER);
 CREATE TABLE public.exercise_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), progress_log_id UUID NOT NULL REFERENCES public.progress_logs(id), exercise_id UUID REFERENCES public.exercises(id), sets_completed INTEGER, reps_completed INTEGER[], weights_kg NUMERIC[], rpe_values NUMERIC[], duration_seconds INTEGER, notes TEXT);
 CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
 `
@@ -221,12 +220,13 @@ try {
   process.stdout.write(`[trainer-programming-db] database ready (${readiness.health}; ${readiness.diagnostic})\n`)
   runPsql(bootstrapSql, 'applying minimal pre-041 history')
   runPsql(planBootstrapSql, 'applying required plan and exercise history')
-  runPsql(`BEGIN;\n${readFileSync(migrationPaths[0], 'utf8')}\nCOMMIT;`, 'applying migration 037 lifecycle')
-  runPsql(readFileSync(migrationPaths[1], 'utf8'), 'applying migration 038 session authorization')
-  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 041')
-  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 042')
-  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'applying migration 043')
-  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'reapplying migration 043 for rerunnability')
+  runPsql(readFileSync(migrationPaths[0], 'utf8'), 'applying migration 035 session save idempotency')
+  runPsql(`BEGIN;\n${readFileSync(migrationPaths[1], 'utf8')}\nCOMMIT;`, 'applying migration 037 lifecycle')
+  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 038 session authorization')
+  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 041')
+  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'applying migration 042')
+  runPsql(readFileSync(migrationPaths[5], 'utf8'), 'applying migration 043')
+  runPsql(readFileSync(migrationPaths[5], 'utf8'), 'reapplying migration 043 for rerunnability')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
