@@ -13,12 +13,20 @@ function requestQuery(result: { data: unknown; error: unknown }, relationships =
   const order = vi.fn(async () => result)
   const requestEq = vi.fn(() => ({ order }))
   const requestSelect = vi.fn(() => ({ eq: requestEq }))
-  const relationshipLimit = vi.fn(async () => ({ data: relationships, error: null }))
-  const relationshipResult = Object.assign(Promise.resolve({ data: relationships, error: null }), { limit: relationshipLimit })
-  const relationshipStatusIn = vi.fn(() => relationshipResult)
+  const relationshipResult = Promise.resolve({ data: relationships, error: null })
+  const relationshipOrder = vi.fn(() => relationshipResult)
+  const relationshipStatusIn = vi.fn(() => ({ order: relationshipOrder }))
   const relationshipClientEq = vi.fn(() => ({ in: relationshipStatusIn }))
   const relationshipSelect = vi.fn(() => ({ eq: relationshipClientEq }))
-  const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : requestSelect }))
+  const emptyQuery: any = {
+    select: vi.fn(() => emptyQuery),
+    eq: vi.fn(() => emptyQuery),
+    in: vi.fn(() => emptyQuery),
+    order: vi.fn(() => emptyQuery),
+    maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+    then: (resolve: (value: unknown) => unknown) => resolve({ data: [], error: null }),
+  }
+  const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : table === 'coaching_requests' ? requestSelect : emptyQuery.select }))
   return { from, order }
 }
 

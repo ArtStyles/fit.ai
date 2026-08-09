@@ -4,6 +4,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { requireActiveTrainerContext } = vi.hoisted(() => ({
   requireActiveTrainerContext: vi.fn().mockResolvedValue({
     user: { id: 'trainer-user-1' },
+    supabase: {
+      from: () => {
+        const query: any = {
+          select: () => query,
+          eq: () => query,
+          in: () => query,
+          neq: () => query,
+          order: () => query,
+          then: (resolve: (value: unknown) => unknown) => resolve({ data: [], error: null }),
+        }
+        return query
+      },
+    },
     profile: { language: 'es' },
     trainerProfile: { id: 'trainer-profile-1', status: 'active' },
   }),

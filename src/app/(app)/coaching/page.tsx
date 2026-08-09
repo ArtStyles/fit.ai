@@ -3,6 +3,7 @@ import { ConsentManager, type CoachingConsentView } from '@/components/coaching/
 import { ProposedProgramReview } from '@/components/coaching/ProposedProgramReview'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { parseTrainerProgramSnapshot } from '@/lib/coaching/programs'
+import { selectLatestProposedAssignment } from '@/lib/coaching/proposals'
 
 export default async function CoachingPage() {
   const { supabase, user } = await requireAppUserContext()
@@ -43,8 +44,9 @@ export default async function CoachingPage() {
       .eq('client_user_id', user.id)
       .eq('status', 'proposed')
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
     : { data: [], error: null }
-  const assignment = (proposedAssignments as Array<any> | null | undefined)?.[0]
+  const assignment = selectLatestProposedAssignment(proposedAssignments as Array<any> | null | undefined)
   const rawVersion = assignment?.trainer_assignment_versions
   const version = (Array.isArray(rawVersion) ? rawVersion : rawVersion ? [rawVersion] : [])
     .filter((candidate: any) => candidate.status === 'proposed')

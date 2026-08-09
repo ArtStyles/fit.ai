@@ -17,9 +17,14 @@ export default async function CoachProgramDetailPage({ params }: { params: { tem
   const [workoutResponse, exerciseResponse, relationshipResponse] = await Promise.all([
     (supabase.from('trainer_template_workouts') as any).select('id, name, day_of_week, order_in_plan, trainer_template_exercises(id, exercise_id, order_index, sets, reps, weight_kg, target_rpe, rest_seconds, notes, exercises(name))').eq('template_id', template.id).order('order_in_plan'),
     (supabase.from('exercises') as any).select('id, name, muscle_groups, equipment, difficulty, exercise_type, is_compound').eq('is_public', true).order('name').limit(200),
-    (supabase.from('coaching_relationships') as any).select('id').eq('trainer_user_id', user.id).eq('status', 'active').order('created_at', { ascending: false }),
+    (supabase.from('coaching_relationships') as any).select('id, started_at, trainer_service_offerings(name)').eq('trainer_user_id', user.id).eq('status', 'active').order('created_at', { ascending: false }).order('id', { ascending: false }),
   ])
   if (workoutResponse.error || exerciseResponse.error || relationshipResponse.error) throw new Error('No se pudo cargar el editor de la rutina.')
   const workouts = (workoutResponse.data ?? []).map((workout: any) => ({ ...workout, exercises: (workout.trainer_template_exercises ?? []).sort((a: any, b: any) => a.order_index - b.order_index).map((item: any) => ({ ...item, exercise: Array.isArray(item.exercises) ? item.exercises[0] ?? null : item.exercises ?? null })) }))
-  return <div className="min-h-screen bg-background pb-28"><PageTopBar title="Editar rutina" subtitle="Plantilla profesional" backHref="/coach/programs" backLabel="Rutinas" icon={<Dumbbell className="h-5 w-5" />} /><main className="mx-auto max-w-4xl space-y-6 px-4 py-8"><ProgramTemplateEditor template={template} workouts={workouts} options={(exerciseResponse.data ?? []) as PlanExerciseOption[]} /><AssignProgramDialog templateId={template.id} relationships={(relationshipResponse.data ?? []) as Array<{ id: string }>} /></main></div>
+  const relationshipChoices = (relationshipResponse.data ?? []).map((relationship: any) => {
+    const service = Array.isArray(relationship.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship.trainer_service_offerings
+    const startedAt = new Intl.DateTimeFormat('es', { dateStyle: 'medium' }).format(new Date(relationship.started_at))
+    return { id: relationship.id, label: `${service?.name ?? 'AcompaÃ±amiento'} · iniciado ${startedAt} · ref. ${relationship.id.slice(0, 8)}` }
+  })
+  return <div className="min-h-screen bg-background pb-28"><PageTopBar title="Editar rutina" subtitle="Plantilla profesional" backHref="/coach/programs" backLabel="Rutinas" icon={<Dumbbell className="h-5 w-5" />} /><main className="mx-auto max-w-4xl space-y-6 px-4 py-8"><ProgramTemplateEditor template={template} workouts={workouts} options={(exerciseResponse.data ?? []) as PlanExerciseOption[]} /><AssignProgramDialog templateId={template.id} relationships={relationshipChoices} /></main></div>
 }

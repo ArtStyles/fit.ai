@@ -85,4 +85,20 @@ describe('trainer programming migration', () => {
       expect(activeProfileGuard).toBeGreaterThan(activeAccountGuard)
     }
   })
+
+  it('uses the administrative suspension lock for a proposed assignment before it revalidates rows', () => {
+    const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.propose_trainer_assignment\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(rpc).toBeDefined()
+    const clientLock = rpc!.indexOf('pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0))')
+    const suspensionLock = rpc!.indexOf('pg_advisory_xact_lock(hashtextextended(v_trainer_user_id::TEXT, 0))')
+    const relationshipLock = rpc!.indexOf('SELECT * INTO v_relationship')
+    const accountLock = rpc!.indexOf('FROM public.profiles profile')
+    const profileLock = rpc!.indexOf('FROM public.trainer_profiles profile')
+
+    expect(clientLock).toBeGreaterThanOrEqual(0)
+    expect(suspensionLock).toBeGreaterThan(clientLock)
+    expect(relationshipLock).toBeGreaterThan(suspensionLock)
+    expect(accountLock).toBeGreaterThan(relationshipLock)
+    expect(profileLock).toBeGreaterThan(accountLock)
+  })
 })

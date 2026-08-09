@@ -785,9 +785,9 @@ BEGIN
     RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_FOUND';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
-  -- Administrative trainer suspension uses this compatibility lock before it
-  -- changes professional availability; revalidate only after acquiring it.
-  PERFORM pg_advisory_xact_lock(hashtextextended('trainer-profile:' || v_trainer_user_id::TEXT, 0));
+  -- This is the exact administrative suspension lock. Revalidate every
+  -- trainer/relationship row only after it has been acquired.
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_trainer_user_id::TEXT, 0));
 
   SELECT * INTO v_relationship
   FROM public.coaching_relationships relationship

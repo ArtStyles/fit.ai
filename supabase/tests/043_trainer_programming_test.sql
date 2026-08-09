@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(64);
+SELECT plan(69);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -448,6 +448,84 @@ SELECT is((SELECT account_status FROM public.profiles WHERE id = '99999999-0000-
 SELECT is((SELECT status FROM public.trainer_profiles WHERE user_id = '99999999-0000-4000-8000-000000000009'), 'suspended', 'race leaves the professional profile suspended');
 SELECT dblink_disconnect('program_reorder_race');
 SELECT dblink_disconnect('program_suspend_race');
+
+-- Proposal and administrative suspension share the exact trainer lock. The
+-- externally held lock creates a deterministic contention point; waits below
+-- are condition-based and never use arbitrary sleeps.
+SELECT dblink_connect('proposal_race_setup', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('proposal_race_setup', $dblink$
+  INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+    ('88888888-0000-4000-8000-000000000009', 'proposal-race-trainer@example.test', '{}'::jsonb),
+    ('bbbbbbbb-0000-4000-8000-000000000010', 'proposal-race-client@example.test', '{}'::jsonb);
+  INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
+    ('88888888-0000-4000-8000-000000000009', 'https://example.test/proposal-trainer.webp', TRUE, 'active'),
+    ('bbbbbbbb-0000-4000-8000-000000000010', 'https://example.test/proposal-client.webp', TRUE, 'active');
+  INSERT INTO public.trainer_applications (id, user_id) VALUES ('88888888-0000-4000-8000-000000000011', '88888888-0000-4000-8000-000000000009');
+  INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+    ('88888888-0000-4000-8000-000000000021', '88888888-0000-4000-8000-000000000009', '88888888-0000-4000-8000-000000000011', 'proposal-race-trainer', 'active', 'Proposal trainer', 'Race profile', 'Race evidence');
+  INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+    ('88888888-0000-4000-8000-000000000031', '88888888-0000-4000-8000-000000000021', 'Proposal service', 'online', 60);
+  INSERT INTO public.exercises (id, name) VALUES ('88888888-0000-4000-8000-000000000041', 'Race squat');
+  INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_per_week) VALUES
+    ('88888888-0000-4000-8000-000000000051', '88888888-0000-4000-8000-000000000009', 'Proposal race template', 1);
+  INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES
+    ('88888888-0000-4000-8000-000000000054', '88888888-0000-4000-8000-000000000051', 'Proposal race day', 1, 1);
+  INSERT INTO public.trainer_template_exercises (id, template_workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
+    ('88888888-0000-4000-8000-000000000056', '88888888-0000-4000-8000-000000000054', '88888888-0000-4000-8000-000000000041', 1, 3, 8, 60);
+  INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+    ('88888888-0000-4000-8000-000000000061', '88888888-0000-4000-8000-000000000031', '88888888-0000-4000-8000-000000000009', 'bbbbbbbb-0000-4000-8000-000000000010', 'active');
+  INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+    ('88888888-0000-4000-8000-000000000061', 'training_profile', 'training-profile-v1', 'bbbbbbbb-0000-4000-8000-000000000010');
+$dblink$);
+SELECT dblink_disconnect('proposal_race_setup');
+SELECT pg_advisory_lock(hashtextextended('88888888-0000-4000-8000-000000000009', 0));
+SELECT dblink_connect('proposal_race_propose', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('proposal_race_suspend', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('proposal_race_propose', $$SET request.jwt.claim.sub = '88888888-0000-4000-8000-000000000009'$$);
+SELECT dblink_exec('proposal_race_propose', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('proposal_race_propose', 'SET ROLE authenticated');
+SELECT dblink_exec('proposal_race_propose', $dblink$
+  CREATE OR REPLACE FUNCTION pg_temp.try_propose_assignment() RETURNS JSONB LANGUAGE plpgsql AS $fn$
+  DECLARE v_result JSONB;
+  BEGIN
+    SELECT jsonb_build_object('assignment_id', proposal.assignment_id, 'assignment_version_id', proposal.assignment_version_id, 'workout_plan_id', proposal.workout_plan_id)
+    INTO v_result
+    FROM public.propose_trainer_assignment(
+      '88888888-0000-4000-8000-000000000061', '88888888-0000-4000-8000-000000000051', NULL, 'proposal-race-key'
+    ) AS proposal;
+    RETURN jsonb_build_object('ok', TRUE, 'completed_at', clock_timestamp(), 'result', v_result);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'completed_at', clock_timestamp(), 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $fn$;
+$dblink$);
+SELECT dblink_exec('proposal_race_suspend', 'SET request.jwt.claim.role = ''service_role''');
+SELECT dblink_exec('proposal_race_suspend', 'SET ROLE service_role');
+SELECT dblink_exec('proposal_race_suspend', $dblink$
+  CREATE OR REPLACE FUNCTION pg_temp.try_suspend_proposal_trainer() RETURNS JSONB LANGUAGE plpgsql AS $fn$
+  BEGIN
+    PERFORM public.suspend_account_and_professional('88888888-0000-4000-8000-000000000009', 'aaaaaaaa-0000-4000-8000-000000000010', 'Proposal race suspension', NULL);
+    RETURN jsonb_build_object('ok', TRUE, 'completed_at', clock_timestamp());
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'completed_at', clock_timestamp(), 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $fn$;
+$dblink$);
+SELECT dblink_send_query('proposal_race_propose', 'SELECT pg_temp.try_propose_assignment()');
+DO $$ DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds'; BEGIN LOOP EXIT WHEN dblink_is_busy('proposal_race_propose') = 1; IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'proposal race query was not dispatched'; END IF; PERFORM pg_sleep(0.01); END LOOP; END; $$;
+SELECT dblink_send_query('proposal_race_suspend', 'SELECT pg_temp.try_suspend_proposal_trainer()');
+DO $$ DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds'; BEGIN LOOP EXIT WHEN dblink_is_busy('proposal_race_suspend') = 1; IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'proposal suspension race query was not dispatched'; END IF; PERFORM pg_sleep(0.01); END LOOP; END; $$;
+SELECT pg_advisory_unlock(hashtextextended('88888888-0000-4000-8000-000000000009', 0));
+CREATE TEMP TABLE proposal_race_results (operation TEXT PRIMARY KEY, result JSONB NOT NULL);
+INSERT INTO proposal_race_results SELECT 'propose', result FROM dblink_get_result('proposal_race_propose') AS response(result JSONB);
+INSERT INTO proposal_race_results SELECT 'suspend', result FROM dblink_get_result('proposal_race_suspend') AS response(result JSONB);
+SELECT is((SELECT count(*) FROM proposal_race_results WHERE result->>'sqlstate' = '40P01'), 0::bigint, 'proposal and suspension never deadlock');
+SELECT ok((SELECT (result->>'ok')::boolean FROM proposal_race_results WHERE operation = 'suspend'), 'administrative suspension completes in the proposal race');
+SELECT ok((SELECT (result->>'ok')::boolean FROM proposal_race_results WHERE operation = 'propose') OR (SELECT result->>'message' LIKE '%COACHING_RELATIONSHIP_NOT_ACTIVE%' OR result->>'message' LIKE '%TRAINER_ASSIGNMENT_TRAINER_INACTIVE%' FROM proposal_race_results WHERE operation = 'propose'), 'proposal either completes before suspension or rejects the now inactive relationship');
+SELECT ok(NOT (SELECT (result->>'ok')::boolean FROM proposal_race_results WHERE operation = 'propose') OR (SELECT (result->>'completed_at')::timestamptz <= (SELECT result->>'completed_at' FROM proposal_race_results WHERE operation = 'suspend')::timestamptz FROM proposal_race_results WHERE operation = 'propose'), 'proposal never succeeds after suspension validation completes');
+SELECT ok(NOT (SELECT (result->>'ok')::boolean FROM proposal_race_results WHERE operation = 'propose') OR ((SELECT status FROM public.coaching_relationships WHERE id = '88888888-0000-4000-8000-000000000061') = 'paused_by_platform' AND NOT EXISTS (SELECT 1 FROM public.coaching_consents WHERE relationship_id = '88888888-0000-4000-8000-000000000061' AND revoked_at IS NULL)), 'a winning proposal is immediately suspension-consistent');
+SELECT dblink_disconnect('proposal_race_propose');
+SELECT dblink_disconnect('proposal_race_suspend');
 
 SELECT * FROM finish();
 ROLLBACK;
