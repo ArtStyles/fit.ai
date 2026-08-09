@@ -5,12 +5,14 @@ import path from 'node:path'
 import { waitForFinalDatabase } from './trainer-foundations-readiness.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
+const authorizationMode = process.argv.includes('--authorization')
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
-const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '040_trainer_foundations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql', '044_trainer_insights.sql']
+const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '040_trainer_foundations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql', '044_trainer_insights.sql', '045_trainer_hardening.sql']
   .map(file => path.join(repoRoot, 'supabase', 'migrations', file))
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
+const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 
 // This is the smallest faithful pre-041 surface: the auth/API roles come from
 // the Supabase image, while these legacy tables/functions are real dependencies
@@ -72,6 +74,35 @@ CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid()
 CREATE TABLE public.exercise_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), progress_log_id UUID NOT NULL REFERENCES public.progress_logs(id), exercise_id UUID REFERENCES public.exercises(id), sets_completed INTEGER, reps_completed INTEGER[], weights_kg NUMERIC[], rpe_values NUMERIC[], duration_seconds INTEGER, notes TEXT);
 CREATE TABLE public.measurements (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), weight_kg NUMERIC, body_fat_percentage NUMERIC, muscle_mass_kg NUMERIC, chest_cm NUMERIC, waist_cm NUMERIC, hips_cm NUMERIC, arms_cm NUMERIC, legs_cm NUMERIC, notes TEXT);
 CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
+`
+
+// The historical app tables predate migrations 035-044. The programming
+// suite intentionally tests its definer RPC internals without those policies;
+// the authorization matrix installs their real owner-only API boundary after
+// the older suites finish, before any matrix fixture is visible.
+const authorizationBootstrapSql = `
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workout_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workout_exercises ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.progress_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exercise_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.measurements ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "profiles: own row" ON public.profiles;
+DROP POLICY IF EXISTS "workout_plans: own" ON public.workout_plans;
+DROP POLICY IF EXISTS "workouts: own" ON public.workouts;
+DROP POLICY IF EXISTS "workout_exercises: own" ON public.workout_exercises;
+DROP POLICY IF EXISTS "progress_logs: own" ON public.progress_logs;
+DROP POLICY IF EXISTS "exercise_logs: own" ON public.exercise_logs;
+DROP POLICY IF EXISTS "measurements: own" ON public.measurements;
+CREATE POLICY "profiles: own row" ON public.profiles FOR ALL TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+CREATE POLICY "workout_plans: own" ON public.workout_plans FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "workouts: own" ON public.workouts FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "workout_exercises: own" ON public.workout_exercises FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.workouts workout WHERE workout.id = workout_id AND workout.user_id = auth.uid())) WITH CHECK (EXISTS (SELECT 1 FROM public.workouts workout WHERE workout.id = workout_id AND workout.user_id = auth.uid()));
+CREATE POLICY "progress_logs: own" ON public.progress_logs FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "exercise_logs: own" ON public.exercise_logs FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.progress_logs progress WHERE progress.id = progress_log_id AND progress.user_id = auth.uid())) WITH CHECK (EXISTS (SELECT 1 FROM public.progress_logs progress WHERE progress.id = progress_log_id AND progress.user_id = auth.uid()));
+CREATE POLICY "measurements: own" ON public.measurements FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles, public.workout_plans, public.workouts, public.workout_exercises, public.progress_logs, public.exercise_logs, public.measurements TO authenticated;
 `
 
 // This runs after the pgTAP transaction rolls back. dblink sessions therefore
@@ -307,10 +338,21 @@ try {
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running 044 pgTAP consent-bound insight suite')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
+  if (authorizationMode) {
+    runPsql(authorizationBootstrapSql, 'applying legacy owner-only API boundary for authorization matrix')
+    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening')
+    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-045')
+    if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
+  }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
-  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-044 behavior and rerunnability passed\n')
+  if (!authorizationMode) {
+    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening after insight regressions')
+    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
+  }
+  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-045 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })
