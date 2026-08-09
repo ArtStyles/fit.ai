@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { waitForFinalDatabase } from './trainer-foundations-readiness.mjs'
+import { loadLegacyOwnerBoundary } from './trainer-authorization-production-boundary.mjs'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const authorizationMode = process.argv.includes('--authorization')
@@ -74,35 +75,6 @@ CREATE TABLE public.progress_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid()
 CREATE TABLE public.exercise_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), progress_log_id UUID NOT NULL REFERENCES public.progress_logs(id), exercise_id UUID REFERENCES public.exercises(id), sets_completed INTEGER, reps_completed INTEGER[], weights_kg NUMERIC[], rpe_values NUMERIC[], duration_seconds INTEGER, notes TEXT);
 CREATE TABLE public.measurements (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), weight_kg NUMERIC, body_fat_percentage NUMERIC, muscle_mass_kg NUMERIC, chest_cm NUMERIC, waist_cm NUMERIC, hips_cm NUMERIC, arms_cm NUMERIC, legs_cm NUMERIC, notes TEXT);
 CREATE OR REPLACE FUNCTION public.record_plan_generation_success(p_plan_id UUID) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.plan_generation_events (user_id, mode, generator, success) SELECT user_id, 'initial', 'evidence_engine', TRUE FROM public.workout_plans WHERE id = p_plan_id; END; $$;
-`
-
-// The historical app tables predate migrations 035-044. The programming
-// suite intentionally tests its definer RPC internals without those policies;
-// the authorization matrix installs their real owner-only API boundary after
-// the older suites finish, before any matrix fixture is visible.
-const authorizationBootstrapSql = `
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.workout_plans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.workout_exercises ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.progress_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.exercise_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.measurements ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "profiles: own row" ON public.profiles;
-DROP POLICY IF EXISTS "workout_plans: own" ON public.workout_plans;
-DROP POLICY IF EXISTS "workouts: own" ON public.workouts;
-DROP POLICY IF EXISTS "workout_exercises: own" ON public.workout_exercises;
-DROP POLICY IF EXISTS "progress_logs: own" ON public.progress_logs;
-DROP POLICY IF EXISTS "exercise_logs: own" ON public.exercise_logs;
-DROP POLICY IF EXISTS "measurements: own" ON public.measurements;
-CREATE POLICY "profiles: own row" ON public.profiles FOR ALL TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
-CREATE POLICY "workout_plans: own" ON public.workout_plans FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "workouts: own" ON public.workouts FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "workout_exercises: own" ON public.workout_exercises FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.workouts workout WHERE workout.id = workout_id AND workout.user_id = auth.uid())) WITH CHECK (EXISTS (SELECT 1 FROM public.workouts workout WHERE workout.id = workout_id AND workout.user_id = auth.uid()));
-CREATE POLICY "progress_logs: own" ON public.progress_logs FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "exercise_logs: own" ON public.exercise_logs FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.progress_logs progress WHERE progress.id = progress_log_id AND progress.user_id = auth.uid())) WITH CHECK (EXISTS (SELECT 1 FROM public.progress_logs progress WHERE progress.id = progress_log_id AND progress.user_id = auth.uid()));
-CREATE POLICY "measurements: own" ON public.measurements FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.profiles, public.workout_plans, public.workouts, public.workout_exercises, public.progress_logs, public.exercise_logs, public.measurements TO authenticated;
 `
 
 // This runs after the pgTAP transaction rolls back. dblink sessions therefore
@@ -339,7 +311,8 @@ try {
   const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running 044 pgTAP consent-bound insight suite')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    runPsql(authorizationBootstrapSql, 'applying legacy owner-only API boundary for authorization matrix')
+    const productionBoundary = loadLegacyOwnerBoundary(repoRoot)
+    runPsql(productionBoundary.sql, `applying migration 001 owner boundary (${productionBoundary.sha256})`)
     runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening')
     runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
     const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-045')

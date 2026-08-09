@@ -21,21 +21,46 @@ const migrations = new Map(
 const history = Array.from(migrations.values()).join('\n')
 const hardening = migrations.get('045_trainer_hardening.sql') ?? ''
 
-const createdSensitiveTables = Array.from(history.matchAll(/CREATE TABLE IF NOT EXISTS public\.(trainer_[a-z_]+|coaching_[a-z_]+|product_notifications|product_push_tokens|product_notification_preferences|professional_audit_logs)\s*\(/g))
-  .map((match) => match[1])
-
-const legacySensitiveTables = [
-  'profiles',
-  'workout_plans',
-  'workouts',
-  'workout_exercises',
-  'progress_logs',
+const sensitiveTables = [
+  'admin_audit_logs',
+  'coaching_consents',
+  'coaching_relationships',
+  'coaching_requests',
   'exercise_logs',
   'measurements',
+  'product_notification_preferences',
+  'product_notifications',
+  'product_push_tokens',
+  'professional_audit_logs',
+  'profiles',
+  'progress_logs',
   'session_authorizations',
+  'trainer_application_credentials',
+  'trainer_application_events',
+  'trainer_applications',
+  'trainer_assignment_versions',
+  'trainer_credential_storage_cleanup',
+  'trainer_interviews',
+  'trainer_plan_assignments',
+  'trainer_profiles',
+  'trainer_program_templates',
+  'trainer_service_offerings',
+  'trainer_template_exercises',
+  'trainer_template_workouts',
+  'workout_exercises',
+  'workout_plans',
+  'workouts',
 ] as const
 
-const sensitiveTables = Array.from(new Set([...createdSensitiveTables, ...legacySensitiveTables])).sort()
+const legacyOwnerPolicyNames = [
+  'profiles: own row',
+  'workout_plans: own',
+  'workouts: own',
+  'workout_exercises: own',
+  'progress_logs: own',
+  'exercise_logs: own',
+  'measurements: own',
+] as const
 
 function tableSecurityStatements(sql: string) {
   return Array.from(sql.matchAll(/ALTER TABLE public\.([a-z_]+)\s+(ENABLE|FORCE) ROW LEVEL SECURITY\s*;/g))
@@ -54,14 +79,26 @@ function securityDefinerFunctions(sql: string) {
 }
 
 describe('trainer authorization migration contracts', () => {
-  it('derives every sensitive table and enforces ENABLE plus FORCE RLS', () => {
-    expect(sensitiveTables.length).toBeGreaterThanOrEqual(25)
+  it('uses the exhaustive reviewed sensitive-table contract and enforces ENABLE plus FORCE RLS', () => {
+    expect(sensitiveTables).toHaveLength(28)
     const security = tableSecurityStatements(history)
 
     for (const table of sensitiveTables) {
       expect(security, `${table} must enable RLS`).toContainEqual({ table, mode: 'ENABLE' })
       expect(security, `${table} must force RLS`).toContainEqual({ table, mode: 'FORCE' })
     }
+  })
+
+  it('loads legacy owner policies verbatim from migration 001 with a pinned source digest', async () => {
+    const bridgePath = path.join(process.cwd(), 'scripts', 'trainer-authorization-production-boundary.mjs')
+    expect(existsSync(bridgePath)).toBe(true)
+    const bridge = await import(`${bridgePath}?authorization-contract=${Date.now()}`)
+    const extracted = bridge.loadLegacyOwnerBoundary(process.cwd())
+
+    expect(extracted.policyNames).toEqual(legacyOwnerPolicyNames)
+    expect(extracted.sourcePath).toBe(path.join(process.cwd(), 'supabase', 'migrations', '001_initial_schema.sql'))
+    expect(extracted.sha256).toBe('68859075f6015193483c6a23b443e328fe46465774d1cd919bbcbd15c56cdfcc')
+    expect(extracted.sql).not.toMatch(/GRANT|REVOKE|DROP POLICY/i)
   })
 
   it('uses an explicit deny-first ACL contract for every sensitive table', () => {

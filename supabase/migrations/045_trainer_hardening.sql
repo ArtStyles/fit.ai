@@ -5,6 +5,7 @@
 -- aggregate/detail data solely through consent-bound SECURITY DEFINER RPCs.
 
 ALTER TABLE public.product_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.product_push_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.product_notification_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.professional_audit_logs ENABLE ROW LEVEL SECURITY;
@@ -33,6 +34,7 @@ ALTER TABLE public.measurements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.session_authorizations ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.product_notifications FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_audit_logs FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.product_push_tokens FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.product_notification_preferences FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.professional_audit_logs FORCE ROW LEVEL SECURITY;
@@ -151,6 +153,7 @@ CREATE POLICY "trainer_assignment_versions: consent-bound participants"
 
 -- Rebuild the legacy API ACLs deny-first. RLS remains the per-user boundary;
 -- no policy grants trainers access to client plans, evidence, or measurements.
+REVOKE ALL ON TABLE public.admin_audit_logs FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.profiles FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.workout_plans FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.workouts FROM PUBLIC, anon, authenticated;
@@ -168,6 +171,12 @@ GRANT SELECT, INSERT, UPDATE ON TABLE public.progress_logs TO authenticated;
 GRANT SELECT, INSERT ON TABLE public.exercise_logs TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.measurements TO authenticated;
 GRANT SELECT ON TABLE public.session_authorizations TO authenticated;
+
+-- This trigger owns the protected admin/account fields. Migration 029 fixed its
+-- path to trusted schemas; append pg_temp so unqualified temporary objects can
+-- never enter SECURITY DEFINER resolution.
+ALTER FUNCTION public.enforce_protected_profile_fields()
+  SET search_path = public, auth, pg_temp;
 
 -- This helper is internal to trusted definer functions and server-side service
 -- calls. Authenticated users must never forge cross-user notifications.
