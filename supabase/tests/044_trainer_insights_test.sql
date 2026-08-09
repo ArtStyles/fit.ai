@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(19);
+SELECT plan(23);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('f4000000-0000-4000-8000-000000000001', 'insights-trainer@example.test', '{}'::JSONB),
@@ -37,21 +37,46 @@ INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_i
   ('f4000000-0000-4000-8000-000000000061', 'f4000000-0000-4000-8000-000000000041', 'f4000000-0000-4000-8000-000000000001', 'f4000000-0000-4000-8000-000000000003', 'active', NOW(), 'f4000000-0000-4000-8000-000000000071');
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, effective_from, materialized_plan_id) VALUES
   ('f4000000-0000-4000-8000-000000000071', 'f4000000-0000-4000-8000-000000000061', 1,
-    '{"schemaVersion":1,"workouts":[{"sourceTemplateWorkoutId":"f4000000-0000-4000-8000-000000000081","name":"Prescription workout","dayOfWeek":1,"orderInPlan":1,"exercises":[{"exerciseId":"f4000000-0000-4000-8000-000000000051","sets":3,"reps":8}]}]}'::JSONB,
+    jsonb_build_object('schemaVersion', 1, 'workouts', jsonb_build_array(jsonb_build_object(
+      'sourceTemplateWorkoutId', 'f4000000-0000-4000-8000-000000000081',
+      'name', 'Prescription workout',
+      'dayOfWeek', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER,
+      'orderInPlan', 1,
+      'exercises', jsonb_build_array(jsonb_build_object(
+        'exerciseId', 'f4000000-0000-4000-8000-000000000051', 'sets', 3, 'reps', 8
+      ))
+    ))),
     'active', NOW() - INTERVAL '14 days', 'f4000000-0000-4000-8000-000000000091');
 INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
   ('f4000000-0000-4000-8000-000000000091', 'f4000000-0000-4000-8000-000000000003', 'Live workout name', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'f4000000-0000-4000-8000-000000000041', 'f4000000-0000-4000-8000-000000000061', 'f4000000-0000-4000-8000-000000000071');
 SET CONSTRAINTS ALL IMMEDIATE;
 INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
-  ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000091', 'Live workout name', 1, 1),
+  ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000091', 'Live workout name', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1),
   ('f4000000-0000-4000-8000-000000000102', 'f4000000-0000-4000-8000-000000000003', NULL, 'Personal workout', NULL, NULL);
-INSERT INTO public.progress_logs (id, user_id, workout_id, completed_at, duration_minutes, notes, session_context_snapshot) VALUES
-  ('f4000000-0000-4000-8000-000000000111', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000101', NOW() - INTERVAL '1 hour', 37, 'Professional session note',
-    '{"version":1,"workout":{"name":"Snapshot workout"},"plan":{"trainerAssignmentVersionId":"f4000000-0000-4000-8000-000000000071"},"exercises":[{"exerciseId":"f4000000-0000-4000-8000-000000000051","name":"Snapshot exercise"}]}'::JSONB),
-  ('f4000000-0000-4000-8000-000000000112', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000102', NOW() - INTERVAL '1 day', 20, 'PERSONAL_LOG_MUST_NOT_LEAK',
-    '{"version":1}'::JSONB);
-INSERT INTO public.exercise_logs (progress_log_id, exercise_id, sets_completed, reps_completed, weights_kg, rpe_values, notes) VALUES
-  ('f4000000-0000-4000-8000-000000000111', 'f4000000-0000-4000-8000-000000000051', 3, ARRAY[8,8,8], ARRAY[42,42,42], ARRAY[7,8,8], 'Professional set note');
+INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
+  ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000051', 1, 3, 8, 60);
+INSERT INTO public.progress_logs (id, user_id, client_session_id, workout_id, completed_at, duration_minutes, notes, session_context_snapshot) VALUES
+  ('f4000000-0000-4000-8000-000000000112', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000122', 'f4000000-0000-4000-8000-000000000102', NOW() - INTERVAL '1 day', 20, 'PERSONAL_LOG_MUST_NOT_LEAK',
+    '{"version":1,"plan":{"trainerAssignmentVersionId":"f4000000-0000-4000-8000-000000000071"}}'::JSONB);
+
+SELECT set_config('request.jwt.claim.sub', 'f4000000-0000-4000-8000-000000000003', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.authorize_session_start('f4000000-0000-4000-8000-000000000121', 'f4000000-0000-4000-8000-000000000101')$$,
+  'the client receives a real professional session authorization'
+);
+SELECT lives_ok(
+  $$SELECT * FROM public.save_session_log_atomic_v3(
+    'f4000000-0000-4000-8000-000000000121',
+    'f4000000-0000-4000-8000-000000000101',
+    NOW(), 37, 4,
+    '[{"exercise_id":"f4000000-0000-4000-8000-000000000051","sets_completed":3,"reps_completed":[8,8,8],"weights_kg":[42,42,42],"rpe_values":[7,8,8],"duration_seconds":null,"notes":"Trusted result","skip_reason":null}]'::JSONB,
+    '{"version":1}'::JSONB
+  )$$,
+  'the consumed authorization persists professional evidence'
+);
+RESET ROLE;
 
 SELECT ok(
   has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
@@ -80,13 +105,13 @@ SELECT is(
 );
 SELECT is(
   (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'sessions'->0->'workout'->>'name'),
-  'Snapshot workout',
-  'historical workout name comes from the session snapshot'
+  'Live workout name',
+  'trusted authorization snapshot supplies the workout name'
 );
 SELECT is(
   (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'sessions'->0->'exerciseResults'->0->>'name'),
-  'Snapshot exercise',
-  'historical exercise name comes from the session snapshot'
+  'Live exercise name',
+  'trusted authorization snapshot supplies the exercise name'
 );
 SELECT is(
   (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'prescribedWorkouts'->0->>'id'),
@@ -96,16 +121,35 @@ SELECT is(
 SELECT is(
   (SELECT jsonb_array_length(public.get_coach_clients_summary()->'clients'->0->'adherenceInput'->'sessions')),
   1,
-  'summary exposes only professional weekly session inputs through workout then plan'
+  'summary exposes only trusted professional weekly session inputs'
 );
 SELECT ok(
-  (SELECT public.get_coach_clients_summary()::TEXT NOT LIKE '%Professional session note%'),
+  (SELECT public.get_coach_clients_summary()::TEXT NOT LIKE '%Trusted result%'),
   'summary adherence input excludes session notes and exercise result data'
 );
 SELECT is(
   (SELECT jsonb_array_length(public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'sessions')),
   1,
-  'a personal session does not leak into professional evidence'
+  'a personal log with a forged professional snapshot does not leak into evidence'
+);
+RESET ROLE;
+SET LOCAL ROLE service_role;
+UPDATE public.progress_logs
+SET workout_id = NULL
+WHERE client_session_id = 'f4000000-0000-4000-8000-000000000121';
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', 'f4000000-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'sessions'->0->'workout'->>'id'),
+  'f4000000-0000-4000-8000-000000000101',
+  'a detached genuine log remains visible through its trusted authorization workout id'
+);
+SELECT is(
+  (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'sessions'->0->'workout'->>'name'),
+  'Live workout name',
+  'a detached genuine log retains the trusted authorization snapshot name'
 );
 SELECT ok(
   (SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'measurements' = 'null'::JSONB),

@@ -77,14 +77,26 @@ BEGIN
       (
         SELECT MAX(progress_log.completed_at)
         FROM public.progress_logs AS progress_log
-        JOIN public.workouts AS workout ON workout.id = progress_log.workout_id
-        JOIN public.workout_plans AS plan ON plan.id = workout.plan_id
+        JOIN public.session_authorizations AS session_authorization
+          ON session_authorization.client_session_id = progress_log.client_session_id
+         AND session_authorization.user_id = progress_log.user_id
+         AND session_authorization.consumed_at IS NOT NULL
+         AND session_authorization.released_at IS NULL
+        JOIN public.workouts AS workout ON workout.id = session_authorization.workout_id
+        JOIN public.workout_plans AS plan
+          ON plan.id = session_authorization.plan_id
+         AND workout.plan_id = plan.id
+         AND plan.prescription_locked = TRUE
         JOIN public.trainer_assignment_versions AS version
           ON version.id = plan.trainer_assignment_version_id
+         AND version.materialized_plan_id = plan.id
         JOIN public.trainer_plan_assignments AS assignment
           ON assignment.id = version.assignment_id
+         AND assignment.id = plan.trainer_assignment_id
+         AND assignment.relationship_id = plan.trainer_relationship_id
         WHERE progress_log.user_id = relationship.client_user_id
           AND assignment.relationship_id = relationship.id
+          AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
       ) AS last_prescribed_session_at,
        (
          SELECT jsonb_build_object(
@@ -117,16 +129,30 @@ BEGIN
              SELECT jsonb_agg(jsonb_build_object(
                'id', progress_log.id,
                'assignmentVersionId', version.id,
-               'workoutId', progress_log.workout_id,
+               'workoutId', session_authorization.workout_id,
                'completedAt', progress_log.completed_at
              ) ORDER BY progress_log.completed_at ASC, progress_log.id ASC)
              FROM public.progress_logs AS progress_log
-             JOIN public.workouts AS workout ON workout.id = progress_log.workout_id
-             JOIN public.workout_plans AS plan ON plan.id = workout.plan_id
-             JOIN public.trainer_assignment_versions AS version ON version.id = plan.trainer_assignment_version_id
-             JOIN public.trainer_plan_assignments AS assignment ON assignment.id = version.assignment_id
+             JOIN public.session_authorizations AS session_authorization
+               ON session_authorization.client_session_id = progress_log.client_session_id
+              AND session_authorization.user_id = progress_log.user_id
+              AND session_authorization.consumed_at IS NOT NULL
+              AND session_authorization.released_at IS NULL
+             JOIN public.workouts AS workout ON workout.id = session_authorization.workout_id
+             JOIN public.workout_plans AS plan
+               ON plan.id = session_authorization.plan_id
+              AND workout.plan_id = plan.id
+              AND plan.prescription_locked = TRUE
+             JOIN public.trainer_assignment_versions AS version
+               ON version.id = plan.trainer_assignment_version_id
+              AND version.materialized_plan_id = plan.id
+             JOIN public.trainer_plan_assignments AS assignment
+               ON assignment.id = version.assignment_id
+              AND assignment.id = plan.trainer_assignment_id
+              AND assignment.relationship_id = plan.trainer_relationship_id
              WHERE progress_log.user_id = relationship.client_user_id
                AND assignment.relationship_id = relationship.id
+               AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
                AND (progress_log.completed_at AT TIME ZONE client.timezone)::DATE BETWEEN week_window.start_date AND week_window.end_date
            ), '[]'::JSONB)
          )
@@ -271,17 +297,49 @@ BEGIN
       ON materialized_workout.plan_id = version.materialized_plan_id
      AND materialized_workout.day_of_week = NULLIF(workout.value->>'dayOfWeek', '')::INTEGER
      AND materialized_workout.order_in_plan = NULLIF(workout.value->>'orderInPlan', '')::INTEGER
+  ), trusted_sessions AS (
+    SELECT
+      progress_log.id,
+      progress_log.completed_at,
+      progress_log.duration_minutes,
+      progress_log.mood_rating,
+      progress_log.notes,
+      session_authorization.workout_id AS trusted_workout_id,
+      session_authorization.session_context_snapshot AS authorization_snapshot,
+      workout.name AS live_workout_name,
+      version.id AS assignment_version_id
+    FROM public.progress_logs AS progress_log
+    JOIN public.session_authorizations AS session_authorization
+      ON session_authorization.client_session_id = progress_log.client_session_id
+     AND session_authorization.user_id = progress_log.user_id
+     AND session_authorization.consumed_at IS NOT NULL
+     AND session_authorization.released_at IS NULL
+    JOIN public.workouts AS workout ON workout.id = session_authorization.workout_id
+    JOIN public.workout_plans AS plan
+      ON plan.id = session_authorization.plan_id
+     AND workout.plan_id = plan.id
+     AND plan.prescription_locked = TRUE
+    JOIN public.trainer_assignment_versions AS version
+      ON version.id = plan.trainer_assignment_version_id
+     AND version.materialized_plan_id = plan.id
+    JOIN assignment_rows AS assignment
+      ON assignment.id = version.assignment_id
+     AND assignment.id = plan.trainer_assignment_id
+     AND plan.trainer_relationship_id = v_relationship_id
+    WHERE progress_log.user_id = p_client_id
+      AND (progress_log.workout_id IS NULL OR progress_log.workout_id = session_authorization.workout_id)
+      AND (progress_log.completed_at AT TIME ZONE v_client_timezone)::DATE BETWEEN p_from_date AND p_to_date
   ), sessions AS (
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
-      'id', progress_log.id,
-      'assignmentVersionId', version.id,
-      'completedAt', progress_log.completed_at,
-      'durationMinutes', progress_log.duration_minutes,
-      'moodRating', progress_log.mood_rating,
-      'notes', progress_log.notes,
+      'id', trusted_session.id,
+      'assignmentVersionId', trusted_session.assignment_version_id,
+      'completedAt', trusted_session.completed_at,
+      'durationMinutes', trusted_session.duration_minutes,
+      'moodRating', trusted_session.mood_rating,
+      'notes', trusted_session.notes,
       'workout', jsonb_build_object(
-        'id', progress_log.workout_id,
-        'name', COALESCE(progress_log.session_context_snapshot->'workout'->>'name', workout.name)
+        'id', trusted_session.trusted_workout_id,
+        'name', COALESCE(trusted_session.authorization_snapshot->'workout'->>'name', trusted_session.live_workout_name)
       ),
       'exerciseResults', COALESCE((
         SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -298,29 +356,14 @@ BEGIN
         LEFT JOIN public.exercises AS catalog ON catalog.id = exercise_log.exercise_id
         LEFT JOIN LATERAL (
           SELECT snapshot_exercise.value
-          FROM jsonb_array_elements(COALESCE(progress_log.session_context_snapshot->'exercises', '[]'::JSONB)) AS snapshot_exercise(value)
+          FROM jsonb_array_elements(COALESCE(trusted_session.authorization_snapshot->'exercises', '[]'::JSONB)) AS snapshot_exercise(value)
           WHERE snapshot_exercise.value->>'exerciseId' = exercise_log.exercise_id::TEXT
           LIMIT 1
         ) AS captured_exercise ON TRUE
-        WHERE exercise_log.progress_log_id = progress_log.id
+        WHERE exercise_log.progress_log_id = trusted_session.id
       ), '[]'::JSONB)
-    ) ORDER BY progress_log.completed_at DESC, progress_log.id DESC), '[]'::JSONB) AS value
-    FROM public.progress_logs AS progress_log
-    LEFT JOIN public.workouts AS workout ON workout.id = progress_log.workout_id
-    LEFT JOIN public.workout_plans AS plan ON plan.id = workout.plan_id
-    JOIN public.trainer_assignment_versions AS version
-      ON version.id = COALESCE(
-        CASE
-          WHEN progress_log.session_context_snapshot->'plan'->>'trainerAssignmentVersionId'
-            ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-          THEN (progress_log.session_context_snapshot->'plan'->>'trainerAssignmentVersionId')::UUID
-          ELSE NULL
-        END,
-        plan.trainer_assignment_version_id
-      )
-    JOIN assignment_rows AS assignment ON assignment.id = version.assignment_id
-    WHERE progress_log.user_id = p_client_id
-      AND (progress_log.completed_at AT TIME ZONE v_client_timezone)::DATE BETWEEN p_from_date AND p_to_date
+    ) ORDER BY trusted_session.completed_at DESC, trusted_session.id DESC), '[]'::JSONB) AS value
+    FROM trusted_sessions AS trusted_session
   )
   SELECT jsonb_build_object(
     'schemaVersion', 1,

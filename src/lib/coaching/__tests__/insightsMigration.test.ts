@@ -41,6 +41,15 @@ describe('trainer insights migration', () => {
     expect(rpc).toMatch(/session_context_snapshot/i)
   })
 
+  it('anchors professional evidence to a consumed authorization instead of a progress-log snapshot', () => {
+    const rpc = migration.match(/CREATE OR REPLACE FUNCTION public\.get_coach_client_insights\([\s\S]+?END;\n\$\$;/i)?.[0]
+    expect(rpc).toBeDefined()
+    expect(rpc).toMatch(/JOIN public\.session_authorizations AS session_authorization[\s\S]+session_authorization\.client_session_id = progress_log\.client_session_id[\s\S]+session_authorization\.user_id = progress_log\.user_id[\s\S]+session_authorization\.consumed_at IS NOT NULL[\s\S]+session_authorization\.released_at IS NULL/i)
+    expect(rpc).toMatch(/workout\.plan_id = plan\.id[\s\S]+plan\.prescription_locked = TRUE[\s\S]+version\.materialized_plan_id = plan\.id/i)
+    expect(rpc).toMatch(/progress_log\.workout_id IS NULL OR progress_log\.workout_id = session_authorization\.workout_id/i)
+    expect(rpc).not.toMatch(/progress_log\.session_context_snapshot->'plan'->>'trainerAssignmentVersionId'/i)
+  })
+
   it('adds narrowly scoped lookup indexes without granting coaches direct sensitive-table access', () => {
     expect(migration).toMatch(/CREATE INDEX IF NOT EXISTS coaching_relationships_trainer_active_started_idx/i)
     expect(migration).toMatch(/CREATE INDEX IF NOT EXISTS coaching_consents_active_scope_lookup_idx/i)
