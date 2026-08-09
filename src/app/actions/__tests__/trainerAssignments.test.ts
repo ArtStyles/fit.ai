@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { requireActiveTrainerContext, revalidatePath } = vi.hoisted(() => ({
+const { requireActiveTrainerContext, requireAppUserContext, revalidatePath } = vi.hoisted(() => ({
   requireActiveTrainerContext: vi.fn(),
+  requireAppUserContext: vi.fn(),
   revalidatePath: vi.fn(),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/coaching/access', () => ({ requireActiveTrainerContext }))
+vi.mock('@/lib/auth/server', () => ({ requireAppUserContext }))
 vi.mock('next/cache', () => ({ revalidatePath }))
 
 const ids = {
@@ -75,5 +77,36 @@ describe('trainer assignment actions', () => {
       ok: false,
       error: 'No se pudo enviar la rutina. Verifica que el acompaÃ±amiento siga activo y que el cliente haya dado su consentimiento.',
     })
+  })
+
+  it('accepts only through the atomic RPC derived from the client session', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: { assignment_id: ids.assignment, workout_plan_id: ids.plan }, error: null })) }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { acceptTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(acceptTrainerAssignment(form({
+      assignmentId: ids.assignment,
+      idempotencyKey: 'accept-attempt-1',
+      clientUserId: 'attacker',
+    }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, workoutPlanId: ids.plan })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('accept_trainer_assignment', {
+      p_assignment_id: ids.assignment,
+      p_idempotency_key: 'accept-attempt-1',
+    })
+    expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+    expect(revalidatePath).toHaveBeenCalledWith('/plan')
+  })
+
+  it('does not call acceptance with malformed input', async () => {
+    const supabase = { rpc: vi.fn() }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { acceptTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(acceptTrainerAssignment(form({ assignmentId: 'nope', idempotencyKey: '' }))).resolves.toMatchObject({
+      ok: false,
+      fieldErrors: { assignmentId: expect.any(String), idempotencyKey: expect.any(String) },
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
   })
 })

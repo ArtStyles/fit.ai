@@ -977,6 +977,151 @@ ALTER FUNCTION public.propose_trainer_assignment(UUID, UUID, TEXT, TEXT) OWNER T
 REVOKE ALL ON FUNCTION public.propose_trainer_assignment(UUID, UUID, TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.propose_trainer_assignment(UUID, UUID, TEXT, TEXT) TO authenticated, service_role;
 
+-- Acceptance has its own durable key: a browser retry returns the already
+-- activated prescription instead of creating another active assignment.
+ALTER TABLE public.trainer_plan_assignments
+  ADD COLUMN IF NOT EXISTS acceptance_idempotency_key TEXT;
+ALTER TABLE public.trainer_plan_assignments
+  DROP CONSTRAINT IF EXISTS trainer_plan_assignments_acceptance_idempotency_key_check;
+ALTER TABLE public.trainer_plan_assignments
+  ADD CONSTRAINT trainer_plan_assignments_acceptance_idempotency_key_check
+  CHECK (acceptance_idempotency_key IS NULL OR char_length(btrim(acceptance_idempotency_key)) BETWEEN 1 AND 200);
+CREATE UNIQUE INDEX IF NOT EXISTS trainer_plan_assignments_acceptance_idempotency_unique
+  ON public.trainer_plan_assignments (client_user_id, acceptance_idempotency_key)
+  WHERE acceptance_idempotency_key IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION public.assert_professional_plan_replaceable(p_user_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.workout_plans plan
+    JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id
+    JOIN public.coaching_relationships relationship ON relationship.id = assignment.relationship_id
+    WHERE plan.user_id = p_user_id
+      AND plan.library_slot = 'professional'
+      AND plan.is_active = TRUE
+      AND plan.prescription_locked = TRUE
+      AND assignment.status = 'active'
+      AND relationship.status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'PROFESSIONAL_PLAN_REPLACEMENT_FORBIDDEN';
+  END IF;
+END;
+$$;
+ALTER FUNCTION public.assert_professional_plan_replaceable(UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.assert_professional_plan_replaceable(UUID) FROM PUBLIC, anon;
+
+CREATE OR REPLACE FUNCTION public.accept_trainer_assignment(
+  p_assignment_id UUID,
+  p_idempotency_key TEXT
+)
+RETURNS TABLE (assignment_id UUID, workout_plan_id UUID)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_client_user_id UUID := auth.uid();
+  v_assignment public.trainer_plan_assignments%ROWTYPE;
+  v_version public.trainer_assignment_versions%ROWTYPE;
+  v_relationship public.coaching_relationships%ROWTYPE;
+  v_plan public.workout_plans%ROWTYPE;
+  v_target_client_id UUID;
+  v_existing_assignment_id UUID;
+  v_existing_plan_id UUID;
+BEGIN
+  IF v_client_user_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF p_assignment_id IS NULL OR NULLIF(BTRIM(COALESCE(p_idempotency_key, '')), '') IS NULL
+    OR char_length(BTRIM(p_idempotency_key)) > 200 THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_ACCEPTANCE_INVALID';
+  END IF;
+
+  -- Read only the owner key first, then always acquire client before trainer.
+  SELECT client_user_id INTO v_target_client_id
+  FROM public.trainer_plan_assignments WHERE id = p_assignment_id;
+  IF v_target_client_id IS NULL OR v_target_client_id <> v_client_user_id THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_FOUND';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0));
+
+  SELECT assignment.id, version.materialized_plan_id
+  INTO v_existing_assignment_id, v_existing_plan_id
+  FROM public.trainer_plan_assignments assignment
+  JOIN public.trainer_assignment_versions version ON version.assignment_id = assignment.id AND version.version_number = 1
+  WHERE assignment.client_user_id = v_client_user_id
+    AND assignment.acceptance_idempotency_key = BTRIM(p_idempotency_key)
+  FOR UPDATE OF assignment, version;
+  IF FOUND THEN
+    RETURN QUERY SELECT v_existing_assignment_id, v_existing_plan_id;
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_assignment FROM public.trainer_plan_assignments assignment
+  WHERE assignment.id = p_assignment_id AND assignment.client_user_id = v_client_user_id FOR UPDATE;
+  IF NOT FOUND OR v_assignment.status <> 'proposed' THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_PROPOSED'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_assignment.trainer_user_id::TEXT, 0));
+
+  SELECT * INTO v_relationship FROM public.coaching_relationships relationship
+  WHERE relationship.id = v_assignment.relationship_id
+    AND relationship.client_user_id = v_client_user_id
+    AND relationship.trainer_user_id = v_assignment.trainer_user_id FOR UPDATE;
+  IF NOT FOUND OR v_relationship.status <> 'active' THEN RAISE EXCEPTION 'COACHING_RELATIONSHIP_NOT_ACTIVE'; END IF;
+  PERFORM 1 FROM public.profiles WHERE id = v_client_user_id AND account_status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_CLIENT_INACTIVE'; END IF;
+  PERFORM 1 FROM public.profiles WHERE id = v_assignment.trainer_user_id AND account_status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
+  PERFORM 1 FROM public.trainer_profiles WHERE user_id = v_assignment.trainer_user_id AND status = 'active' FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.coaching_consents consent WHERE consent.relationship_id = v_relationship.id AND consent.scope = 'training_profile' AND consent.revoked_at IS NULL) THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_CONSENT_REQUIRED';
+  END IF;
+  SELECT * INTO v_version FROM public.trainer_assignment_versions version
+  WHERE version.assignment_id = v_assignment.id AND version.version_number = 1 FOR UPDATE;
+  IF NOT FOUND OR v_version.status <> 'proposed' OR v_version.materialized_plan_id IS NULL THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_VERSION_NOT_PROPOSED';
+  END IF;
+  SELECT * INTO v_plan FROM public.workout_plans plan
+  WHERE plan.id = v_version.materialized_plan_id
+    AND plan.user_id = v_client_user_id
+    AND plan.trainer_assignment_id = v_assignment.id
+    AND plan.trainer_assignment_version_id = v_version.id
+    AND plan.source_type = 'trainer_assigned'
+    AND plan.library_slot = 'professional'
+    AND plan.prescription_locked = TRUE
+    AND plan.is_active = FALSE
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'TRAINER_ASSIGNMENT_PLAN_INVALID'; END IF;
+  IF EXISTS (SELECT 1 FROM public.trainer_plan_assignments assignment WHERE assignment.client_user_id = v_client_user_id AND assignment.status = 'active') THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_ACTIVE_EXISTS';
+  END IF;
+
+  PERFORM set_config('app.plan_lifecycle_actor', v_client_user_id::TEXT, TRUE);
+  UPDATE public.workout_plans SET is_active = FALSE
+  WHERE user_id = v_client_user_id AND is_active = TRUE;
+  UPDATE public.workout_plans SET is_active = TRUE WHERE id = v_plan.id;
+  UPDATE public.trainer_plan_assignments
+  SET status = 'cancelled', updated_at = NOW()
+  WHERE client_user_id = v_client_user_id AND status = 'proposed' AND id <> v_assignment.id;
+  UPDATE public.trainer_plan_assignments
+  SET status = 'active', accepted_at = NOW(), active_version_id = v_version.id,
+      acceptance_idempotency_key = BTRIM(p_idempotency_key), updated_at = NOW()
+  WHERE id = v_assignment.id;
+  UPDATE public.trainer_assignment_versions SET status = 'active', effective_from = NOW() WHERE id = v_version.id;
+  INSERT INTO public.professional_audit_logs (actor_user_id, subject_user_id, entity_type, entity_id, action, metadata)
+  VALUES (v_client_user_id, v_client_user_id, 'trainer_plan_assignment', v_assignment.id, 'accepted', jsonb_build_object('relationship_id', v_relationship.id, 'version_number', 1));
+  PERFORM public.create_product_notification(v_assignment.trainer_user_id, 'coaching_assignment_status', 'Rutina profesional aceptada', 'Tu cliente aceptó la rutina profesional.', '/coach/programs', 'coaching-assignment-accepted:' || v_assignment.id::TEXT, jsonb_build_object('assignment_id', v_assignment.id));
+  RETURN QUERY SELECT v_assignment.id, v_plan.id;
+END;
+$$;
+ALTER FUNCTION public.accept_trainer_assignment(UUID, TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.accept_trainer_assignment(UUID, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.accept_trainer_assignment(UUID, TEXT) TO authenticated, service_role;
+
 
 -- Preserve the Phase 3 atomic contracts while excluding professional
 -- materializations from personal-library quota checks.
@@ -1017,6 +1162,7 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
   PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
+  PERFORM public.assert_professional_plan_replaceable(v_user_id);
 
   -- A retry must win even after its parent was superseded by the first attempt.
   SELECT id INTO v_existing_plan_id
@@ -1256,6 +1402,40 @@ BEGIN
 END;
 $$;
 
+-- The legacy activation surface is intentionally limited to personal plans;
+-- professional materializations can become active only via acceptance/revision RPCs.
+CREATE OR REPLACE FUNCTION public.activate_plan_version(p_plan_id UUID)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_plan public.workout_plans%ROWTYPE;
+BEGIN
+  IF v_user_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
+  SELECT * INTO v_plan FROM public.workout_plans
+  WHERE id = p_plan_id AND user_id = v_user_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'PLAN_NOT_FOUND'; END IF;
+  IF v_plan.library_slot = 'professional' OR v_plan.prescription_locked THEN
+    RAISE EXCEPTION 'PROFESSIONAL_PLAN_MANUAL_ACTIVATION_FORBIDDEN';
+  END IF;
+  PERFORM public.assert_professional_plan_replaceable(v_user_id);
+  IF v_plan.retired_at IS NOT NULL THEN RAISE EXCEPTION 'PLAN_VERSION_RETIRED'; END IF;
+  IF v_plan.superseded_at IS NOT NULL THEN RAISE EXCEPTION 'PLAN_VERSION_SUPERSEDED'; END IF;
+  UPDATE public.workout_plans SET is_active = FALSE WHERE user_id = v_user_id AND is_active = TRUE;
+  UPDATE public.workout_plans SET is_active = TRUE
+  WHERE id = v_plan.id AND user_id = v_user_id AND retired_at IS NULL AND superseded_at IS NULL;
+  IF NOT FOUND THEN RAISE EXCEPTION 'PLAN_VERSION_UNAVAILABLE'; END IF;
+  RETURN v_plan.id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.activate_plan_version(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.activate_plan_version(UUID) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.create_manual_plan_atomic(
   p_plan JSONB,
   p_workouts JSONB,
@@ -1289,6 +1469,9 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
   PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
+  IF p_make_active THEN
+    PERFORM public.assert_professional_plan_replaceable(v_user_id);
+  END IF;
 
   SELECT subscription_tier INTO v_subscription_tier
   FROM profiles
@@ -1411,6 +1594,7 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
   PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
+  PERFORM public.assert_professional_plan_replaceable(v_user_id);
 
   -- SECURITY INVOKER keeps the current posts SELECT policy authoritative:
   -- removed, blocked or private posts unavailable to this user are not visible.

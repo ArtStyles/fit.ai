@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(69);
+SELECT plan(77);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -159,9 +159,35 @@ SELECT is(
 SELECT is((SELECT count(*) FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1'), 1::bigint, 'proposal retry creates no duplicate assignment');
 SELECT is((SELECT count(*) FROM public.professional_audit_logs WHERE entity_type = 'trainer_plan_assignment' AND action = 'proposed'), 1::bigint, 'proposal records an audit event');
 SELECT is((SELECT count(*) FROM public.product_notifications WHERE dedupe_key LIKE 'coaching-assignment-proposed:%'), 1::bigint, 'proposal notifies the client without private template data');
+-- The client, never the trainer or a submitted id, accepts the immutable first
+-- prescription. This is the real RPC boundary rather than an update shortcut.
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '33333333-0000-4000-8000-000000000003', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.accept_trainer_assignment((SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1'), 'accept-idempotency-1')$$,
+  'client accepts the proposed professional assignment atomically'
+);
+SELECT is((SELECT status FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1'), 'active', 'acceptance activates the assignment');
+SELECT ok((SELECT accepted_at IS NOT NULL FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1'), 'acceptance records its timestamp');
+SELECT is((SELECT version.status FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 'active', 'acceptance activates version one');
+SELECT is((SELECT is_active FROM public.workout_plans WHERE id = '11111111-0000-4000-8000-000000000110'), FALSE, 'acceptance deactivates the former personal plan');
+SELECT ok((SELECT retired_at IS NULL AND superseded_at IS NULL FROM public.workout_plans WHERE id = '11111111-0000-4000-8000-000000000110'), 'acceptance preserves former plan history');
+SELECT is((SELECT workout_plan_id FROM public.accept_trainer_assignment((SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1'), 'accept-idempotency-1')),
+  (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'),
+  'acceptance retry returns the original materialized plan');
+SELECT throws_ok(
+  $$SELECT public.activate_plan_version((SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'))$$,
+  'PROFESSIONAL_PLAN_MANUAL_ACTIVATION_FORBIDDEN', 'legacy activation cannot activate professional prescriptions directly'
+);
 RESET ROLE;
 SET LOCAL ROLE service_role;
 SELECT set_config('request.jwt.claim.role', 'service_role', true);
+-- Later identity fixtures intentionally reserve the same client as their
+-- active-assignment subject, so close this isolated acceptance scenario first.
+UPDATE public.trainer_plan_assignments SET status = 'superseded' WHERE proposal_idempotency_key = 'proposal-idempotency-1';
+UPDATE public.workout_plans SET is_active = FALSE WHERE trainer_assignment_id = (SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key = 'proposal-idempotency-1');
 UPDATE public.workout_plans SET is_active = FALSE, retired_at = NOW() WHERE id = '11111111-0000-4000-8000-000000000110';
 -- Three isolated clients exercise the real lifecycle RPCs against a genuine
 -- professional plan instead of a test-only quota shortcut.
