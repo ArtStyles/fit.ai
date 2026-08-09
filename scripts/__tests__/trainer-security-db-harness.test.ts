@@ -29,10 +29,19 @@ describe('trainer security database harness', () => {
     }
     expect(source).toContain('dblink_send_query')
     expect(source).toContain('dblink_get_result')
+    expect(source).toMatch(/wait_event_type\s*=\s*'Lock'/)
+    expect(source.match(/wait_for_security_lock\(/g)?.length).toBeGreaterThanOrEqual(4)
+    expect(source).toContain("request.jwt.claim.sub = '76000000-0000-4000-8000-000000000003'")
+    expect(source).toContain('permission denied for function suspend_account_and_professional')
 
     for (const id of [
       'applicationId', 'credentialId', 'requestId', 'relationshipId', 'clientId',
       'templateId', 'assignmentId', 'planId', 'progressLogId',
     ]) expect(source).toContain(`IDOR:${id}`)
+
+    for (const dependency of [
+      'trainer_assignment_versions', 'workouts', 'workout_exercises',
+      'coaching_consents', 'product_notifications', 'professional_audit_logs',
+    ]) expect(source).toMatch(new RegExp(`'${dependency}'\\s*,`))
   })
 })

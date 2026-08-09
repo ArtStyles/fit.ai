@@ -56,8 +56,8 @@ export function isTrainerSecurityE2EEnabled(env: NodeJS.ProcessEnv): boolean {
 
 export type TrainerRelationshipsFixture = {
   client: { id: string; email: string; client: SupabaseClient }
-  trainerA: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string; professionalName: string }
-  trainerB: { id: string; email: string; client: SupabaseClient; profileId: string; serviceId: string; slug: string; professionalName: string }
+  trainerA: { id: string; email: string; client: SupabaseClient; applicationId: string; profileId: string; serviceId: string; slug: string; professionalName: string }
+  trainerB: { id: string; email: string; client: SupabaseClient; applicationId: string; profileId: string; serviceId: string; slug: string; professionalName: string }
   admin: { id: string; email: string }
   service: SupabaseClient
   runId: string
@@ -151,6 +151,8 @@ export type TrainerInsightsFixture = TrainerProgrammingFixture & {
   readClientInsightsError(): Promise<string>
   readProfessionalInsightSessionIds(): Promise<string[]>
 }
+
+type TrainerFixtureSeedOptions = { skipReadiness?: boolean }
 
 type TrainerRelationshipRows = {
   relationshipId: string
@@ -342,8 +344,11 @@ export async function assertTrainerRelationshipsE2EReady(): Promise<void> {
   }
 }
 
-export async function seedTrainerRelationshipsFixture(scope: string): Promise<TrainerRelationshipsFixture> {
-  await assertTrainerRelationshipsE2EReady()
+export async function seedTrainerRelationshipsFixture(
+  scope: string,
+  options: TrainerFixtureSeedOptions = {},
+): Promise<TrainerRelationshipsFixture> {
+  if (!options.skipReadiness) await assertTrainerRelationshipsE2EReady()
   const config = requireE2EConfig(process.env)
   const service = adminClient(config)
   const created = {
@@ -355,38 +360,48 @@ export async function seedTrainerRelationshipsFixture(scope: string): Promise<Tr
     relationshipIds: [] as string[],
     consentIds: [] as string[],
   }
-  const clientAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'client')
-  created.userIds.push(clientAccount.id)
-  const client = fixtureClient(config)
-  await signInFixtureClient(client, clientAccount.email, config.password)
-  const { error: clientProfileError } = await (service.from('profiles') as any).update({
-    onboarding_done: true, account_status: 'active', is_admin: false, language: 'es', timezone: E2E_TIME_ZONE,
-  }).eq('id', clientAccount.id)
-  assertNoError(clientProfileError, 'Preparing trainer relationships client profile')
-  const trainerAAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-a')
-  const trainerBAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-b')
-  const admin = await ensureTrainerRelationshipsAccount(service, config, scope, 'admin')
-  created.userIds.push(trainerAAccount.id, trainerBAccount.id, admin.id)
-  const trainerAClient = fixtureClient(config)
-  const trainerBClient = fixtureClient(config)
-  await Promise.all([
-    signInFixtureClient(trainerAClient, trainerAAccount.email, config.password),
-    signInFixtureClient(trainerBClient, trainerBAccount.email, config.password),
-  ])
-  const trainerA = await createVerifiedTrainerFixture(service, trainerAAccount, config, scope, 'a')
-  const trainerB = await createVerifiedTrainerFixture(service, trainerBAccount, config, scope, 'b')
-  created.applicationIds.push(trainerA.applicationId, trainerB.applicationId)
-  created.profileIds.push(trainerA.profileId, trainerB.profileId)
-  created.serviceIds.push(trainerA.serviceId, trainerB.serviceId)
-  return {
-    client: { id: clientAccount.id, email: clientAccount.email, client },
-    trainerA: { ...trainerAAccount, client: trainerAClient, ...trainerA },
-    trainerB: { ...trainerBAccount, client: trainerBClient, ...trainerB },
-    admin,
-    service,
-    runId: config.runId,
-    scope,
-    created,
+  try {
+    const clientAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'client')
+    created.userIds.push(clientAccount.id)
+    const client = fixtureClient(config)
+    await signInFixtureClient(client, clientAccount.email, config.password)
+    const { error: clientProfileError } = await (service.from('profiles') as any).update({
+      onboarding_done: true, account_status: 'active', is_admin: false, language: 'es', timezone: E2E_TIME_ZONE,
+    }).eq('id', clientAccount.id)
+    assertNoError(clientProfileError, 'Preparing trainer relationships client profile')
+    const trainerAAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-a')
+    created.userIds.push(trainerAAccount.id)
+    const trainerBAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-b')
+    created.userIds.push(trainerBAccount.id)
+    const admin = await ensureTrainerRelationshipsAccount(service, config, scope, 'admin')
+    created.userIds.push(admin.id)
+    const trainerAClient = fixtureClient(config)
+    const trainerBClient = fixtureClient(config)
+    await Promise.all([
+      signInFixtureClient(trainerAClient, trainerAAccount.email, config.password),
+      signInFixtureClient(trainerBClient, trainerBAccount.email, config.password),
+    ])
+    const trainerA = await createVerifiedTrainerFixture(service, trainerAAccount, config, scope, 'a')
+    created.applicationIds.push(trainerA.applicationId)
+    created.profileIds.push(trainerA.profileId)
+    created.serviceIds.push(trainerA.serviceId)
+    const trainerB = await createVerifiedTrainerFixture(service, trainerBAccount, config, scope, 'b')
+    created.applicationIds.push(trainerB.applicationId)
+    created.profileIds.push(trainerB.profileId)
+    created.serviceIds.push(trainerB.serviceId)
+    return {
+      client: { id: clientAccount.id, email: clientAccount.email, client },
+      trainerA: { ...trainerAAccount, client: trainerAClient, ...trainerA },
+      trainerB: { ...trainerBAccount, client: trainerBClient, ...trainerB },
+      admin,
+      service,
+      runId: config.runId,
+      scope,
+      created,
+    }
+  } catch (error) {
+    await cleanupTrainerRelationshipsFixture({ service, created } as TrainerRelationshipsFixture)
+    throw error
   }
 }
 
@@ -678,10 +693,13 @@ function differentPolicyTimeZone(currentTimeZone: string): string {
 
 /** Builds the relationship, personal library baseline, template and RPC
  * boundaries used by the professional programming browser journey. */
-export async function seedTrainerProgrammingFixture(scope: string): Promise<TrainerProgrammingFixture> {
-  await assertTrainerProgrammingE2EReady()
+export async function seedTrainerProgrammingFixture(
+  scope: string,
+  options: TrainerFixtureSeedOptions = {},
+): Promise<TrainerProgrammingFixture> {
+  if (!options.skipReadiness) await assertTrainerProgrammingE2EReady()
   const config = requireE2EConfig(process.env)
-  const fixture = await seedTrainerRelationshipsFixture(scope)
+  const fixture = await seedTrainerRelationshipsFixture(scope, options)
   let programmingPublished = false
   try {
     const relationship = await exerciseTrainerRelationshipLifecycle(fixture)
@@ -887,11 +905,16 @@ export async function seedTrainerProgrammingFixture(scope: string): Promise<Trai
 /** Adds the exact personal, versioned professional, and measurement rows used
  * by the insights browser journey. It is intentionally callable only after a
  * real client acceptance, so every professional log has a consumed lease. */
-export async function seedTrainerInsightsFixture(scope: string): Promise<TrainerInsightsFixture> {
-  const fixture = await runTrainerInsightsFixtureAfterPreflight({
-    preflight: assertTrainerInsightsE2EReady,
-    seed: () => seedTrainerProgrammingFixture(scope),
-  })
+export async function seedTrainerInsightsFixture(
+  scope: string,
+  options: TrainerFixtureSeedOptions = {},
+): Promise<TrainerInsightsFixture> {
+  const fixture = options.skipReadiness
+    ? await seedTrainerProgrammingFixture(scope, options)
+    : await runTrainerInsightsFixtureAfterPreflight({
+      preflight: assertTrainerInsightsE2EReady,
+      seed: () => seedTrainerProgrammingFixture(scope),
+    })
   return {
     ...fixture,
     async prepareInsightsEvidence() {

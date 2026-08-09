@@ -70,3 +70,28 @@ No fixture seed ran. Global teardown repeated the preflight, logged that cleanup
 - Production changes are limited to the read-only migration marker; no action handler or database permission was relaxed.
 - Package/community/payment/messaging surfaces are untouched.
 - Remaining blocker: deploy migrations 042–045 to the dedicated remote E2E project, then run the opt-in Playwright spec with `--repeat-each=3`.
+
+## Review round 1 of 5
+
+All critical and important review findings were remediated with tests before implementation:
+
+- The only pre-seed RPC is now the read-only `trainer_security_preflight()` marker. It returns exactly `45` and verifies all seven required routine signatures with `to_regprocedure`; the client preflight performs only bounded table `SELECT`s plus that marker call.
+- Browser IDOR coverage now uses persisted foreign IDs and separate random missing IDs for all nine identifier classes. A successful empty response is rejected, foreign/missing failures must share the same generic code/domain, and full target/dependency snapshots are compared without coercing malformed results to empty arrays.
+- The suspension race now traverses an authenticated admin-only HTTP boundary. The server-only helper verifies the bearer identity and active admin profile before creating a service client for the privileged RPC; direct authenticated RPC access remains denied in SQL.
+- Proposal, N+1 revision, and end/read SQL races capture exact `dblink` backend PIDs and prove a local `Lock` wait event before releasing their barriers. The end/read race always executes a post-commit evidence read and verifies generic denial.
+- Security race execution now always invokes registered cleanup in `finally`. Partial relationship seed failures clean tracked rows, all created actor sessions are registered as soon as they exist, and fixtures that publish retained program data declare the dedicated-project-reset policy explicitly.
+- The global teardown no longer returns early when the security preflight fails; unrelated teardown is still attempted.
+- Protected snapshots now include full rows for applications, credentials and cleanup records, application events/interviews, trainer profiles and service offerings, requests, relationships, consents, templates/workouts/exercises, assignments/versions, plans/workouts/exercises, progress/exercise logs, notifications, and professional audits.
+
+### Review-round verification
+
+- `pnpm test:db:trainer-security` — exit 0, 3/3 fresh isolated database repetitions (94.9 seconds).
+- `pnpm test:db:programming` — exit 0.
+- `pnpm test:db:insights` — exit 0; migrations 040–045 behavior and rerunnability passed.
+- `pnpm test:db:trainers` — exit 0; authorization mode passed.
+- Focused Vitest command over preflight, teardown, DB harness, migration marker, admin boundary, and route — 6 files and 17 tests passed.
+- `pnpm type-check` — exit 0.
+- `pnpm lint` — exit 0.
+- Playwright list with `--repeat-each=3` — 6 tests scheduled.
+- Remote Playwright with `--repeat-each=3` stopped at the read-only preflight in all three attempts because the configured remote still lacks marker 45. No fixture seed ran. General teardown was attempted after the security teardown failure; the sandbox then denied the auth-list network request with `fetch EACCES`.
+- A post-review full Vitest run was not green: 184/190 files and 1,513/1,517 tests passed. The six failed suites were browser/Vite lifecycle contention only (ports 5173–5177, four 5-second test timeouts, and six 10-second `afterAll` close timeouts); there was no behavioral assertion mismatch and no listener remained after the run. This is recorded as an external repository-wide parallelism blocker rather than represented as a pass.

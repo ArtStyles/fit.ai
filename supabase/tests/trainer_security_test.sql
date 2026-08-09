@@ -2,6 +2,29 @@
 
 CREATE EXTENSION IF NOT EXISTS dblink;
 
+CREATE OR REPLACE FUNCTION pg_temp.wait_for_security_lock(
+  p_actor_pids INTEGER[],
+  p_expected INTEGER
+) RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  FOR attempt IN 1..200 LOOP
+    IF (SELECT count(*) FROM pg_stat_activity
+        WHERE pid <> pg_backend_pid()
+          AND pid = ANY(p_actor_pids)
+          AND state = 'active'
+          AND wait_event_type = 'Lock') = p_expected THEN
+      RETURN;
+    END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+  RAISE EXCEPTION 'expected % blocked security actors; observed %', p_expected,
+    (SELECT jsonb_agg(jsonb_build_object('pid',pid,'state',state,'wait',wait_event_type,'event',wait_event))
+     FROM pg_stat_activity WHERE pid = ANY(p_actor_pids));
+END;
+$$;
+
 DO $$
 BEGIN
   IF public.trainer_security_preflight() <> 45 THEN
@@ -9,6 +32,22 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- The marker must derive readiness from the catalogs, not merely exist.
+BEGIN;
+ALTER FUNCTION public.get_coach_client_insights(UUID, DATE, DATE)
+  RENAME TO security_missing_get_coach_client_insights;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.trainer_security_preflight();
+    RAISE EXCEPTION 'preflight accepted a missing required routine';
+  EXCEPTION WHEN SQLSTATE 'P0001' THEN
+    IF SQLERRM <> 'TRAINER_SECURITY_SCHEMA_INCOMPLETE' THEN RAISE; END IF;
+  END;
+END;
+$$;
+ROLLBACK;
 
 -- security_two_trainer_accept_a / security_two_trainer_accept_b are executed
 -- by test-trainer-relationships-db.mjs immediately before this supplemental
@@ -70,8 +109,15 @@ SELECT dblink_exec(name, format($sql$
     RETURN jsonb_build_object('ok', false, 'sqlstate', SQLSTATE, 'message', SQLERRM);
   END; $f$;
 $sql$)) FROM (VALUES ('security_idempotent_proposal_a'), ('security_idempotent_proposal_b')) AS actor(name);
+CREATE TEMP TABLE security_proposal_pids AS
+SELECT pid FROM dblink('security_idempotent_proposal_a', 'SELECT pg_backend_pid()') response(pid INTEGER)
+UNION ALL
+SELECT pid FROM dblink('security_idempotent_proposal_b', 'SELECT pg_backend_pid()') response(pid INTEGER);
+SELECT pg_advisory_lock(hashtextextended('76000000-0000-4000-8000-000000000002', 0));
 SELECT dblink_send_query('security_idempotent_proposal_a', 'SELECT pg_temp.try_security_proposal()');
 SELECT dblink_send_query('security_idempotent_proposal_b', 'SELECT pg_temp.try_security_proposal()');
+SELECT pg_temp.wait_for_security_lock(ARRAY(SELECT pid FROM security_proposal_pids), 2);
+SELECT pg_advisory_unlock(hashtextextended('76000000-0000-4000-8000-000000000002', 0));
 CREATE TEMP TABLE security_proposal_results (result JSONB NOT NULL);
 INSERT INTO security_proposal_results SELECT result FROM dblink_get_result('security_idempotent_proposal_a') AS response(result JSONB);
 INSERT INTO security_proposal_results SELECT result FROM dblink_get_result('security_idempotent_proposal_b') AS response(result JSONB);
@@ -106,6 +152,24 @@ SELECT dblink_exec('security_accept_publish_suspend_a', 'SET ROLE authenticated'
 SELECT dblink_exec('security_accept_publish_suspend_b', $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000001'$$);
 SELECT dblink_exec('security_accept_publish_suspend_b', $$SET request.jwt.claim.role = 'authenticated'$$);
 SELECT dblink_exec('security_accept_publish_suspend_b', 'SET ROLE authenticated');
+SELECT set_config('request.jwt.claim.sub', '76000000-0000-4000-8000-000000000003', false);
+SELECT set_config('request.jwt.claim.role', 'authenticated', false);
+SET ROLE authenticated;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.suspend_account_and_professional(
+      '76000000-0000-4000-8000-000000000001',
+      '76000000-0000-4000-8000-000000000003',
+      'Forged direct suspension', NULL);
+    RAISE EXCEPTION 'authenticated admin bypassed the server boundary';
+  EXCEPTION WHEN insufficient_privilege THEN
+    IF SQLERRM <> 'permission denied for function suspend_account_and_professional' THEN RAISE; END IF;
+  END;
+END;
+$$;
+RESET ROLE;
+SELECT dblink_exec('security_accept_publish_suspend_admin', $$SET request.jwt.claim.sub = '76000000-0000-4000-8000-000000000003'$$);
 SELECT dblink_exec('security_accept_publish_suspend_admin', $$SET request.jwt.claim.role = 'service_role'$$);
 SELECT dblink_exec('security_accept_publish_suspend_admin', 'SET ROLE service_role');
 SELECT dblink_exec('security_accept_publish_suspend_a', $$CREATE FUNCTION pg_temp.try_security_accept() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM public.accept_trainer_assignment((SELECT id FROM public.trainer_plan_assignments WHERE proposal_idempotency_key='security-same-proposal-key'), 'security-accept-key'); RETURN '{"ok":true}'::jsonb; EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
@@ -146,8 +210,15 @@ SELECT dblink_exec(name, 'SET ROLE authenticated')
 FROM (VALUES ('security_revision_n_plus_one_a'), ('security_revision_n_plus_one_b')) actor(name);
 SELECT dblink_exec('security_revision_n_plus_one_a', $$CREATE FUNCTION pg_temp.try_revision() RETURNS JSONB LANGUAGE plpgsql AS $f$ DECLARE r RECORD; BEGIN SELECT * INTO r FROM public.publish_trainer_assignment_revision('eeeeeeee-0000-4000-8000-000000000091','eeeeeeee-0000-4000-8000-000000000061','Concurrent revision A','security-revision-a'); RETURN jsonb_build_object('ok',true,'versionId',r.assignment_version_id); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
 SELECT dblink_exec('security_revision_n_plus_one_b', $$CREATE FUNCTION pg_temp.try_revision() RETURNS JSONB LANGUAGE plpgsql AS $f$ DECLARE r RECORD; BEGIN SELECT * INTO r FROM public.publish_trainer_assignment_revision('eeeeeeee-0000-4000-8000-000000000091','eeeeeeee-0000-4000-8000-000000000061','Concurrent revision B','security-revision-b'); RETURN jsonb_build_object('ok',true,'versionId',r.assignment_version_id); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+CREATE TEMP TABLE security_revision_pids AS
+SELECT pid FROM dblink('security_revision_n_plus_one_a', 'SELECT pg_backend_pid()') response(pid INTEGER)
+UNION ALL
+SELECT pid FROM dblink('security_revision_n_plus_one_b', 'SELECT pg_backend_pid()') response(pid INTEGER);
+SELECT pg_advisory_lock(hashtextextended('eeeeeeee-0000-4000-8000-000000000002', 0));
 SELECT dblink_send_query('security_revision_n_plus_one_a', 'SELECT pg_temp.try_revision()');
 SELECT dblink_send_query('security_revision_n_plus_one_b', 'SELECT pg_temp.try_revision()');
+SELECT pg_temp.wait_for_security_lock(ARRAY(SELECT pid FROM security_revision_pids), 2);
+SELECT pg_advisory_unlock(hashtextextended('eeeeeeee-0000-4000-8000-000000000002', 0));
 CREATE TEMP TABLE security_revision_results (result JSONB);
 INSERT INTO security_revision_results SELECT result FROM dblink_get_result('security_revision_n_plus_one_a') AS response(result JSONB);
 INSERT INTO security_revision_results SELECT result FROM dblink_get_result('security_revision_n_plus_one_b') AS response(result JSONB);
@@ -174,9 +245,12 @@ FROM (VALUES ('security_end_read_evidence_a'), ('security_end_read_evidence_b'))
 SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
 FROM (VALUES ('security_end_read_evidence_a'), ('security_end_read_evidence_b')) actor(name);
 SELECT dblink_exec('security_end_read_evidence_b', 'SET ROLE authenticated');
-SELECT dblink_exec('security_end_read_evidence_b', $$CREATE FUNCTION pg_temp.try_evidence() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN RETURN jsonb_build_object('ok',true,'payload',public.get_coach_client_insights('eeeeeeee-0000-4000-8000-000000000002',CURRENT_DATE-30,CURRENT_DATE)); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
-SELECT dblink_exec('security_end_read_evidence_a', $$BEGIN; DO $f$ BEGIN PERFORM 1 FROM public.coaching_relationships WHERE id='eeeeeeee-0000-4000-8000-000000000041' FOR UPDATE; END;$f$; SET ROLE authenticated$$);
+SELECT dblink_exec('security_end_read_evidence_b', $$CREATE FUNCTION pg_temp.try_evidence() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN PERFORM pg_advisory_xact_lock(hashtextextended('eeeeeeee-0000-4000-8000-000000000002',0)); RETURN jsonb_build_object('ok',true,'payload',public.get_coach_client_insights('eeeeeeee-0000-4000-8000-000000000002',CURRENT_DATE-30,CURRENT_DATE)); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok',false,'message',SQLERRM,'sqlstate',SQLSTATE); END;$f$;$$);
+CREATE TEMP TABLE security_evidence_pids AS
+SELECT pid FROM dblink('security_end_read_evidence_b', 'SELECT pg_backend_pid()') response(pid INTEGER);
+SELECT dblink_exec('security_end_read_evidence_a', $$BEGIN; DO $f$ BEGIN PERFORM pg_advisory_xact_lock(hashtextextended('eeeeeeee-0000-4000-8000-000000000002',0)); PERFORM 1 FROM public.coaching_relationships WHERE id='eeeeeeee-0000-4000-8000-000000000041' FOR UPDATE; END;$f$; SET ROLE authenticated$$);
 SELECT dblink_send_query('security_end_read_evidence_b', 'SELECT pg_temp.try_evidence()');
+SELECT pg_temp.wait_for_security_lock(ARRAY(SELECT pid FROM security_evidence_pids), 1);
 SELECT dblink_exec('security_end_read_evidence_a', $$DO $f$ BEGIN PERFORM public.end_coaching_relationship('eeeeeeee-0000-4000-8000-000000000041','Security end/read race',gen_random_uuid()); END;$f$; COMMIT$$);
 CREATE TEMP TABLE security_end_read_results (result JSONB);
 INSERT INTO security_end_read_results SELECT result FROM dblink_get_result('security_end_read_evidence_b') AS response(result JSONB);
@@ -216,17 +290,36 @@ INSERT INTO public.progress_logs (id, user_id, completed_at, notes) VALUES (
   'cccccccc-0000-4000-8000-000000000002', NOW(), 'Foreign private progress'
 );
 
-CREATE TEMP TABLE security_idor_before AS
+CREATE OR REPLACE FUNCTION pg_temp.security_full_snapshot()
+RETURNS JSONB LANGUAGE sql STABLE AS $$
 SELECT jsonb_build_object(
-  'applications', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.trainer_applications) row),
-  'credentials', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,application_id FROM public.trainer_application_credentials) row),
-  'requests', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_requests) row),
-  'relationships', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_relationships) row),
-  'templates', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,name FROM public.trainer_program_templates) row),
-  'assignments', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,active_version_id FROM public.trainer_plan_assignments) row),
-  'plans', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,is_active,name FROM public.workout_plans) row),
-  'progress', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,notes FROM public.progress_logs) row)
-) AS snapshot;
+  'trainer_applications', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_applications row),
+  'trainer_application_credentials', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_application_credentials row),
+  'trainer_credential_storage_cleanup', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_credential_storage_cleanup row),
+  'trainer_application_events', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_application_events row),
+  'trainer_interviews', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_interviews row),
+  'trainer_profiles', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_profiles row),
+  'trainer_service_offerings', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_service_offerings row),
+  'coaching_requests', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.coaching_requests row),
+  'coaching_relationships', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.coaching_relationships row),
+  'coaching_consents', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.coaching_consents row),
+  'trainer_program_templates', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_program_templates row),
+  'trainer_template_workouts', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_template_workouts row),
+  'trainer_template_exercises', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_template_exercises row),
+  'trainer_plan_assignments', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_plan_assignments row),
+  'trainer_assignment_versions', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.trainer_assignment_versions row),
+  'workout_plans', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.workout_plans row),
+  'workouts', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.workouts row),
+  'workout_exercises', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.workout_exercises row),
+  'progress_logs', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.progress_logs row),
+  'exercise_logs', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.exercise_logs row),
+  'product_notifications', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.product_notifications row),
+  'professional_audit_logs', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM public.professional_audit_logs row)
+);
+$$;
+
+CREATE TEMP TABLE security_idor_before AS
+SELECT pg_temp.security_full_snapshot() AS snapshot;
 
 CREATE OR REPLACE FUNCTION pg_temp.security_try(p_sql TEXT)
 RETURNS JSONB
@@ -281,10 +374,10 @@ INSERT INTO security_idor_results VALUES
   ('assignmentId','foreign',pg_temp.security_try($q$SELECT public.publish_trainer_assignment_revision('cccccccc-0000-4000-8000-000000000061','eeeeeeee-0000-4000-8000-000000000061','IDOR foreign','idor-assignment-foreign')$q$)),
   ('assignmentId','missing',pg_temp.security_try($q$SELECT public.publish_trainer_assignment_revision('ffffffff-0000-4000-8000-000000000061','eeeeeeee-0000-4000-8000-000000000061','IDOR missing','idor-assignment-missing')$q$)),
   -- IDOR:planId and IDOR:progressLogId exercise the real RLS DML boundary.
-  ('planId','foreign',pg_temp.security_try($q$WITH changed AS (UPDATE public.workout_plans SET name='IDOR blocked' WHERE id='cccccccc-0000-4000-8000-000000000081' RETURNING id) SELECT count(*) AS changed FROM changed$q$)),
-  ('planId','missing',pg_temp.security_try($q$WITH changed AS (UPDATE public.workout_plans SET name='IDOR blocked' WHERE id='ffffffff-0000-4000-8000-000000000081' RETURNING id) SELECT count(*) AS changed FROM changed$q$)),
-  ('progressLogId','foreign',pg_temp.security_try($q$WITH changed AS (UPDATE public.progress_logs SET notes='IDOR blocked' WHERE id='cccccccc-0000-4000-8000-000000000111' RETURNING id) SELECT count(*) AS changed FROM changed$q$)),
-  ('progressLogId','missing',pg_temp.security_try($q$WITH changed AS (UPDATE public.progress_logs SET notes='IDOR blocked' WHERE id='ffffffff-0000-4000-8000-000000000081' RETURNING id) SELECT count(*) AS changed FROM changed$q$));
+  ('planId','foreign',pg_temp.security_try($q$WITH changed AS (UPDATE public.workout_plans SET name='IDOR blocked' WHERE id='cccccccc-0000-4000-8000-000000000081' RETURNING id) SELECT 1 / count(*)::INTEGER AS unavailable FROM changed$q$)),
+  ('planId','missing',pg_temp.security_try($q$WITH changed AS (UPDATE public.workout_plans SET name='IDOR blocked' WHERE id='ffffffff-0000-4000-8000-000000000081' RETURNING id) SELECT 1 / count(*)::INTEGER AS unavailable FROM changed$q$)),
+  ('progressLogId','foreign',pg_temp.security_try($q$WITH changed AS (UPDATE public.progress_logs SET notes='IDOR blocked' WHERE id='cccccccc-0000-4000-8000-000000000111' RETURNING id) SELECT 1 / count(*)::INTEGER AS unavailable FROM changed$q$)),
+  ('progressLogId','missing',pg_temp.security_try($q$WITH changed AS (UPDATE public.progress_logs SET notes='IDOR blocked' WHERE id='ffffffff-0000-4000-8000-000000000081' RETURNING id) SELECT 1 / count(*)::INTEGER AS unavailable FROM changed$q$));
 RESET ROLE;
 
 DO $$
@@ -303,17 +396,11 @@ BEGIN
   IF (SELECT count(DISTINCT field) FROM security_idor_results) <> 9 THEN
     RAISE EXCEPTION 'IDOR suite did not execute all nine identifiers';
   END IF;
+  IF EXISTS (SELECT 1 FROM security_idor_results WHERE (result->>'ok')::BOOLEAN) THEN
+    RAISE EXCEPTION 'IDOR suite accepted an unauthorized operation';
+  END IF;
 
-  SELECT jsonb_build_object(
-    'applications', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.trainer_applications) row),
-    'credentials', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,application_id FROM public.trainer_application_credentials) row),
-    'requests', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_requests) row),
-    'relationships', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status FROM public.coaching_relationships) row),
-    'templates', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,name FROM public.trainer_program_templates) row),
-    'assignments', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,status,active_version_id FROM public.trainer_plan_assignments) row),
-    'plans', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,is_active,name FROM public.workout_plans) row),
-    'progress', (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM (SELECT id,notes FROM public.progress_logs) row)
-  ) INTO after_snapshot;
+  SELECT pg_temp.security_full_snapshot() INTO after_snapshot;
   IF after_snapshot IS DISTINCT FROM (SELECT snapshot FROM security_idor_before) THEN
     RAISE EXCEPTION 'IDOR attempts changed protected rows';
   END IF;

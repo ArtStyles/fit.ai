@@ -185,15 +185,28 @@ REVOKE ALL ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT
 GRANT EXECUTE ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB)
   TO service_role;
 
--- Read-only deployment marker used before destructive E2E fixture setup.  A
--- constant SQL function has no table or sequence side effects and distinguishes
--- a complete 045 deployment from a database that stopped at Insights (044).
+-- Read-only deployment marker used before destructive E2E fixture setup. It
+-- derives readiness from the catalogs so a partial/invalid deployment cannot
+-- pass merely because this marker function itself exists.
 CREATE OR REPLACE FUNCTION public.trainer_security_preflight()
 RETURNS INTEGER
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SET search_path = public, pg_temp
-AS $$ SELECT 45 $$;
+AS $$
+BEGIN
+  IF to_regprocedure('public.prepare_trainer_credential_removal(uuid,uuid)') IS NULL
+    OR to_regprocedure('public.accept_coaching_request(uuid,uuid)') IS NULL
+    OR to_regprocedure('public.end_coaching_relationship(uuid,text,uuid)') IS NULL
+    OR to_regprocedure('public.propose_trainer_assignment(uuid,uuid,text,text)') IS NULL
+    OR to_regprocedure('public.accept_trainer_assignment(uuid,text)') IS NULL
+    OR to_regprocedure('public.publish_trainer_assignment_revision(uuid,uuid,text,text)') IS NULL
+    OR to_regprocedure('public.get_coach_client_insights(uuid,date,date)') IS NULL THEN
+    RAISE EXCEPTION 'TRAINER_SECURITY_SCHEMA_INCOMPLETE';
+  END IF;
+  RETURN 45;
+END;
+$$;
 
 REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.trainer_security_preflight() TO authenticated, service_role;
