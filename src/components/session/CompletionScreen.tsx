@@ -82,6 +82,7 @@ export function CompletionScreen({
   const finishedAt = useSessionStore(state => state.finishedAt)
   const workoutName = useSessionStore(state => state.workoutName)
   const clientSessionId = useSessionStore(state => state.clientSessionId)
+  const prescriptionLocked = useSessionStore(state => state.prescriptionLocked)
   const clearSession = useSessionStore(state => state.clearSession)
   const requestGateRef = useRef(createSessionRequestGate())
   const serverSavedRef = useRef<string | null>(null)
@@ -133,6 +134,7 @@ export function CompletionScreen({
         startedAt,
         finishedAt: finishedAt || Date.now(),
         moodRating,
+        prescriptionLocked,
         exercises: exercises.map(exercise => ({
           workoutExerciseId: exercise.workoutExerciseId,
           exerciseId: exercise.exerciseId,
@@ -192,7 +194,7 @@ export function CompletionScreen({
     } finally {
       if (requestGateRef.current.finish(requestToken)) setIsSaving(false)
     }
-  }, [clientSessionId, exercises, finishedAt, moodRating, onClearBackup, onSyncEvent, showToast, startedAt, syncErrorSource, t, workoutId])
+  }, [clientSessionId, exercises, finishedAt, moodRating, onClearBackup, onSyncEvent, prescriptionLocked, showToast, startedAt, syncErrorSource, t, workoutId])
 
   function handleDone() {
     if (!cleanupComplete) return

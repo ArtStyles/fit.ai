@@ -376,6 +376,57 @@ describe('saveSession idempotency', () => {
     expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))
   })
 
+  it('rejects an unfinished locked prescription before any persistence RPC', async () => {
+    const supabase = successfulSaveMock()
+    createClientMock.mockResolvedValue(supabase)
+
+    const result = await saveSession({
+      ...payload,
+      prescriptionLocked: true,
+      exercises: [{
+        workoutExerciseId: '66666666-6666-4666-8666-666666666666',
+        exerciseId: '77777777-7777-4777-8777-777777777777',
+        name: 'Sentadilla prescrita',
+        source: 'planned',
+        targetSets: 2,
+        targetReps: 8,
+        sets: [
+          { weightKg: '60', reps: '8', rpe: 7, completed: true },
+          { weightKg: '60', reps: '8', rpe: null, completed: false },
+        ],
+        status: 'active',
+      }, {
+        workoutExerciseId: '88888888-8888-4888-8888-888888888888',
+        exerciseId: '99999999-9999-4999-8999-999999999999',
+        name: 'Remo prescrito',
+        source: 'planned',
+        targetSets: 2,
+        targetReps: 10,
+        sets: [
+          { weightKg: '40', reps: '10', rpe: null, completed: false },
+          { weightKg: '40', reps: '10', rpe: null, completed: false },
+        ],
+        status: 'pending',
+      }],
+    })
+
+    expect(result).toMatchObject({
+      success: false,
+      progressLogId: null,
+      error: expect.stringContaining('completa'),
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('keeps personal partial-session stop compatible with the existing save flow', async () => {
+    const supabase = successfulSaveMock()
+    createClientMock.mockResolvedValue(supabase)
+
+    await expect(saveSession({ ...payload, prescriptionLocked: false })).resolves.toMatchObject({ success: true })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.any(Object))
+  })
+
   it('never writes progression targets back into a locked professional plan', async () => {
     const supabase: any = createSupabaseMock({
       progress_logs: [{ data: null }],

@@ -1377,6 +1377,10 @@ BEGIN
   PERFORM set_config('app.plan_lifecycle_actor', v_target_client_id::TEXT, TRUE);
   PERFORM set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
   UPDATE public.workout_plans SET is_active = FALSE WHERE user_id = v_target_client_id AND is_active = TRUE;
+  UPDATE public.workout_plans
+  SET superseded_at = COALESCE(superseded_at, NOW())
+  WHERE id = v_previous_version.materialized_plan_id
+    AND user_id = v_target_client_id;
   UPDATE public.workout_plans SET is_active = TRUE WHERE id = v_new_plan_id;
   UPDATE public.trainer_assignment_versions
   SET status = 'superseded', effective_to = GREATEST(clock_timestamp(), v_previous_version.effective_from + INTERVAL '1 microsecond')
@@ -1717,6 +1721,19 @@ BEGIN
       )
     ) THEN
       RAISE EXCEPTION 'SESSION_PROFESSIONAL_EXERCISE_FORBIDDEN';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.workout_exercises AS prescription
+      WHERE prescription.workout_id = v_authorization.workout_id
+        AND NOT EXISTS (
+          SELECT 1
+          FROM jsonb_to_recordset(v_normalized_exercise_logs) AS item(exercise_id UUID)
+          WHERE item.exercise_id = prescription.exercise_id
+        )
+    ) THEN
+      RAISE EXCEPTION 'SESSION_PROFESSIONAL_EXERCISE_INCOMPLETE';
     END IF;
 
     -- Keep an explicit omission reason in the client payload and normalize the

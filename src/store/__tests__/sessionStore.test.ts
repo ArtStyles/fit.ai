@@ -141,4 +141,56 @@ describe('session store side effects', () => {
       skipReason: 'Dolor',
     })
   })
+
+  it('refuses to finish a locked prescription while any prescribed exercise has no evidence', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession(
+      'workout-locked',
+      'Locked workout',
+      [exercise('one'), exercise('two', 'pending')],
+      true,
+    )
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(false)
+  })
+
+  it('accepts partial-set evidence when every locked exercise has at least one completed set', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession('workout-locked', 'Locked workout', [exercise('one')], true)
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(true)
+  })
+
+  it('finishes a locked prescription only after every exercise is completed or cleanly skipped', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession(
+      'workout-locked',
+      'Locked workout',
+      [exercise('one'), exercise('two', 'pending')],
+      true,
+    )
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().completeSet('we-one', 1)
+    useSessionStore.getState().skipExercise('we-two', 'Sin equipo')
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(true)
+  })
+
+  it('keeps personal-session safe stop available after partial progress', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession('workout-personal', 'Personal workout', [exercise('one')], false)
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(true)
+  })
 })

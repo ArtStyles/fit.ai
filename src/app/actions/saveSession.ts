@@ -86,6 +86,7 @@ export interface SaveSessionPayload {
   finishedAt: number
   moodRating: number | null
   exercises: ExercisePayload[]
+  prescriptionLocked?: boolean
 }
 
 export interface SaveSessionResult {
@@ -981,6 +982,22 @@ export async function saveSession(
       progressLogId: existingSession.id,
       prs: recoveredResult.outcome.prs,
       progressions: recoveredResult.outcome.progressions,
+    }
+  }
+
+  if (payload.prescriptionLocked && (
+    payload.exercises.length === 0
+    || !payload.exercises.every(exercise =>
+      exercise.sets.some(set => set.completed)
+      || (exercise.status === 'skipped' && Boolean(exercise.skipReason?.trim())),
+    )
+  )) {
+    return {
+      success: false,
+      progressLogId: null,
+      prs: [],
+      progressions: [],
+      error: 'La rutina profesional no está completa: registra al menos una serie de cada ejercicio o márcalo como saltado con un motivo.',
     }
   }
 

@@ -9,7 +9,7 @@ import { Button }          from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { useSessionStore } from '@/store/sessionStore'
+import { canFinishSession, useSessionStore } from '@/store/sessionStore'
 import { SessionSyncStatus } from '@/components/session/SessionSyncStatus'
 import type { SessionSyncState } from '@/components/session/sessionViewModel'
 import { useBackHandler } from '@/lib/native/backHandlers'
@@ -52,6 +52,7 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
   const workoutName   = useSessionStore(s => s.workoutName)
   const startedAt     = useSessionStore(s => s.startedAt)
   const exercises     = useSessionStore(s => s.exercises)
+  const prescriptionLocked = useSessionStore(s => s.prescriptionLocked)
   const elapsed       = useElapsedTime(startedAt)
 
   const [showExitDialog, setShowExitDialog] = useState(false)
@@ -61,6 +62,7 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
     (acc, e) => acc + e.sets.filter(s => s.completed).length, 0,
   )
   const totalSets = exercises.reduce((acc, e) => acc + e.sets.length, 0)
+  const canFinish = canFinishSession(exercises, prescriptionLocked)
 
   // Gesto/botón atrás de Android: cerrar el diálogo si está abierto, o pedir
   // confirmación antes de abandonar un entreno con progreso (igual que el botón).
@@ -122,10 +124,10 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
           size="sm"
           variant="outline"
           onClick={onFinish}
-          disabled={completedSets === 0}
+          disabled={!canFinish}
           className={cn(
             'shrink-0 h-11 gap-1.5 transition-colors',
-            completedSets > 0
+            canFinish
               ? 'border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/50'
               : 'border-border/30 text-muted-foreground/40 cursor-not-allowed',
           )}

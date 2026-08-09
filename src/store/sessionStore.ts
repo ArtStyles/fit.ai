@@ -101,6 +101,20 @@ export interface SessionState {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+export function canFinishSession(
+  exercises: ExerciseSession[],
+  prescriptionLocked: boolean,
+): boolean {
+  if (!prescriptionLocked) {
+    return exercises.some(exercise => exercise.sets.some(set => set.completed))
+  }
+
+  return exercises.length > 0 && exercises.every(exercise =>
+    exercise.sets.some(set => set.completed)
+    || (exercise.status === 'skipped' && Boolean(exercise.skipReason?.trim())),
+  )
+}
+
 function buildInitialSets(
   targetSets:      number,
   suggestedWeight: number | null,
@@ -493,6 +507,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── finishSession ─────────────────────────────────────────────────────────
   finishSession() {
+    const state = get()
+    if (state.prescriptionLocked && !canFinishSession(state.exercises, true)) return
     set({ isFinished: true, finishedAt: Date.now(), restTimer: null })
   },
 
