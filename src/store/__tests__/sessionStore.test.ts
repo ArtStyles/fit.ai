@@ -108,4 +108,89 @@ describe('session store side effects', () => {
     useSessionStore.getState().updateSetField('we-one', 0, 'reps', '9')
     expect(useSessionStore.getState().clientSessionId).toBe(migrated)
   })
+
+  it('keeps execution data editable but refuses ad-hoc and replacement exercises in a locked prescription', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession('workout-locked', 'Locked workout', [exercise('one')], true)
+
+    const before = useSessionStore.getState().exercises
+    useSessionStore.getState().addSessionExercise({
+      exerciseId: 'extra',
+      name: 'Extra exercise',
+      imageUrl: null,
+      instructions: null,
+      muscleGroups: [],
+      isCompound: false,
+    })
+    useSessionStore.getState().replaceSessionExercise('we-one', {
+      exerciseId: 'replacement',
+      name: 'Replacement exercise',
+      imageUrl: null,
+      instructions: null,
+      muscleGroups: [],
+      isCompound: false,
+    })
+    useSessionStore.getState().updateSetField('we-one', 0, 'weightKg', '42.5')
+    useSessionStore.getState().skipExercise('we-one', 'Dolor')
+
+    expect(useSessionStore.getState().exercises).toHaveLength(before.length)
+    expect(useSessionStore.getState().exercises[0]).toMatchObject({
+      exerciseId: 'one',
+      sets: expect.arrayContaining([expect.objectContaining({ weightKg: '42.5' })]),
+      status: 'skipped',
+      skipReason: 'Dolor',
+    })
+  })
+
+  it('refuses to finish a locked prescription while any prescribed exercise has no evidence', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession(
+      'workout-locked',
+      'Locked workout',
+      [exercise('one'), exercise('two', 'pending')],
+      true,
+    )
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(false)
+  })
+
+  it('accepts partial-set evidence when every locked exercise has at least one completed set', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession('workout-locked', 'Locked workout', [exercise('one')], true)
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(true)
+  })
+
+  it('finishes a locked prescription only after every exercise is completed or cleanly skipped', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession(
+      'workout-locked',
+      'Locked workout',
+      [exercise('one'), exercise('two', 'pending')],
+      true,
+    )
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().completeSet('we-one', 1)
+    useSessionStore.getState().skipExercise('we-two', 'Sin equipo')
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(true)
+  })
+
+  it('keeps personal-session safe stop available after partial progress', () => {
+    useSessionStore.getState().clearSession()
+    useSessionStore.getState().initSession('workout-personal', 'Personal workout', [exercise('one')], false)
+
+    useSessionStore.getState().completeSet('we-one', 0)
+    useSessionStore.getState().finishSession()
+
+    expect(useSessionStore.getState().isFinished).toBe(true)
+  })
 })

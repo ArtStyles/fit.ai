@@ -149,6 +149,29 @@ razón visible para el solicitante. Cambiar datos profesionales sensibles despu�
 de la aprobación podrá requerir una revisión posterior sin eliminar el historial
 de decisiones.
 
+### 6.3 Revisión de un perfil aprobado
+
+`trainer_applications.application_kind` distinguirá `initial` de
+`profile_update`. Una solicitud inicial seguirá exigiendo al menos una
+credencial privada. Una revisión de perfil solo podrá ser creada por el propietario
+de un `trainer_profile` activo y referenciará explícitamente el perfil vigente y la
+solicitud aprobada de la que hereda sus credenciales verificadas; no duplicará
+filas ni objetos de Storage.
+
+Biografía, fotografía, ubicación general e idiomas podrán actualizarse de forma
+directa. Cambiar nombre profesional, especialidades, modalidades o experiencia
+creará o reutilizará una única solicitud abierta `profile_update`, copiará una
+instantánea completa del perfil aprobado y la enviará a revisión administrativa.
+El `trainer_profile` activo no se modifica con esos valores sensibles hasta una
+nueva aprobación. Rechazar la revisión conserva íntegramente la versión aprobada.
+
+La cola administrativa identificará claramente el tipo de solicitud y, para una
+revisión, resolverá las credenciales desde la solicitud aprobada referenciada. Las
+transiciones, eventos, auditoría, entrevistas y notificaciones usarán el mismo flujo
+administrativo existente. Ninguna excepción de credenciales dependerá solo de la
+UI: PostgreSQL validará que la referencia pertenece al mismo entrenador, apunta a
+una solicitud aprobada y contiene al menos una credencial.
+
 ## 7. Perfiles y servicios
 
 Solo un `trainer_profile` aprobado y activo aparecerá en `/trainers`.

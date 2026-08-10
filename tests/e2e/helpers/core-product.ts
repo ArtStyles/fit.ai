@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   requireE2EConfig,
@@ -25,6 +25,1065 @@ export type HistoryContinuityFixture = {
 }
 
 type QueryError = { message?: string } | null
+
+/** Trainer relationship E2E is deliberately opt-in because it creates several
+ * service-role fixtures and needs the dedicated run-scoped credentials. */
+export function isTrainerRelationshipsE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return env.E2E_TRAINER_RELATIONSHIPS_ENABLED === 'true'
+}
+
+/** Programming writes are intentionally opt-in: published professional plans
+ * cannot be removed through ordinary REST cleanup. The dedicated database must
+ * be reset by its owner after the suite, and that acknowledgement is required
+ * before this test can create immutable evidence. */
+export function isTrainerProgrammingE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return isTrainerRelationshipsE2EEnabled(env)
+    && env.E2E_TRAINER_PROGRAMMING_ENABLED === 'true'
+    && env.E2E_TRAINER_PROGRAMMING_RETENTION_ACK === 'dedicated-project-reset'
+}
+
+/** Insights fixtures reuse the immutable programming data and therefore add a
+ * separate acknowledgement instead of widening the programming opt-in. */
+export function isTrainerInsightsE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return isTrainerProgrammingE2EEnabled(env)
+    && env.E2E_TRAINER_INSIGHTS_ENABLED === 'true'
+}
+
+export function isTrainerSecurityE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return isTrainerInsightsE2EEnabled(env)
+    && env.E2E_TRAINER_SECURITY_ENABLED === 'true'
+}
+
+export type TrainerRelationshipsFixture = {
+  client: { id: string; email: string; client: SupabaseClient }
+  trainerA: { id: string; email: string; client: SupabaseClient; applicationId: string; profileId: string; serviceId: string; slug: string; professionalName: string }
+  trainerB: { id: string; email: string; client: SupabaseClient; applicationId: string; profileId: string; serviceId: string; slug: string; professionalName: string }
+  admin: { id: string; email: string }
+  service: SupabaseClient
+  runId: string
+  scope: string
+  created: {
+    userIds: string[]
+    applicationIds: string[]
+    profileIds: string[]
+    serviceIds: string[]
+    requestIds: string[]
+    relationshipIds: string[]
+    consentIds: string[]
+  }
+}
+
+type TrainerProgrammingAuthorization = {
+  clientSessionId: string
+  workoutId: string
+  planId: string
+  assignmentVersionId: string
+}
+
+type TrainerProgrammingProposal = {
+  templateId: string
+  assignmentId: string
+  assignmentVersionId: string
+  planId: string
+  proposalIdempotencyKey: string
+}
+
+export type TrainerProgrammingFixture = TrainerRelationshipsFixture & {
+  password: string
+  relationshipId: string
+  personalPlanId: string
+  createTemplateAndPropose(name: string, idempotencyKey?: string): Promise<TrainerProgrammingProposal>
+  readAcceptedAssignment(assignmentId: string): Promise<{
+    planId: string
+    personalPlanIsActive: boolean
+    personalPlanStillExists: boolean
+    snapshot: { name: string }
+  }>
+  authorizeCurrentProfessionalSession(): Promise<TrainerProgrammingAuthorization>
+  saveUnauthorizedProfessionalExercise(authorization: TrainerProgrammingAuthorization, exerciseId: string): Promise<never>
+  publishRevision(name: string, changeSummary: string): Promise<{
+    assignmentVersionId: string
+    planId: string
+    versionNumber: number
+    previousVersionEffectiveTo: string | null
+  }>
+  readAuthorizedSession(clientSessionId: string): Promise<{
+    planId: string
+    assignmentVersionId: string | null
+  }>
+  saveAuthorizedSessionWithActualResults(authorization: TrainerProgrammingAuthorization): Promise<{
+    inserted: boolean
+    progressLogId: string
+    retryProgressLogId: string
+    retryInserted: boolean
+    progressLogCount: number
+    exerciseLogCount: number
+    consumedAtBeforeRetry: string | null
+    consumedAtAfterRetry: string | null
+    actualResult: {
+      setsCompleted: number
+      repsCompleted: number[]
+      weightsKg: number[]
+      rpeValues: number[]
+      notes: string | null
+    }
+    skipNote: string | null
+  }>
+  moveToDifferentPolicyDate(): Promise<void>
+}
+
+export type TrainerInsightsFixture = TrainerProgrammingFixture & {
+  prepareInsightsEvidence(): Promise<{
+    personalProgressLogId: string
+    historicalProfessionalProgressLogId: string
+    currentProfessionalProgressLogId: string
+    historicalAssignmentVersionId: string
+    currentAssignmentVersionId: string
+    historicalWorkoutName: string
+    currentWorkoutName: string
+    professionalEvidenceCount: number
+    measurementWeightKg: number
+  }>
+  grantBodyMeasurements(): Promise<void>
+  revokeBodyMeasurements(): Promise<void>
+  endActiveRelationship(): Promise<void>
+  suspendTrainer(): Promise<void>
+  readClientInsightsError(): Promise<string>
+  readProfessionalInsightSessionIds(): Promise<string[]>
+}
+
+type TrainerFixtureSeedOptions = {
+  skipReadiness?: boolean
+  relationshipsFixture?: TrainerRelationshipsFixture
+  existingRelationshipId?: string
+}
+
+type TrainerRelationshipRows = {
+  relationshipId: string
+  firstRequestId: string
+  competingRequestId: string
+}
+
+function requireTrainerRelationshipsAnonKey(env: NodeJS.ProcessEnv): string {
+  const value = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!value) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required for trainer relationships E2E')
+  return value
+}
+
+type TrainerRelationshipRole = 'client' | 'trainer-a' | 'trainer-b' | 'admin'
+
+type TrainerRelationshipScopeInput = {
+  projectName: string
+  workerIndex: number
+  parallelIndex: number
+  retry: number
+}
+
+function cleanScopePart(value: string, fallback: string): string {
+  const cleaned = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return (cleaned || fallback).slice(0, 20).replace(/-+$/, '')
+}
+
+export function deriveTrainerRelationshipScope(input: TrainerRelationshipScopeInput): string {
+  return `${cleanScopePart(input.projectName, 'project')}-w${input.workerIndex}-p${input.parallelIndex}-r${input.retry}`
+}
+
+export function deriveTrainerRelationshipIdentity(
+  runId: string,
+  scope: string,
+  role: TrainerRelationshipRole,
+): { email: string; username: string } {
+  const runPart = cleanScopePart(runId, 'run').slice(0, 18)
+  const scopePart = cleanScopePart(scope, 'scope').slice(0, 16).replace(/-+$/, '')
+  const hash = createHash('sha256').update(`${runId}:${scope}:${role}`).digest('hex').slice(0, 8)
+  const localPart = `e2e-${runPart}-${scopePart}-${hash}-${role}`
+  return { email: `${localPart}@example.test`, username: localPart.replace(/-/g, '_') }
+}
+
+export function deriveTrainerFixtureIdentity(
+  runId: string,
+  scope: string,
+  suffix: 'a' | 'b',
+): { slug: string; professionalName: string } {
+  const runPart = cleanScopePart(runId, 'run').slice(0, 18).replace(/-+$/, '')
+  const scopePart = cleanScopePart(scope, 'scope').slice(0, 16).replace(/-+$/, '')
+  const hash = createHash('sha256').update(`${runId}:${scope}:trainer:${suffix}`).digest('hex').slice(0, 8)
+  const coach = suffix.toUpperCase()
+  return {
+    slug: `e2e-${runPart}-${scopePart}-${hash}-coach-${suffix}`,
+    professionalName: `E2E Coach ${coach} ${runPart} ${scopePart} ${hash}`,
+  }
+}
+
+function fixtureClient(config: E2ESeedConfig): SupabaseClient {
+  return createClient(config.supabaseUrl, requireTrainerRelationshipsAnonKey(process.env), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
+
+async function signInFixtureClient(client: SupabaseClient, email: string, password: string): Promise<void> {
+  const { error } = await client.auth.signInWithPassword({ email, password })
+  assertNoError(error, `Signing in trainer relationships fixture account ${email}`)
+}
+
+async function ensureTrainerRelationshipsAccount(
+  service: SupabaseClient,
+  config: E2ESeedConfig,
+  scope: string,
+  role: TrainerRelationshipRole,
+): Promise<{ id: string; email: string }> {
+  const identity = deriveTrainerRelationshipIdentity(config.runId, scope, role)
+  const listed = await service.auth.admin.listUsers({ page: 1, perPage: 1000 })
+  assertNoError(listed.error, `Listing ${role} trainer relationships fixture`)
+  const existing = listed.data.users.find(user => user.email?.toLowerCase() === identity.email)
+  if (existing) {
+    await cleanupTrainerRelationshipsAccount(service, existing.id)
+    const { error } = await service.auth.admin.deleteUser(existing.id)
+    assertNoError(error, `Removing stale ${role} trainer relationships fixture`)
+  }
+  const created = await service.auth.admin.createUser({
+    email: identity.email,
+    password: config.password,
+    email_confirm: true,
+    user_metadata: { e2e_run_id: config.runId, trainer_relationship_role: role },
+  })
+  assertNoError(created.error, `Creating ${role} trainer relationships fixture`)
+  if (!created.data.user) throw new Error(`Creating ${role} trainer relationships fixture returned no user`)
+  const { error: profileError } = await (service.from('profiles') as any).upsert({
+    id: created.data.user.id,
+    username: identity.username,
+    full_name: `E2E ${role}`,
+    onboarding_done: true,
+    account_status: 'active',
+    is_admin: role === 'admin',
+    language: 'es',
+    timezone: E2E_TIME_ZONE,
+  })
+  assertNoError(profileError, `Preparing ${role} trainer relationships profile`)
+  return { id: created.data.user.id, email: identity.email }
+}
+
+async function createVerifiedTrainerFixture(
+  service: SupabaseClient,
+  account: { id: string; email: string },
+  config: E2ESeedConfig,
+  scope: string,
+  suffix: 'a' | 'b',
+): Promise<{ applicationId: string; profileId: string; serviceId: string; slug: string; professionalName: string }> {
+  const applicationId = randomUUID()
+  const profileId = randomUUID()
+  const serviceId = randomUUID()
+  const trainerIdentity = deriveTrainerFixtureIdentity(config.runId, scope, suffix)
+  const { slug, professionalName: name } = trainerIdentity
+  const { error: applicationError } = await (service.from('trainer_applications') as any).insert({
+    id: applicationId,
+    user_id: account.id,
+    application_kind: 'initial',
+    status: 'approved',
+    professional_name: name,
+    bio: 'Perfil profesional exclusivo para validar relaciones de entrenamiento.',
+    specialties: ['fuerza'],
+    modalities: ['online'],
+    experience_summary: 'Experiencia de prueba controlada para E2E.',
+    languages: ['es'],
+    contact_email: account.email,
+    interview_availability: 'E2E only',
+  })
+  assertNoError(applicationError, `Creating approved trainer ${suffix} application`)
+  const { error: trainerError } = await (service.from('trainer_profiles') as any).insert({
+    id: profileId,
+    user_id: account.id,
+    source_application_id: applicationId,
+    slug,
+    status: 'active',
+    professional_name: name,
+    bio: 'Perfil profesional exclusivo para validar relaciones de entrenamiento.',
+    specialties: ['fuerza'],
+    modalities: ['online'],
+    experience_summary: 'Experiencia de prueba controlada para E2E.',
+    general_location: 'La Habana',
+    languages: ['es'],
+  })
+  assertNoError(trainerError, `Creating active trainer ${suffix} profile`)
+  const { error: serviceError } = await (service.from('trainer_service_offerings') as any).insert({
+    id: serviceId,
+    trainer_profile_id: profileId,
+    name: `E2E Servicio ${suffix.toUpperCase()} ${config.runId}`,
+    description: 'Servicio gratuito de prueba para acompañamiento profesional.',
+    modality: 'online',
+    duration_minutes: 45,
+    content: 'Seguimiento de entrenamiento.',
+    capacity: 5,
+    is_active: true,
+    billing_mode: 'free_preview',
+    price_minor: null,
+    currency: null,
+    billing_interval: null,
+  })
+  assertNoError(serviceError, `Creating non-commercial trainer ${suffix} service`)
+  return { applicationId, profileId, serviceId, slug, professionalName: name }
+}
+
+/** Performs read-only migration probes before any relationship fixture write. */
+export async function assertTrainerRelationshipsE2EReady(): Promise<void> {
+  if (!isTrainerRelationshipsE2EEnabled(process.env)) {
+    throw new Error('Trainer relationship E2E writes require E2E_TRAINER_RELATIONSHIPS_ENABLED=true')
+  }
+  const config = requireE2EConfig(process.env)
+  const service = adminClient(config)
+  const probes = await Promise.all([
+    service.from('trainer_service_offerings').select('id, billing_mode, price_minor').limit(1),
+    service.from('coaching_relationships').select('id, status, paused_at').limit(1),
+    service.from('coaching_consents').select('id, scope, revoked_at').limit(1),
+    service.rpc('suspend_account_and_professional', {
+      p_user_id: null, p_admin_id: null, p_reason: null, p_until: null,
+    }),
+  ])
+  // The invalid arguments intentionally prove the RPC exists. Missing migration
+  // reports a PostgREST function-not-found error instead of a domain error.
+  const schemaError = probes.slice(0, 3).find(probe => probe.error)?.error
+  const rpcError = probes[3].error
+  if (schemaError || !rpcError || /Could not find the function|PGRST202/i.test(rpcError.message ?? '')) {
+    throw new Error('Trainer relationship migration 042 must be deployed to the dedicated E2E project')
+  }
+}
+
+export async function seedTrainerRelationshipsFixture(
+  scope: string,
+  options: TrainerFixtureSeedOptions = {},
+): Promise<TrainerRelationshipsFixture> {
+  if (!options.skipReadiness) await assertTrainerRelationshipsE2EReady()
+  const config = requireE2EConfig(process.env)
+  const service = adminClient(config)
+  const created = {
+    userIds: [] as string[],
+    applicationIds: [] as string[],
+    profileIds: [] as string[],
+    serviceIds: [] as string[],
+    requestIds: [] as string[],
+    relationshipIds: [] as string[],
+    consentIds: [] as string[],
+  }
+  try {
+    const clientAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'client')
+    created.userIds.push(clientAccount.id)
+    const client = fixtureClient(config)
+    await signInFixtureClient(client, clientAccount.email, config.password)
+    const { error: clientProfileError } = await (service.from('profiles') as any).update({
+      onboarding_done: true, account_status: 'active', is_admin: false, language: 'es', timezone: E2E_TIME_ZONE,
+    }).eq('id', clientAccount.id)
+    assertNoError(clientProfileError, 'Preparing trainer relationships client profile')
+    const trainerAAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-a')
+    created.userIds.push(trainerAAccount.id)
+    const trainerBAccount = await ensureTrainerRelationshipsAccount(service, config, scope, 'trainer-b')
+    created.userIds.push(trainerBAccount.id)
+    const admin = await ensureTrainerRelationshipsAccount(service, config, scope, 'admin')
+    created.userIds.push(admin.id)
+    const trainerAClient = fixtureClient(config)
+    const trainerBClient = fixtureClient(config)
+    await Promise.all([
+      signInFixtureClient(trainerAClient, trainerAAccount.email, config.password),
+      signInFixtureClient(trainerBClient, trainerBAccount.email, config.password),
+    ])
+    const trainerA = await createVerifiedTrainerFixture(service, trainerAAccount, config, scope, 'a')
+    created.applicationIds.push(trainerA.applicationId)
+    created.profileIds.push(trainerA.profileId)
+    created.serviceIds.push(trainerA.serviceId)
+    const trainerB = await createVerifiedTrainerFixture(service, trainerBAccount, config, scope, 'b')
+    created.applicationIds.push(trainerB.applicationId)
+    created.profileIds.push(trainerB.profileId)
+    created.serviceIds.push(trainerB.serviceId)
+    return {
+      client: { id: clientAccount.id, email: clientAccount.email, client },
+      trainerA: { ...trainerAAccount, client: trainerAClient, ...trainerA },
+      trainerB: { ...trainerBAccount, client: trainerBClient, ...trainerB },
+      admin,
+      service,
+      runId: config.runId,
+      scope,
+      created,
+    }
+  } catch (error) {
+    await cleanupTrainerRelationshipsFixture({ service, created } as TrainerRelationshipsFixture)
+    throw error
+  }
+}
+
+function rpcRows<T>(data: T[] | null, operation: string): T {
+  const row = data?.[0]
+  if (!row) throw new Error(`${operation} returned no row`)
+  return row
+}
+
+export async function exerciseTrainerRelationshipLifecycle(fixture: TrainerRelationshipsFixture): Promise<TrainerRelationshipRows> {
+  const createA = await (fixture.client.client.rpc as any)('create_coaching_request', {
+    service_id: fixture.trainerA.serviceId, message: 'Solicitud E2E para Coach A.', consent_version: 'training-profile-v1', idempotency_key: randomUUID(),
+  })
+  assertNoError(createA.error, 'Creating first pending coaching request')
+  const createB = await (fixture.client.client.rpc as any)('create_coaching_request', {
+    service_id: fixture.trainerB.serviceId, message: 'Solicitud E2E para Coach B.', consent_version: 'training-profile-v1', idempotency_key: randomUUID(),
+  })
+  assertNoError(createB.error, 'Creating competing pending coaching request')
+  const firstRequestId = rpcRows<{ request_id: string }>(createA.data, 'Creating first pending coaching request').request_id
+  const competingRequestId = rpcRows<{ request_id: string }>(createB.data, 'Creating competing pending coaching request').request_id
+  fixture.created.requestIds.push(firstRequestId, competingRequestId)
+  const accepted = await (fixture.trainerA.client.rpc as any)('accept_coaching_request', { request_id: firstRequestId, idempotency_key: randomUUID() })
+  assertNoError(accepted.error, 'Accepting first coaching request')
+  const acceptedRow = rpcRows<{ relationship_id: string; accepted_request_id: string; cancelled_request_ids: string[] }>(accepted.data, 'Accepting first coaching request')
+  expectRelationshipValue(acceptedRow.accepted_request_id, firstRequestId, 'accepted request')
+  expectRelationshipValue(acceptedRow.cancelled_request_ids.includes(competingRequestId), true, 'competing request cancellation')
+  const { data: requests, error: requestsError } = await (fixture.service.from('coaching_requests') as any)
+    .select('id,status').in('id', [firstRequestId, competingRequestId])
+  assertNoError(requestsError, 'Reading accepted and cancelled requests')
+  expectRelationshipValue(requests.find((request: any) => request.id === firstRequestId)?.status, 'accepted', 'accepted request status')
+  expectRelationshipValue(requests.find((request: any) => request.id === competingRequestId)?.status, 'cancelled', 'cancelled competing request status')
+  const { data: activeRelationships, error: relationshipError } = await (fixture.service.from('coaching_relationships') as any)
+    .select('id,status').eq('client_user_id', fixture.client.id).eq('status', 'active')
+  assertNoError(relationshipError, 'Reading active coaching relationship')
+  expectRelationshipValue(activeRelationships?.length, 1, 'one active coaching relationship')
+  const relationshipId = acceptedRow.relationship_id
+  fixture.created.relationshipIds.push(relationshipId)
+  const grant = await (fixture.client.client.rpc as any)('grant_body_measurements_consent', { p_relationship_id: relationshipId, p_consent_version: 'body-measurements-v1', p_idempotency_key: randomUUID() })
+  assertNoError(grant.error, 'Granting body measurements consent')
+  const revoke = await (fixture.client.client.rpc as any)('revoke_body_measurements_consent', { p_relationship_id: relationshipId, p_idempotency_key: randomUUID() })
+  assertNoError(revoke.error, 'Revoking body measurements consent')
+  const { data: bodyConsent, error: consentError } = await (fixture.service.from('coaching_consents') as any)
+    .select('id,scope,revoked_at').eq('relationship_id', relationshipId).eq('scope', 'body_measurements').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  assertNoError(consentError, 'Reading body measurements consent')
+  if (bodyConsent?.id) fixture.created.consentIds.push(bodyConsent.id)
+  expectRelationshipValue(Boolean(bodyConsent?.revoked_at), true, 'revoked body measurements consent')
+  return { relationshipId, firstRequestId, competingRequestId }
+}
+
+function expectRelationshipValue(actual: unknown, expected: unknown, label: string): void {
+  if (actual !== expected) throw new Error(`Expected ${label} to be ${String(expected)}, received ${String(actual)}`)
+}
+
+export async function endSuspendReinstateAndResumeTrainerRelationship(
+  fixture: TrainerRelationshipsFixture,
+  firstRelationshipId: string,
+): Promise<string> {
+  const ended = await (fixture.client.client.rpc as any)('end_coaching_relationship', {
+    p_relationship_id: firstRelationshipId, p_reason: 'Cierre E2E para preparar suspensión.', p_idempotency_key: randomUUID(),
+  })
+  assertNoError(ended.error, 'Ending first coaching relationship')
+  const { data: endedRelationship, error: endedError } = await (fixture.service.from('coaching_relationships') as any)
+    .select('status,ended_at').eq('id', firstRelationshipId).maybeSingle()
+  assertNoError(endedError, 'Reading ended coaching relationship')
+  expectRelationshipValue(endedRelationship?.status, 'ended', 'ended relationship status')
+  expectRelationshipValue(Boolean(endedRelationship?.ended_at), true, 'ended relationship timestamp')
+  const freshRequest = await (fixture.client.client.rpc as any)('create_coaching_request', {
+    service_id: fixture.trainerA.serviceId, message: 'Nueva solicitud E2E para suspensión.', consent_version: 'training-profile-v1', idempotency_key: randomUUID(),
+  })
+  assertNoError(freshRequest.error, 'Creating request before suspension')
+  const freshRequestId = rpcRows<{ request_id: string }>(freshRequest.data, 'Creating request before suspension').request_id
+  fixture.created.requestIds.push(freshRequestId)
+  const freshAccepted = await (fixture.trainerA.client.rpc as any)('accept_coaching_request', { request_id: freshRequestId, idempotency_key: randomUUID() })
+  assertNoError(freshAccepted.error, 'Accepting request before suspension')
+  const relationshipId = rpcRows<{ relationship_id: string }>(freshAccepted.data, 'Accepting request before suspension').relationship_id
+  fixture.created.relationshipIds.push(relationshipId)
+  const suspended = await (fixture.service.rpc as any)('suspend_account_and_professional', {
+    p_user_id: fixture.trainerA.id, p_admin_id: fixture.admin.id, p_reason: 'Suspensión administrativa E2E.', p_until: null,
+  })
+  assertNoError(suspended.error, 'Suspending trainer account and profile')
+  const { data: suspendedState, error: suspendedError } = await (fixture.service.from('coaching_relationships') as any)
+    .select('status,paused_at').eq('id', relationshipId).maybeSingle()
+  assertNoError(suspendedError, 'Reading paused relationship')
+  expectRelationshipValue(suspendedState?.status, 'paused_by_platform', 'paused relationship status')
+  expectRelationshipValue(Boolean(suspendedState?.paused_at), true, 'paused relationship timestamp')
+  const { data: activeConsent, error: activeConsentError } = await (fixture.service.from('coaching_consents') as any)
+    .select('id').eq('relationship_id', relationshipId).is('revoked_at', null)
+  assertNoError(activeConsentError, 'Reading suspended relationship grants')
+  expectRelationshipValue(activeConsent?.length, 0, 'active grants after suspension')
+  const { data: directory, error: directoryError } = await (fixture.service.from('active_trainer_directory') as any)
+    .select('slug').eq('user_id', fixture.trainerA.id)
+  assertNoError(directoryError, 'Reading suspended trainer directory projection')
+  expectRelationshipValue(directory?.length, 0, 'suspended trainer directory rows')
+  const { error: accountError } = await (fixture.service.from('profiles') as any).update({
+    account_status: 'active', suspension_reason: null, suspended_at: null, suspended_until: null, suspended_by: null,
+  }).eq('id', fixture.trainerA.id)
+  assertNoError(accountError, 'Reactivating trainer account only')
+  const { data: stillSuspended, error: profileError } = await (fixture.service.from('trainer_profiles') as any)
+    .select('status').eq('id', fixture.trainerA.profileId).maybeSingle()
+  assertNoError(profileError, 'Reading trainer profile after account reactivation')
+  expectRelationshipValue(stillSuspended?.status, 'suspended', 'trainer profile after account-only reactivation')
+  const reinstated = await (fixture.service.rpc as any)('reinstate_trainer_profile', { p_user_id: fixture.trainerA.id, p_admin_id: fixture.admin.id })
+  assertNoError(reinstated.error, 'Explicitly reinstating trainer profile')
+  const { data: pausedAfterReinstate, error: pausedAfterError } = await (fixture.service.from('coaching_relationships') as any)
+    .select('status').eq('id', relationshipId).maybeSingle()
+  assertNoError(pausedAfterError, 'Reading relationship after trainer profile reinstatement')
+  expectRelationshipValue(pausedAfterReinstate?.status, 'paused_by_platform', 'relationship after profile reinstatement')
+  const resumed = await (fixture.client.client.rpc as any)('resume_paused_coaching_relationship', { p_relationship_id: relationshipId, p_idempotency_key: randomUUID() })
+  assertNoError(resumed.error, 'Client-confirmed relationship resume')
+  const { data: resumedState, error: resumedError } = await (fixture.service.from('coaching_relationships') as any)
+    .select('status').eq('id', relationshipId).maybeSingle()
+  assertNoError(resumedError, 'Reading resumed relationship')
+  expectRelationshipValue(resumedState?.status, 'active', 'resumed relationship status')
+  const { data: renewedTrainingConsent, error: renewedConsentError } = await (fixture.service.from('coaching_consents') as any)
+    .select('id').eq('relationship_id', relationshipId).eq('scope', 'training_profile').is('revoked_at', null)
+  assertNoError(renewedConsentError, 'Reading renewed training consent')
+  expectRelationshipValue(renewedTrainingConsent?.length, 1, 'renewed training consent')
+  if (renewedTrainingConsent?.[0]?.id) fixture.created.consentIds.push(renewedTrainingConsent[0].id)
+  return relationshipId
+}
+
+/** Probes 043 before fixture writes so a partially deployed database never
+ * receives an unrecoverable professional materialization from E2E. */
+export async function assertTrainerProgrammingE2EReady(): Promise<void> {
+  if (!isTrainerProgrammingE2EEnabled(process.env)) {
+    throw new Error('Trainer programming E2E writes require dedicated-project reset acknowledgement')
+  }
+  await assertTrainerRelationshipsE2EReady()
+  const config = requireE2EConfig(process.env)
+  const service = adminClient(config)
+  const [tables, propose, save] = await Promise.all([
+    Promise.all([
+      service.from('trainer_program_templates').select('id').limit(1),
+      service.from('trainer_plan_assignments').select('id').limit(1),
+      service.from('trainer_assignment_versions').select('id, materialized_plan_id').limit(1),
+      service.from('workout_plans').select('id, prescription_locked').limit(1),
+    ]),
+    (service.rpc as any)('propose_trainer_assignment', {
+      p_relationship_id: null, p_template_id: null, p_change_summary: null, p_idempotency_key: null,
+    }),
+    (service.rpc as any)('save_session_log_atomic_v3', {
+      p_client_session_id: null, p_workout_id: null, p_completed_at: null,
+      p_duration_minutes: null, p_mood_rating: null, p_exercise_logs: [], p_result_snapshot: {},
+    }),
+  ])
+  const tableError = tables.find(result => result.error)?.error
+  const missingRpc = [propose.error, save.error].some(error =>
+    /Could not find the function|PGRST202/i.test(error?.message ?? ''))
+  if (tableError || missingRpc) {
+    throw new Error('Trainer programming migration 043 must be deployed to the dedicated E2E project')
+  }
+}
+
+/**
+ * Runs only SELECT and intentionally-invalid RPC probes before any insights
+ * fixture write. The generic domain errors prove deployed RPCs without reading
+ * a client row or leaking credentials into test output.
+ */
+export const TRAINER_INSIGHTS_PREFLIGHT_ERROR = 'Trainer insights migrations 042, 043, and 044 must be deployed to the dedicated E2E project'
+
+type TrainerInsightsReadOnlyClient = {
+  from(table: string): { select(columns: string): { limit(count: number): PromiseLike<{ error: QueryError }> } }
+  rpc(name: string, args?: Record<string, unknown>): PromiseLike<{ error: QueryError }>
+}
+
+type TrainerInsightsProbeResult = { tableError: QueryError; missingRpc: boolean }
+
+/** Contains the only network actions allowed before an Insights fixture write. */
+export async function probeTrainerInsightsReadOnly(service: TrainerInsightsReadOnlyClient): Promise<TrainerInsightsProbeResult> {
+  const [tables, summary, detail, measurements] = await Promise.all([
+    Promise.all([
+      service.from('coaching_relationships').select('id, status').limit(1),
+      service.from('coaching_consents').select('id, scope, revoked_at').limit(1),
+      service.from('trainer_assignment_versions').select('id, materialized_plan_id').limit(1),
+      service.from('progress_logs').select('id, client_session_id').limit(1),
+      service.from('measurements').select('id, recorded_at').limit(1),
+    ]),
+    service.rpc('get_coach_clients_summary'),
+    service.rpc('get_coach_client_insights', {
+      p_client_id: null, p_from_date: null, p_to_date: null,
+    }),
+    service.rpc('get_coach_client_measurements', {
+      p_client_id: null, p_from_date: null, p_to_date: null,
+    }),
+  ])
+  return {
+    tableError: tables.find(result => result.error)?.error ?? null,
+    missingRpc: [summary.error, detail.error, measurements.error].some(error =>
+      /Could not find the function|PGRST202/i.test(error?.message ?? '')),
+  }
+}
+
+/** Normalizes every incomplete 042–044 deployment into one safe, actionable error. */
+export async function assertTrainerInsightsSchemaReady(dependencies: {
+  assertPrerequisites: () => Promise<void>
+  probeReadOnly: () => Promise<TrainerInsightsProbeResult>
+}): Promise<void> {
+  try {
+    await dependencies.assertPrerequisites()
+    const probe = await dependencies.probeReadOnly()
+    if (probe.tableError || probe.missingRpc) throw new Error(TRAINER_INSIGHTS_PREFLIGHT_ERROR)
+  } catch {
+    throw new Error(TRAINER_INSIGHTS_PREFLIGHT_ERROR)
+  }
+}
+
+/** Preflight failure happens before seed or compensating cleanup can mutate a target. */
+export async function runTrainerInsightsFixtureAfterPreflight<T>(input: {
+  preflight: () => Promise<void>
+  seed: () => Promise<T>
+  cleanup?: () => Promise<void>
+}): Promise<T> {
+  await input.preflight()
+  try {
+    return await input.seed()
+  } catch (error) {
+    if (input.cleanup) await input.cleanup()
+    throw error
+  }
+}
+
+export async function assertTrainerInsightsE2EReady(): Promise<void> {
+  if (!isTrainerInsightsE2EEnabled(process.env)) {
+    throw new Error('Trainer insights E2E writes require E2E_TRAINER_INSIGHTS_ENABLED=true and dedicated-project reset acknowledgement')
+  }
+
+  const config = requireE2EConfig(process.env)
+  const service = adminClient(config)
+  await assertTrainerInsightsSchemaReady({
+    assertPrerequisites: assertTrainerProgrammingE2EReady,
+    probeReadOnly: () => probeTrainerInsightsReadOnly(service as unknown as TrainerInsightsReadOnlyClient),
+  })
+}
+
+function requireRpcRow<T>(data: T[] | null, operation: string): T {
+  const row = data?.[0]
+  if (!row) throw new Error(`${operation} returned no row`)
+  return row
+}
+
+async function createTrainerProgrammingPersonalPlan(
+  service: SupabaseClient,
+  userId: string,
+  scope: string,
+): Promise<string> {
+  const planId = randomUUID()
+  const { error } = await (service.from('workout_plans') as any).insert({
+    id: planId,
+    user_id: userId,
+    name: `E2E personal ${scope}`.slice(0, 120),
+    goal: 'Plan personal que debe preservarse.',
+    duration_weeks: 1,
+    days_per_week: 1,
+    difficulty: 'beginner',
+    is_active: true,
+    generated_by_ai: false,
+    plan_context: 'first_plan',
+    source_type: 'engine',
+    library_slot: 'personal',
+    prescription_locked: false,
+  })
+  assertNoError(error, 'Creating customer personal plan before professional acceptance')
+  return planId
+}
+
+async function currentProfessionalWorkout(service: SupabaseClient, userId: string): Promise<{ planId: string; workoutId: string }> {
+  const { data: plan, error: planError } = await (service.from('workout_plans') as any)
+    .select('id').eq('user_id', userId).eq('is_active', true).eq('library_slot', 'professional').eq('prescription_locked', true).maybeSingle()
+  assertNoError(planError, 'Reading active professional plan')
+  if (!plan?.id) throw new Error('Expected one active professional plan')
+  const { data: workout, error: workoutError } = await (service.from('workouts') as any)
+    .select('id').eq('user_id', userId).eq('plan_id', plan.id).order('order_in_plan').limit(1).maybeSingle()
+  assertNoError(workoutError, 'Reading active professional workout')
+  if (!workout?.id) throw new Error('Expected a materialized professional workout')
+  return { planId: plan.id, workoutId: workout.id }
+}
+
+function policyDate(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date())
+}
+
+function differentPolicyTimeZone(currentTimeZone: string): string {
+  const currentDate = policyDate(currentTimeZone)
+  const alternative = ['Pacific/Kiritimati', 'Etc/GMT+12'].find(zone => policyDate(zone) !== currentDate)
+  if (!alternative) throw new Error('Could not select a separate E2E policy date')
+  return alternative
+}
+
+/** Builds the relationship, personal library baseline, template and RPC
+ * boundaries used by the professional programming browser journey. */
+export async function seedTrainerProgrammingFixture(
+  scope: string,
+  options: TrainerFixtureSeedOptions = {},
+): Promise<TrainerProgrammingFixture> {
+  if (!options.skipReadiness) await assertTrainerProgrammingE2EReady()
+  const config = requireE2EConfig(process.env)
+  const fixture = options.relationshipsFixture ?? await seedTrainerRelationshipsFixture(scope, options)
+  let programmingPublished = false
+  try {
+    const relationshipId = options.existingRelationshipId
+      ?? (await exerciseTrainerRelationshipLifecycle(fixture)).relationshipId
+    const personalPlanId = await createTrainerProgrammingPersonalPlan(fixture.service, fixture.client.id, scope)
+    const catalog = await publicStrengthExercises(fixture.service, 3)
+    const revisionTimeZone = differentPolicyTimeZone(E2E_TIME_ZONE)
+    let latestProposal: TrainerProgrammingProposal | null = null
+    let latestTemplateWorkoutId: string | null = null
+
+    return {
+      ...fixture,
+      password: config.password,
+      relationshipId,
+      personalPlanId,
+      async createTemplateAndPropose(name, requestedIdempotencyKey) {
+        const templateId = randomUUID()
+        const templateWorkoutId = randomUUID()
+        const templateExercises = [randomUUID(), randomUUID()]
+        const day = templateDayForMaterializedWeekday(isoTodayForE2ETimeZone())
+        const templates = fixture.trainerA.client.from('trainer_program_templates') as any
+        const createdTemplate = await templates.insert({
+          id: templateId, trainer_user_id: fixture.trainerA.id, name,
+          goal: 'Progresar fuerza con control.', description: 'Plantilla E2E inmutable al publicarse.',
+          days_per_week: 1, status: 'active',
+        })
+        assertNoError(createdTemplate.error, 'Creating trainer program template')
+        const createdWorkout = await (fixture.trainerA.client.from('trainer_template_workouts') as any).insert({
+          id: templateWorkoutId, template_id: templateId, name: 'E2E Día profesional', day_of_week: day, order_in_plan: 1,
+        })
+        assertNoError(createdWorkout.error, 'Creating trainer template workout')
+        latestTemplateWorkoutId = templateWorkoutId
+        const createdExercises = await (fixture.trainerA.client.from('trainer_template_exercises') as any).insert([
+          { id: templateExercises[0], template_workout_id: templateWorkoutId, exercise_id: catalog[0].id, order_index: 1, sets: 2, reps: 8, weight_kg: 40, target_rpe: 7, rest_seconds: 60, notes: 'Resultado real permitido.' },
+          { id: templateExercises[1], template_workout_id: templateWorkoutId, exercise_id: catalog[1].id, order_index: 2, sets: 2, reps: 10, weight_kg: 20, target_rpe: 6, rest_seconds: 45, notes: 'Puede omitirse con motivo.' },
+        ])
+        assertNoError(createdExercises.error, 'Creating trainer template exercises')
+        const proposalIdempotencyKey = requestedIdempotencyKey ?? randomUUID()
+        const proposed = await (fixture.trainerA.client.rpc as any)('propose_trainer_assignment', {
+          p_relationship_id: relationshipId,
+          p_template_id: templateId,
+          p_change_summary: 'Primera prescripción profesional.',
+          p_idempotency_key: proposalIdempotencyKey,
+        })
+        assertNoError(proposed.error, 'Proposing trainer assignment')
+        const row = requireRpcRow<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>(proposed.data, 'Proposing trainer assignment')
+        latestProposal = { templateId, assignmentId: row.assignment_id, assignmentVersionId: row.assignment_version_id, planId: row.workout_plan_id, proposalIdempotencyKey }
+        programmingPublished = true
+        return latestProposal
+      },
+      async readAcceptedAssignment(assignmentId) {
+        const { data: assignment, error: assignmentError } = await (fixture.service.from('trainer_plan_assignments') as any)
+          .select('status, active_version_id').eq('id', assignmentId).maybeSingle()
+        assertNoError(assignmentError, 'Reading accepted trainer assignment')
+        if (assignment?.status !== 'active' || !assignment.active_version_id) throw new Error('Assignment was not atomically accepted')
+        const { data: version, error: versionError } = await (fixture.service.from('trainer_assignment_versions') as any)
+          .select('materialized_plan_id, snapshot').eq('id', assignment.active_version_id).maybeSingle()
+        assertNoError(versionError, 'Reading accepted assignment version')
+        if (!version?.materialized_plan_id || !version.snapshot || typeof version.snapshot.name !== 'string') throw new Error('Accepted assignment version is incomplete')
+        const { data: personal, error: personalError } = await (fixture.service.from('workout_plans') as any)
+          .select('id, is_active').eq('id', personalPlanId).maybeSingle()
+        assertNoError(personalError, 'Reading preserved personal plan')
+        return {
+          planId: version.materialized_plan_id,
+          personalPlanIsActive: personal?.is_active === true,
+          personalPlanStillExists: Boolean(personal?.id),
+          snapshot: { name: version.snapshot.name },
+        }
+      },
+      async authorizeCurrentProfessionalSession() {
+        const current = await currentProfessionalWorkout(fixture.service, fixture.client.id)
+        const clientSessionId = randomUUID()
+        const authorized = await (fixture.client.client.rpc as any)('authorize_session_start', {
+          p_client_session_id: clientSessionId, p_workout_id: current.workoutId,
+        })
+        assertNoError(authorized.error, 'Authorizing professional session')
+        const plan = authorized.data?.plan
+        if (!plan || plan.id !== current.planId || typeof plan.trainerAssignmentVersionId !== 'string') {
+          throw new Error('Professional authorization did not preserve assignment identity')
+        }
+        return { clientSessionId, workoutId: current.workoutId, planId: current.planId, assignmentVersionId: plan.trainerAssignmentVersionId }
+      },
+      async saveUnauthorizedProfessionalExercise(authorization, exerciseId) {
+        const saved = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', {
+          p_client_session_id: authorization.clientSessionId,
+          p_workout_id: authorization.workoutId,
+          p_completed_at: new Date().toISOString(), p_duration_minutes: 25, p_mood_rating: 4,
+          p_exercise_logs: [{ exercise_id: exerciseId, sets_completed: 1, reps_completed: [1], weights_kg: [1], rpe_values: [1], duration_seconds: null, notes: 'Manipulación directa', skip_reason: null }],
+          p_result_snapshot: { version: 1, prs: [], progressions: [] },
+        })
+        if (!saved.error) throw new Error('Direct professional exercise manipulation unexpectedly persisted')
+        throw new Error(saved.error.message)
+      },
+      async publishRevision(name, changeSummary) {
+        if (!latestProposal) throw new Error('A proposal must be accepted before publishing a revision')
+        if (!latestTemplateWorkoutId) throw new Error('Revision template workout is missing')
+        const changedTemplate = await (fixture.trainerA.client.from('trainer_program_templates') as any)
+          .update({ name }).eq('id', latestProposal.templateId).eq('trainer_user_id', fixture.trainerA.id)
+        assertNoError(changedTemplate.error, 'Updating trainer template for revision')
+        const revisedDay = await (fixture.trainerA.client.from('trainer_template_workouts') as any)
+          .update({
+            name: 'E2E Día profesional V2',
+            day_of_week: templateDayForMaterializedWeekday(isoTodayForTimeZone(revisionTimeZone)),
+          })
+          .eq('id', latestTemplateWorkoutId).eq('template_id', latestProposal.templateId)
+        assertNoError(revisedDay.error, 'Updating trainer template day for revision B')
+        const published = await (fixture.trainerA.client.rpc as any)('publish_trainer_assignment_revision', {
+          p_assignment_id: latestProposal.assignmentId, p_template_id: latestProposal.templateId,
+          p_change_summary: changeSummary, p_idempotency_key: randomUUID(),
+        })
+        assertNoError(published.error, 'Publishing trainer assignment revision')
+        const row = requireRpcRow<{ assignment_version_id: string; workout_plan_id: string }>(published.data, 'Publishing trainer assignment revision')
+        const { data: versions, error } = await (fixture.service.from('trainer_assignment_versions') as any)
+          .select('id, version_number, effective_to').eq('assignment_id', latestProposal.assignmentId).order('version_number')
+        assertNoError(error, 'Reading professional assignment versions')
+        const previous = (versions ?? []).find((version: any) => version.id === latestProposal?.assignmentVersionId)
+        const current = (versions ?? []).find((version: any) => version.id === row.assignment_version_id)
+        if (!current?.version_number) throw new Error('Revision did not materialize its version')
+        return { assignmentVersionId: row.assignment_version_id, planId: row.workout_plan_id, versionNumber: current.version_number, previousVersionEffectiveTo: previous?.effective_to ?? null }
+      },
+      async readAuthorizedSession(clientSessionId) {
+        const { data, error } = await (fixture.service.from('session_authorizations') as any)
+          .select('plan_id, session_context_snapshot').eq('client_session_id', clientSessionId).eq('user_id', fixture.client.id).maybeSingle()
+        assertNoError(error, 'Reading authorized professional session')
+        if (!data?.plan_id) throw new Error('Professional authorization was not recorded')
+        return { planId: data.plan_id, assignmentVersionId: data.session_context_snapshot?.plan?.trainerAssignmentVersionId ?? null }
+      },
+      async saveAuthorizedSessionWithActualResults(authorization) {
+        const { data: rows, error: rowsError } = await (fixture.service.from('workout_exercises') as any)
+          .select('exercise_id').eq('workout_id', authorization.workoutId).order('order_index')
+        assertNoError(rowsError, 'Reading professional prescription exercises')
+        if (!rows || rows.length < 2) throw new Error('Professional execution fixture requires two prescribed exercises')
+        const payload = {
+          p_client_session_id: authorization.clientSessionId,
+          p_workout_id: authorization.workoutId,
+          p_completed_at: new Date().toISOString(), p_duration_minutes: 32, p_mood_rating: 4,
+          p_exercise_logs: [
+            { exercise_id: rows[0].exercise_id, sets_completed: 2, reps_completed: [8, 9], weights_kg: [42.5, 45], rpe_values: [7, 8], duration_seconds: null, notes: 'Resultado real', skip_reason: null },
+            { exercise_id: rows[1].exercise_id, sets_completed: 0, reps_completed: [], weights_kg: [], rpe_values: [], duration_seconds: null, notes: null, skip_reason: 'dolor localizado' },
+          ],
+          p_result_snapshot: { version: 1, prs: [], progressions: [] },
+        }
+        const saved = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', payload)
+        assertNoError(saved.error, 'Saving professional session with actual results')
+        const row = requireRpcRow<{ progress_log_id: string; inserted: boolean }>(saved.data, 'Saving professional session')
+        const { data: authorizationBeforeRetry, error: authorizationBeforeRetryError } = await (fixture.service.from('session_authorizations') as any)
+          .select('consumed_at').eq('client_session_id', authorization.clientSessionId).eq('user_id', fixture.client.id).maybeSingle()
+        assertNoError(authorizationBeforeRetryError, 'Reading consumed professional authorization before retry')
+        if (!authorizationBeforeRetry?.consumed_at) throw new Error('Professional session save did not consume its authorization')
+
+        const retry = await (fixture.client.client.rpc as any)('save_session_log_atomic_v3', payload)
+        assertNoError(retry.error, 'Retrying professional session with the same client session id')
+        const retryRow = requireRpcRow<{ progress_log_id: string; inserted: boolean }>(retry.data, 'Retrying professional session')
+
+        const [{ data: authorizationAfterRetry, error: authorizationAfterRetryError }, { count: progressLogCount, error: progressCountError }, { data: exerciseLogs, error: exerciseLogsError }] = await Promise.all([
+          (fixture.service.from('session_authorizations') as any)
+            .select('consumed_at').eq('client_session_id', authorization.clientSessionId).eq('user_id', fixture.client.id).maybeSingle(),
+          (fixture.service.from('progress_logs') as any)
+            .select('id', { count: 'exact', head: true }).eq('user_id', fixture.client.id).eq('client_session_id', authorization.clientSessionId),
+          (fixture.service.from('exercise_logs') as any)
+            .select('exercise_id, sets_completed, reps_completed, weights_kg, rpe_values, notes').eq('progress_log_id', row.progress_log_id),
+        ])
+        assertNoError(authorizationAfterRetryError, 'Reading consumed professional authorization after retry')
+        assertNoError(progressCountError, 'Counting idempotent professional progress logs')
+        assertNoError(exerciseLogsError, 'Reading persisted professional exercise evidence')
+        const actual = (exerciseLogs ?? []).find((entry: any) => entry.exercise_id === rows[0].exercise_id)
+        const skipped = (exerciseLogs ?? []).find((entry: any) => entry.exercise_id === rows[1].exercise_id)
+        if (!actual || !skipped) throw new Error('Professional session evidence rows were not persisted exactly once')
+        const numeric = (value: unknown): number[] => Array.isArray(value) ? value.map(Number) : []
+        return {
+          inserted: row.inserted === true,
+          progressLogId: row.progress_log_id,
+          retryProgressLogId: retryRow.progress_log_id,
+          retryInserted: retryRow.inserted === true,
+          progressLogCount: progressLogCount ?? 0,
+          exerciseLogCount: exerciseLogs?.length ?? 0,
+          consumedAtBeforeRetry: authorizationBeforeRetry.consumed_at,
+          consumedAtAfterRetry: authorizationAfterRetry?.consumed_at ?? null,
+          actualResult: {
+            setsCompleted: Number(actual.sets_completed),
+            repsCompleted: numeric(actual.reps_completed),
+            weightsKg: numeric(actual.weights_kg),
+            rpeValues: numeric(actual.rpe_values),
+            notes: actual.notes ?? null,
+          },
+          skipNote: skipped.notes ?? null,
+        }
+      },
+      async moveToDifferentPolicyDate() {
+        const { error } = await (fixture.service.from('profiles') as any).update({ timezone: revisionTimeZone }).eq('id', fixture.client.id)
+        assertNoError(error, 'Moving fixture to a separate policy date for revision B')
+      },
+    }
+  } catch (error) {
+    // Before the first immutable publication the ordinary relationship cleanup
+    // remains safe. Afterwards the explicit external-reset acknowledgement is
+    // the teardown policy, so do not mask the useful seed failure with a
+    // forbidden REST deletion attempt.
+    if (!programmingPublished) await cleanupTrainerRelationshipsFixture(fixture)
+    throw error
+  }
+}
+
+/** Adds the exact personal, versioned professional, and measurement rows used
+ * by the insights browser journey. It is intentionally callable only after a
+ * real client acceptance, so every professional log has a consumed lease. */
+export async function seedTrainerInsightsFixture(
+  scope: string,
+  options: TrainerFixtureSeedOptions = {},
+): Promise<TrainerInsightsFixture> {
+  const fixture = options.skipReadiness
+    ? await seedTrainerProgrammingFixture(scope, options)
+    : await runTrainerInsightsFixtureAfterPreflight({
+      preflight: assertTrainerInsightsE2EReady,
+      seed: () => seedTrainerProgrammingFixture(scope),
+    })
+  return {
+    ...fixture,
+    async prepareInsightsEvidence() {
+      const personalProgressLogId = randomUUID()
+      const { error: personalError } = await (fixture.service.from('progress_logs') as any).insert({
+        id: personalProgressLogId,
+        user_id: fixture.client.id,
+        workout_id: null,
+        completed_at: new Date().toISOString(),
+        duration_minutes: 20,
+        mood_rating: 4,
+        notes: 'Personal E2E session excluded from professional adherence.',
+      })
+      assertNoError(personalError, 'Creating personal E2E session')
+
+      const historicalAuthorization = await fixture.authorizeCurrentProfessionalSession()
+      const historical = await fixture.saveAuthorizedSessionWithActualResults(historicalAuthorization)
+      await fixture.moveToDifferentPolicyDate()
+      const revision = await fixture.publishRevision('E2E Insights V2', 'Versión profesional actual para Insights')
+      if (revision.versionNumber !== 2) throw new Error('Insights fixture requires a historical and a current professional version')
+      const currentAuthorization = await fixture.authorizeCurrentProfessionalSession()
+      const current = await fixture.saveAuthorizedSessionWithActualResults(currentAuthorization)
+      if (historicalAuthorization.assignmentVersionId === currentAuthorization.assignmentVersionId) {
+        throw new Error('Insights fixture requires distinct historical and current assignment versions')
+      }
+      const measurementWeightKg = 72.4
+      const { error: measurementError } = await (fixture.service.from('measurements') as any).insert({
+        id: randomUUID(),
+        user_id: fixture.client.id,
+        recorded_at: new Date().toISOString(),
+        weight_kg: measurementWeightKg,
+        body_fat_percentage: null,
+        muscle_mass_kg: null,
+        chest_cm: null,
+        waist_cm: null,
+        hips_cm: null,
+        arms_cm: null,
+        legs_cm: null,
+        notes: 'Private fixture note that must never reach analytics.',
+      })
+      assertNoError(measurementError, 'Creating consent-bound E2E measurement')
+      return {
+        personalProgressLogId,
+        historicalProfessionalProgressLogId: historical.progressLogId,
+        currentProfessionalProgressLogId: current.progressLogId,
+        historicalAssignmentVersionId: historicalAuthorization.assignmentVersionId,
+        currentAssignmentVersionId: currentAuthorization.assignmentVersionId,
+        historicalWorkoutName: 'E2E Día profesional',
+        currentWorkoutName: 'E2E Día profesional V2',
+        professionalEvidenceCount: 2,
+        measurementWeightKg,
+      }
+    },
+    async grantBodyMeasurements() {
+      const result = await (fixture.client.client.rpc as any)('grant_body_measurements_consent', {
+        p_relationship_id: fixture.relationshipId,
+        p_consent_version: 'body-measurements-v1',
+        p_idempotency_key: randomUUID(),
+      })
+      assertNoError(result.error, 'Granting Insights body-measurements consent')
+    },
+    async revokeBodyMeasurements() {
+      const result = await (fixture.client.client.rpc as any)('revoke_body_measurements_consent', {
+        p_relationship_id: fixture.relationshipId,
+        p_idempotency_key: randomUUID(),
+      })
+      assertNoError(result.error, 'Revoking Insights body-measurements consent')
+    },
+    async endActiveRelationship() {
+      const result = await (fixture.client.client.rpc as any)('end_coaching_relationship', {
+        p_relationship_id: fixture.relationshipId,
+        p_reason: 'E2E Insights access cut-off.',
+        p_idempotency_key: randomUUID(),
+      })
+      assertNoError(result.error, 'Ending Insights coaching relationship')
+    },
+    async suspendTrainer() {
+      const result = await (fixture.service.rpc as any)('suspend_account_and_professional', {
+        p_user_id: fixture.trainerA.id,
+        p_admin_id: fixture.admin.id,
+        p_reason: 'E2E Insights suspension access cut-off.',
+        p_until: null,
+      })
+      assertNoError(result.error, 'Suspending Insights trainer')
+    },
+    async readClientInsightsError() {
+      const result = await (fixture.trainerA.client.rpc as any)('get_coach_client_insights', {
+        p_client_id: fixture.client.id,
+        p_from_date: '2026-01-01',
+        p_to_date: '2026-01-28',
+      })
+      if (!result.error?.message) throw new Error('Insights read unexpectedly succeeded after access was removed')
+      return result.error.message
+    },
+    async readProfessionalInsightSessionIds() {
+      const toDate = new Date().toISOString().slice(0, 10)
+      const fromDate = new Date(Date.now() - 84 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const result = await (fixture.trainerA.client.rpc as any)('get_coach_client_insights', {
+        p_client_id: fixture.client.id,
+        p_from_date: fromDate,
+        p_to_date: toDate,
+      })
+      assertNoError(result.error, 'Reading consent-bound professional Insights evidence')
+      if (!Array.isArray(result.data?.sessions) || result.data.sessions.some((session: unknown) => typeof session !== 'object' || session === null || typeof (session as { id?: unknown }).id !== 'string')) {
+        throw new Error('Insights fixture received an invalid professional evidence projection')
+      }
+      return result.data.sessions.map((session: { id: string }) => session.id)
+    },
+  }
+}
+
+async function deleteExactRows(service: SupabaseClient, table: string, column: string, ids: string[], operation: string): Promise<void> {
+  if (!ids.length) return
+  const { error } = await (service.from(table) as any).delete().in(column, Array.from(new Set(ids)))
+  assertNoError(error, operation)
+}
+
+/** Removes only rows tied to one dedicated fixture account before recreating it. */
+async function cleanupTrainerRelationshipsAccount(service: SupabaseClient, userId: string): Promise<void> {
+  const { data: profiles, error: profilesError } = await (service.from('trainer_profiles') as any)
+    .select('id').eq('user_id', userId)
+  assertNoError(profilesError, 'Reading stale trainer relationship profiles')
+  const profileIds = (profiles ?? []).map((profile: { id: string }) => profile.id)
+  const { data: relationships, error: relationshipsError } = await (service.from('coaching_relationships') as any)
+    .select('id').or(`client_user_id.eq.${userId},trainer_user_id.eq.${userId}`)
+  assertNoError(relationshipsError, 'Reading stale trainer relationship rows')
+  const relationshipIds = (relationships ?? []).map((relationship: { id: string }) => relationship.id)
+
+  await deleteExactRows(service, 'coaching_consents', 'relationship_id', relationshipIds, 'Removing stale trainer relationship consents')
+  await deleteExactRows(service, 'coaching_relationships', 'id', relationshipIds, 'Removing stale trainer relationships')
+  const { error: requestError } = await (service.from('coaching_requests') as any)
+    .delete().or(`client_user_id.eq.${userId},trainer_user_id.eq.${userId}`)
+  assertNoError(requestError, 'Removing stale trainer relationship requests')
+  await deleteExactRows(service, 'trainer_service_offerings', 'trainer_profile_id', profileIds, 'Removing stale trainer relationship services')
+  await deleteExactRows(service, 'trainer_profiles', 'id', profileIds, 'Removing stale trainer relationship profiles')
+  const { error: applicationsError } = await (service.from('trainer_applications') as any).delete().eq('user_id', userId)
+  assertNoError(applicationsError, 'Removing stale trainer relationship applications')
+  for (const [table, column] of [
+    ['product_notifications', 'user_id'],
+  ] as const) {
+    const { error } = await (service.from(table) as any).delete().eq(column, userId)
+    assertNoError(error, `Removing stale ${table}`)
+  }
+}
+
+export async function cleanupTrainerRelationshipsFixture(fixture: TrainerRelationshipsFixture): Promise<void> {
+  const relationshipIds = Array.from(new Set(fixture.created.relationshipIds))
+  const { data: consents, error: consentsError } = relationshipIds.length
+    ? await (fixture.service.from('coaching_consents') as any).select('id').in('relationship_id', relationshipIds)
+    : { data: [], error: null }
+  assertNoError(consentsError, 'Reading exact trainer relationship consents for cleanup')
+  fixture.created.consentIds.push(...(consents ?? []).map((consent: { id: string }) => consent.id))
+  await deleteExactRows(fixture.service, 'coaching_consents', 'id', fixture.created.consentIds, 'Cleaning exact trainer relationship consents')
+  await deleteExactRows(fixture.service, 'coaching_relationships', 'id', relationshipIds, 'Cleaning exact trainer relationships')
+  await deleteExactRows(fixture.service, 'coaching_requests', 'id', fixture.created.requestIds, 'Cleaning exact trainer relationship requests')
+  await deleteExactRows(fixture.service, 'trainer_service_offerings', 'id', fixture.created.serviceIds, 'Cleaning exact trainer relationship services')
+  await deleteExactRows(fixture.service, 'trainer_profiles', 'id', fixture.created.profileIds, 'Cleaning exact trainer relationship profiles')
+  await deleteExactRows(fixture.service, 'trainer_applications', 'id', fixture.created.applicationIds, 'Cleaning exact trainer relationship applications')
+  for (const userId of fixture.created.userIds) {
+    await cleanupTrainerRelationshipsAccount(fixture.service, userId)
+    const { error } = await fixture.service.auth.admin.deleteUser(userId)
+    assertNoError(error, 'Deleting exact dedicated trainer relationship auth user')
+  }
+}
 
 function assertNoError(error: QueryError, operation: string): void {
   if (error) throw new Error(`${operation} failed: ${error.message ?? 'unknown error'}`)
@@ -78,8 +1137,12 @@ async function retryTransientSupabase<T>(operation: string, action: () => Promis
 }
 
 function isoTodayForE2ETimeZone(now = new Date()): number {
+  return isoTodayForTimeZone(E2E_TIME_ZONE, now)
+}
+
+function isoTodayForTimeZone(timeZone: string, now = new Date()): number {
   const weekday = new Intl.DateTimeFormat('en-US', {
-    timeZone: E2E_TIME_ZONE,
+    timeZone,
     weekday: 'short',
   }).format(now)
 
@@ -90,7 +1153,11 @@ function isoTodayForE2ETimeZone(now = new Date()): number {
   return isoWeekday
 }
 
-function adminClient(config: E2ESeedConfig): SupabaseClient {
+function templateDayForMaterializedWeekday(weekday: number): number {
+  return weekday === 7 ? 1 : weekday + 1
+}
+
+export function adminClient(config: E2ESeedConfig): SupabaseClient {
   return createClient(config.supabaseUrl, config.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
@@ -128,6 +1195,28 @@ async function firstPublicStrengthExercise(supabase: SupabaseClient): Promise<{
     muscle_groups_es: string[] | null
     is_compound: boolean | null
   }
+}
+
+export function createTrainerE2EAdminClient(): SupabaseClient {
+  return adminClient(requireE2EConfig(process.env))
+}
+
+async function publicStrengthExercises(
+  supabase: SupabaseClient,
+  count: number,
+): Promise<Array<{ id: string }>> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id')
+    .eq('is_public', true)
+    .eq('exercise_type', 'strength')
+    .order('name')
+    .limit(count)
+  assertNoError(error, 'Loading public E2E strength exercises')
+  if (!data || data.length < count) {
+    throw new Error(`Trainer programming E2E requires ${count} public strength exercises seeded`)
+  }
+  return data as Array<{ id: string }>
 }
 
 async function clearProgressLogs(supabase: SupabaseClient, userId: string): Promise<void> {

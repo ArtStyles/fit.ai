@@ -113,7 +113,6 @@ describe('POST /api/analytics', () => {
     const event = {
       name: 'onboarding_step_completed',
       properties: {
-        locale: 'es',
         path: '/onboarding',
         stage: 'profile',
         screen: 'onboarding',
@@ -132,7 +131,7 @@ describe('POST /api/analytics', () => {
       event_name: 'onboarding_step_completed',
       anonymous_id: VALID_UUID,
       user_id: 'server-user-id',
-      locale: 'es',
+      locale: null,
       path: '/onboarding',
       properties: event.properties,
     })
@@ -152,6 +151,30 @@ describe('POST /api/analytics', () => {
 
     expect(response.status).toBe(202)
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ user_id: null }))
+  })
+
+  it('stores coach aggregates without an actor identity or persistent cookie', async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null })
+    const from = vi.fn(() => ({ insert }))
+    createServiceClientMock.mockReturnValue({ from })
+
+    const response = await POST(request({
+      name: 'coach_client_insights_viewed',
+      properties: {
+        period_weeks: 4,
+        prescribed_session_count: 8,
+        evidence_session_count: 6,
+      },
+    }, { cookie: `fitai-anonymous-id=${VALID_UUID}` }))
+
+    expect(response.status).toBe(202)
+    expect(createClientMock).not.toHaveBeenCalled()
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      event_name: 'coach_client_insights_viewed',
+      user_id: null,
+      anonymous_id: '00000000-0000-4000-8000-000000000000',
+    }))
+    expect(response.headers.get('set-cookie')).toBeNull()
   })
 
   it('sets a server-generated HttpOnly SameSite=Lax UUID cookie when absent', async () => {
@@ -193,5 +216,13 @@ describe('POST /api/analytics', () => {
     ))
 
     expect(response.status).toBe(500)
+    const payload = await response.json()
+    expect(payload).toEqual({
+      error: {
+        code: 'ANALYTICS_STORAGE_UNAVAILABLE',
+        correlationId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      },
+    })
+    expect(JSON.stringify(payload)).not.toContain('database unavailable')
   })
 })

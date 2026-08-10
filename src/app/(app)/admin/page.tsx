@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { Crown, Search, ShieldCheck, UserRoundCheck, UsersRound } from 'lucide-react'
+import { Crown, Search, ShieldCheck, UserRoundCheck, UsersRound, UserRoundSearch } from 'lucide-react'
 import { AdminUserActions } from '@/components/admin/AdminUserActions'
 import { DashboardBannerEditor } from '@/components/admin/DashboardBannerEditor'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
+import { PendingLink } from '@/components/navigation/PendingLink'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -46,7 +47,21 @@ export default async function AdminPage({ searchParams }: { searchParams?: { q?:
       />
 
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <section className="mt-8 grid gap-3 sm:grid-cols-3" aria-label="Resumen de cuentas">
+        <section className="mt-8" aria-label="Herramientas administrativas">
+          <PendingLink href="/admin/trainers" className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500">
+            <Card className="border-violet-500/20 bg-violet-500/5 transition-colors hover:bg-violet-500/10">
+              <CardContent className="flex items-center gap-3 p-4">
+                <UserRoundSearch className="h-5 w-5 text-violet-300" />
+                <div>
+                  <p className="font-semibold">Entrenadores</p>
+                  <p className="text-xs text-muted-foreground">Revisar solicitudes y expedientes profesionales</p>
+                </div>
+              </CardContent>
+            </Card>
+          </PendingLink>
+        </section>
+
+        <section className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="Resumen de cuentas">
           <Card className="border-border/60 bg-muted/10">
             <CardContent className="flex items-center gap-3 p-4">
               <UsersRound className="h-5 w-5 text-muted-foreground" />

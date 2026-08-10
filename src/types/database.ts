@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 040_trainer_foundations
+ * Last updated: migration 042_trainer_relationships
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -174,6 +174,509 @@ export interface Database {
           metadata: Json
           created_at: string
         }>
+        Relationships: []
+      }
+
+      trainer_applications: {
+        Row: {
+          id: string
+          user_id: string
+          application_kind: 'initial' | 'profile_update'
+          source_profile_id: string | null
+          credential_source_application_id: string | null
+          status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          professional_name: string
+          professional_photo_url: string | null
+          bio: string
+          specialties: string[]
+          modalities: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location: string | null
+          languages: string[]
+          contact_email: string
+          contact_phone: string | null
+          preferred_contact: 'email' | 'phone' | 'whatsapp'
+          timezone: string
+          interview_availability: string
+          submitted_at: string | null
+          decided_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          application_kind?: 'initial' | 'profile_update'
+          source_profile_id?: string | null
+          credential_source_application_id?: string | null
+          status?: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          professional_name?: string
+          professional_photo_url?: string | null
+          bio?: string
+          specialties?: string[]
+          modalities?: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary?: string
+          general_location?: string | null
+          languages?: string[]
+          contact_email?: string
+          contact_phone?: string | null
+          preferred_contact?: 'email' | 'phone' | 'whatsapp'
+          timezone?: string
+          interview_availability?: string
+          submitted_at?: string | null
+          decided_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_applications']['Insert']>
+        Relationships: []
+      }
+
+      trainer_application_credentials: {
+        Row: {
+          id: string
+          application_id: string
+          credential_type: 'document' | 'link'
+          title: string
+          issuer: string | null
+          issued_on: string | null
+          expires_on: string | null
+          storage_path: string | null
+          external_url: string | null
+          mime_type: 'application/pdf' | 'image/jpeg' | 'image/png' | null
+          size_bytes: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          application_id: string
+          credential_type: 'document' | 'link'
+          title: string
+          issuer?: string | null
+          issued_on?: string | null
+          expires_on?: string | null
+          storage_path?: string | null
+          external_url?: string | null
+          mime_type?: 'application/pdf' | 'image/jpeg' | 'image/png' | null
+          size_bytes?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_application_credentials']['Insert']>
+        Relationships: []
+      }
+
+      trainer_credential_storage_cleanup: {
+        Row: {
+          id: string
+          user_id: string
+          application_id: string
+          credential_id: string
+          storage_path: string
+          reason: 'upload_rollback' | 'user_removal'
+          attempt_count: number
+          last_error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          application_id: string
+          credential_id: string
+          storage_path: string
+          reason: 'upload_rollback' | 'user_removal'
+          attempt_count?: number
+          last_error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_credential_storage_cleanup']['Insert']>
+        Relationships: []
+      }
+
+      trainer_application_events: {
+        Row: {
+          id: string
+          application_id: string
+          from_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn' | null
+          to_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          public_note: string | null
+          internal_note: string | null
+          actor_user_id: string | null
+          actor_role: 'applicant' | 'admin' | 'system'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          application_id: string
+          from_status?: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn' | null
+          to_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          public_note?: string | null
+          internal_note?: string | null
+          actor_user_id?: string | null
+          actor_role: 'applicant' | 'admin' | 'system'
+          created_at?: string
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
+
+      trainer_interviews: {
+        Row: {
+          id: string
+          application_id: string
+          proposed_at: string
+          timezone: string
+          medium: 'video_call' | 'phone' | 'in_person'
+          external_url: string | null
+          status: 'proposed' | 'scheduled' | 'completed' | 'cancelled'
+          outcome: string | null
+          public_note: string | null
+          internal_note: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          application_id: string
+          proposed_at: string
+          timezone: string
+          medium: 'video_call' | 'phone' | 'in_person'
+          external_url?: string | null
+          status?: 'proposed' | 'scheduled' | 'completed' | 'cancelled'
+          outcome?: string | null
+          public_note?: string | null
+          internal_note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_interviews']['Insert']>
+        Relationships: []
+      }
+
+      trainer_profiles: {
+        Row: {
+          id: string
+          user_id: string
+          source_application_id: string
+          slug: string
+          status: 'active' | 'suspended' | 'inactive'
+          professional_name: string
+          professional_photo_url: string | null
+          bio: string
+          specialties: string[]
+          modalities: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location: string | null
+          languages: string[]
+          verified_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          source_application_id: string
+          slug: string
+          status?: 'active' | 'suspended' | 'inactive'
+          professional_name: string
+          professional_photo_url?: string | null
+          bio: string
+          specialties?: string[]
+          modalities?: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location?: string | null
+          languages?: string[]
+          verified_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_profiles']['Insert']>
+        Relationships: []
+      }
+
+      trainer_service_offerings: {
+        Row: {
+          id: string
+          trainer_profile_id: string
+          name: string
+          description: string
+          modality: 'online' | 'in_person' | 'hybrid'
+          duration_minutes: number
+          content: string
+          capacity: number
+          is_active: boolean
+          billing_mode: 'free_preview'
+          price_minor: number | null
+          currency: string | null
+          billing_interval: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          trainer_profile_id: string
+          name: string
+          description?: string
+          modality: 'online' | 'in_person' | 'hybrid'
+          duration_minutes: number
+          content?: string
+          capacity?: number
+          is_active?: boolean
+          billing_mode?: 'free_preview'
+          price_minor?: null
+          currency?: null
+          billing_interval?: null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_service_offerings']['Insert']>
+        Relationships: []
+      }
+
+      coaching_requests: {
+        Row: {
+          id: string
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          message: string
+          training_profile_consent_version: string
+          idempotency_key: string
+          acceptance_idempotency_key: string | null
+          acceptance_cancelled_request_ids: string[]
+          status: 'pending' | 'accepted' | 'declined' | 'cancelled'
+          decided_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          message?: string
+          training_profile_consent_version: string
+          idempotency_key?: string
+          acceptance_idempotency_key?: string | null
+          acceptance_cancelled_request_ids?: string[]
+          status?: 'pending' | 'accepted' | 'declined' | 'cancelled'
+          decided_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['coaching_requests']['Insert']>
+        Relationships: []
+      }
+
+      coaching_relationships: {
+        Row: {
+          id: string
+          source_request_id: string | null
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          status: 'active' | 'paused_by_platform' | 'ended'
+          started_at: string
+          paused_at: string | null
+          ended_at: string | null
+          ended_by: string | null
+          end_reason: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          source_request_id?: string | null
+          service_id: string
+          trainer_user_id: string
+          client_user_id: string
+          status?: 'active' | 'paused_by_platform' | 'ended'
+          started_at?: string
+          paused_at?: string | null
+          ended_at?: string | null
+          ended_by?: string | null
+          end_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['coaching_relationships']['Insert']>
+        Relationships: []
+      }
+
+      coaching_consents: {
+        Row: {
+          id: string
+          relationship_id: string
+          scope: 'training_profile' | 'body_measurements'
+          text_version: string
+          granted_at: string
+          revoked_at: string | null
+          granted_by: string
+          revoked_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          relationship_id: string
+          scope: 'training_profile' | 'body_measurements'
+          text_version: string
+          granted_at?: string
+          revoked_at?: string | null
+          granted_by: string
+          revoked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['coaching_consents']['Insert']>
+        Relationships: []
+      }
+
+      trainer_program_templates: {
+        Row: {
+          id: string
+          trainer_user_id: string
+          name: string
+          goal: string | null
+          description: string | null
+          days_per_week: number
+          status: 'draft' | 'active' | 'archived'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          trainer_user_id: string
+          name: string
+          goal?: string | null
+          description?: string | null
+          days_per_week: number
+          status?: 'draft' | 'active' | 'archived'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_program_templates']['Insert']>
+        Relationships: []
+      }
+
+      trainer_template_workouts: {
+        Row: {
+          id: string
+          template_id: string
+          name: string
+          day_of_week: number
+          order_in_plan: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          template_id: string
+          name: string
+          day_of_week: number
+          order_in_plan: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_template_workouts']['Insert']>
+        Relationships: []
+      }
+
+      trainer_template_exercises: {
+        Row: {
+          id: string
+          template_workout_id: string
+          exercise_id: string
+          order_index: number
+          sets: number
+          reps: number
+          weight_kg: number | null
+          target_rpe: number | null
+          rest_seconds: number
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          template_workout_id: string
+          exercise_id: string
+          order_index: number
+          sets: number
+          reps: number
+          weight_kg?: number | null
+          target_rpe?: number | null
+          rest_seconds: number
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_template_exercises']['Insert']>
+        Relationships: []
+      }
+
+      trainer_plan_assignments: {
+        Row: {
+          id: string
+          relationship_id: string
+          trainer_user_id: string
+          client_user_id: string
+          source_template_id: string | null
+          status: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          accepted_at: string | null
+          active_version_id: string | null
+          proposal_idempotency_key: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          relationship_id: string
+          trainer_user_id: string
+          client_user_id: string
+          source_template_id?: string | null
+          status?: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          accepted_at?: string | null
+          active_version_id?: string | null
+          proposal_idempotency_key?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_plan_assignments']['Insert']>
+        Relationships: []
+      }
+
+      trainer_assignment_versions: {
+        Row: {
+          id: string
+          assignment_id: string
+          version_number: number
+          snapshot: Json
+          change_summary: string | null
+          status: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          effective_from: string
+          effective_to: string | null
+          materialized_plan_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          assignment_id: string
+          version_number: number
+          snapshot: Json
+          change_summary?: string | null
+          status?: 'proposed' | 'active' | 'superseded' | 'frozen' | 'cancelled'
+          effective_from?: string
+          effective_to?: string | null
+          materialized_plan_id?: string | null
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['trainer_assignment_versions']['Insert']>
         Relationships: []
       }
 
@@ -458,7 +961,12 @@ export interface Database {
           plan_context: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id: string | null
           manually_updated_at: string | null
-          source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          source_type: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
+          library_slot: 'personal' | 'professional'
+          trainer_relationship_id: string | null
+          trainer_assignment_id: string | null
+          trainer_assignment_version_id: string | null
+          prescription_locked: boolean
           generation_metadata: Json
           source_post_id: string | null
           source_user_id: string | null
@@ -486,7 +994,12 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
-          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
+          library_slot?: 'personal' | 'professional'
+          trainer_relationship_id?: string | null
+          trainer_assignment_id?: string | null
+          trainer_assignment_version_id?: string | null
+          prescription_locked?: boolean
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
@@ -510,7 +1023,12 @@ export interface Database {
           plan_context?: 'first_plan' | 'weekly_regeneration' | 'manual_update'
           parent_plan_id?: string | null
           manually_updated_at?: string | null
-          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post'
+          source_type?: 'ai' | 'engine' | 'manual' | 'imported' | 'shared_post' | 'trainer_assigned'
+          library_slot?: 'personal' | 'professional'
+          trainer_relationship_id?: string | null
+          trainer_assignment_id?: string | null
+          trainer_assignment_version_id?: string | null
+          prescription_locked?: boolean
           generation_metadata?: Json
           source_post_id?: string | null
           source_user_id?: string | null
@@ -1011,6 +1529,54 @@ export interface Database {
     }
 
     Views: {
+      active_trainer_directory: {
+        Row: {
+          user_id: string
+          slug: string
+          professional_name: string
+          professional_photo_url: string | null
+          bio: string
+          specialties: string[]
+          modalities: Array<'online' | 'in_person' | 'hybrid'>
+          experience_summary: string
+          general_location: string | null
+          languages: string[]
+          verified_at: string
+          directory_search: string
+          specialties_search: string
+          languages_search: string
+          active_services: Json
+        }
+        Relationships: []
+      }
+      trainer_application_events_public: {
+        Row: {
+          id: string
+          application_id: string
+          from_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn' | null
+          to_status: 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required' | 'approved' | 'rejected' | 'withdrawn'
+          public_note: string | null
+          actor_user_id: string | null
+          actor_role: 'applicant' | 'admin' | 'system'
+          created_at: string
+        }
+        Relationships: []
+      }
+      trainer_interviews_applicant_public: {
+        Row: {
+          id: string
+          application_id: string
+          proposed_at: string
+          timezone: string
+          medium: 'video_call' | 'phone' | 'in_person'
+          external_url: string | null
+          status: 'proposed' | 'scheduled' | 'completed' | 'cancelled'
+          public_note: string | null
+          created_at: string
+          updated_at: string
+        }
+        Relationships: []
+      }
       [name: string]: {
         Row: Record<string, unknown>
         Relationships: []
@@ -1020,6 +1586,78 @@ export interface Database {
       [name: string]: {
         Args: Record<string, unknown>
         Returns: unknown
+      }
+      has_active_coaching_scope: {
+        Args: {
+          p_trainer_id: string
+          p_client_id: string
+          p_scope: string
+        }
+        Returns: boolean
+      }
+      get_coach_clients_summary: {
+        Args: Record<string, never>
+        Returns: Json
+      }
+      get_coach_client_insights: {
+        Args: {
+          p_client_id: string
+          p_from_date: string
+          p_to_date: string
+        }
+        Returns: Json
+      }
+      get_coach_client_measurements: {
+        Args: {
+          p_client_id: string
+          p_from_date: string
+          p_to_date: string
+        }
+        Returns: Json
+      }
+      create_coaching_request: {
+        Args: { service_id: string; message: string; consent_version: string; idempotency_key: string }
+        Returns: { request_id: string; created: boolean }[]
+      }
+      cancel_coaching_request: {
+        Args: { p_request_id: string }
+        Returns: { request_id: string }[]
+      }
+      accept_coaching_request: {
+        Args: { request_id: string; idempotency_key: string }
+        Returns: { relationship_id: string; accepted_request_id: string; cancelled_request_ids: string[] }[]
+      }
+      decline_coaching_request: {
+        Args: { request_id: string; reason?: string }
+        Returns: { declined_request_id: string }[]
+      }
+      propose_trainer_assignment: {
+        Args: { p_relationship_id: string; p_template_id: string; p_change_summary: string | null; p_idempotency_key: string }
+        Returns: Array<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>
+      }
+      grant_body_measurements_consent: {
+        Args: { p_relationship_id: string; p_consent_version: string; p_idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
+      revoke_body_measurements_consent: {
+        Args: { p_relationship_id: string; p_idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
+      revoke_training_profile_consent: {
+        Args: { p_relationship_id: string; p_idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
+      end_coaching_relationship: {
+        Args: { p_relationship_id: string; p_reason: string | null; p_idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
+      resume_paused_coaching_relationship: {
+        Args: { p_relationship_id: string; p_idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
+      get_requestable_trainer_services: {
+        Args: { trainer_slug: string }
+        Returns: Array<{ service_id: string; name: string; description: string; modality: string; duration_minutes: number; content: string }>
       }
       create_engine_plan_v2: {
         Args: {
@@ -1055,6 +1693,72 @@ export interface Database {
           read_at: string | null
           created_at: string
         }
+      }
+      submit_trainer_application: {
+        Args: {
+          p_application_id: string
+        }
+        Returns: Json
+      }
+      save_trainer_application_draft: {
+        Args: {
+          p_payload: Json
+        }
+        Returns: Json
+      }
+      save_trainer_profile_changes: {
+        Args: {
+          p_payload: Json
+        }
+        Returns: Json
+      }
+      create_trainer_application_credential: {
+        Args: {
+          p_credential_id: string
+          p_application_id: string
+          p_credential_type: 'document' | 'link'
+          p_title: string
+          p_issuer: string | null
+          p_issued_on: string | null
+          p_expires_on: string | null
+          p_external_url: string | null
+          p_mime_type: 'application/pdf' | 'image/jpeg' | 'image/png' | null
+          p_size_bytes: number | null
+        }
+        Returns: Json
+      }
+      queue_trainer_credential_cleanup: {
+        Args: {
+          p_application_id: string
+          p_credential_id: string
+          p_storage_path: string
+        }
+        Returns: Json
+      }
+      prepare_trainer_credential_removal: {
+        Args: {
+          p_application_id: string
+          p_credential_id: string
+        }
+        Returns: Json
+      }
+      list_trainer_credential_cleanup: {
+        Args: Record<string, never>
+        Returns: Array<{ id: string; storage_path: string }>
+      }
+      record_trainer_credential_cleanup_failure: {
+        Args: { p_cleanup_id: string; p_error: string }
+        Returns: boolean
+      }
+      finalize_trainer_credential_cleanup: {
+        Args: { p_cleanup_id: string }
+        Returns: boolean
+      }
+      withdraw_trainer_application: {
+        Args: {
+          p_application_id: string
+        }
+        Returns: Json
       }
       activate_plan_version: {
         Args: {
@@ -1113,6 +1817,22 @@ export interface Database {
         Returns: Json
       }
       save_session_log_atomic_v2: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+          p_completed_at: string
+          p_duration_minutes: number
+          p_mood_rating: number | null
+          p_exercise_logs: Json
+          p_result_snapshot: Json
+        }
+        Returns: Array<{
+          progress_log_id: string
+          inserted: boolean
+          result_snapshot: Json
+        }>
+      }
+      save_session_log_atomic_v3: {
         Args: {
           p_client_session_id: string
           p_workout_id: string
@@ -1285,6 +2005,20 @@ export type Measurement     = Database['public']['Tables']['measurements']['Row'
 export type AiConversation  = Database['public']['Tables']['ai_conversations']['Row']
 export type AiMessage       = Database['public']['Tables']['ai_messages']['Row']
 export type AiUsageLog      = Database['public']['Tables']['ai_usage_logs']['Row']
+export type TrainerApplication = Database['public']['Tables']['trainer_applications']['Row']
+export type TrainerApplicationCredential = Database['public']['Tables']['trainer_application_credentials']['Row']
+export type TrainerApplicationEvent = Database['public']['Tables']['trainer_application_events']['Row']
+export type TrainerInterview = Database['public']['Tables']['trainer_interviews']['Row']
+export type TrainerProfile = Database['public']['Tables']['trainer_profiles']['Row']
+export type TrainerServiceOffering = Database['public']['Tables']['trainer_service_offerings']['Row']
+export type CoachingRequest = Database['public']['Tables']['coaching_requests']['Row']
+export type CoachingRelationship = Database['public']['Tables']['coaching_relationships']['Row']
+export type CoachingConsent = Database['public']['Tables']['coaching_consents']['Row']
+export type TrainerProgramTemplate = Database['public']['Tables']['trainer_program_templates']['Row']
+export type TrainerTemplateWorkout = Database['public']['Tables']['trainer_template_workouts']['Row']
+export type TrainerTemplateExercise = Database['public']['Tables']['trainer_template_exercises']['Row']
+export type TrainerPlanAssignment = Database['public']['Tables']['trainer_plan_assignments']['Row']
+export type TrainerAssignmentVersion = Database['public']['Tables']['trainer_assignment_versions']['Row']
 
 // ─── Enum convenience types (migrations 004–005) ──────────────────────────────
 

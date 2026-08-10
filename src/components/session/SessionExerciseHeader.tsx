@@ -13,9 +13,11 @@ const SKIP_REASONS = ['Sin equipo', 'Fatiga', 'Dolor', 'Tiempo']
 export function SessionExerciseHeader({
   exercise,
   exerciseOptions,
+  prescriptionLocked = false,
 }: {
   exercise: ExerciseSession
   exerciseOptions: SessionExerciseDraft[]
+  prescriptionLocked?: boolean
 }) {
   const { t } = useI18n()
   const skipExercise = useSessionStore(state => state.skipExercise)
@@ -44,7 +46,7 @@ export function SessionExerciseHeader({
             <MoreVertical className="h-5 w-5" aria-hidden="true" />
           </summary>
           <div className="absolute right-0 z-20 mt-2 w-72 space-y-3 rounded-2xl border border-border/70 bg-background p-3 shadow-2xl shadow-black/30">
-            {canReplace && (
+            {!prescriptionLocked && canReplace && (
               <details className="rounded-xl border border-border/60 bg-muted/10 p-3">
                 <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-violet-200"><Repeat2 className="h-4 w-4" aria-hidden="true" />{t('Cambiar ejercicio solo por hoy')}</summary>
                 <div className="mt-3"><SessionExercisePicker options={exerciseOptions.filter(option => option.exerciseId !== exercise.exerciseId)} placeholder={t('Buscar reemplazo')} onSelect={nextExercise => replaceExercise(exercise.workoutExerciseId, nextExercise)} /></div>
@@ -58,7 +60,7 @@ export function SessionExerciseHeader({
                 ))}
               </div>
             </div>
-            {canRemove && (
+            {!prescriptionLocked && canRemove && (
               <button type="button" onClick={() => removeExercise(exercise.workoutExerciseId)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-red-500/5 text-sm font-semibold text-red-300"><Trash2 className="h-4 w-4" aria-hidden="true" />{t('Quitar ejercicio agregado')}</button>
             )}
           </div>

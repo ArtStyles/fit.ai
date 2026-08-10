@@ -29,6 +29,7 @@ interface Props {
   exercise: ExerciseSession
   exerciseOptions: SessionExerciseDraft[]
   focusWindow?: SessionFocusWindow
+  prescriptionLocked?: boolean
 }
 
 type EditDraft = {
@@ -66,7 +67,7 @@ function CompactExercise({ exercise }: { exercise: ExerciseSession }) {
   )
 }
 
-export function ExerciseCard({ exercise, exerciseOptions, focusWindow }: Props) {
+export function ExerciseCard({ exercise, exerciseOptions, focusWindow, prescriptionLocked = false }: Props) {
   const { t } = useI18n()
   const updateSetField = useSessionStore(state => state.updateSetField)
   const updateSetDuration = useSessionStore(state => state.updateSetDuration)
@@ -107,7 +108,7 @@ export function ExerciseCard({ exercise, exerciseOptions, focusWindow }: Props) 
 
   return (
     <article className="space-y-3" aria-label={exercise.name}>
-      <SessionExerciseHeader exercise={exercise} exerciseOptions={exerciseOptions} />
+      <SessionExerciseHeader exercise={exercise} exerciseOptions={exerciseOptions} prescriptionLocked={prescriptionLocked} />
 
       {previousIndex !== null && exercise.sets[previousIndex] && (
         <CompactSetSummary

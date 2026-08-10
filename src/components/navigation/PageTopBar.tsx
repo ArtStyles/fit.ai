@@ -5,8 +5,8 @@ import { PendingLink } from '@/components/navigation/PendingLink'
 interface PageTopBarProps {
   title: string
   subtitle?: string
-  backHref: string
-  backLabel: string
+  backHref?: string
+  backLabel?: string
   icon?: React.ReactNode
   right?: React.ReactNode
 }
@@ -22,14 +22,16 @@ export function PageTopBar({
   return (
     <FixedTopBar contentClassName="justify-between">
       <div className="flex min-w-0 items-center gap-2.5">
-        <PendingLink
-          href={backHref}
-          showSpinner={false}
-          aria-label={backLabel}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </PendingLink>
+        {backHref && backLabel ? (
+          <PendingLink
+            href={backHref}
+            showSpinner={false}
+            aria-label={backLabel}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </PendingLink>
+        ) : null}
 
         {icon && (
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">

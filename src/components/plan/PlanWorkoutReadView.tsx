@@ -29,7 +29,7 @@ export function PlanWorkoutReadView({
   summary: PlanDaySummary
   exercises: PlanWorkoutExerciseRow[]
   isToday: boolean
-  onEdit: () => void
+  onEdit?: () => void
 }) {
   const { t } = useI18n()
 
@@ -72,10 +72,10 @@ export function PlanWorkoutReadView({
         })}
       </ol>
 
-      <button type="button" onClick={onEdit} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/40 px-4 text-sm font-bold text-violet-200 transition-colors hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
+      {onEdit && <button type="button" onClick={onEdit} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-400/40 px-4 text-sm font-bold text-violet-200 transition-colors hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
         <Pencil className="h-4 w-4" aria-hidden="true" />
         {t('Editar estructura')}
-      </button>
+      </button>}
     </div>
   )
 }

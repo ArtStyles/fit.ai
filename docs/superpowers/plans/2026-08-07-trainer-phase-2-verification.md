@@ -19,6 +19,7 @@
 - Entrevista es opcional y selectiva; no se envia correo automatico ni se integra videollamada.
 - Solo `trainer_profiles.status='active'` habilita rutas `/coach/*` y el selector de espacio.
 - La aprobacion o rechazo debe ser idempotente y quedar auditado/notificado.
+- `trainer_applications.application_kind` distingue `initial|profile_update`; solo la segunda puede reutilizar por referencia credenciales de una solicitud aprobada del mismo entrenador.
 - No crear servicios, solicitudes de clientes ni acceso a progreso en esta fase.
 
 ---
@@ -297,35 +298,49 @@ git commit -m "feat(admin): add trainer approval workflow"
 - Create: `src/lib/coaching/access.ts`
 - Create: `src/lib/coaching/__tests__/access.test.ts`
 - Create: `src/app/actions/trainerProfile.ts`
+- Create: `src/app/actions/__tests__/trainerProfile.test.ts`
 - Create: `src/app/(app)/coach/profile/page.tsx`
 - Create: `src/components/coaching/TrainerProfileForm.tsx`
+- Create: `src/components/coaching/__tests__/trainerProfileForm.test.tsx`
 - Create: `src/app/(app)/coach/page.tsx`
 - Create: `src/app/(app)/coach/clients/page.tsx`
 - Create: `src/app/(app)/coach/programs/page.tsx`
 - Create: `src/app/(app)/coach/requests/page.tsx`
+- Modify: `supabase/migrations/041_trainer_verification.sql`
+- Modify: `supabase/tests/041_trainer_verification_test.sql`
+- Modify: `src/types/database.ts`
 
 **Interfaces:**
 - Produces: `getTrainerAccess(userId)` y `requireActiveTrainerContext()`.
 - Consume `trainer_profiles.status`; no usa metadata de Auth como autorizacion.
+- Produce `updateTrainerProfile(formData)` y una RPC owner-safe que aplica campos directos o crea/reutiliza una solicitud `profile_update` enviada, sin mutar los campos sensibles aprobados.
 
-- [ ] **Step 1: Escribir prueba roja del guard**
+- [ ] **Step 1: Escribir pruebas rojas del guard y de revision de perfil**
 
 Cubrir ausencia de perfil, solicitud pendiente, perfil inactivo, suspendido, activo y cuenta globalmente suspendida. Solo el ultimo caso activo devuelve contexto profesional.
+
+Cubrir ademas que bio, foto, ubicacion e idiomas actualizan directamente el perfil; cambiar nombre, especialidades, modalidades o experiencia crea o reutiliza una solicitud abierta con `application_kind='profile_update'`, `source_profile_id` y `credential_source_application_id`. La RPC debe copiar una instantanea completa del perfil aprobado, contacto desde su solicitud fuente y dejar la revision `submitted`, mientras el perfil activo conserva los valores sensibles anteriores.
+
+PostgreSQL debe rechazar una revision si el perfil no esta activo, la solicitud o credencial fuente pertenece a otro usuario, la solicitud fuente no esta aprobada o no posee credenciales. Dos envios concurrentes producen una sola solicitud abierta y una sola notificacion administrativa deduplicada.
 
 - [ ] **Step 2: Ejecutar RED**
 
 ```bash
-pnpm vitest run src/lib/coaching/__tests__/access.test.ts
+pnpm vitest run src/lib/coaching/__tests__/access.test.ts src/app/actions/__tests__/trainerProfile.test.ts src/components/coaching/__tests__/trainerProfileForm.test.tsx
+pnpm test:db:verification
 ```
 
 - [ ] **Step 3: Implementar guard y rutas**
 
-`requireActiveTrainerContext` autentica, aplica suspension global y consulta el perfil por `user_id`. Las rutas profesionales llaman al guard antes de cualquier query. En esta fase Resumen, Clientes, Rutinas y Solicitudes muestran estados vacios reales. Perfil permite editar directamente bio, foto, ubicacion general e idiomas; cambiar nombre profesional, especialidades, modalidades o experiencia crea una nueva solicitud de revision y mantiene visible la version aprobada hasta la siguiente decision administrativa.
+`requireActiveTrainerContext` autentica, aplica suspension global y consulta el perfil por `user_id`. Las rutas profesionales llaman al guard antes de cualquier query. En esta fase Resumen, Clientes, Rutinas y Solicitudes muestran estados vacios reales.
+
+Perfil permite editar directamente bio, foto, ubicacion general e idiomas. Cambiar nombre profesional, especialidades, modalidades o experiencia usa una RPC transaccional owner-safe para crear o reutilizar una revision `profile_update`; no duplica credenciales ni objetos, sino que referencia las credenciales de la solicitud aprobada del mismo entrenador. La cola administrativa debe identificar el tipo y resolver esas credenciales por la referencia. El perfil visible conserva la version aprobada hasta la decision administrativa, que reutiliza el flujo atomico de la tarea 5.
 
 - [ ] **Step 4: Ejecutar GREEN**
 
 ```bash
-pnpm vitest run src/lib/coaching/__tests__/access.test.ts
+pnpm vitest run src/lib/coaching/__tests__/access.test.ts src/app/actions/__tests__/trainerProfile.test.ts src/components/coaching/__tests__/trainerProfileForm.test.tsx
+pnpm test:db:verification
 pnpm type-check
 ```
 

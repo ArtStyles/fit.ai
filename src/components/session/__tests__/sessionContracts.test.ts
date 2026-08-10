@@ -1,5 +1,11 @@
 import { readFileSync } from 'node:fs'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
+import { ExerciseCard } from '@/components/session/ExerciseCard'
+import { SessionExerciseHeader } from '@/components/session/SessionExerciseHeader'
+import type { ExerciseSession } from '@/store/sessionStore'
 
 const sessionClient = readFileSync(new URL('../../../app/(app)/session/[workoutId]/SessionClient.tsx', import.meta.url), 'utf8')
 const sessionPage = readFileSync(new URL('../../../app/(app)/session/[workoutId]/page.tsx', import.meta.url), 'utf8')
@@ -17,6 +23,43 @@ const compactSet = readFileSync(new URL('../CompactSetSummary.tsx', import.meta.
 const rpeSelector = readFileSync(new URL('../RPESelector.tsx', import.meta.url), 'utf8')
 const store = readFileSync(new URL('../../../store/sessionStore.ts', import.meta.url), 'utf8')
 const persistence = readFileSync(new URL('../../../lib/session/persistSession.ts', import.meta.url), 'utf8')
+
+const lockedExercise: ExerciseSession = {
+  workoutExerciseId: 'locked-session-exercise',
+  exerciseId: '11111111-1111-4111-8111-111111111111',
+  originalExerciseId: null,
+  originalName: null,
+  name: 'Sentadilla controlada',
+  imageUrl: null,
+  instructions: null,
+  muscleGroups: [],
+  isCompound: true,
+  targetSets: 2,
+  targetReps: 8,
+  targetDuration: null,
+  restSeconds: 60,
+  targetRpe: 7,
+  suggestedWeight: null,
+  weightSuggestionBasis: null,
+  notes: null,
+  source: 'ad_hoc',
+  skipReason: null,
+  previousPerformance: null,
+  sets: [
+    { weightKg: '30', reps: '8', rpe: null, completed: false },
+    { weightKg: '30', reps: '8', rpe: null, completed: false },
+  ],
+  status: 'active',
+  expanded: true,
+  hasLastSessionData: false,
+}
+
+function renderSessionMarkup(element: ReturnType<typeof createElement>) {
+  return renderToStaticMarkup(createElement(
+    I18nProvider,
+    { language: 'es', syncDocumentLanguage: false, children: element },
+  ))
+}
 
 describe('active session wiring contracts', () => {
   it('keeps sync state ephemeral and advances it after each local backup', () => {
@@ -116,6 +159,37 @@ describe('active session wiring contracts', () => {
     expect(rpeSelector.match(/disabled=\{disabled\}/g)).toHaveLength(2)
     expect(rpeSelector).toMatch(/function decrement\(\) \{[\s\S]+if \(disabled\) return[\s\S]+onChange\(next\)/)
     expect(rpeSelector).toMatch(/function increment\(\) \{[\s\S]+if \(disabled\) return[\s\S]+onChange\(next\)/)
+  })
+
+  it('keeps result and skip controls while a trainer prescription removes routine mutations', () => {
+    expect(sessionPage).toContain('prescriptionLocked')
+    expect(sessionClient).toContain('prescriptionLocked')
+    expect(sessionClient).toMatch(/\{!prescriptionLocked && \(\s*<SessionRoutineTools exerciseOptions=\{exerciseOptions\} \/>\s*\)\}/)
+    expect(exerciseHeader).toContain('prescriptionLocked')
+    expect(exerciseHeader).toContain('{!prescriptionLocked && canReplace && (')
+    expect(exerciseHeader).toContain('SKIP_REASONS.map')
+    expect(exerciseCard).toContain('updateSetField')
+  })
+
+  it('renders locked header and card without add/replace/remove controls while preserving skip and result controls', () => {
+    const header = renderSessionMarkup(createElement(SessionExerciseHeader, {
+      exercise: lockedExercise,
+      exerciseOptions: [],
+      prescriptionLocked: true,
+    }))
+    const card = renderSessionMarkup(createElement(ExerciseCard, {
+      exercise: lockedExercise,
+      exerciseOptions: [],
+      prescriptionLocked: true,
+    }))
+
+    expect(header).toContain('Saltar por')
+    expect(header).not.toContain('Cambiar ejercicio solo por hoy')
+    expect(header).not.toContain('Quitar ejercicio agregado')
+    expect(card).toContain('Peso en kilogramos')
+    expect(card).toContain('Repeticiones')
+    expect(card).not.toContain('Cambiar ejercicio solo por hoy')
+    expect(card).not.toContain('Quitar ejercicio agregado')
   })
 
   it('orders completion sections and keeps navigation independent of motion', () => {

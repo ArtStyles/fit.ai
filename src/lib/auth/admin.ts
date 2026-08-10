@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { isOwnerAdminEmail } from '@/lib/auth/identity'
 import type { DashboardBannerData } from '@/lib/dashboard/banner'
 import { DASHBOARD_BANNER_SLOT } from '@/lib/dashboard/banner'
+import { isTrainerMarketplacePilotGateEnabled } from '@/lib/features/trainerMarketplacePilot'
 
 export type AdminUserRecord = {
   id: string
@@ -33,14 +34,29 @@ export type AdminDashboardBannerData = {
   enabled: boolean
 }
 
+function isExactTrainerMarketplaceE2EAdmin(user: User): boolean {
+  const metadata = user.user_metadata as Record<string, unknown> | undefined
+  return isTrainerMarketplacePilotGateEnabled(process.env)
+    && metadata?.e2e_run_id === process.env.E2E_RUN_ID
+    && metadata?.trainer_relationship_role === 'admin'
+}
+
 export async function requireAdminUserContext() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login?error=auth_required')
-  if (!isOwnerAdminEmail(user.email)) redirect('/dashboard')
-
   const service = createServiceClient()
+  if (!isOwnerAdminEmail(user.email)) {
+    if (!isExactTrainerMarketplaceE2EAdmin(user)) redirect('/dashboard')
+    const { data: profile, error } = await service
+      .from('profiles')
+      .select('is_admin,account_status')
+      .eq('id', user.id)
+      .maybeSingle()
+    if (error || profile?.is_admin !== true || profile.account_status !== 'active') redirect('/dashboard')
+    return { user, service }
+  }
 
   // Keep the owner invariant true even if the profile predates migration 029.
   await service

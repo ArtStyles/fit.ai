@@ -11,6 +11,9 @@ export interface SessionContextSnapshotV1 {
     familyId: string
     name: string
     weekNumber: number | null
+    prescriptionLocked: boolean
+    trainerAssignmentId: string | null
+    trainerAssignmentVersionId: string | null
   } | null
   exercises: Array<{
     exerciseId: string
@@ -78,11 +81,15 @@ function isWorkout(value: unknown): value is SessionContextSnapshotV1['workout']
 
 function isPlan(value: unknown): value is NonNullable<SessionContextSnapshotV1['plan']> {
   return isObject(value) &&
-    hasExactKeys(value, ['id', 'familyId', 'name', 'weekNumber']) &&
+    (hasExactKeys(value, ['id', 'familyId', 'name', 'weekNumber']) || hasExactKeys(value, ['id', 'familyId', 'name', 'weekNumber', 'prescriptionLocked', 'trainerAssignmentId', 'trainerAssignmentVersionId'])) &&
     isUuid(value.id) &&
     isUuid(value.familyId) &&
     isNonBlankString(value.name) &&
-    isNullableWeekNumber(value.weekNumber)
+    isNullableWeekNumber(value.weekNumber) &&
+    (!('prescriptionLocked' in value) || (typeof value.prescriptionLocked === 'boolean' &&
+      (value.trainerAssignmentId === null || isUuid(value.trainerAssignmentId)) &&
+      (value.trainerAssignmentVersionId === null || isUuid(value.trainerAssignmentVersionId)) &&
+      (!value.prescriptionLocked || (value.trainerAssignmentId !== null && value.trainerAssignmentVersionId !== null))))
 }
 
 function isExercise(value: unknown): value is SessionContextSnapshotV1['exercises'][number] {
@@ -102,7 +109,15 @@ export function parseSessionContextSnapshot(value: unknown): SessionContextSnaps
   if (value.plan !== null && !isPlan(value.plan)) return null
   if (!Array.isArray(value.exercises) || !value.exercises.every(isExercise)) return null
 
-  return value as unknown as SessionContextSnapshotV1
+  return {
+    ...value,
+    plan: value.plan === null ? null : {
+      ...value.plan,
+      prescriptionLocked: value.plan.prescriptionLocked ?? false,
+      trainerAssignmentId: value.plan.trainerAssignmentId ?? null,
+      trainerAssignmentVersionId: value.plan.trainerAssignmentVersionId ?? null,
+    },
+  } as unknown as SessionContextSnapshotV1
 }
 
 export function resolveSessionContext({

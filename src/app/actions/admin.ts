@@ -93,24 +93,14 @@ export async function suspendUser(formData: FormData) {
     ? null
     : new Date(Date.now() + Number(duration) * 24 * 60 * 60 * 1000).toISOString()
 
-  const { error } = await service.from('profiles').update({
-    account_status: 'suspended',
-    suspension_reason: reason,
-    suspended_at: new Date().toISOString(),
-    suspended_until: suspendedUntil,
-    suspended_by: user.id,
-  }).eq('id', targetUserId)
+  const { error } = await (service.rpc as any)('suspend_account_and_professional', {
+    p_user_id: targetUserId,
+    p_admin_id: user.id,
+    p_reason: reason,
+    p_until: suspendedUntil,
+  })
 
   if (error) redirect('/admin?error=admin_update_failed')
-
-  await writeAudit({
-    service,
-    adminUserId: user.id,
-    targetUserId,
-    action: 'account_suspended',
-    reason,
-    metadata: { duration, suspended_until: suspendedUntil },
-  })
 
   revalidatePath('/admin')
   redirect('/admin?notice=admin_user_suspended')

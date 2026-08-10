@@ -74,12 +74,13 @@ export interface SessionState {
   startedAt:   number            // Date.now()
   finishedAt:  number            // Date.now() cuando se finaliza
   exercises:   ExerciseSession[]
+  prescriptionLocked: boolean
   restTimer:   RestTimerState | null
   isFinished:  boolean
 
   // ── Acciones ───────────────────────────────────────────────────────────────
-  initSession:     (workoutId: string, workoutName: string, exercises: ExerciseSession[]) => void
-  restoreSession:  (snapshot: { clientSessionId?: string; workoutId: string; workoutName: string; startedAt: number; exercises: ExerciseSession[] }) => void
+  initSession:     (workoutId: string, workoutName: string, exercises: ExerciseSession[], prescriptionLocked?: boolean) => void
+  restoreSession:  (snapshot: { clientSessionId?: string; workoutId: string; workoutName: string; startedAt: number; exercises: ExerciseSession[] }, prescriptionLocked?: boolean) => void
   toggleExpanded:  (workoutExerciseId: string) => void
   updateSetField:  (weId: string, setIdx: number, field: 'weightKg' | 'reps', value: string) => void
   updateSetDuration: (weId: string, setIdx: number, seconds: number) => void
@@ -99,6 +100,20 @@ export interface SessionState {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+export function canFinishSession(
+  exercises: ExerciseSession[],
+  prescriptionLocked: boolean,
+): boolean {
+  if (!prescriptionLocked) {
+    return exercises.some(exercise => exercise.sets.some(set => set.completed))
+  }
+
+  return exercises.length > 0 && exercises.every(exercise =>
+    exercise.sets.some(set => set.completed)
+    || (exercise.status === 'skipped' && Boolean(exercise.skipReason?.trim())),
+  )
+}
 
 function buildInitialSets(
   targetSets:      number,
@@ -194,11 +209,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   startedAt:   0,
   finishedAt:  0,
   exercises:   [],
+  prescriptionLocked: false,
   restTimer:   null,
   isFinished:  false,
 
   // ── initSession ───────────────────────────────────────────────────────────
-  initSession(workoutId, workoutName, exercises) {
+  initSession(workoutId, workoutName, exercises, prescriptionLocked = false) {
     // Activar el primer ejercicio automáticamente
     const initialExercises = exercises.map((ex, i) => ({
       ...ex,
@@ -212,6 +228,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       startedAt:  Date.now(),
       finishedAt: 0,
       exercises:  initialExercises,
+      prescriptionLocked,
       restTimer:  null,
       isFinished: false,
     })
@@ -219,21 +236,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── restoreSession ────────────────────────────────────────────────────────
   // Restaura el estado completo desde un backup (localStorage) sin resetear
-  restoreSession({ clientSessionId, workoutId, workoutName, startedAt, exercises }) {
+  restoreSession({ clientSessionId, workoutId, workoutName, startedAt, exercises }, prescriptionLocked = false) {
     set({
       clientSessionId: isClientSessionId(clientSessionId) ? clientSessionId : createClientSessionId(),
       workoutId,
       workoutName,
       startedAt,
       finishedAt: 0,
-      exercises: exercises.map(exercise => ({
+      exercises: exercises
+        .filter(exercise => !prescriptionLocked || (exercise.source ?? 'planned') === 'planned')
+        .map(exercise => ({
         ...exercise,
         originalExerciseId: exercise.originalExerciseId ?? null,
         originalName: exercise.originalName ?? null,
         source: exercise.source ?? 'planned',
         skipReason: exercise.skipReason ?? null,
         previousPerformance: exercise.previousPerformance ?? null,
-      })),
+        })),
+      prescriptionLocked,
       restTimer:  null,
       isFinished: false,
     })
@@ -375,6 +395,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── startRestTimer ────────────────────────────────────────────────────────
   addSessionExercise(exercise) {
+    if (get().prescriptionLocked) return
     set(s => {
       const hasActive = s.exercises.some(ex => ex.status === 'active')
       const nextExercise = buildFlexibleExercise(exercise, 'ad_hoc')
@@ -393,6 +414,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   replaceSessionExercise(weId, exercise) {
+    if (get().prescriptionLocked) return
     set(s => ({
       exercises: s.exercises.map(ex => {
         if (ex.workoutExerciseId !== weId) return ex
@@ -470,6 +492,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── applyProgressions ────────────────────────────────────────────────────
   applyProgressions(updates) {
+    if (get().prescriptionLocked) return
     set(s => ({
       exercises: s.exercises.map(ex => {
         const u = updates.find(item => item.weId === ex.workoutExerciseId)
@@ -484,6 +507,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── finishSession ─────────────────────────────────────────────────────────
   finishSession() {
+    const state = get()
+    if (state.prescriptionLocked && !canFinishSession(state.exercises, true)) return
     set({ isFinished: true, finishedAt: Date.now(), restTimer: null })
   },
 
@@ -496,6 +521,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       startedAt:   0,
       finishedAt:  0,
       exercises:   [],
+      prescriptionLocked: false,
       restTimer:   null,
       isFinished:  false,
     })

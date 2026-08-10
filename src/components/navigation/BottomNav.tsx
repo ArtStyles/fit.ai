@@ -6,11 +6,13 @@ import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigat
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { hapticImpact } from '@/lib/native/haptics'
+import { WorkspaceSwitcher } from './WorkspaceSwitcher'
+import type { Workspace } from '@/lib/coaching/workspace'
 
 // Routes where the bottom bar should be hidden (full-screen flows)
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
 
-export function BottomNav({ navItems }: { navItems: readonly AppNavItem[] }) {
+export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavItem[], workspace?: Workspace }) {
   const pathname = usePathname()
   const { t } = useI18n()
 
@@ -75,6 +77,7 @@ export function BottomNav({ navItems }: { navItems: readonly AppNavItem[] }) {
             </PendingLink>
           )
         })}
+        {workspace ? <WorkspaceSwitcher workspace={workspace} variant="mobile" /> : null}
       </div>
     </nav>
   )

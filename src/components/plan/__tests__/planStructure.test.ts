@@ -54,4 +54,22 @@ describe('plan information hierarchy', () => {
     expect(readView).not.toContain('removeWorkoutExercise')
     expect(readView).not.toContain('WorkoutExerciseManager')
   })
+
+  it('renders a locked professional plan as read-only without mutation tools', () => {
+    expect(page).toContain('prescriptionLocked')
+    expect(page).toContain('Asignada por entrenador')
+    expect(workspace).toContain('prescriptionLocked')
+    expect(workspace).not.toContain("onEdit={() => setMode('edit')}")
+  })
+
+  it('loads and renders reciprocal assignment version metadata for a locked plan', () => {
+    expect(page).toContain(".from('trainer_assignment_versions')")
+    expect(page).toContain(".eq('id', planRaw.trainer_assignment_version_id)")
+    expect(page).toContain('professionalVersion')
+    expect(workspace).toContain('prescriptionLocked')
+    const overview = readFileSync(new URL('../PlanOverview.tsx', import.meta.url), 'utf8')
+    expect(overview).toContain('professionalVersionNumber')
+    expect(overview).toContain('professionalChangeSummary')
+    expect(overview).toContain("t('Versión {version}', { version: professionalVersionNumber })")
+  })
 })

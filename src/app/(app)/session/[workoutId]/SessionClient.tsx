@@ -38,6 +38,7 @@ interface Props {
   communityEnabled: boolean
   exercises:        ExerciseSession[]   // estado inicial del servidor
   exerciseOptions:  SessionExerciseDraft[]
+  prescriptionLocked: boolean
 }
 
 // ─── SessionClient ────────────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ function extractProgressions(exercises: ExerciseSession[]): ProgressionItem[] {
     .filter(p => p.fromWeightKg == null || p.fromWeightKg !== p.toWeightKg)
 }
 
-export function SessionClient({ workoutId, workoutName, exercises, exerciseOptions, communityEnabled }: Props) {
+export function SessionClient({ workoutId, workoutName, exercises, exerciseOptions, communityEnabled, prescriptionLocked }: Props) {
   const { t } = useI18n()
   const initSession       = useSessionStore(s => s.initSession)
   const restoreSession    = useSessionStore(s => s.restoreSession)
@@ -127,7 +128,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     const result = await runSessionAuthorizationAttempt(
       () => authorizeSessionStart(state.clientSessionId, workoutId),
       () => attempt === authorizationAttemptRef.current,
-      t('No se pudo preparar la sesiÃ³n. IntÃ©ntalo nuevamente.'),
+      t('No se pudo preparar la sesión. Inténtalo nuevamente.'),
     )
     if (result.status === 'stale') return
 
@@ -145,7 +146,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
 
   // Mostrar pantalla pre-sesión solo en arranques frescos con progresiones
   const [showPreSession, setShowPreSession] = useState(() => {
-    if (typeof window === 'undefined' || progressions.length === 0) return false
+    if (prescriptionLocked || typeof window === 'undefined' || progressions.length === 0) return false
     return !loadBackup(workoutId)
   })
 
@@ -164,9 +165,9 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     // Intentar restaurar desde localStorage (crash recovery)
     const backup = loadBackup(workoutId)
     if (backup) {
-      restoreSession(backup)
+      restoreSession(backup, prescriptionLocked)
     } else {
-      initSession(workoutId, workoutName, exercises)
+      initSession(workoutId, workoutName, exercises, prescriptionLocked)
     }
 
     initializedRef.current = true
@@ -277,10 +278,13 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
               exercise={exercise}
               exerciseOptions={exerciseOptions}
               focusWindow={exercise.status === 'active' ? focusWindow : undefined}
+              prescriptionLocked={prescriptionLocked}
             />
           ))}
 
-          <SessionRoutineTools exerciseOptions={exerciseOptions} />
+          {!prescriptionLocked && (
+            <SessionRoutineTools exerciseOptions={exerciseOptions} />
+          )}
 
           <div className="h-4" />
         </div>

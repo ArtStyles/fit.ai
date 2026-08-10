@@ -15,6 +15,7 @@ import {
   type PlanAdjustmentOptions,
   type PlanAdjustmentPreviewSummary,
 } from '@/lib/plans/adjustmentIntent'
+import { requireEditableOwnedPlan } from '@/lib/plans/editability'
 
 export interface SuggestAdjustmentResult {
   success: boolean
@@ -61,7 +62,13 @@ async function getOwnedActivePlan(
     .eq('is_active', true)
     .maybeSingle() as { data: { id: string } | null }
 
-  return plan
+  if (!plan) return null
+  try {
+    await requireEditableOwnedPlan(supabase, userId, plan.id)
+    return plan
+  } catch {
+    return null
+  }
 }
 
 async function loadPlanAdjustmentOptions(
@@ -174,6 +181,7 @@ export async function previewStructuredPlanAdjustment(
 
   const plan = await getOwnedActivePlan(supabase, user.id, planId)
   if (!plan) return { success: false, error: 'Plan activo no encontrado' }
+  try { await requireEditableOwnedPlan(supabase, user.id, plan.id) } catch { return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' } }
 
   const options = await loadPlanAdjustmentOptions(supabase, user.id, plan.id)
   const intent = validatePlanAdjustmentIntent(rawIntent, options)
@@ -221,6 +229,8 @@ export async function applyPlanAdjustment(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false, error: 'No autenticado' }
 
+  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' } }
+
   try {
     const existing = await findExistingPlanGeneration(requestId)
     if (existing?.success) return { success: true, appliedCount: 1 }
@@ -231,6 +241,8 @@ export async function applyPlanAdjustment(
 
   const plan = await getOwnedActivePlan(supabase, user.id, planId)
   if (!plan) return { success: false, error: 'El plan activo cambió. Vuelve a generar la vista previa.' }
+  try { await requireEditableOwnedPlan(supabase, user.id, plan.id) } catch { return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' } }
+
   const options = await loadPlanAdjustmentOptions(supabase, user.id, plan.id)
   const intent = validatePlanAdjustmentIntent(rawIntent, options)
   if (!intent) return { success: false, error: 'El ajuste seleccionado ya no es válido.' }
@@ -263,6 +275,7 @@ export async function suggestWorkoutAdjustment(
 
   const workout = await getOwnedActiveWorkout(supabase, user.id, workoutId)
   if (!workout) return { success: false, error: 'Entrenamiento no encontrado en tu plan activo' }
+  try { await requireEditableOwnedPlan(supabase, user.id, workout.plan_id) } catch { return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' } }
 
   if (isHealthChangeRequest(trimmed)) {
     return {
@@ -325,6 +338,7 @@ export async function applyWorkoutAdjustment(
 
   const workout = await getOwnedActiveWorkout(supabase, user.id, workoutId)
   if (!workout) return { success: false, error: 'Entrenamiento no encontrado en tu plan activo' }
+  try { await requireEditableOwnedPlan(supabase, user.id, workout.plan_id) } catch { return { success: false, error: 'La rutina asignada por tu entrenador solo se puede ejecutar.' } }
 
   const { data: exerciseRows } = await (supabase
     .from('workout_exercises') as any)

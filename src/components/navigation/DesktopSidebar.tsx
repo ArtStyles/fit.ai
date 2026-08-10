@@ -6,19 +6,22 @@ import { useI18n } from '@/components/i18n/I18nProvider'
 import { cn } from '@/lib/utils'
 import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigation'
 import { PendingLink } from './PendingLink'
+import { WorkspaceSwitcher } from './WorkspaceSwitcher'
+import type { Workspace } from '@/lib/coaching/workspace'
 
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
 
-export function DesktopSidebar({ navItems }: { navItems: readonly AppNavItem[] }) {
+export function DesktopSidebar({ navItems, workspace }: { navItems: readonly AppNavItem[], workspace?: Workspace }) {
   const pathname = usePathname()
   const { t } = useI18n()
+  const homeHref = workspace === 'coach' ? '/coach' : '/dashboard'
 
   if (HIDDEN_PREFIXES.some(prefix => pathname.startsWith(prefix))) return null
 
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border/60 bg-[hsl(var(--surface-1))] lg:flex lg:flex-col">
       <PendingLink
-        href="/dashboard"
+        href={homeHref}
         showSpinner={false}
         aria-label={t('Inicio')}
         className="mx-5 mt-6 inline-flex min-h-11 items-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -50,6 +53,7 @@ export function DesktopSidebar({ navItems }: { navItems: readonly AppNavItem[] }
           )
         })}
       </nav>
+      {workspace ? <WorkspaceSwitcher workspace={workspace} variant="desktop" /> : null}
     </aside>
   )
 }

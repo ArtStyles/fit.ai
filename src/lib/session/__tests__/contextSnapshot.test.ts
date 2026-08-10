@@ -18,6 +18,9 @@ const validSnapshot: SessionContextSnapshotV1 = {
     familyId: '33333333-3333-4333-8333-333333333333',
     name: 'Strength block',
     weekNumber: 2,
+    prescriptionLocked: true,
+    trainerAssignmentId: '55555555-5555-4555-8555-555555555555',
+    trainerAssignmentVersionId: '66666666-6666-4666-8666-666666666666',
   },
   exercises: [{
     exerciseId: '44444444-4444-4444-8444-444444444444',
@@ -36,6 +39,35 @@ describe('session context snapshots', () => {
 
   it('rejects a snapshot from an unknown version', () => {
     expect(parseSessionContextSnapshot({ version: 2 })).toBeNull()
+  })
+
+  it('keeps the authorized trainer version in the snapshot after a later publication', () => {
+    const authorizedBeforeRevision = parseSessionContextSnapshot(validSnapshot)
+
+    expect(authorizedBeforeRevision?.plan).toMatchObject({
+      prescriptionLocked: true,
+      trainerAssignmentId: '55555555-5555-4555-8555-555555555555',
+      trainerAssignmentVersionId: '66666666-6666-4666-8666-666666666666',
+    })
+  })
+
+  it('normalizes historical version-1 snapshots that predate trainer fields', () => {
+    const historical = {
+      ...validSnapshot,
+      plan: {
+        id: validSnapshot.plan!.id,
+        familyId: validSnapshot.plan!.familyId,
+        name: validSnapshot.plan!.name,
+        weekNumber: validSnapshot.plan!.weekNumber,
+      },
+    }
+
+    expect(parseSessionContextSnapshot(historical)?.plan).toEqual({
+      ...historical.plan,
+      prescriptionLocked: false,
+      trainerAssignmentId: null,
+      trainerAssignmentVersionId: null,
+    })
   })
 
   it.each([

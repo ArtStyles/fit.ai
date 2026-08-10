@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import { CoachInsightsAnalytics } from '../../CoachInsightsAnalytics.tsx'
+
+      const root = createRoot(document.getElementById('root'))
+      window.__COACH_ANALYTICS_EVENTS__ = []
+      window.renderCoachInsightsAnalytics = props => root.render(React.createElement(CoachInsightsAnalytics, props))
+      window.renderCoachInsightsAnalytics({ kind: 'client-insights', weeks: 4, prescribedSessionCount: 8, evidenceSessionCount: 6, measurementsShared: false })
+      window.__COACH_ANALYTICS_READY__ = true
+    </script>
+  </body>
+</html>

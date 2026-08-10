@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { sanitizeEvent } from '@/lib/analytics/events'
+import { isCoachAggregateEvent, sanitizeEvent } from '@/lib/analytics/events'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
@@ -7,9 +7,16 @@ const MAX_BODY_BYTES = 2048
 const ANONYMOUS_COOKIE = 'fitai-anonymous-id'
 const ANONYMOUS_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const AGGREGATE_ANONYMOUS_ID = '00000000-0000-4000-8000-000000000000'
 
 function invalidRequest() {
-  return NextResponse.json({ error: 'Invalid analytics event' }, { status: 400 })
+  return analyticsError('ANALYTICS_INVALID_EVENT', 400)
+}
+
+function analyticsError(code: 'ANALYTICS_INVALID_EVENT' | 'ANALYTICS_STORAGE_UNAVAILABLE', status: 400 | 500) {
+  return NextResponse.json({
+    error: { code, correlationId: crypto.randomUUID() },
+  }, { status })
 }
 
 async function readBody(request: NextRequest): Promise<string | null> {
@@ -77,15 +84,20 @@ export async function POST(request: NextRequest) {
   const event = sanitizeEvent(input)
   if (!event) return invalidRequest()
 
-  const existingAnonymousId = request.cookies.get(ANONYMOUS_COOKIE)?.value
-  const anonymousId = existingAnonymousId && UUID_PATTERN.test(existingAnonymousId)
-    ? existingAnonymousId
-    : crypto.randomUUID()
-  const userId = await serverUserId()
-  const locale = event.properties.locale === 'es' || event.properties.locale === 'en'
-    ? event.properties.locale
+  const aggregateEvent = isCoachAggregateEvent(event.name)
+  const existingAnonymousId = aggregateEvent ? null : request.cookies.get(ANONYMOUS_COOKIE)?.value
+  const anonymousId = aggregateEvent
+    ? AGGREGATE_ANONYMOUS_ID
+    : existingAnonymousId && UUID_PATTERN.test(existingAnonymousId)
+      ? existingAnonymousId
+      : crypto.randomUUID()
+  const userId = aggregateEvent ? null : await serverUserId()
+  const localeValue = 'locale' in event.properties ? event.properties.locale : null
+  const pathValue = 'path' in event.properties ? event.properties.path : null
+  const locale = localeValue === 'es' || localeValue === 'en'
+    ? localeValue
     : null
-  const path = typeof event.properties.path === 'string' ? event.properties.path : null
+  const path = typeof pathValue === 'string' ? pathValue : null
 
   try {
     const service = createServiceClient()
@@ -97,13 +109,13 @@ export async function POST(request: NextRequest) {
       path,
       properties: event.properties,
     })
-    if (error) return NextResponse.json({ error: 'Analytics storage unavailable' }, { status: 500 })
+    if (error) return analyticsError('ANALYTICS_STORAGE_UNAVAILABLE', 500)
   } catch {
-    return NextResponse.json({ error: 'Analytics storage unavailable' }, { status: 500 })
+    return analyticsError('ANALYTICS_STORAGE_UNAVAILABLE', 500)
   }
 
   const response = NextResponse.json({ accepted: true }, { status: 202 })
-  if (anonymousId !== existingAnonymousId) {
+  if (!aggregateEvent && anonymousId !== existingAnonymousId) {
     response.cookies.set(ANONYMOUS_COOKIE, anonymousId, {
       httpOnly: true,
       sameSite: 'lax',

@@ -4,6 +4,7 @@
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { requireEditableOwnedPlan } from '@/lib/plans/editability'
 import { createServiceClient } from '@/lib/supabase/service'
 import { communityUnavailableResult, isCommunityEnabled } from '@/lib/features/community'
 import { buildSessionSnapshot, buildRoutineSnapshot } from '@/lib/social/snapshots'
@@ -171,13 +172,18 @@ export async function createPostFromPlan(
   if (!user) return { ok: false, error: 'Sesión no válida.' }
 
   const { data: plan } = await (supabase.from('workout_plans') as any)
-    .select('id, name, goal, days_per_week, difficulty')
+    .select('id, name, goal, days_per_week, difficulty, prescription_locked')
     .eq('id', planId)
     .eq('user_id', user.id)
     .maybeSingle() as {
-      data: { id: string; name: string; goal: string | null; days_per_week: number | null; difficulty: string | null } | null
+      data: { id: string; name: string; goal: string | null; days_per_week: number | null; difficulty: string | null; prescription_locked: boolean } | null
     }
   if (!plan) return { ok: false, error: 'Rutina no encontrada.' }
+  try {
+    await requireEditableOwnedPlan(supabase, user.id, plan.id)
+  } catch {
+    return { ok: false, error: 'La rutina asignada por tu entrenador no se puede compartir.' }
+  }
 
   const { data: workouts } = await (supabase.from('workouts') as any)
     .select('id, name, day_of_week, order_in_plan')
