@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import type { Database } from '../../../types/database'
 
 function readArtifact(url: URL): string {
   try {
@@ -21,7 +22,74 @@ const relationshipTables = [
   'coaching_consents',
 ]
 
+type RelationshipRpcName =
+  | 'grant_body_measurements_consent'
+  | 'revoke_body_measurements_consent'
+  | 'revoke_training_profile_consent'
+  | 'end_coaching_relationship'
+  | 'resume_paused_coaching_relationship'
+
+const typedRelationshipRpcArgs = {
+  grant_body_measurements_consent: {
+    p_relationship_id: 'relationship-id',
+    p_consent_version: 'body-measurements-v1',
+    p_idempotency_key: 'idempotency-key',
+  },
+  revoke_body_measurements_consent: {
+    p_relationship_id: 'relationship-id',
+    p_idempotency_key: 'idempotency-key',
+  },
+  revoke_training_profile_consent: {
+    p_relationship_id: 'relationship-id',
+    p_idempotency_key: 'idempotency-key',
+  },
+  end_coaching_relationship: {
+    p_relationship_id: 'relationship-id',
+    p_reason: null,
+    p_idempotency_key: 'idempotency-key',
+  },
+  resume_paused_coaching_relationship: {
+    p_relationship_id: 'relationship-id',
+    p_idempotency_key: 'idempotency-key',
+  },
+} satisfies { [Name in RelationshipRpcName]: Database['public']['Functions'][Name]['Args'] }
+
+const typedRelationshipRpcReturns = {
+  grant_body_measurements_consent: [{ relationship_id: 'relationship-id', changed: true }],
+  revoke_body_measurements_consent: [{ relationship_id: 'relationship-id', changed: true }],
+  revoke_training_profile_consent: [{ relationship_id: 'relationship-id', changed: true }],
+  end_coaching_relationship: [{ relationship_id: 'relationship-id', changed: true }],
+  resume_paused_coaching_relationship: [{ relationship_id: 'relationship-id', changed: true }],
+} satisfies { [Name in RelationshipRpcName]: Database['public']['Functions'][Name]['Returns'] }
+
 describe('trainer relationships migration', () => {
+  it('keeps relationship RPC database types aligned with the exact SQL signatures', () => {
+    const expectedArgs: Record<RelationshipRpcName, string[]> = {
+      grant_body_measurements_consent: ['p_relationship_id', 'p_consent_version', 'p_idempotency_key'],
+      revoke_body_measurements_consent: ['p_relationship_id', 'p_idempotency_key'],
+      revoke_training_profile_consent: ['p_relationship_id', 'p_idempotency_key'],
+      end_coaching_relationship: ['p_relationship_id', 'p_reason', 'p_idempotency_key'],
+      resume_paused_coaching_relationship: ['p_relationship_id', 'p_idempotency_key'],
+    }
+
+    for (const [name, args] of Object.entries(expectedArgs) as [RelationshipRpcName, string[]][]) {
+      const sqlContract = migration.match(new RegExp(
+        `CREATE OR REPLACE FUNCTION public\\.${name}\\(\\s*([\\s\\S]*?)\\s*\\)\\s*RETURNS TABLE \\(relationship_id UUID, changed BOOLEAN\\)`,
+        'i',
+      ))
+      const typeContract = databaseTypes.match(new RegExp(
+        `${name}: \\{\\s*Args: \\{([\\s\\S]*?)\\}\\s*Returns: \\{ relationship_id: string; changed: boolean \\}\\[\\]\\s*\\}`,
+      ))
+
+      expect(sqlContract, `${name} SQL contract`).toBeDefined()
+      expect(typeContract, `${name} Database type contract`).toBeDefined()
+      expect(sqlContract?.[1].match(/\bp_[a-z_]+(?=\s+UUID|\s+TEXT)/gi) ?? []).toEqual(args)
+      expect(typeContract?.[1].match(/\bp_[a-z_]+(?=\??:)/gi) ?? []).toEqual(args)
+      expect(Object.keys(typedRelationshipRpcArgs[name])).toEqual(args)
+      expect(typedRelationshipRpcReturns[name]).toEqual([{ relationship_id: 'relationship-id', changed: true }])
+    }
+  })
+
   it('creates the service, request, relationship, and scoped consent records under RLS', () => {
     for (const table of relationshipTables) {
       expect(migration).toMatch(new RegExp(`CREATE TABLE (?:IF NOT EXISTS )?public\\.${table}`, 'i'))
