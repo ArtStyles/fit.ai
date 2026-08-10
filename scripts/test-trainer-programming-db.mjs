@@ -202,6 +202,125 @@ SELECT dblink_disconnect('measurement_reader');
 SELECT dblink_disconnect('measurement_revoker');
 `
 
+// Hold the same relationship row that a real training-consent revocation
+// updates. The detail RPC must wait, recheck the committed revocation, and
+// return the generic unavailable error without reading client evidence.
+const detailRevocationRaceSql = `
+CREATE EXTENSION IF NOT EXISTS dblink;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('d5000000-0000-4000-8000-000000000001', 'detail-race-trainer@example.test', '{}'::jsonb),
+  ('d5000000-0000-4000-8000-000000000002', 'detail-race-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, timezone, onboarding_done, account_status) VALUES
+  ('d5000000-0000-4000-8000-000000000001', 'Detail race trainer', 'https://example.test/detail-race-trainer.webp', 'America/Havana', TRUE, 'active'),
+  ('d5000000-0000-4000-8000-000000000002', 'Detail race client', 'https://example.test/detail-race-client.webp', 'America/Havana', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id) VALUES
+  ('d5000000-0000-4000-8000-000000000011', 'd5000000-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('d5000000-0000-4000-8000-000000000021', 'd5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000011', 'detail-race-trainer', 'active', 'Detail race trainer', 'Race', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('d5000000-0000-4000-8000-000000000031', 'd5000000-0000-4000-8000-000000000021', 'Detail race service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('d5000000-0000-4000-8000-000000000041', 'd5000000-0000-4000-8000-000000000031', 'd5000000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('d5000000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'd5000000-0000-4000-8000-000000000002');
+SELECT dblink_connect('detail_reader', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('detail_revoker', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('detail_reader', $$SET application_name = 'detail-race-reader'$$);
+SELECT dblink_exec('detail_reader', $$SET request.jwt.claim.sub = 'd5000000-0000-4000-8000-000000000001'$$);
+SELECT dblink_exec('detail_reader', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('detail_reader', 'SET ROLE authenticated');
+SELECT dblink_exec('detail_reader', $$CREATE FUNCTION pg_temp.try_detail() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN RETURN jsonb_build_object('ok', true, 'payload', public.get_coach_client_insights('d5000000-0000-4000-8000-000000000002', CURRENT_DATE - 30, CURRENT_DATE)); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok', false, 'sqlstate', SQLSTATE, 'message', SQLERRM); END; $f$;$$);
+SELECT dblink_exec('detail_revoker', $$SET request.jwt.claim.sub = 'd5000000-0000-4000-8000-000000000002'$$);
+SELECT dblink_exec('detail_revoker', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('detail_revoker', 'SET ROLE service_role');
+SELECT dblink_exec('detail_revoker', $$BEGIN; DO $lock$ BEGIN PERFORM 1 FROM public.coaching_relationships WHERE id = 'd5000000-0000-4000-8000-000000000041' FOR UPDATE; END $lock$;$$);
+SELECT dblink_send_query('detail_reader', 'SELECT pg_temp.try_detail()');
+DO $$
+DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'detail-race-reader' AND wait_event_type = 'Lock');
+    IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'detail reader did not wait for revocation lock'; END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT dblink_exec('detail_revoker', $$SET ROLE authenticated; DO $revoke$ BEGIN PERFORM public.revoke_training_profile_consent('d5000000-0000-4000-8000-000000000041', gen_random_uuid()); END $revoke$; COMMIT;$$);
+CREATE TEMP TABLE detail_race_results (result JSONB NOT NULL);
+INSERT INTO detail_race_results SELECT result FROM dblink_get_result('detail_reader') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT result->>'ok' FROM detail_race_results) <> 'false' THEN RAISE EXCEPTION 'detail reader returned data after effective revocation: %', (SELECT result FROM detail_race_results); END IF;
+  IF (SELECT result->>'sqlstate' FROM detail_race_results) <> 'P0001' OR (SELECT result->>'message' FROM detail_race_results) <> 'COACH_CLIENT_INSIGHTS_UNAVAILABLE' THEN RAISE EXCEPTION 'detail reader leaked revocation result: %', (SELECT result FROM detail_race_results); END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.coaching_relationships WHERE id = 'd5000000-0000-4000-8000-000000000041' AND status = 'ended') THEN RAISE EXCEPTION 'detail revocation did not end relationship'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.coaching_consents WHERE relationship_id = 'd5000000-0000-4000-8000-000000000041' AND scope = 'training_profile' AND revoked_at IS NOT NULL) THEN RAISE EXCEPTION 'detail revocation did not commit'; END IF;
+END;
+$$;
+SELECT dblink_disconnect('detail_reader');
+SELECT dblink_disconnect('detail_revoker');
+`
+
+// A real administrative suspension updates the trainer account, professional
+// profile, relationships, and consents. The summary must wait on that authority
+// transition and re-evaluate to the same generic unavailable response.
+const summarySuspensionRaceSql = `
+CREATE EXTENSION IF NOT EXISTS dblink;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('d6000000-0000-4000-8000-000000000001', 'summary-race-trainer@example.test', '{}'::jsonb),
+  ('d6000000-0000-4000-8000-000000000002', 'summary-race-client@example.test', '{}'::jsonb),
+  ('d6000000-0000-4000-8000-000000000003', 'summary-race-admin@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, timezone, onboarding_done, is_admin, account_status) VALUES
+  ('d6000000-0000-4000-8000-000000000001', 'Summary race trainer', 'https://example.test/summary-race-trainer.webp', 'America/Havana', TRUE, FALSE, 'active'),
+  ('d6000000-0000-4000-8000-000000000002', 'Summary race client', 'https://example.test/summary-race-client.webp', 'America/Havana', TRUE, FALSE, 'active'),
+  ('d6000000-0000-4000-8000-000000000003', 'Summary race admin', NULL, 'America/Havana', TRUE, TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id) VALUES
+  ('d6000000-0000-4000-8000-000000000011', 'd6000000-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('d6000000-0000-4000-8000-000000000021', 'd6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000011', 'summary-race-trainer', 'active', 'Summary race trainer', 'Race', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('d6000000-0000-4000-8000-000000000031', 'd6000000-0000-4000-8000-000000000021', 'Summary race service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('d6000000-0000-4000-8000-000000000041', 'd6000000-0000-4000-8000-000000000031', 'd6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('d6000000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'd6000000-0000-4000-8000-000000000002');
+SELECT dblink_connect('summary_reader', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('summary_suspender', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('summary_reader', $$SET application_name = 'summary-suspension-race-reader'$$);
+SELECT dblink_exec('summary_reader', $$SET request.jwt.claim.sub = 'd6000000-0000-4000-8000-000000000001'$$);
+SELECT dblink_exec('summary_reader', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('summary_reader', 'SET ROLE authenticated');
+SELECT dblink_exec('summary_reader', $$CREATE FUNCTION pg_temp.try_summary() RETURNS JSONB LANGUAGE plpgsql AS $f$ BEGIN RETURN jsonb_build_object('ok', true, 'payload', public.get_coach_clients_summary()); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok', false, 'sqlstate', SQLSTATE, 'message', SQLERRM); END; $f$;$$);
+SELECT dblink_exec('summary_suspender', $$SET request.jwt.claim.sub = 'd6000000-0000-4000-8000-000000000003'$$);
+SELECT dblink_exec('summary_suspender', $$SET request.jwt.claim.role = 'service_role'$$);
+SELECT dblink_exec('summary_suspender', 'SET ROLE service_role');
+SELECT dblink_exec('summary_suspender', $$BEGIN; DO $lock$ BEGIN PERFORM pg_advisory_xact_lock(hashtextextended('d6000000-0000-4000-8000-000000000001', 0)); PERFORM 1 FROM public.profiles WHERE id = 'd6000000-0000-4000-8000-000000000001' FOR UPDATE; PERFORM 1 FROM public.trainer_profiles WHERE user_id = 'd6000000-0000-4000-8000-000000000001' FOR UPDATE; END $lock$;$$);
+SELECT dblink_send_query('summary_reader', 'SELECT pg_temp.try_summary()');
+DO $$
+DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'summary-suspension-race-reader' AND wait_event_type = 'Lock');
+    IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'summary reader did not wait for suspension lock'; END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT dblink_exec('summary_suspender', $$DO $suspend$ BEGIN PERFORM public.suspend_account_and_professional('d6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000003', 'Summary suspension race', NULL); END $suspend$; COMMIT;$$);
+CREATE TEMP TABLE summary_race_results (result JSONB NOT NULL);
+INSERT INTO summary_race_results SELECT result FROM dblink_get_result('summary_reader') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT result->>'ok' FROM summary_race_results) <> 'false' THEN RAISE EXCEPTION 'summary reader returned data after effective suspension: %', (SELECT result FROM summary_race_results); END IF;
+  IF (SELECT result->>'sqlstate' FROM summary_race_results) <> 'P0001' OR (SELECT result->>'message' FROM summary_race_results) <> 'COACH_CLIENT_INSIGHTS_UNAVAILABLE' THEN RAISE EXCEPTION 'summary reader leaked suspension result: %', (SELECT result FROM summary_race_results); END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = 'd6000000-0000-4000-8000-000000000001' AND account_status = 'suspended') THEN RAISE EXCEPTION 'summary suspension did not suspend account'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.trainer_profiles WHERE user_id = 'd6000000-0000-4000-8000-000000000001' AND status = 'suspended') THEN RAISE EXCEPTION 'summary suspension did not suspend professional profile'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.coaching_relationships WHERE id = 'd6000000-0000-4000-8000-000000000041' AND status = 'paused_by_platform') THEN RAISE EXCEPTION 'summary suspension did not pause relationship'; END IF;
+END;
+$$;
+SELECT dblink_disconnect('summary_reader');
+SELECT dblink_disconnect('summary_suspender');
+`
+
 // Exercise the real authorization RPC across a professional revision. The
 // reservation is released before B because the daily policy intentionally
 // permits only one live authorization per user/date.
@@ -227,7 +346,7 @@ SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, source_template_id, status, accepted_at, active_version_id) VALUES ('eeeeeeee-0000-4000-8000-000000000091', 'eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000061', 'active', NOW(), 'eeeeeeee-0000-4000-8000-000000000101');
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES ('eeeeeeee-0000-4000-8000-000000000101', 'eeeeeeee-0000-4000-8000-000000000091', 1, '{"schemaVersion":1}'::jsonb, 'active', 'eeeeeeee-0000-4000-8000-000000000111');
 INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES ('eeeeeeee-0000-4000-8000-000000000111', 'eeeeeeee-0000-4000-8000-000000000002', 'Continuity A', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000091', 'eeeeeeee-0000-4000-8000-000000000101');
-INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000111', 'Version A day', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1);
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000111', 'Version A day', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER - 1, 1);
 INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000051', 1, 3, 8, 60);
 COMMIT;
 SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000002'; SET request.jwt.claim.role = 'authenticated'; SET ROLE authenticated;
@@ -310,23 +429,21 @@ try {
   runPsql(readFileSync(migrationPaths[7], 'utf8'), 'reapplying migration 044 for rerunnability')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
-  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running 044 pgTAP consent-bound insight suite')
+  const productionBoundary = loadLegacyOwnerBoundary(repoRoot)
+  runPsql(productionBoundary.sql, `applying migration 001 owner boundary (${productionBoundary.sha256})`)
+  runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening')
+  runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
+  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against 045')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const productionBoundary = loadLegacyOwnerBoundary(repoRoot)
-    runPsql(productionBoundary.sql, `applying migration 001 owner boundary (${productionBoundary.sha256})`)
-    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening')
-    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
     const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-045')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
+  runPsql(detailRevocationRaceSql, 'running committed concurrent detail revocation race')
+  runPsql(summarySuspensionRaceSql, 'running committed concurrent summary suspension race')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
-  if (!authorizationMode) {
-    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening after insight regressions')
-    runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
-  }
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
