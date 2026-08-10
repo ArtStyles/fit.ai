@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { requireAppUserContext, revalidatePath } = vi.hoisted(() => ({
@@ -35,9 +36,9 @@ describe('coaching relationship consent actions', () => {
 
     await expect(grantBodyMeasurementsConsent(formData)).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
     expect(supabase.rpc).toHaveBeenCalledWith('grant_body_measurements_consent', {
-      relationship_id: '11111111-1111-4111-8111-111111111111',
-      consent_version: 'body-measurements-v1',
-      idempotency_key: '22222222-2222-4222-8222-222222222222',
+      p_relationship_id: '11111111-1111-4111-8111-111111111111',
+      p_consent_version: 'body-measurements-v1',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
   })
@@ -49,8 +50,8 @@ describe('coaching relationship consent actions', () => {
 
     await expect(revokeBodyMeasurementsConsent(relationshipForm())).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
     expect(supabase.rpc).toHaveBeenCalledWith('revoke_body_measurements_consent', {
-      relationship_id: '11111111-1111-4111-8111-111111111111',
-      idempotency_key: '22222222-2222-4222-8222-222222222222',
+      p_relationship_id: '11111111-1111-4111-8111-111111111111',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
     })
   })
 
@@ -61,8 +62,8 @@ describe('coaching relationship consent actions', () => {
 
     await expect(revokeTrainingProfileConsent(relationshipForm())).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
     expect(supabase.rpc).toHaveBeenCalledWith('revoke_training_profile_consent', {
-      relationship_id: '11111111-1111-4111-8111-111111111111',
-      idempotency_key: '22222222-2222-4222-8222-222222222222',
+      p_relationship_id: '11111111-1111-4111-8111-111111111111',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
     })
   })
 
@@ -90,9 +91,9 @@ describe('coaching relationship consent actions', () => {
 
     await expect(endCoachingRelationship(formData)).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
     expect(supabase.rpc).toHaveBeenCalledWith('end_coaching_relationship', {
-      relationship_id: '11111111-1111-4111-8111-111111111111',
-      reason: 'Meta cumplida',
-      idempotency_key: '22222222-2222-4222-8222-222222222222',
+      p_relationship_id: '11111111-1111-4111-8111-111111111111',
+      p_reason: 'Meta cumplida',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('injected-client')
   })
@@ -119,9 +120,27 @@ describe('coaching relationship consent actions', () => {
 
     await expect(resumePausedCoachingRelationship(formData)).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
     expect(supabase.rpc).toHaveBeenCalledWith('resume_paused_coaching_relationship', {
-      relationship_id: '11111111-1111-4111-8111-111111111111',
-      idempotency_key: '22222222-2222-4222-8222-222222222222',
+      p_relationship_id: '11111111-1111-4111-8111-111111111111',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('injected-trainer')
+  })
+
+  it('keeps the action argument keys aligned with the deployed SQL signatures', () => {
+    const relationshipsSql = readFileSync(
+      new URL('../../../../supabase/migrations/042_trainer_relationships.sql', import.meta.url),
+      'utf8',
+    )
+    const programmingSql = readFileSync(
+      new URL('../../../../supabase/migrations/043_trainer_programming.sql', import.meta.url),
+      'utf8',
+    )
+    const signatures = `${relationshipsSql}\n${programmingSql}`
+
+    expect(signatures).toMatch(/grant_body_measurements_consent\(\s*p_relationship_id UUID, p_consent_version TEXT, p_idempotency_key UUID\s*\)/i)
+    expect(signatures).toMatch(/revoke_body_measurements_consent\(\s*p_relationship_id UUID, p_idempotency_key UUID\s*\)/i)
+    expect(signatures).toMatch(/revoke_training_profile_consent\(\s*p_relationship_id UUID, p_idempotency_key UUID\s*\)/i)
+    expect(signatures).toMatch(/end_coaching_relationship\(\s*p_relationship_id UUID, p_reason TEXT, p_idempotency_key UUID\s*\)/i)
+    expect(signatures).toMatch(/resume_paused_coaching_relationship\(\s*p_relationship_id UUID, p_idempotency_key UUID\s*\)/i)
   })
 })

@@ -26,9 +26,9 @@ test('trainer programming keeps immutable prescriptions across acceptance, revis
   const proposal = await fixture.createTemplateAndPropose('E2E Fuerza V1')
 
   await page.goto('/login')
-  await page.getByLabel('Correo electrÃ³nico', { exact: true }).fill(fixture.client.email)
-  await page.getByLabel('ContraseÃ±a', { exact: true }).fill(fixture.password)
-  await page.getByRole('button', { name: 'Iniciar sesiÃ³n', exact: true }).click()
+  await page.getByLabel('Correo electrónico', { exact: true }).fill(fixture.client.email)
+  await page.getByLabel('Contraseña', { exact: true }).fill(fixture.password)
+  await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 })
 
   await page.goto('/coaching')

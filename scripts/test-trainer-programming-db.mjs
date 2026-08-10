@@ -359,16 +359,24 @@ SELECT dblink_disconnect('summary_suspender');
 const revisionSessionContinuitySql = `
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('eeeeeeee-0000-4000-8000-000000000001', 'continuity-trainer@example.test', '{}'::jsonb),
-  ('eeeeeeee-0000-4000-8000-000000000002', 'continuity-client@example.test', '{}'::jsonb);
-INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status) VALUES
-  ('eeeeeeee-0000-4000-8000-000000000001', 'https://example.test/continuity-trainer.webp', TRUE, 'active'),
-  ('eeeeeeee-0000-4000-8000-000000000002', 'https://example.test/continuity-client.webp', TRUE, 'active');
-INSERT INTO public.trainer_applications (id, user_id) VALUES ('eeeeeeee-0000-4000-8000-000000000011', 'eeeeeeee-0000-4000-8000-000000000001');
+  ('eeeeeeee-0000-4000-8000-000000000002', 'continuity-client@example.test', '{}'::jsonb),
+  ('eeeeeeee-0000-4000-8000-000000000003', 'continuity-admin@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, is_admin, account_status) VALUES
+  ('eeeeeeee-0000-4000-8000-000000000001', 'Continuity trainer', 'https://example.test/continuity-trainer.webp', TRUE, FALSE, 'active'),
+  ('eeeeeeee-0000-4000-8000-000000000002', 'Continuity client', 'https://example.test/continuity-client.webp', TRUE, FALSE, 'active'),
+  ('eeeeeeee-0000-4000-8000-000000000003', 'Continuity admin', NULL, TRUE, TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id, status, decided_at) VALUES ('eeeeeeee-0000-4000-8000-000000000011', 'eeeeeeee-0000-4000-8000-000000000001', 'approved', NOW());
 INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
   ('eeeeeeee-0000-4000-8000-000000000021', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000011', 'continuity-trainer', 'active', 'Continuity trainer', 'Bio', 'Evidence');
 INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES ('eeeeeeee-0000-4000-8000-000000000031', 'eeeeeeee-0000-4000-8000-000000000021', 'Continuity service', 'online', 60);
-INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES ('eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000031', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'active');
-INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES ('eeeeeeee-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'eeeeeeee-0000-4000-8000-000000000002');
+INSERT INTO public.coaching_requests (id, service_id, trainer_user_id, client_user_id, message, training_profile_consent_version, idempotency_key, acceptance_idempotency_key, status, decided_at) VALUES
+  ('eeeeeeee-0000-4000-8000-000000000032', 'eeeeeeee-0000-4000-8000-000000000031', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'Continuity request', 'training-profile-v1', 'eeeeeeee-0000-4000-8000-000000000033', 'eeeeeeee-0000-4000-8000-000000000034', 'accepted', NOW());
+INSERT INTO public.coaching_relationships (id, source_request_id, service_id, trainer_user_id, client_user_id, status) VALUES ('eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000032', 'eeeeeeee-0000-4000-8000-000000000031', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('eeeeeeee-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'eeeeeeee-0000-4000-8000-000000000002'),
+  ('eeeeeeee-0000-4000-8000-000000000041', 'body_measurements', 'body-measurements-v1', 'eeeeeeee-0000-4000-8000-000000000002');
+INSERT INTO public.admin_audit_logs (id, admin_user_id, target_user_id, action, reason, metadata) VALUES
+  ('eeeeeeee-0000-4000-8000-000000000035', 'eeeeeeee-0000-4000-8000-000000000003', 'eeeeeeee-0000-4000-8000-000000000001', 'trainer_application_approved', 'Continuity fixture approval', jsonb_build_object('application_id', 'eeeeeeee-0000-4000-8000-000000000011'));
 INSERT INTO public.exercises (id, name, name_es, muscle_groups, muscle_groups_es, is_compound) VALUES ('eeeeeeee-0000-4000-8000-000000000051', 'Continuity squat', 'Sentadilla', ARRAY['quadriceps'], ARRAY['cuadriceps'], TRUE);
 INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_per_week) VALUES ('eeeeeeee-0000-4000-8000-000000000061', 'eeeeeeee-0000-4000-8000-000000000001', 'Continuity B', 1);
 INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES ('eeeeeeee-0000-4000-8000-000000000071', 'eeeeeeee-0000-4000-8000-000000000061', 'Version B day', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1);
@@ -405,6 +413,153 @@ DO $$ BEGIN
   IF (SELECT count(*) FROM public.exercise_logs WHERE progress_log_id = (SELECT id FROM public.progress_logs WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131') AND exercise_id = 'eeeeeeee-0000-4000-8000-000000000051') <> 1 THEN RAISE EXCEPTION 'v3 did not persist authorized A exercise result'; END IF;
 END $$;
 RESET ROLE;
+`
+
+const trainerMigrationRerunSnapshotSql = `
+DROP TABLE IF EXISTS public.trainer_migration_rerun_snapshot;
+DROP FUNCTION IF EXISTS public.capture_trainer_migration_rerun_snapshot();
+CREATE TABLE public.trainer_migration_rerun_snapshot (snapshot JSONB NOT NULL);
+CREATE FUNCTION public.capture_trainer_migration_rerun_snapshot()
+RETURNS JSONB
+LANGUAGE sql
+STABLE
+SET search_path = public, pg_temp
+AS $function$
+  SELECT jsonb_build_object(
+    'trainer', (SELECT jsonb_build_object(
+      'application_id', application.id,
+      'application_status', application.status,
+      'profile_id', profile.id,
+      'profile_status', profile.status,
+      'user_id', profile.user_id
+    ) FROM public.trainer_applications application
+    JOIN public.trainer_profiles profile ON profile.source_application_id = application.id
+    WHERE application.id = 'eeeeeeee-0000-4000-8000-000000000011'),
+    'accounts', (SELECT COALESCE(jsonb_agg(to_jsonb(account_row) ORDER BY account_row.id), '[]'::jsonb)
+      FROM public.profiles account_row
+      WHERE account_row.id IN ('eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000003')),
+    'application', (SELECT to_jsonb(application_row) FROM public.trainer_applications application_row
+      WHERE application_row.id = 'eeeeeeee-0000-4000-8000-000000000011'),
+    'trainer_profile', (SELECT to_jsonb(profile_row) FROM public.trainer_profiles profile_row
+      WHERE profile_row.id = 'eeeeeeee-0000-4000-8000-000000000021'),
+    'service', (SELECT to_jsonb(service_row) FROM public.trainer_service_offerings service_row
+      WHERE service_row.id = 'eeeeeeee-0000-4000-8000-000000000031'),
+    'request', (SELECT to_jsonb(request_row) FROM public.coaching_requests request_row
+      WHERE request_row.id = 'eeeeeeee-0000-4000-8000-000000000032'),
+    'relationship', (SELECT to_jsonb(relationship_row) FROM public.coaching_relationships relationship_row
+      WHERE relationship_row.id = 'eeeeeeee-0000-4000-8000-000000000041'),
+    'consents', (SELECT COALESCE(jsonb_agg(to_jsonb(consent_row) ORDER BY consent_row.id), '[]'::jsonb)
+      FROM public.coaching_consents consent_row
+      WHERE consent_row.relationship_id = 'eeeeeeee-0000-4000-8000-000000000041'),
+    'exercise', (SELECT to_jsonb(exercise_row) FROM public.exercises exercise_row
+      WHERE exercise_row.id = 'eeeeeeee-0000-4000-8000-000000000051'),
+    'template', (SELECT to_jsonb(template_row) FROM public.trainer_program_templates template_row
+      WHERE template_row.id = 'eeeeeeee-0000-4000-8000-000000000061'),
+    'template_workouts', (SELECT COALESCE(jsonb_agg(to_jsonb(template_workout_row) ORDER BY template_workout_row.id), '[]'::jsonb)
+      FROM public.trainer_template_workouts template_workout_row
+      WHERE template_workout_row.template_id = 'eeeeeeee-0000-4000-8000-000000000061'),
+    'template_exercises', (SELECT COALESCE(jsonb_agg(to_jsonb(template_exercise_row) ORDER BY template_exercise_row.id), '[]'::jsonb)
+      FROM public.trainer_template_exercises template_exercise_row
+      WHERE template_exercise_row.template_workout_id IN (
+        SELECT id FROM public.trainer_template_workouts WHERE template_id = 'eeeeeeee-0000-4000-8000-000000000061'
+      )),
+    'assignment', (SELECT to_jsonb(assignment_row) FROM public.trainer_plan_assignments assignment_row
+      WHERE assignment_row.id = 'eeeeeeee-0000-4000-8000-000000000091'),
+    'versions', (SELECT COALESCE(jsonb_agg(to_jsonb(version_row) ORDER BY version_row.version_number, version_row.id), '[]'::jsonb)
+      FROM public.trainer_assignment_versions version_row
+      WHERE version_row.assignment_id = 'eeeeeeee-0000-4000-8000-000000000091'),
+    'plans', (SELECT COALESCE(jsonb_agg(to_jsonb(plan_row) ORDER BY plan_row.id), '[]'::jsonb)
+      FROM public.workout_plans plan_row
+      WHERE plan_row.trainer_assignment_id = 'eeeeeeee-0000-4000-8000-000000000091'),
+    'workouts', (SELECT COALESCE(jsonb_agg(to_jsonb(workout_row) ORDER BY workout_row.id), '[]'::jsonb)
+      FROM public.workouts workout_row
+      WHERE workout_row.plan_id IN (
+        SELECT id FROM public.workout_plans WHERE trainer_assignment_id = 'eeeeeeee-0000-4000-8000-000000000091'
+      )),
+    'workout_exercises', (SELECT COALESCE(jsonb_agg(to_jsonb(workout_exercise_row) ORDER BY workout_exercise_row.workout_id, workout_exercise_row.order_index, workout_exercise_row.id), '[]'::jsonb)
+      FROM public.workout_exercises workout_exercise_row
+      WHERE workout_exercise_row.workout_id IN (
+        SELECT workout.id FROM public.workouts workout
+        JOIN public.workout_plans plan ON plan.id = workout.plan_id
+        WHERE plan.trainer_assignment_id = 'eeeeeeee-0000-4000-8000-000000000091'
+      )),
+    'session_authorizations', (SELECT COALESCE(jsonb_agg(to_jsonb(authorization_row) ORDER BY authorization_row.client_session_id), '[]'::jsonb)
+      FROM public.session_authorizations authorization_row
+      WHERE authorization_row.client_session_id = 'eeeeeeee-0000-4000-8000-000000000131'),
+    'progress_logs', (SELECT COALESCE(jsonb_agg(to_jsonb(progress_row) ORDER BY progress_row.id), '[]'::jsonb)
+      FROM public.progress_logs progress_row
+      WHERE progress_row.client_session_id = 'eeeeeeee-0000-4000-8000-000000000131'),
+    'exercise_logs', (SELECT COALESCE(jsonb_agg(to_jsonb(exercise_log_row) ORDER BY exercise_log_row.id), '[]'::jsonb)
+      FROM public.exercise_logs exercise_log_row
+      WHERE exercise_log_row.progress_log_id IN (
+        SELECT id FROM public.progress_logs WHERE client_session_id = 'eeeeeeee-0000-4000-8000-000000000131'
+      )),
+    'product_notifications', (SELECT COALESCE(jsonb_agg(to_jsonb(notification_row) ORDER BY notification_row.id), '[]'::jsonb)
+      FROM public.product_notifications notification_row
+      WHERE notification_row.user_id IN ('eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000003')),
+    'professional_audits', (SELECT COALESCE(jsonb_agg(to_jsonb(audit_row) ORDER BY audit_row.id), '[]'::jsonb)
+      FROM public.professional_audit_logs audit_row
+      WHERE audit_row.actor_user_id IN ('eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000003')
+         OR audit_row.subject_user_id IN ('eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000003')),
+    'admin_audits', (SELECT COALESCE(jsonb_agg(to_jsonb(admin_audit_row) ORDER BY admin_audit_row.id), '[]'::jsonb)
+      FROM public.admin_audit_logs admin_audit_row
+      WHERE admin_audit_row.id = 'eeeeeeee-0000-4000-8000-000000000035')
+  );
+$function$;
+INSERT INTO public.trainer_migration_rerun_snapshot (snapshot)
+SELECT public.capture_trainer_migration_rerun_snapshot();
+DO $$ BEGIN
+  IF (SELECT snapshot->'trainer'->>'application_status' <> 'approved' FROM public.trainer_migration_rerun_snapshot) THEN
+    RAISE EXCEPTION 'rerun fixture trainer application is not approved';
+  END IF;
+  IF (SELECT snapshot->'trainer'->>'profile_status' <> 'active' FROM public.trainer_migration_rerun_snapshot) THEN
+    RAISE EXCEPTION 'rerun fixture trainer profile is not active';
+  END IF;
+  IF (SELECT snapshot->'request'->>'status' <> 'accepted' FROM public.trainer_migration_rerun_snapshot) THEN
+    RAISE EXCEPTION 'rerun fixture request is not accepted';
+  END IF;
+  IF jsonb_array_length((SELECT snapshot->'consents' FROM public.trainer_migration_rerun_snapshot)) <> 2 THEN
+    RAISE EXCEPTION 'rerun fixture lacks both active consent scopes';
+  END IF;
+  IF jsonb_array_length((SELECT snapshot->'versions' FROM public.trainer_migration_rerun_snapshot)) <> 2
+     OR jsonb_array_length((SELECT snapshot->'plans' FROM public.trainer_migration_rerun_snapshot)) <> 2
+     OR jsonb_array_length((SELECT snapshot->'workouts' FROM public.trainer_migration_rerun_snapshot)) <> 2
+     OR jsonb_array_length((SELECT snapshot->'workout_exercises' FROM public.trainer_migration_rerun_snapshot)) <> 2 THEN
+    RAISE EXCEPTION 'rerun fixture lacks locked professional plan history';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.workout_plans
+    WHERE trainer_assignment_id = 'eeeeeeee-0000-4000-8000-000000000091'
+      AND source_type = 'trainer_assigned'
+      AND library_slot = 'professional'
+      AND prescription_locked = TRUE
+  ) THEN RAISE EXCEPTION 'rerun fixture lacks professional identity lock'; END IF;
+  IF jsonb_array_length((SELECT snapshot->'session_authorizations' FROM public.trainer_migration_rerun_snapshot)) <> 1
+     OR jsonb_array_length((SELECT snapshot->'progress_logs' FROM public.trainer_migration_rerun_snapshot)) <> 1
+     OR jsonb_array_length((SELECT snapshot->'exercise_logs' FROM public.trainer_migration_rerun_snapshot)) <> 1 THEN
+    RAISE EXCEPTION 'rerun fixture lacks execution evidence';
+  END IF;
+  IF jsonb_array_length((SELECT snapshot->'professional_audits' FROM public.trainer_migration_rerun_snapshot)) = 0
+     OR jsonb_array_length((SELECT snapshot->'admin_audits' FROM public.trainer_migration_rerun_snapshot)) <> 1 THEN
+    RAISE EXCEPTION 'rerun fixture lacks professional audit evidence';
+  END IF;
+END $$;
+`
+
+const trainerMigrationRerunVerifySql = `
+DO $$
+DECLARE
+  before_snapshot JSONB;
+  after_snapshot JSONB;
+BEGIN
+  SELECT snapshot INTO before_snapshot FROM public.trainer_migration_rerun_snapshot;
+  SELECT public.capture_trainer_migration_rerun_snapshot() INTO after_snapshot;
+  IF before_snapshot IS DISTINCT FROM after_snapshot THEN
+    RAISE EXCEPTION 'migrations 040-045 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
+  END IF;
+END $$;
+DROP TABLE public.trainer_migration_rerun_snapshot;
+DROP FUNCTION public.capture_trainer_migration_rerun_snapshot();
 `
 
 function docker(args, { input, print = true } = {}) {
@@ -479,6 +634,12 @@ try {
   runPsql(summarySuspensionRaceSql, 'running committed concurrent summary suspension race')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
+  runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
+  runPsql(
+    migrationPaths.slice(3).map(migrationPath => readFileSync(migrationPath, 'utf8')).join('\n'),
+    'reapplying migrations 040-045 after locked professional data',
+  )
+  runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }

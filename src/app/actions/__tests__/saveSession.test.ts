@@ -482,7 +482,7 @@ describe('saveSession idempotency', () => {
 
     await expect(saveSession(payload)).resolves.toMatchObject({
       success: false,
-      error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesión de forma segura.',
+      error: 'Esta rutina profesional requiere una actualización para guardar la sesión de forma segura.',
     })
     expect(supabase.rpc).toHaveBeenCalledWith('save_session_log_atomic_v3', expect.any(Object))
     expect(supabase.rpc).not.toHaveBeenCalledWith('save_session_log_atomic_v2', expect.any(Object))

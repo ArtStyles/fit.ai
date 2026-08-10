@@ -21,23 +21,23 @@ test('trainer relationships keep requests, consent, suspension, and resume isola
   }))
   try {
     await page.goto('/login')
-    await page.getByLabel('Correo electrÃ³nico', { exact: true }).fill(fixture.client.email)
-    await page.getByLabel('ContraseÃ±a', { exact: true }).fill(process.env.E2E_USER_PASSWORD!)
-    await page.getByRole('button', { name: 'Iniciar sesiÃ³n', exact: true }).click()
+    await page.getByLabel('Correo electrónico', { exact: true }).fill(fixture.client.email)
+    await page.getByLabel('Contraseña', { exact: true }).fill(process.env.E2E_USER_PASSWORD!)
+    await page.getByRole('button', { name: 'Iniciar sesión', exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 })
     await page.goto('/trainers')
     await expect(page.getByRole('heading', { name: 'Entrenadores verificados', exact: true })).toBeVisible()
     await expect(page.getByText(fixture.trainerA.professionalName, { exact: true })).toBeVisible()
-    await expect(page.getByText(/precio|moneda|suscripciÃ³n/i)).toHaveCount(0)
+    await expect(page.getByText(/precio|moneda|suscripción/i)).toHaveCount(0)
 
     const first = await exerciseTrainerRelationshipLifecycle(fixture)
     await page.goto('/coaching')
-    await expect(page.getByRole('heading', { name: 'AcompaÃ±amiento activo', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Acompañamiento activo', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Tus consentimientos', exact: true })).toBeVisible()
 
     await endSuspendReinstateAndResumeTrainerRelationship(fixture, first.relationshipId)
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'AcompaÃ±amiento activo', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Acompañamiento activo', exact: true })).toBeVisible()
   } finally {
     await cleanupTrainerRelationshipsFixture(fixture)
   }

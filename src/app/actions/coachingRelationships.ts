@@ -27,8 +27,8 @@ async function invokeConsentAction(
   try {
     const { supabase } = await requireAppUserContext()
     const args = rpcName === 'grant_body_measurements_consent'
-      ? { relationship_id: relationshipId, consent_version: 'body-measurements-v1', idempotency_key: idempotencyKey }
-      : { relationship_id: relationshipId, idempotency_key: idempotencyKey }
+      ? { p_relationship_id: relationshipId, p_consent_version: 'body-measurements-v1', p_idempotency_key: idempotencyKey }
+      : { p_relationship_id: relationshipId, p_idempotency_key: idempotencyKey }
     const { data, error } = await (supabase as any).rpc(rpcName, args)
     const result = Array.isArray(data) ? data[0] : data
     if (error || !result?.relationship_id) return { ok: false, error: 'No se pudo actualizar el consentimiento.' }
@@ -59,7 +59,7 @@ async function invokeRelationshipAction(
   const relationshipId = formString(formData, 'relationshipId')
   const idempotencyKey = formString(formData, 'idempotencyKey')
   const reason = formString(formData, 'reason')
-  if (!relationshipId || !idempotencyKey) return { ok: false, error: 'No se pudo identificar el acompaÃ±amiento.' }
+  if (!relationshipId || !idempotencyKey) return { ok: false, error: 'No se pudo identificar el acompañamiento.' }
   if (rpcName === 'end_coaching_relationship' && reason.length > 500) {
     return { ok: false, error: 'El motivo no puede superar 500 caracteres.' }
   }
@@ -67,16 +67,16 @@ async function invokeRelationshipAction(
   try {
     const { supabase } = await requireAppUserContext()
     const args = rpcName === 'end_coaching_relationship'
-      ? { relationship_id: relationshipId, reason: reason || null, idempotency_key: idempotencyKey }
-      : { relationship_id: relationshipId, idempotency_key: idempotencyKey }
+      ? { p_relationship_id: relationshipId, p_reason: reason || null, p_idempotency_key: idempotencyKey }
+      : { p_relationship_id: relationshipId, p_idempotency_key: idempotencyKey }
     const { data, error } = await (supabase as any).rpc(rpcName, args)
     const result = Array.isArray(data) ? data[0] : data
-    if (error || !result?.relationship_id) return { ok: false, error: 'No se pudo actualizar el acompaÃ±amiento.' }
+    if (error || !result?.relationship_id) return { ok: false, error: 'No se pudo actualizar el acompañamiento.' }
 
     revalidateConsentPaths()
     return { ok: true, relationshipId: result.relationship_id, changed: result.changed === true }
   } catch {
-    return { ok: false, error: 'No se pudo actualizar el acompaÃ±amiento.' }
+    return { ok: false, error: 'No se pudo actualizar el acompañamiento.' }
   }
 }
 

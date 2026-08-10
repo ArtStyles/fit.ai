@@ -155,6 +155,7 @@ export type TrainerInsightsFixture = TrainerProgrammingFixture & {
 type TrainerFixtureSeedOptions = {
   skipReadiness?: boolean
   relationshipsFixture?: TrainerRelationshipsFixture
+  existingRelationshipId?: string
 }
 
 type TrainerRelationshipRows = {
@@ -705,7 +706,8 @@ export async function seedTrainerProgrammingFixture(
   const fixture = options.relationshipsFixture ?? await seedTrainerRelationshipsFixture(scope, options)
   let programmingPublished = false
   try {
-    const relationship = await exerciseTrainerRelationshipLifecycle(fixture)
+    const relationshipId = options.existingRelationshipId
+      ?? (await exerciseTrainerRelationshipLifecycle(fixture)).relationshipId
     const personalPlanId = await createTrainerProgrammingPersonalPlan(fixture.service, fixture.client.id, scope)
     const catalog = await publicStrengthExercises(fixture.service, 3)
     const revisionTimeZone = differentPolicyTimeZone(E2E_TIME_ZONE)
@@ -715,7 +717,7 @@ export async function seedTrainerProgrammingFixture(
     return {
       ...fixture,
       password: config.password,
-      relationshipId: relationship.relationshipId,
+      relationshipId,
       personalPlanId,
       async createTemplateAndPropose(name, requestedIdempotencyKey) {
         const templateId = randomUUID()
@@ -741,7 +743,7 @@ export async function seedTrainerProgrammingFixture(
         assertNoError(createdExercises.error, 'Creating trainer template exercises')
         const proposalIdempotencyKey = requestedIdempotencyKey ?? randomUUID()
         const proposed = await (fixture.trainerA.client.rpc as any)('propose_trainer_assignment', {
-          p_relationship_id: relationship.relationshipId,
+          p_relationship_id: relationshipId,
           p_template_id: templateId,
           p_change_summary: 'Primera prescripción profesional.',
           p_idempotency_key: proposalIdempotencyKey,

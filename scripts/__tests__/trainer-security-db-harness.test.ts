@@ -70,4 +70,46 @@ describe('trainer security database harness', () => {
     expect(suspended).toBeGreaterThan(observed)
     expect(released).toBeGreaterThan(suspended)
   })
+
+  it('reapplies every trainer migration after a locked professional fixture and compares an immutable snapshot', async () => {
+    const source = await readFile(new URL('../test-trainer-programming-db.mjs', import.meta.url), 'utf8')
+    const seeded = source.indexOf('seeding rerun preservation fixture')
+    const rerun = source.indexOf('reapplying migrations 040-045 after locked professional data')
+    const verified = source.indexOf('verifying rerun preservation snapshot')
+
+    expect(source).toContain('trainer_migration_rerun_snapshot')
+    expect(source).toContain("'application_status', application.status")
+    expect(source).toContain("snapshot->'trainer'->>'application_status' <> 'approved'")
+    expect(source).toContain('prescription_locked')
+    expect(source).toContain('professional_audit_logs')
+    for (const snapshotKey of [
+      'accounts',
+      'application',
+      'trainer_profile',
+      'service',
+      'request',
+      'relationship',
+      'consents',
+      'exercise',
+      'template',
+      'template_workouts',
+      'template_exercises',
+      'assignment',
+      'versions',
+      'plans',
+      'workouts',
+      'workout_exercises',
+      'session_authorizations',
+      'progress_logs',
+      'exercise_logs',
+      'product_notifications',
+      'professional_audits',
+      'admin_audits',
+    ]) expect(source).toContain(`'${snapshotKey}'`)
+    expect(source).toContain("'body_measurements', 'body-measurements-v1'")
+    expect(source).toContain('capture_trainer_migration_rerun_snapshot')
+    expect(seeded).toBeGreaterThan(-1)
+    expect(rerun).toBeGreaterThan(seeded)
+    expect(verified).toBeGreaterThan(rerun)
+  })
 })

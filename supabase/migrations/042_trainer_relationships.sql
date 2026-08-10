@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.trainer_service_offerings (
   )
 );
 
-CREATE INDEX trainer_service_offerings_profile_active_idx
+CREATE INDEX IF NOT EXISTS trainer_service_offerings_profile_active_idx
   ON public.trainer_service_offerings (trainer_profile_id, is_active, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS public.coaching_requests (
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS public.coaching_requests (
   CONSTRAINT coaching_requests_client_trainer_distinct CHECK (client_user_id <> trainer_user_id)
 );
 
-CREATE UNIQUE INDEX coaching_requests_one_pending_equivalent
+CREATE UNIQUE INDEX IF NOT EXISTS coaching_requests_one_pending_equivalent
   ON public.coaching_requests (client_user_id, trainer_user_id, service_id)
   WHERE status = 'pending';
 
@@ -60,14 +60,14 @@ WHERE idempotency_key IS NULL;
 ALTER TABLE public.coaching_requests
   ALTER COLUMN idempotency_key SET NOT NULL;
 
-CREATE UNIQUE INDEX coaching_requests_client_idempotency_key
+CREATE UNIQUE INDEX IF NOT EXISTS coaching_requests_client_idempotency_key
   ON public.coaching_requests (client_user_id, idempotency_key);
 
-CREATE INDEX coaching_requests_trainer_pending_created_idx
+CREATE INDEX IF NOT EXISTS coaching_requests_trainer_pending_created_idx
   ON public.coaching_requests (trainer_user_id, created_at DESC, id DESC)
   WHERE status = 'pending';
 
-CREATE INDEX coaching_requests_client_created_idx
+CREATE INDEX IF NOT EXISTS coaching_requests_client_created_idx
   ON public.coaching_requests (client_user_id, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS public.coaching_relationships (
@@ -96,14 +96,14 @@ CREATE TABLE IF NOT EXISTS public.coaching_relationships (
   )
 );
 
-CREATE UNIQUE INDEX coaching_relationships_one_active_client
+CREATE UNIQUE INDEX IF NOT EXISTS coaching_relationships_one_active_client
   ON public.coaching_relationships(client_user_id)
   WHERE status = 'active';
 
-CREATE INDEX coaching_relationships_trainer_status_idx
+CREATE INDEX IF NOT EXISTS coaching_relationships_trainer_status_idx
   ON public.coaching_relationships (trainer_user_id, status, created_at DESC, id DESC);
 
-CREATE INDEX coaching_relationships_client_status_idx
+CREATE INDEX IF NOT EXISTS coaching_relationships_client_status_idx
   ON public.coaching_relationships (client_user_id, status, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS public.coaching_consents (
@@ -125,11 +125,11 @@ CREATE TABLE IF NOT EXISTS public.coaching_consents (
   -- a new row so the historical decision remains auditable.
 );
 
-CREATE INDEX coaching_consents_active_scope_idx
+CREATE INDEX IF NOT EXISTS coaching_consents_active_scope_idx
   ON public.coaching_consents (relationship_id, scope)
   WHERE revoked_at IS NULL;
 
-CREATE UNIQUE INDEX coaching_consents_one_active_scope
+CREATE UNIQUE INDEX IF NOT EXISTS coaching_consents_one_active_scope
   ON public.coaching_consents (relationship_id, scope)
   WHERE revoked_at IS NULL;
 
@@ -728,13 +728,13 @@ BEGIN
 
   PERFORM public.create_product_notification(
     v_request.client_user_id, 'coaching_request_accepted', 'Solicitud aceptada',
-    'Tu solicitud de acompaÃ±amiento fue aceptada.', '/coaching',
+    'Tu solicitud de acompañamiento fue aceptada.', '/coaching',
     'coaching-request-accepted:' || v_request.id::TEXT,
     jsonb_build_object('request_id', v_request.id, 'relationship_id', v_relationship.id)
   );
   PERFORM public.create_product_notification(
     cancelled.trainer_user_id, 'coaching_request_cancelled_after_acceptance', 'Solicitud cancelada',
-    'La persona ya iniciÃ³ otro acompaÃ±amiento.', '/coach/requests',
+    'La persona ya inició otro acompañamiento.', '/coach/requests',
     'coaching-request-cancelled-after-acceptance:' || cancelled.id::TEXT,
     jsonb_build_object('request_id', cancelled.id)
   )
@@ -952,13 +952,13 @@ BEGIN
   VALUES (v_actor_user_id, v_other_user_id, 'coaching_relationship', v_relationship.id, 'ended',
     jsonb_build_object('reason', v_reason, 'idempotency_key', p_idempotency_key));
   PERFORM public.create_product_notification(
-    v_actor_user_id, 'coaching_relationship_ended', 'AcompaÃ±amiento finalizado',
-    'El acompaÃ±amiento fue finalizado.', '/coaching',
+    v_actor_user_id, 'coaching_relationship_ended', 'Acompañamiento finalizado',
+    'El acompañamiento fue finalizado.', '/coaching',
     'coaching-relationship-ended:' || v_relationship.id::TEXT || ':' || v_actor_user_id::TEXT,
     jsonb_build_object('relationship_id', v_relationship.id));
   PERFORM public.create_product_notification(
-    v_other_user_id, 'coaching_relationship_ended', 'AcompaÃ±amiento finalizado',
-    'El acompaÃ±amiento fue finalizado.', '/coaching',
+    v_other_user_id, 'coaching_relationship_ended', 'Acompañamiento finalizado',
+    'El acompañamiento fue finalizado.', '/coaching',
     'coaching-relationship-ended:' || v_relationship.id::TEXT || ':' || v_other_user_id::TEXT,
     jsonb_build_object('relationship_id', v_relationship.id));
   RETURN QUERY SELECT v_relationship.id, TRUE;
@@ -1045,13 +1045,13 @@ BEGIN
   VALUES (v_client_user_id, v_relationship.trainer_user_id, 'coaching_relationship', v_relationship.id, 'resumed',
     jsonb_build_object('idempotency_key', p_idempotency_key));
   PERFORM public.create_product_notification(
-    v_client_user_id, 'coaching_relationship_resumed', 'AcompaÃ±amiento reanudado',
-    'Confirmaste la reanudaciÃ³n del acompaÃ±amiento.', '/coaching',
+    v_client_user_id, 'coaching_relationship_resumed', 'Acompañamiento reanudado',
+    'Confirmaste la reanudación del acompañamiento.', '/coaching',
     'coaching-relationship-resumed:' || v_relationship.id::TEXT || ':' || v_client_user_id::TEXT,
     jsonb_build_object('relationship_id', v_relationship.id));
   PERFORM public.create_product_notification(
-    v_relationship.trainer_user_id, 'coaching_relationship_resumed', 'AcompaÃ±amiento reanudado',
-    'La persona confirmÃ³ la reanudaciÃ³n del acompaÃ±amiento.', '/coach/requests',
+    v_relationship.trainer_user_id, 'coaching_relationship_resumed', 'Acompañamiento reanudado',
+    'La persona confirmó la reanudación del acompañamiento.', '/coach/requests',
     'coaching-relationship-resumed:' || v_relationship.id::TEXT || ':' || v_relationship.trainer_user_id::TEXT,
     jsonb_build_object('relationship_id', v_relationship.id));
   RETURN QUERY SELECT v_relationship.id, TRUE;
@@ -1304,25 +1304,25 @@ BEGIN
     IF v_relationship.trainer_user_id = p_user_id THEN
       PERFORM public.create_product_notification(
         p_user_id, 'coaching_trainer_suspended', 'Perfil profesional suspendido',
-        'El acceso profesional fue suspendido por administraciÃ³n.', '/coach',
+        'El acceso profesional fue suspendido por administración.', '/coach',
         'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || p_user_id::TEXT,
         jsonb_build_object('relationship_id', v_relationship.id));
       IF v_relationship.client_user_id <> p_user_id THEN
         PERFORM public.create_product_notification(
-          v_relationship.client_user_id, 'coaching_trainer_suspended', 'AcompaÃ±amiento pausado',
-          'Tu acompaÃ±amiento fue pausado por una revisiÃ³n administrativa.', '/coaching',
+          v_relationship.client_user_id, 'coaching_trainer_suspended', 'Acompañamiento pausado',
+          'Tu acompañamiento fue pausado por una revisión administrativa.', '/coaching',
           'coaching-trainer-suspended:' || v_relationship.id::TEXT || ':' || v_relationship.client_user_id::TEXT,
           jsonb_build_object('relationship_id', v_relationship.id));
       END IF;
     ELSE
       PERFORM public.create_product_notification(
         p_user_id, 'coaching_account_suspended', 'Cuenta suspendida',
-        'Tu acceso fue suspendido por administraciÃ³n y el acompaÃ±amiento quedó pausado.', '/coaching',
+        'Tu acceso fue suspendido por administración y el acompañamiento quedó pausado.', '/coaching',
         'coaching-account-suspended:' || v_relationship.id::TEXT || ':' || p_user_id::TEXT,
         jsonb_build_object('relationship_id', v_relationship.id));
       IF v_relationship.trainer_user_id <> p_user_id THEN
         PERFORM public.create_product_notification(
-          v_relationship.trainer_user_id, 'coaching_client_suspended', 'AcompaÃ±amiento pausado',
+          v_relationship.trainer_user_id, 'coaching_client_suspended', 'Acompañamiento pausado',
           'El acompañamiento fue pausado por una revisión administrativa.', '/coach/requests',
           'coaching-account-suspended:' || v_relationship.id::TEXT || ':' || v_relationship.trainer_user_id::TEXT,
           jsonb_build_object('relationship_id', v_relationship.id));
@@ -1369,7 +1369,7 @@ BEGIN
   VALUES (v_admin_user_id, p_user_id, 'trainer_profile', v_profile.id, 'reinstated');
   PERFORM public.create_product_notification(
     p_user_id, 'trainer_profile_reinstated', 'Perfil profesional restablecido',
-    'Tu perfil profesional fue restablecido. Los acompaÃ±amientos pausados requieren confirmaciÃ³n del cliente.', '/coach',
+    'Tu perfil profesional fue restablecido. Los acompañamientos pausados requieren confirmación del cliente.', '/coach',
     'trainer-profile-reinstated:' || p_user_id::TEXT,
     jsonb_build_object('trainer_profile_id', v_profile.id));
   RETURN QUERY SELECT TRUE;

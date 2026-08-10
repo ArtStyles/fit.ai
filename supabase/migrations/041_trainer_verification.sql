@@ -37,11 +37,11 @@ CREATE TABLE IF NOT EXISTS public.trainer_applications (
   )
 );
 
-CREATE UNIQUE INDEX trainer_applications_one_open_per_user_idx
+CREATE UNIQUE INDEX IF NOT EXISTS trainer_applications_one_open_per_user_idx
   ON public.trainer_applications (user_id)
   WHERE status IN ('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required');
 
-CREATE INDEX trainer_applications_status_created_idx
+CREATE INDEX IF NOT EXISTS trainer_applications_status_created_idx
   ON public.trainer_applications (status, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS public.trainer_application_credentials (
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS public.trainer_application_credentials (
   CONSTRAINT trainer_application_credentials_storage_path_unique UNIQUE (storage_path)
 );
 
-CREATE INDEX trainer_application_credentials_application_created_idx
+CREATE INDEX IF NOT EXISTS trainer_application_credentials_application_created_idx
   ON public.trainer_application_credentials (application_id, created_at, id);
 
 CREATE TABLE IF NOT EXISTS public.trainer_credential_storage_cleanup (
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS public.trainer_credential_storage_cleanup (
     CHECK (storage_path LIKE user_id::TEXT || '/' || application_id::TEXT || '/' || credential_id::TEXT || '.%')
 );
 
-CREATE INDEX trainer_credential_storage_cleanup_user_created_idx
+CREATE INDEX IF NOT EXISTS trainer_credential_storage_cleanup_user_created_idx
   ON public.trainer_credential_storage_cleanup (user_id, created_at, id);
 
 CREATE TABLE IF NOT EXISTS public.trainer_application_events (
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS public.trainer_application_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX trainer_application_events_application_created_idx
+CREATE INDEX IF NOT EXISTS trainer_application_events_application_created_idx
   ON public.trainer_application_events (application_id, created_at, id);
 
 CREATE TABLE IF NOT EXISTS public.trainer_interviews (
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS public.trainer_interviews (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX trainer_interviews_application_proposed_idx
+CREATE INDEX IF NOT EXISTS trainer_interviews_application_proposed_idx
   ON public.trainer_interviews (application_id, proposed_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS public.trainer_profiles (
@@ -158,9 +158,11 @@ CREATE TABLE IF NOT EXISTS public.trainer_profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX trainer_profiles_status_created_idx
+CREATE INDEX IF NOT EXISTS trainer_profiles_status_created_idx
   ON public.trainer_profiles (status, created_at DESC, id DESC);
 
+ALTER TABLE public.trainer_applications
+  DROP CONSTRAINT IF EXISTS trainer_applications_source_profile_fk;
 ALTER TABLE public.trainer_applications
   ADD CONSTRAINT trainer_applications_source_profile_fk
   FOREIGN KEY (source_profile_id) REFERENCES public.trainer_profiles(id)

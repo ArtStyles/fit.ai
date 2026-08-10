@@ -12,7 +12,7 @@ describe('CoachRelationshipActions', () => {
   it('requires an accessible confirmation before a trainer can finish a relationship', () => {
     const html = renderToStaticMarkup(<CoachRelationshipActions relationshipId="relationship-1" status="paused_by_platform" />)
 
-    expect(html).toContain('Finalizar acompaÃ±amiento')
+    expect(html).toContain('Finalizar acompañamiento')
     expect(html).toContain('aria-controls')
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('Pausado por la plataforma')

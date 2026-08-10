@@ -106,6 +106,15 @@ async function signIn(page: Page, email: string, password: string): Promise<void
   await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 })
 }
 
+async function requestCoachingThroughBrowser(page: Page, slug: string, message: string): Promise<void> {
+  await page.goto(`/trainers/${slug}`)
+  const form = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Solicitar acompañamiento', exact: true }) })
+  await form.getByLabel('Mensaje opcional', { exact: true }).fill(message)
+  await form.getByRole('checkbox').check()
+  await form.getByRole('button', { name: 'Enviar solicitud', exact: true }).click()
+  await expect(form.getByText('Tu solicitud quedó pendiente de respuesta.', { exact: true })).toBeVisible()
+}
+
 async function assertPilotExclusions(page: Page): Promise<void> {
   await expect(page.locator('a[href^="/feed"], a[href^="/checkout"], a[href^="/messages"], a[href^="/coach/messages"], a[href*="/reviews"]')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Comunidad', exact: true })).toHaveCount(0)
@@ -245,30 +254,67 @@ test('gates the complete persisted trainer marketplace journey and pilot exclusi
     // The actor approved above is the exact trainer carried through service,
     // discovery, relationship, programming, evidence and suspension below.
     await connectApprovedApplicantAsTrainer(relationships, applicant, application.id)
-    const fixture: TrainerProgrammingFixture = await seedTrainerProgrammingFixture(scope, {
-      skipReadiness: true,
-      relationshipsFixture: relationships,
-    })
-
     await page.context().clearCookies()
-    await signIn(page, fixture.client.email, password)
+    await signIn(page, relationships.client.email, password)
     await page.goto('/trainers')
-    await expect(page.getByText(fixture.trainerA.professionalName, { exact: true })).toBeVisible()
+    await expect(page.getByText(relationships.trainerA.professionalName, { exact: true })).toBeVisible()
     await assertPilotExclusions(page)
-    await page.goto(`/trainers/${fixture.trainerA.slug}`)
-    await expect(page.getByRole('heading', { name: fixture.trainerA.professionalName, exact: true })).toBeVisible()
+    await page.goto(`/trainers/${relationships.trainerA.slug}`)
+    await expect(page.getByRole('heading', { name: relationships.trainerA.professionalName, exact: true })).toBeVisible()
     await assertPilotExclusions(page)
-    const { data: freeService, error: serviceError } = await (fixture.service.from('trainer_service_offerings') as any)
-      .select('billing_mode,price_minor,currency,billing_interval').eq('id', fixture.trainerA.serviceId).maybeSingle()
+    const { data: freeService, error: serviceError } = await (relationships.service.from('trainer_service_offerings') as any)
+      .select('billing_mode,price_minor,currency,billing_interval').eq('id', relationships.trainerA.serviceId).maybeSingle()
     noError(serviceError, 'reading free marketplace service')
     expect(freeService).toEqual({
       billing_mode: 'free_preview', price_minor: null, currency: null, billing_interval: null,
     })
-    const { data: requestRows, error: requestError } = await (fixture.service.from('coaching_requests') as any)
-      .select('id,status').in('id', fixture.created.requestIds)
-    noError(requestError, 'reading competing coaching requests')
+
+    // The client creates both open requests through the rendered server-action
+    // forms. Trainer A then accepts through its queue; the browser, not fixture
+    // RPC setup, creates the relationship and the basic consent grant.
+    await requestCoachingThroughBrowser(page, relationships.trainerA.slug, 'Quiero trabajar fuerza con seguimiento semanal.')
+    await requestCoachingThroughBrowser(page, relationships.trainerB.slug, 'También quiero comparar este servicio profesional.')
+    await page.context().clearCookies()
+    await signIn(page, relationships.trainerA.email, password)
+    await page.goto('/coach/requests')
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: 'Aceptar', exact: true }).first().click()
+    await expect(page.getByText('La solicitud fue aceptada.', { exact: true })).toBeVisible()
+
+    await page.context().clearCookies()
+    await signIn(page, relationships.client.email, password)
+    await page.goto('/coaching')
+    await expect(page.getByRole('heading', { name: 'Acompañamiento activo', exact: true })).toBeVisible()
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: 'Autorizar medidas corporales', exact: true }).click()
+    await expect(page.getByText('Tu consentimiento fue actualizado.', { exact: true })).toBeVisible()
+
+    const { data: persistedRequests, error: persistedRequestsError } = await (relationships.service.from('coaching_requests') as any)
+      .select('id,status').eq('client_user_id', relationships.client.id).order('created_at')
+    noError(persistedRequestsError, 'reading browser-created coaching requests')
+    const requestRows = persistedRequests ?? []
+    relationships.created.requestIds.push(...requestRows.map((row: { id: string }) => row.id))
+    const { data: persistedRelationship, error: persistedRelationshipError } = await (relationships.service.from('coaching_relationships') as any)
+      .select('id,status').eq('client_user_id', relationships.client.id).eq('status', 'active').maybeSingle()
+    noError(persistedRelationshipError, 'reading browser-created coaching relationship')
+    if (!persistedRelationship?.id) throw new Error('Browser acceptance did not persist an active relationship')
+    relationships.created.relationshipIds.push(persistedRelationship.id)
+    const { data: persistedConsents, error: persistedConsentsError } = await (relationships.service.from('coaching_consents') as any)
+      .select('id,scope,revoked_at').eq('relationship_id', persistedRelationship.id)
+    noError(persistedConsentsError, 'reading browser-created coaching consents')
+    relationships.created.consentIds.push(...(persistedConsents ?? []).map((row: { id: string }) => row.id))
+    expect(persistedConsents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: 'training_profile', revoked_at: null }),
+      expect.objectContaining({ scope: 'body_measurements', revoked_at: null }),
+    ]))
     expect(requestRows?.filter((row: { status: string }) => row.status === 'accepted')).toHaveLength(1)
     expect(requestRows?.filter((row: { status: string }) => row.status === 'cancelled')).toHaveLength(1)
+
+    const fixture: TrainerProgrammingFixture = await seedTrainerProgrammingFixture(scope, {
+      skipReadiness: true,
+      relationshipsFixture: relationships,
+      existingRelationshipId: persistedRelationship.id,
+    })
 
     const proposal = await fixture.createTemplateAndPropose('Marketplace Professional V1')
     await page.goto('/coaching')
@@ -297,22 +343,15 @@ test('gates the complete persisted trainer marketplace journey and pilot exclusi
       id: randomUUID(), user_id: fixture.client.id, recorded_at: new Date().toISOString(), weight_kg: measurementWeightKg,
     })
     noError(measurementError, 'creating consent-bound marketplace measurement')
-    const granted = await (fixture.client.client.rpc as any)('grant_body_measurements_consent', {
-      p_relationship_id: fixture.relationshipId,
-      p_consent_version: 'body-measurements-v1',
-      p_idempotency_key: randomUUID(),
-    })
-    noError(granted.error, 'granting body-measurements consent')
     const visibleMeasurement = await (fixture.trainerA.client.rpc as any)('get_coach_client_measurements', {
       p_client_id: fixture.client.id, p_from_date: '2020-01-01', p_to_date: '2035-01-01',
     })
     noError(visibleMeasurement.error, 'reading consent-bound marketplace measurement')
     expect(JSON.stringify(visibleMeasurement.data)).toContain(String(measurementWeightKg))
-    const revoked = await (fixture.client.client.rpc as any)('revoke_body_measurements_consent', {
-      p_relationship_id: fixture.relationshipId,
-      p_idempotency_key: randomUUID(),
-    })
-    noError(revoked.error, 'revoking body-measurements consent')
+    await page.goto('/coaching')
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: 'Revocar medidas corporales', exact: true }).click()
+    await expect(page.getByText('Tu consentimiento fue actualizado.', { exact: true })).toBeVisible()
     const revokedMeasurement = await (fixture.trainerA.client.rpc as any)('get_coach_client_measurements', {
       p_client_id: fixture.client.id, p_from_date: '2020-01-01', p_to_date: '2035-01-01',
     })

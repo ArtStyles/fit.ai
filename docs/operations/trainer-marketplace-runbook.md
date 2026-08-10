@@ -32,7 +32,8 @@ Validar solo presencia y alcance; nunca imprimir valores:
 
 - Aplicación: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_APP_URL`, `COMMUNITY_ENABLED`.
 - E2E dedicado: `E2E_SUPABASE_URL`, `E2E_SUPABASE_PROJECT_REF`, `E2E_RUN_ID`, `E2E_USER_EMAIL`, `E2E_USER_PASSWORD`.
-- Puertas E2E: `E2E_TRAINER_RELATIONSHIPS_ENABLED`, `E2E_TRAINER_PROGRAMMING_ENABLED`, `E2E_TRAINER_PROGRAMMING_RETENTION_ACK`, `E2E_TRAINER_INSIGHTS_ENABLED`, `E2E_TRAINER_SECURITY_ENABLED`.
+- Puertas E2E: `E2E_TRAINER_RELATIONSHIPS_ENABLED=true`, `E2E_TRAINER_PROGRAMMING_ENABLED=true`, `E2E_TRAINER_PROGRAMMING_RETENTION_ACK=dedicated-project-reset`, `E2E_TRAINER_INSIGHTS_ENABLED=true`, `E2E_TRAINER_SECURITY_ENABLED=true`, `E2E_TRAINER_MARKETPLACE_ENABLED=true`.
+- Exclusiones obligatorias del piloto: `COMMUNITY_ENABLED=false`, `TRAINER_PAYMENTS_ENABLED=false`, `TRAINER_MESSAGING_ENABLED=false`, `TRAINER_REVIEWS_ENABLED=false`. La puerta rechaza cualquier otro valor; `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` y `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` deben estar ausentes.
 - Respaldo operativo, fuera de la aplicación: `TRAINER_DATABASE_PGSERVICE`, `RESTORE_VERIFY_PGSERVICE`, `PGSERVICEFILE`, `PGPASSFILE`, `BACKUP_AGE_RECIPIENT`, `BACKUP_AGE_IDENTITY_FILE`.
 
 `SUPABASE_SERVICE_ROLE_KEY` y los secretos de base de datos solo se usan en procesos de servidor o del operador. Las conexiones de respaldo se definen como servicios libpq en `PGSERVICEFILE`, con contraseñas en un `PGPASSFILE` de permisos `0600`; ningún URI ni contraseña se expone como `NEXT_PUBLIC_*`, argumento de línea de comandos, salida de CI o captura. Los nombres de servicio no son secretos.

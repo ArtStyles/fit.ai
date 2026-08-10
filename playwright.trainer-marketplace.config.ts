@@ -4,7 +4,11 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: 'trainer-marketplace.spec.ts',
+  testMatch: [
+    'trainer-marketplace.spec.ts',
+    'trainer-security.spec.ts',
+    'trainer-accessibility.spec.ts',
+  ],
   globalSetup: './tests/e2e/global-setup.ts',
   globalTeardown: './tests/e2e/global-teardown.ts',
   workers: 1,

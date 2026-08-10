@@ -9,10 +9,29 @@ describe('destructive trainer marketplace browser harness', () => {
     const config = source('playwright.trainer-marketplace.config.ts')
     const packageJson = JSON.parse(source('package.json')) as { scripts: Record<string, string> }
 
-    expect(config).toContain("testMatch: 'trainer-marketplace.spec.ts'")
+    expect(config).toContain("'trainer-marketplace.spec.ts'")
+    expect(config).toContain("'trainer-security.spec.ts'")
+    expect(config).toContain("'trainer-accessibility.spec.ts'")
     expect(config).toContain('reuseExistingServer: false')
     expect(config).toContain('...process.env')
     expect(packageJson.scripts['test:e2e:trainer-marketplace'])
       .toBe('playwright test --config=playwright.trainer-marketplace.config.ts')
+  })
+
+  it('drives request, acceptance, and consent through browser controls before programming setup', () => {
+    const journey = source('tests/e2e/trainer-marketplace.spec.ts')
+    const request = journey.indexOf("getByRole('button', { name: 'Enviar solicitud'")
+    const acceptance = journey.indexOf("getByRole('button', { name: 'Aceptar'")
+    const consent = journey.indexOf("getByRole('button', { name: 'Autorizar medidas corporales'")
+    const programming = journey.indexOf('await seedTrainerProgrammingFixture')
+
+    expect(request).toBeGreaterThan(-1)
+    expect(acceptance).toBeGreaterThan(request)
+    expect(consent).toBeGreaterThan(acceptance)
+    expect(programming).toBeGreaterThan(consent)
+    expect(journey).toContain('await requestCoachingThroughBrowser(page, relationships.trainerA.slug')
+    expect(journey).toContain('await requestCoachingThroughBrowser(page, relationships.trainerB.slug')
+    expect(journey).toContain('existingRelationshipId: persistedRelationship.id')
+    expect(journey).not.toContain('exerciseTrainerRelationshipLifecycle')
   })
 })

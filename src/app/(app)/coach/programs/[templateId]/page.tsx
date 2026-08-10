@@ -26,7 +26,7 @@ export default async function CoachProgramDetailPage({ params }: { params: { tem
   const relationshipChoices = (relationshipResponse.data ?? []).map((relationship: any) => {
     const service = Array.isArray(relationship.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship.trainer_service_offerings
     const startedAt = new Intl.DateTimeFormat('es', { dateStyle: 'medium' }).format(new Date(relationship.started_at))
-    return { id: relationship.id, label: `${service?.name ?? 'AcompaÃ±amiento'} · iniciado ${startedAt} · ref. ${relationship.id.slice(0, 8)}` }
+    return { id: relationship.id, label: `${service?.name ?? 'Acompañamiento'} · iniciado ${startedAt} · ref. ${relationship.id.slice(0, 8)}` }
   })
   const revisionChoices = (assignmentResponse.data ?? []).map((assignment: any) => {
     const relationship = Array.isArray(assignment.coaching_relationships) ? assignment.coaching_relationships[0] : assignment.coaching_relationships

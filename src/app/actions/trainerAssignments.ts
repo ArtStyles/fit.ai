@@ -33,10 +33,10 @@ export async function proposeTrainerAssignment(formData: FormData): Promise<Prop
   const idempotencyKey = value(formData, 'idempotencyKey')
   const fieldErrors: FieldErrors = {}
 
-  if (!isUuid(relationshipId)) fieldErrors.relationshipId = 'La relaciÃ³n no es vÃ¡lida.'
-  if (!isUuid(templateId)) fieldErrors.templateId = 'La rutina no es vÃ¡lida.'
+  if (!isUuid(relationshipId)) fieldErrors.relationshipId = 'La relación no es válida.'
+  if (!isUuid(templateId)) fieldErrors.templateId = 'La rutina no es válida.'
   if (changeSummary.length > 1000) fieldErrors.changeSummary = 'El resumen no puede superar 1000 caracteres.'
-  if (!idempotencyKey || idempotencyKey.length > 200) fieldErrors.idempotencyKey = 'No se pudo identificar este envÃ­o. IntÃ©ntalo de nuevo.'
+  if (!idempotencyKey || idempotencyKey.length > 200) fieldErrors.idempotencyKey = 'No se pudo identificar este envío. Inténtalo de nuevo.'
   if (Object.keys(fieldErrors).length) return failure(fieldErrors, 'Revisa los datos de la propuesta.')
 
   const { supabase } = await requireActiveTrainerContext()
@@ -48,7 +48,7 @@ export async function proposeTrainerAssignment(formData: FormData): Promise<Prop
   })
   const proposal = Array.isArray(data) ? data[0] : data
   if (error || !proposal?.assignment_id || !proposal?.assignment_version_id || !proposal?.workout_plan_id) {
-    return failure({}, 'No se pudo enviar la rutina. Verifica que el acompaÃ±amiento siga activo y que el cliente haya dado su consentimiento.')
+    return failure({}, 'No se pudo enviar la rutina. Verifica que el acompañamiento siga activo y que el cliente haya dado su consentimiento.')
   }
 
   revalidatePath('/coaching')
@@ -67,9 +67,9 @@ export async function acceptTrainerAssignment(formData: FormData): Promise<Accep
   const idempotencyKey = value(formData, 'idempotencyKey')
   const fieldErrors: FieldErrors = {}
 
-  if (!isUuid(assignmentId)) fieldErrors.assignmentId = 'La propuesta no es vÃ¡lida.'
+  if (!isUuid(assignmentId)) fieldErrors.assignmentId = 'La propuesta no es válida.'
   if (!idempotencyKey || idempotencyKey.length > 200) {
-    fieldErrors.idempotencyKey = 'No se pudo identificar esta aceptaciÃ³n. IntÃ©ntalo de nuevo.'
+    fieldErrors.idempotencyKey = 'No se pudo identificar esta aceptación. Inténtalo de nuevo.'
   }
   if (Object.keys(fieldErrors).length) return failure(fieldErrors, 'Revisa los datos de la propuesta.')
 
@@ -80,7 +80,7 @@ export async function acceptTrainerAssignment(formData: FormData): Promise<Accep
   })
   const accepted = Array.isArray(data) ? data[0] : data
   if (error || !accepted?.assignment_id || !accepted?.workout_plan_id) {
-    return failure({}, 'No se pudo activar la rutina. Verifica que el acompaÃ±amiento siga activo e intÃ©ntalo de nuevo.')
+    return failure({}, 'No se pudo activar la rutina. Verifica que el acompañamiento siga activo e inténtalo de nuevo.')
   }
 
   revalidatePath('/coaching')

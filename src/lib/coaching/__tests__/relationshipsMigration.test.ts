@@ -32,10 +32,10 @@ describe('trainer relationships migration', () => {
 
   it('enforces the active relationship and pending duplicate invariants in the database', () => {
     expect(migration).toMatch(
-      /CREATE UNIQUE INDEX coaching_relationships_one_active_client\s+ON public\.coaching_relationships\(client_user_id\)\s+WHERE status = 'active';/i,
+      /CREATE UNIQUE INDEX IF NOT EXISTS coaching_relationships_one_active_client\s+ON public\.coaching_relationships\(client_user_id\)\s+WHERE status = 'active';/i,
     )
     expect(migration).toMatch(
-      /CREATE UNIQUE INDEX coaching_requests_one_pending_equivalent\s+ON public\.coaching_requests\s*\(client_user_id, trainer_user_id, service_id\)\s+WHERE status = 'pending';/i,
+      /CREATE UNIQUE INDEX IF NOT EXISTS coaching_requests_one_pending_equivalent\s+ON public\.coaching_requests\s*\(client_user_id, trainer_user_id, service_id\)\s+WHERE status = 'pending';/i,
     )
     expect(migration).toMatch(/CONSTRAINT coaching_relationships_client_trainer_distinct CHECK \(client_user_id <> trainer_user_id\)/i)
     expect(migration).toMatch(/CONSTRAINT coaching_requests_client_trainer_distinct CHECK \(client_user_id <> trainer_user_id\)/i)
@@ -67,7 +67,7 @@ describe('trainer relationships migration', () => {
     expect(migration).toMatch(/revoked_at TIMESTAMPTZ/i)
     expect(migration).toMatch(/granted_by UUID NOT NULL/i)
     expect(migration).toMatch(/revoked_by UUID/i)
-    expect(migration).toMatch(/CREATE UNIQUE INDEX coaching_consents_one_active_scope\s+ON public\.coaching_consents \(relationship_id, scope\)\s+WHERE revoked_at IS NULL/i)
+    expect(migration).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS coaching_consents_one_active_scope\s+ON public\.coaching_consents \(relationship_id, scope\)\s+WHERE revoked_at IS NULL/i)
     expect(migration).toMatch(/DROP CONSTRAINT IF EXISTS coaching_consents_relationship_id_scope_key/i)
   })
 

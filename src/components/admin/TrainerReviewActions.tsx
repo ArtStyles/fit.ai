@@ -297,7 +297,7 @@ export function TrainerReviewActions({
               <input type="hidden" name="applicationId" value={applicationId} />
               <h3 className="font-semibold text-amber-100">Restablecer perfil profesional</h3>
               <p className="text-xs text-muted-foreground">
-                Restablece solo el perfil profesional suspendido tras reactivar la cuenta global. No reanuda acompaÃ±amientos: cada cliente debe confirmarlo.
+                Restablece solo el perfil profesional suspendido tras reactivar la cuenta global. No reanuda acompañamientos: cada cliente debe confirmarlo.
               </p>
               <Button type="submit" disabled={pendingAction === 'reinstateProfile'} className="w-full" variant="outline">Restablecer perfil profesional</Button>
               <ActionFeedback state={states.reinstateProfile} success="Perfil profesional restablecido." />

@@ -58,7 +58,7 @@ describe('trainer verification migration', () => {
 
   it('enforces one open application per user with a partial unique index', () => {
     expect(migration).toMatch(
-      /CREATE UNIQUE INDEX trainer_applications_one_open_per_user_idx[\s\S]+ON public\.trainer_applications \(user_id\)[\s\S]+WHERE status IN \('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required'\)/i,
+      /CREATE UNIQUE INDEX IF NOT EXISTS trainer_applications_one_open_per_user_idx[\s\S]+ON public\.trainer_applications \(user_id\)[\s\S]+WHERE status IN \('draft', 'submitted', 'under_review', 'changes_requested', 'interview_required'\)/i,
     )
   })
 

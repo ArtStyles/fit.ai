@@ -82,7 +82,7 @@ export async function acceptCoachingRequest(formData: FormData): Promise<AcceptC
   const { supabase } = await requireActiveTrainerContext()
   const requestId = formString(formData, 'requestId')
   const idempotencyKey = formString(formData, 'idempotencyKey')
-  if (!requestId || !idempotencyKey) return { ok: false, error: 'No se encontrÃ³ la solicitud.' }
+  if (!requestId || !idempotencyKey) return { ok: false, error: 'No se encontró la solicitud.' }
 
   const { data, error } = await (supabase as any).rpc('accept_coaching_request', {
     request_id: requestId,
@@ -95,7 +95,7 @@ export async function acceptCoachingRequest(formData: FormData): Promise<AcceptC
       : ''
     if (message === 'COACHING_ACTIVE_RELATIONSHIP_EXISTS' || message === 'COACHING_REQUEST_NOT_PENDING') {
       revalidateCoachingPaths()
-      return { ok: false, error: 'La solicitud se actualizÃ³. Recarga la bandeja.', refreshed: true }
+      return { ok: false, error: 'La solicitud se actualizó. Recarga la bandeja.', refreshed: true }
     }
     return { ok: false, error: 'No se pudo aceptar la solicitud.' }
   }
@@ -113,12 +113,12 @@ export async function declineCoachingRequest(formData: FormData): Promise<Declin
   const { supabase } = await requireActiveTrainerContext()
   const requestId = formString(formData, 'requestId')
   const reason = formString(formData, 'reason')
-  if (!requestId) return { ok: false, error: 'No se encontrÃ³ la solicitud.' }
+  if (!requestId) return { ok: false, error: 'No se encontró la solicitud.' }
   if (reason.length > 500) return { ok: false, error: 'El motivo es demasiado largo.' }
 
   const { data, error } = await (supabase as any).rpc('decline_coaching_request', { request_id: requestId, reason })
   const result = Array.isArray(data) ? data[0] : data
-  if (error || !result?.declined_request_id) return { ok: false, error: 'La solicitud ya no estÃ¡ pendiente.' }
+  if (error || !result?.declined_request_id) return { ok: false, error: 'La solicitud ya no está pendiente.' }
 
   revalidateCoachingPaths()
   return { ok: true, requestId: result.declined_request_id }

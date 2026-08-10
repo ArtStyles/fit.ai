@@ -128,7 +128,7 @@ export function SessionClient({ workoutId, workoutName, exercises, exerciseOptio
     const result = await runSessionAuthorizationAttempt(
       () => authorizeSessionStart(state.clientSessionId, workoutId),
       () => attempt === authorizationAttemptRef.current,
-      t('No se pudo preparar la sesiÃ³n. IntÃ©ntalo nuevamente.'),
+      t('No se pudo preparar la sesión. Inténtalo nuevamente.'),
     )
     if (result.status === 'stale') return
 

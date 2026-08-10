@@ -18,7 +18,7 @@ export async function cancelCoachingRequest() {
 export async function acceptCoachingRequest() {
   const mode = new URLSearchParams(window.location.search).get('accept')
   return mode === 'conflict'
-    ? { ok: false as const, error: 'La solicitud se actualizÃ³. Recarga la bandeja.', refreshed: true }
+    ? { ok: false as const, error: 'La solicitud se actualizó. Recarga la bandeja.', refreshed: true }
     : { ok: true as const, relationshipId: 'relationship-1', acceptedRequestId: 'request-1', cancelledRequestIds: [] }
 }
 

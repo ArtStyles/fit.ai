@@ -145,7 +145,7 @@ describe('coaching request actions', () => {
     formData.set('idempotencyKey', '44444444-4444-4444-8444-444444444444')
     const { acceptCoachingRequest } = await import('../coachingRequests')
 
-    await expect(acceptCoachingRequest(formData)).resolves.toEqual({ ok: false, error: 'La solicitud se actualizÃ³. Recarga la bandeja.', refreshed: true })
+    await expect(acceptCoachingRequest(formData)).resolves.toEqual({ ok: false, error: 'La solicitud se actualizó. Recarga la bandeja.', refreshed: true })
   })
 
   it('declines only a pending request owned by the authenticated trainer', async () => {

@@ -75,7 +75,7 @@ describe('trainer assignment actions', () => {
 
     await expect(proposeTrainerAssignment(form({ relationshipId: ids.relationship, templateId: ids.template, changeSummary: '', idempotencyKey: 'key' }))).resolves.toEqual({
       ok: false,
-      error: 'No se pudo enviar la rutina. Verifica que el acompaÃ±amiento siga activo y que el cliente haya dado su consentimiento.',
+      error: 'No se pudo enviar la rutina. Verifica que el acompañamiento siga activo y que el cliente haya dado su consentimiento.',
     })
   })
 

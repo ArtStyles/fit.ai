@@ -690,7 +690,7 @@ function lockedSessionSaveUpgradeResult() {
     progressLogId: null,
     prs: [],
     progressions: [],
-    error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesión de forma segura.',
+    error: 'Esta rutina profesional requiere una actualización para guardar la sesión de forma segura.',
   }
 }
 
@@ -864,7 +864,7 @@ async function persistSessionWithoutAtomicRpc({
 
     return {
       data: null,
-      error: progressError ?? { message: 'No se pudo guardar la sesiÃ³n' },
+      error: progressError ?? { message: 'No se pudo guardar la sesión' },
     }
   }
 
@@ -1090,7 +1090,7 @@ export async function saveSession(
         progressLogId: null,
         prs: [],
         progressions: [],
-        error: 'Esta rutina profesional requiere una actualizaciÃ³n para guardar la sesiÃ³n de forma segura.',
+        error: 'Esta rutina profesional requiere una actualización para guardar la sesión de forma segura.',
       }
     }
 

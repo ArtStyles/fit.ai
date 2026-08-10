@@ -101,8 +101,14 @@ ALTER TABLE public.workout_plans
 -- rule. Historical plans remain personal and mutable.
 UPDATE public.workout_plans
 SET library_slot = 'personal', prescription_locked = FALSE
-WHERE library_slot IS DISTINCT FROM 'personal'
-   OR prescription_locked IS DISTINCT FROM FALSE;
+WHERE source_type <> 'trainer_assigned'
+  AND trainer_relationship_id IS NULL
+  AND trainer_assignment_id IS NULL
+  AND trainer_assignment_version_id IS NULL
+  AND (
+    library_slot IS DISTINCT FROM 'personal'
+    OR prescription_locked IS DISTINCT FROM FALSE
+  );
 
 ALTER TABLE public.workout_plans
   DROP CONSTRAINT IF EXISTS workout_plans_source_type_check;
@@ -1053,7 +1059,7 @@ BEGIN
   );
   PERFORM public.create_product_notification(
     v_client_user_id, 'coaching_assignment_status', 'Nueva rutina profesional',
-    'Tu entrenador te enviÃ³ una rutina para revisar.', '/coaching',
+    'Tu entrenador te envió una rutina para revisar.', '/coaching',
     'coaching-assignment-proposed:' || v_assignment_id::TEXT,
     jsonb_build_object('assignment_id', v_assignment_id, 'version_number', 1)
   );
