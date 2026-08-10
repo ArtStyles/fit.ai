@@ -95,6 +95,7 @@ En local o CI, ejecutar antes del remoto:
 ```bash
 pnpm test:db:trainers
 pnpm test:db:trainer-security
+pnpm test:db:marketplace
 pnpm audit:trainers
 pnpm test
 pnpm type-check
@@ -138,6 +139,12 @@ Esperado: RLS y FORCE RLS activos; `can_append=true`; las tres mutaciones restan
 ## Despliegue de aplicación y smoke tests
 
 Desplegar primero el esquema compatible y luego la aplicación. Con cuentas sintéticas o del proyecto E2E dedicado, verificar:
+
+```bash
+pnpm test:e2e:trainer-marketplace
+```
+
+Este es el único comando autorizado para el journey destructivo del marketplace: inicia un servidor Next nuevo con el mismo entorno del proceso y `reuseExistingServer=false`. No ejecutar `trainer-marketplace.spec.ts` mediante `pnpm test:e2e` ni contra un servidor ambiental, porque podría apuntar a otro proyecto Supabase.
 
 1. Solicitante guarda, adjunta una credencial permitida y envía una solicitud.
 2. Administración inicia revisión, solicita cambios, agenda una entrevista externa, registra el resultado y decide.

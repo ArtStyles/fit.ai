@@ -69,8 +69,8 @@ INSERT INTO public.profiles (id, avatar_url, onboarding_done, account_status, is
   ('76000000-0000-4000-8000-000000000001', 'https://example.test/security-trainer.webp', TRUE, 'active', FALSE),
   ('76000000-0000-4000-8000-000000000002', 'https://example.test/security-client.webp', TRUE, 'active', FALSE),
   ('76000000-0000-4000-8000-000000000003', 'https://example.test/security-admin.webp', TRUE, 'active', TRUE);
-INSERT INTO public.trainer_applications (id, user_id) VALUES
-  ('76000000-0000-4000-8000-000000000011', '76000000-0000-4000-8000-000000000001');
+INSERT INTO public.trainer_applications (id, user_id, status, submitted_at, decided_at) VALUES
+  ('76000000-0000-4000-8000-000000000011', '76000000-0000-4000-8000-000000000001', 'approved', NOW(), NOW());
 INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
   ('76000000-0000-4000-8000-000000000021', '76000000-0000-4000-8000-000000000001', '76000000-0000-4000-8000-000000000011', 'security-trainer', 'active', 'Security trainer', 'Security fixture', 'Security evidence');
 INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
@@ -205,6 +205,123 @@ $$;
 SELECT dblink_disconnect('security_accept_publish_suspend_a');
 SELECT dblink_disconnect('security_accept_publish_suspend_b');
 SELECT dblink_disconnect('security_accept_publish_suspend_db_boundary');
+
+-- Reactivation + profile reinstatement is one fail-closed service boundary.
+-- It restores only the approved professional account; client relationships and
+-- revoked scopes remain paused until the client explicitly renews consent.
+SELECT set_config('request.jwt.claim.sub', '76000000-0000-4000-8000-000000000003', false);
+SELECT set_config('request.jwt.claim.role', 'authenticated', false);
+SET ROLE authenticated;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.reactivate_and_reinstate_trainer(
+      '76000000-0000-4000-8000-000000000001',
+      '76000000-0000-4000-8000-000000000003');
+    RAISE EXCEPTION 'authenticated caller reached atomic reinstatement';
+  EXCEPTION WHEN insufficient_privilege THEN
+    IF SQLERRM <> 'permission denied for function reactivate_and_reinstate_trainer' THEN RAISE; END IF;
+  END;
+END;
+$$;
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '', false);
+SELECT set_config('request.jwt.claim.role', 'anon', false);
+SET ROLE anon;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.reactivate_and_reinstate_trainer(
+      '76000000-0000-4000-8000-000000000001',
+      '76000000-0000-4000-8000-000000000003');
+    RAISE EXCEPTION 'anonymous caller reached atomic reinstatement';
+  EXCEPTION WHEN insufficient_privilege THEN
+    IF SQLERRM <> 'permission denied for function reactivate_and_reinstate_trainer' THEN RAISE; END IF;
+  END;
+END;
+$$;
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '', false);
+SELECT set_config('request.jwt.claim.role', 'service_role', false);
+SET ROLE service_role;
+DO $$
+DECLARE
+  v_result RECORD;
+BEGIN
+  BEGIN
+    PERFORM public.reactivate_and_reinstate_trainer(
+      '76000000-0000-4000-8000-000000000001',
+      '76000000-0000-4000-8000-000000000099');
+    RAISE EXCEPTION 'invalid admin unexpectedly reinstated trainer';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'ADMIN_REINSTATEMENT_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  IF (SELECT account_status FROM public.profiles WHERE id = '76000000-0000-4000-8000-000000000001') <> 'suspended'
+    OR (SELECT status FROM public.trainer_profiles WHERE user_id = '76000000-0000-4000-8000-000000000001') <> 'suspended'
+    OR EXISTS (SELECT 1 FROM public.admin_audit_logs WHERE target_user_id = '76000000-0000-4000-8000-000000000001' AND action IN ('account_reactivated', 'trainer_profile_reinstated')) THEN
+    RAISE EXCEPTION 'invalid admin left a partial reinstatement';
+  END IF;
+
+  BEGIN
+    PERFORM public.reactivate_and_reinstate_trainer(
+      '76000000-0000-4000-8000-000000000099',
+      '76000000-0000-4000-8000-000000000003');
+    RAISE EXCEPTION 'missing target unexpectedly reinstated';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'ADMIN_REINSTATEMENT_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+
+  SELECT * INTO STRICT v_result
+  FROM public.reactivate_and_reinstate_trainer(
+    '76000000-0000-4000-8000-000000000001',
+    '76000000-0000-4000-8000-000000000003');
+  IF v_result.account_reactivated IS DISTINCT FROM TRUE
+    OR v_result.profile_reinstated IS DISTINCT FROM TRUE
+    OR (SELECT account_status FROM public.profiles WHERE id = '76000000-0000-4000-8000-000000000001') <> 'active'
+    OR (SELECT status FROM public.trainer_profiles WHERE user_id = '76000000-0000-4000-8000-000000000001') <> 'active'
+    OR (SELECT status FROM public.trainer_applications WHERE id = '76000000-0000-4000-8000-000000000011') <> 'approved'
+    OR (SELECT status FROM public.coaching_relationships WHERE id = '76000000-0000-4000-8000-000000000041') <> 'paused_by_platform'
+    OR EXISTS (SELECT 1 FROM public.coaching_consents WHERE relationship_id = '76000000-0000-4000-8000-000000000041' AND revoked_at IS NULL) THEN
+    RAISE EXCEPTION 'atomic reinstatement did not restore only the intended professional state';
+  END IF;
+
+  IF (SELECT count(*) FROM public.admin_audit_logs
+      WHERE admin_user_id = '76000000-0000-4000-8000-000000000003'
+        AND target_user_id = '76000000-0000-4000-8000-000000000001'
+        AND action = 'account_reactivated' AND reason IS NULL AND metadata = '{}'::JSONB) <> 1
+    OR (SELECT count(*) FROM public.admin_audit_logs
+      WHERE admin_user_id = '76000000-0000-4000-8000-000000000003'
+        AND target_user_id = '76000000-0000-4000-8000-000000000001'
+        AND action = 'trainer_profile_reinstated' AND reason IS NULL
+        AND metadata = jsonb_build_object('trainer_profile_id', '76000000-0000-4000-8000-000000000021'::UUID)) <> 1
+    OR (SELECT count(*) FROM public.professional_audit_logs
+      WHERE actor_user_id = '76000000-0000-4000-8000-000000000003'
+        AND subject_user_id = '76000000-0000-4000-8000-000000000001'
+        AND entity_type = 'trainer_profile'
+        AND entity_id = '76000000-0000-4000-8000-000000000021'
+        AND action = 'reinstated' AND metadata = '{}'::JSONB) <> 1 THEN
+    RAISE EXCEPTION 'atomic reinstatement audit contract is missing, duplicated, or unsanitized';
+  END IF;
+
+  BEGIN
+    PERFORM public.reactivate_and_reinstate_trainer(
+      '76000000-0000-4000-8000-000000000001',
+      '76000000-0000-4000-8000-000000000003');
+    RAISE EXCEPTION 'active target unexpectedly accepted reinstatement';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'ADMIN_REINSTATEMENT_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  IF (SELECT count(*) FROM public.admin_audit_logs
+      WHERE target_user_id = '76000000-0000-4000-8000-000000000001'
+        AND action IN ('account_reactivated', 'trainer_profile_reinstated')) <> 2
+    OR (SELECT account_status FROM public.profiles WHERE id = '76000000-0000-4000-8000-000000000001') <> 'active'
+    OR (SELECT status FROM public.coaching_relationships WHERE id = '76000000-0000-4000-8000-000000000041') <> 'paused_by_platform' THEN
+    RAISE EXCEPTION 'invalid target state duplicated audit or partially mutated state';
+  END IF;
+END;
+$$;
+RESET ROLE;
 
 -- Two revision attempts use distinct connections for one actor. They serialize
 -- in SQL and receive distinct version numbers; exactly one final version/plan
@@ -430,6 +547,12 @@ SELECT count(*) AS total
 FROM public.professional_audit_logs
 WHERE actor_user_id::TEXT LIKE '76000000-0000-4000-8000-%'
    OR subject_user_id::TEXT LIKE '76000000-0000-4000-8000-%';
+CREATE TEMP TABLE security_preserved_admin_audit AS
+SELECT id, action, reason, metadata, created_at,
+  admin_user_id_snapshot, target_user_id_snapshot
+FROM public.admin_audit_logs
+WHERE admin_user_id_snapshot::TEXT LIKE '76000000-0000-4000-8000-%'
+   OR target_user_id_snapshot::TEXT LIKE '76000000-0000-4000-8000-%';
 SELECT set_config('request.jwt.claim.sub', '76000000-0000-4000-8000-000000000003', false);
 SELECT set_config('request.jwt.claim.role', 'authenticated', false);
 SET ROLE authenticated;
@@ -530,6 +653,25 @@ BEGIN
        <> (SELECT total FROM security_preserved_audit_count)
   THEN
     RAISE EXCEPTION 'trainer security cleanup deleted append-only audit evidence';
+  END IF;
+  IF (SELECT count(*) FROM security_preserved_admin_audit) = 0
+    OR EXISTS (
+      SELECT * FROM security_preserved_admin_audit
+      EXCEPT
+      SELECT id, action, reason, metadata, created_at,
+        admin_user_id_snapshot, target_user_id_snapshot
+      FROM public.admin_audit_logs
+      WHERE id IN (SELECT id FROM security_preserved_admin_audit)
+    )
+    OR EXISTS (
+      SELECT id, action, reason, metadata, created_at,
+        admin_user_id_snapshot, target_user_id_snapshot
+      FROM public.admin_audit_logs
+      WHERE id IN (SELECT id FROM security_preserved_admin_audit)
+      EXCEPT
+      SELECT * FROM security_preserved_admin_audit
+    ) THEN
+    RAISE EXCEPTION 'trainer security cleanup altered retained administrative audit evidence';
   END IF;
 END;
 $$;

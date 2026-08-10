@@ -100,19 +100,21 @@ SELECT is(
   '75705cba20975d9c9cab7ae8d7994268',
   'effective anon/authenticated column ACLs match the reviewed allowlist'
 );
-SELECT is(
-  (SELECT owner.rolname
+SELECT ok(
+  (SELECT count(*) = 2 AND bool_and(owner.rolname = 'postgres')
    FROM pg_proc function
    JOIN pg_roles owner ON owner.oid = function.proowner
-   WHERE function.oid = 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])'::regprocedure),
-  'postgres',
-  'trainer security fixture cleanup remains postgres-owned after migration rerun'
+   WHERE function.oid IN (
+     'public.cleanup_trainer_security_e2e_fixture(text,uuid[])'::regprocedure,
+     'public.reactivate_and_reinstate_trainer(uuid,uuid)'::regprocedure
+   )),
+  'trainer security cleanup and atomic reinstatement remain postgres-owned after migration rerun'
 );
 SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  'e49a9463eb9f9ee5d1a3733167a4b6b2',
+  '2f753d604695cad584608aed13d6570c',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -123,6 +125,9 @@ SELECT ok(NOT EXISTS (
 SELECT ok(
   has_function_privilege('service_role', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.reactivate_and_reinstate_trainer(uuid,uuid)', 'EXECUTE')
+  AND NOT has_function_privilege('authenticated', 'public.reactivate_and_reinstate_trainer(uuid,uuid)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.reactivate_and_reinstate_trainer(uuid,uuid)', 'EXECUTE')
   AND has_function_privilege('service_role', 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.require_active_coaching_admin(uuid)', 'EXECUTE')
@@ -139,7 +144,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  'ca5fd1fb5de789d16af77d89118b55f8',
+  'e34e6aa10a2f6acf2043e12cde2079f3',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
 );
 

@@ -16,6 +16,7 @@ const migrations = [40, 41, 42, 43, 44, 45].map(number => readFileSync(
 const sql = migrations.join('\n')
 const hardening = migrations.at(-1)!
 const runner = readFileSync(new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url), 'utf8')
+const relationshipsHelper = readFileSync(new URL('../../../../tests/e2e/helpers/core-product.ts', import.meta.url), 'utf8')
 const runbook = readFileSync(new URL('../../../../docs/operations/trainer-marketplace-runbook.md', import.meta.url), 'utf8')
 
 function functionBody(name: string): string {
@@ -105,6 +106,16 @@ describe('trainer professional audit coverage', () => {
     expect(hardening).toMatch(/REVOKE ALL ON TABLE public\.professional_audit_logs FROM service_role/i)
     expect(hardening).toMatch(/GRANT SELECT, INSERT ON TABLE public\.professional_audit_logs TO service_role/i)
     expect(functionBody('cleanup_trainer_security_e2e_fixture')).not.toMatch(/DELETE FROM public\.professional_audit_logs/i)
+    expect(functionBody('cleanup_trainer_security_e2e_fixture')).not.toMatch(/DELETE FROM public\.admin_audit_logs/i)
+    expect(functionBody('cleanup_trainer_security_e2e_fixture')).not.toMatch(/UPDATE public\.admin_audit_logs/i)
+    expect(relationshipsHelper).not.toContain("'admin_audit_logs'")
+    expect(relationshipsHelper).not.toContain("'professional_audit_logs'")
+    expect(hardening).toContain('admin_user_id_snapshot UUID')
+    expect(hardening).toContain('target_user_id_snapshot UUID')
+    const snapshotBody = functionBody('snapshot_admin_audit_identity')
+    expect(snapshotBody).toContain('NEW.admin_user_id_snapshot := NEW.admin_user_id')
+    expect(snapshotBody).toContain('NEW.target_user_id_snapshot := NEW.target_user_id')
+    expect(hardening).toMatch(/BEFORE INSERT ON public\.admin_audit_logs[\s\S]+snapshot_admin_audit_identity/i)
     expect(hardening).not.toMatch(/audit_retention|audit_bypass|professional_audit_mutation/i)
   })
 

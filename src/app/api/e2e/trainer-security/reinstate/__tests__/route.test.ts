@@ -2,27 +2,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 vi.mock('@/lib/coaching/trainerSecurityAdmin', () => ({
-  suspendTrainerThroughAuthenticatedAdmin: vi.fn(),
+  reinstateTrainerThroughAuthenticatedAdmin: vi.fn(),
 }))
 
-import { suspendTrainerThroughAuthenticatedAdmin } from '@/lib/coaching/trainerSecurityAdmin'
+import { reinstateTrainerThroughAuthenticatedAdmin } from '@/lib/coaching/trainerSecurityAdmin'
 import { POST } from '../route'
 
-const suspendMock = vi.mocked(suspendTrainerThroughAuthenticatedAdmin)
+const reinstateMock = vi.mocked(reinstateTrainerThroughAuthenticatedAdmin)
 
 function request(token = 'admin-token') {
-  return new NextRequest('http://localhost/api/e2e/trainer-security/suspend', {
+  return new NextRequest('http://localhost/api/e2e/trainer-security/reinstate', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2' }),
   })
 }
 
-describe('trainer security E2E admin suspension route', () => {
+describe('trainer marketplace E2E admin reinstatement route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('NODE_ENV', 'test')
-    vi.stubEnv('E2E_RUN_ID', 'suspend-route-run')
+    vi.stubEnv('E2E_RUN_ID', 'route-gate-run')
     vi.stubEnv('E2E_TRAINER_RELATIONSHIPS_ENABLED', 'true')
     vi.stubEnv('E2E_TRAINER_PROGRAMMING_ENABLED', 'true')
     vi.stubEnv('E2E_TRAINER_PROGRAMMING_RETENTION_ACK', 'dedicated-project-reset')
@@ -37,53 +37,37 @@ describe('trainer security E2E admin suspension route', () => {
     vi.stubEnv('STRIPE_WEBHOOK_SECRET', '')
     vi.stubEnv('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY', '')
   })
-
   afterEach(() => vi.unstubAllEnvs())
 
-  it('passes the authenticated admin token into the server-only boundary', async () => {
-    suspendMock.mockResolvedValue({ accountSuspended: true })
-
+  it('passes an authenticated admin token into the server-only boundary', async () => {
+    reinstateMock.mockResolvedValue({ accountReactivated: true, profileReinstated: true })
     const response = await POST(request())
-
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ accountSuspended: true })
-    expect(suspendMock).toHaveBeenCalledWith({
+    expect(await response.json()).toEqual({ accountReactivated: true, profileReinstated: true })
+    expect(reinstateMock).toHaveBeenCalledWith({
       accessToken: 'admin-token',
       targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
-      reason: 'Trainer security concurrency test',
     })
   })
 
-  it('does not expose the service boundary outside the explicit security run', async () => {
-    delete process.env.E2E_TRAINER_SECURITY_ENABLED
-
-    const response = await POST(request())
-
-    expect(response.status).toBe(404)
-    expect(suspendMock).not.toHaveBeenCalled()
-  })
-
-  it('stays unavailable in production even if the E2E flag is misconfigured', async () => {
+  it('is unavailable outside the explicit non-production marketplace run', async () => {
     vi.stubEnv('NODE_ENV', 'production')
-
     const response = await POST(request())
-
     expect(response.status).toBe(404)
-    expect(suspendMock).not.toHaveBeenCalled()
+    expect(reinstateMock).not.toHaveBeenCalled()
   })
 
   it.each([
-    ['E2E_RUN_ID', ''],
-    ['E2E_TRAINER_MARKETPLACE_ENABLED', 'false'],
+    ['E2E_TRAINER_SECURITY_ENABLED', 'false'],
     ['COMMUNITY_ENABLED', 'true'],
     ['TRAINER_PAYMENTS_ENABLED', 'true'],
     ['TRAINER_MESSAGING_ENABLED', 'true'],
     ['TRAINER_REVIEWS_ENABLED', 'true'],
     ['STRIPE_SECRET_KEY', 'sk_test_forbidden'],
-  ])('is unavailable when %s=%s violates the full pilot gate', async (name, value) => {
+  ])('is unavailable when %s=%s violates the complete pilot gate', async (name, value) => {
     vi.stubEnv(name, value)
     const response = await POST(request())
     expect(response.status).toBe(404)
-    expect(suspendMock).not.toHaveBeenCalled()
+    expect(reinstateMock).not.toHaveBeenCalled()
   })
 })

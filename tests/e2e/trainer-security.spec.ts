@@ -1,7 +1,6 @@
 import { expect, test } from './fixtures'
 import {
   createTrainerE2EAdminClient,
-  isTrainerSecurityE2EEnabled,
 } from './helpers/core-product'
 import {
   TRAINER_SECURITY_ID_FIELDS,
@@ -15,6 +14,7 @@ import {
   requireDeniedGenericOutcome,
   runPreparedTrainerSecurityRace,
   runTrainerSecurityFixtureAfterPreflight,
+  isTrainerMarketplaceE2EEnabled,
 } from './helpers/trainer-marketplace'
 
 test.describe.configure({ mode: 'serial' })
@@ -41,8 +41,8 @@ async function preflightAndSeed<T>(seed: () => Promise<T>): Promise<T> {
 }
 
 test('concurrent trainer workflows linearize without duplicate or partial state', async ({ trainerSecurityScope }) => {
-  test.skip(!isTrainerSecurityE2EEnabled(process.env),
-    'Requires dedicated E2E credentials, migrations 042-045, immutable-reset acknowledgement, and E2E_TRAINER_SECURITY_ENABLED=true.')
+  test.skip(!isTrainerMarketplaceE2EEnabled(process.env),
+    'Requires the complete fail-closed trainer marketplace E2E gate and migrations 042-045.')
   test.setTimeout(900_000)
 
   // Each scenario owns separately authenticated Supabase clients. The local
@@ -138,7 +138,7 @@ test('concurrent trainer workflows linearize without duplicate or partial state'
 })
 
 test('missing and foreign IDs return the same generic outcome and change zero rows', async ({ trainerSecurityScope }) => {
-  test.skip(!isTrainerSecurityE2EEnabled(process.env), 'Requires the dedicated trainer security environment.')
+  test.skip(!isTrainerMarketplaceE2EEnabled(process.env), 'Requires the complete fail-closed trainer marketplace E2E gate.')
   test.setTimeout(600_000)
   await runPreparedTrainerSecurityRace({
     prepare: () => preflightAndSeed(() => prepareAuthoritativeIdorRace(`${trainerSecurityScope}-idor`)),

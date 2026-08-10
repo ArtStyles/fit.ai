@@ -152,7 +152,10 @@ export type TrainerInsightsFixture = TrainerProgrammingFixture & {
   readProfessionalInsightSessionIds(): Promise<string[]>
 }
 
-type TrainerFixtureSeedOptions = { skipReadiness?: boolean }
+type TrainerFixtureSeedOptions = {
+  skipReadiness?: boolean
+  relationshipsFixture?: TrainerRelationshipsFixture
+}
 
 type TrainerRelationshipRows = {
   relationshipId: string
@@ -699,7 +702,7 @@ export async function seedTrainerProgrammingFixture(
 ): Promise<TrainerProgrammingFixture> {
   if (!options.skipReadiness) await assertTrainerProgrammingE2EReady()
   const config = requireE2EConfig(process.env)
-  const fixture = await seedTrainerRelationshipsFixture(scope, options)
+  const fixture = options.relationshipsFixture ?? await seedTrainerRelationshipsFixture(scope, options)
   let programmingPublished = false
   try {
     const relationship = await exerciseTrainerRelationshipLifecycle(fixture)
@@ -1054,8 +1057,6 @@ async function cleanupTrainerRelationshipsAccount(service: SupabaseClient, userI
   assertNoError(applicationsError, 'Removing stale trainer relationship applications')
   for (const [table, column] of [
     ['product_notifications', 'user_id'],
-    ['admin_audit_logs', 'admin_user_id'],
-    ['admin_audit_logs', 'target_user_id'],
   ] as const) {
     const { error } = await (service.from(table) as any).delete().eq(column, userId)
     assertNoError(error, `Removing stale ${table}`)

@@ -686,6 +686,33 @@ $$;
 ALTER FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
 
+-- Preserve durable audit correlation at insertion time. The legacy foreign
+-- keys intentionally become NULL when an account is deleted, while these
+-- non-FK snapshots remain immutable evidence for operations and incident
+-- review. Cleanup never edits either audit table.
+ALTER TABLE public.admin_audit_logs
+  ADD COLUMN IF NOT EXISTS admin_user_id_snapshot UUID,
+  ADD COLUMN IF NOT EXISTS target_user_id_snapshot UUID;
+
+CREATE OR REPLACE FUNCTION public.snapshot_admin_audit_identity()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  NEW.admin_user_id_snapshot := NEW.admin_user_id;
+  NEW.target_user_id_snapshot := NEW.target_user_id;
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION public.snapshot_admin_audit_identity() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.snapshot_admin_audit_identity() FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS snapshot_admin_audit_identity ON public.admin_audit_logs;
+CREATE TRIGGER snapshot_admin_audit_identity
+  BEFORE INSERT ON public.admin_audit_logs
+  FOR EACH ROW EXECUTE FUNCTION public.snapshot_admin_audit_identity();
+
 -- Metadata is reduced to exact keys and value domains. This pure helper is
 -- shared by the one-time legacy redaction and every future insert.
 CREATE OR REPLACE FUNCTION public.sanitize_professional_audit_metadata(
@@ -1486,11 +1513,94 @@ REVOKE ALL ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT
 GRANT EXECUTE ON FUNCTION public.create_product_notification(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB)
   TO service_role;
 
+-- Account reactivation and professional reinstatement form one transaction:
+-- any failed audit or profile transition rolls the global account back too.
+CREATE OR REPLACE FUNCTION public.reactivate_and_reinstate_trainer(
+  p_user_id UUID,
+  p_admin_id UUID
+)
+RETURNS TABLE(account_reactivated BOOLEAN, profile_reinstated BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_profile RECORD;
+  v_trainer_profile RECORD;
+  v_profile_reinstated BOOLEAN;
+BEGIN
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'ADMIN_REINSTATEMENT_SERVICE_REQUIRED';
+  END IF;
+  BEGIN
+    PERFORM public.require_active_coaching_admin(p_admin_id);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_REINSTATEMENT_UNAVAILABLE';
+  END;
+
+  -- Match suspension/activation serialization before taking the account and
+  -- professional row locks in their established order.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::TEXT, 0));
+
+  SELECT account_status, suspension_reason, suspended_at, suspended_until, suspended_by
+  INTO v_profile
+  FROM public.profiles
+  WHERE id = p_user_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_profile.account_status <> 'suspended' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_REINSTATEMENT_UNAVAILABLE';
+  END IF;
+
+  SELECT profile.id, profile.status, profile.source_application_id
+  INTO v_trainer_profile
+  FROM public.trainer_profiles profile
+  JOIN public.trainer_applications application
+    ON application.id = profile.source_application_id
+   AND application.status = 'approved'
+  WHERE profile.user_id = p_user_id
+  FOR UPDATE OF profile, application;
+  IF NOT FOUND OR v_trainer_profile.status <> 'suspended' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_REINSTATEMENT_UNAVAILABLE';
+  END IF;
+
+  UPDATE public.profiles
+  SET account_status = 'active',
+      suspension_reason = NULL,
+      suspended_at = NULL,
+      suspended_until = NULL,
+      suspended_by = NULL
+  WHERE id = p_user_id;
+
+  IF v_profile.account_status IS DISTINCT FROM 'active'
+     OR v_profile.suspension_reason IS NOT NULL
+     OR v_profile.suspended_at IS NOT NULL
+     OR v_profile.suspended_until IS NOT NULL
+     OR v_profile.suspended_by IS NOT NULL THEN
+    INSERT INTO public.admin_audit_logs (admin_user_id, target_user_id, action, reason, metadata)
+    VALUES (p_admin_id, p_user_id, 'account_reactivated', NULL, '{}'::JSONB);
+  END IF;
+
+  SELECT result.profile_reinstated
+  INTO v_profile_reinstated
+  FROM public.reinstate_trainer_profile(p_user_id, p_admin_id) result;
+  IF v_profile_reinstated IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_REINSTATEMENT_UNAVAILABLE';
+  END IF;
+
+  RETURN QUERY SELECT TRUE, TRUE;
+END;
+$$;
+
+ALTER FUNCTION public.reactivate_and_reinstate_trainer(UUID, UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.reactivate_and_reinstate_trainer(UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reactivate_and_reinstate_trainer(UUID, UUID) TO service_role;
+
 -- Exact, reversible cleanup for opt-in trainer-security fixtures. This is not
 -- a project reset: every target must be named explicitly and carry the same
 -- E2E run marker in auth metadata. The service-role grant lets the server-side
 -- E2E harness remove immutable professional materializations in dependency
--- order without weakening any authenticated production boundary.
+-- order without weakening any authenticated production boundary. Audit rows
+-- are deliberately excluded from cleanup.
 CREATE OR REPLACE FUNCTION public.cleanup_trainer_security_e2e_fixture(
   p_run_id TEXT,
   p_user_ids UUID[]
@@ -1498,7 +1608,7 @@ CREATE OR REPLACE FUNCTION public.cleanup_trainer_security_e2e_fixture(
 RETURNS INTEGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth, pg_temp
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_target_ids UUID[];
@@ -1585,8 +1695,6 @@ BEGIN
   DELETE FROM public.product_notifications notification WHERE notification.user_id = ANY(v_target_ids);
   DELETE FROM public.product_push_tokens token WHERE token.user_id = ANY(v_target_ids);
   DELETE FROM public.product_notification_preferences preference WHERE preference.user_id = ANY(v_target_ids);
-  DELETE FROM public.admin_audit_logs audit
-  WHERE audit.admin_user_id = ANY(v_target_ids) OR audit.target_user_id = ANY(v_target_ids);
 
   DELETE FROM auth.users target WHERE target.id = ANY(v_target_ids);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
@@ -1616,6 +1724,8 @@ BEGIN
     OR to_regprocedure('public.accept_trainer_assignment(uuid,text)') IS NULL
     OR to_regprocedure('public.publish_trainer_assignment_revision(uuid,uuid,text,text)') IS NULL
     OR to_regprocedure('public.get_coach_client_insights(uuid,date,date)') IS NULL
+    OR to_regprocedure('public.snapshot_admin_audit_identity()') IS NULL
+    OR to_regprocedure('public.reactivate_and_reinstate_trainer(uuid,uuid)') IS NULL
     OR to_regprocedure('public.cleanup_trainer_security_e2e_fixture(text,uuid[])') IS NULL THEN
     RAISE EXCEPTION 'TRAINER_SECURITY_SCHEMA_INCOMPLETE';
   END IF;

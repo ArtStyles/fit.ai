@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { isTrainerMarketplacePilotGateEnabled } from '../../../src/lib/features/trainerMarketplacePilot'
 import {
   cleanupTrainerRelationshipsFixture,
   isTrainerSecurityE2EEnabled,
@@ -29,7 +30,6 @@ export const TRAINER_SECURITY_PREFLIGHT_ERROR =
   'Trainer security migrations 042, 043, 044, and 045 must be deployed before fixture writes'
 
 type TrainerSecurityReadOnlyClient = {
-  from(table: string): { select(columns: string): { limit(count: number): PromiseLike<{ error: QueryError }> } }
   rpc(name: string, args?: Record<string, unknown>): PromiseLike<{ data?: unknown; error: QueryError }>
 }
 
@@ -39,26 +39,17 @@ export type TrainerSecurityProbeResult = { tableError: QueryError; marker: numbe
 export async function probeTrainerSecurityReadOnly(
   service: TrainerSecurityReadOnlyClient,
 ): Promise<TrainerSecurityProbeResult> {
-  const [tables, markerResult] = await Promise.all([
-    Promise.all([
-      service.from('trainer_applications').select('id').limit(1),
-      service.from('trainer_application_credentials').select('id').limit(1),
-      service.from('coaching_requests').select('id,status').limit(1),
-      service.from('coaching_relationships').select('id,status').limit(1),
-      service.from('trainer_program_templates').select('id,status').limit(1),
-      service.from('trainer_plan_assignments').select('id,status').limit(1),
-      service.from('trainer_assignment_versions').select('id,version_number').limit(1),
-      service.from('workout_plans').select('id,is_active').limit(1),
-      service.from('progress_logs').select('id,client_session_id').limit(1),
-      service.from('professional_audit_logs').select('id,entity_type').limit(1),
-    ]),
-    service.rpc('trainer_security_preflight'),
-  ])
+  const markerResult = await service.rpc('trainer_security_preflight')
 
   return {
-    tableError: tables.find(result => result.error)?.error ?? null,
+    tableError: markerResult.error,
     marker: markerResult.error || markerResult.data !== 45 ? null : 45,
   }
+}
+
+export function isTrainerMarketplaceE2EEnabled(env: NodeJS.ProcessEnv): boolean {
+  return isTrainerSecurityE2EEnabled(env)
+    && isTrainerMarketplacePilotGateEnabled(env)
 }
 
 export async function assertTrainerSecuritySchemaReady(dependencies: {
@@ -280,6 +271,121 @@ async function suspendThroughAuthenticatedAdmin(
   return response.ok
     ? { data: body, error: null }
     : { data: null, error: { message: typeof body?.error === 'string' ? body.error : 'ADMIN_SUSPENSION_FAILED' } }
+}
+
+async function reinstateThroughAuthenticatedAdmin(
+  admin: SupabaseClient,
+  targetUserId: string,
+): Promise<RpcResult> {
+  const { data: session, error: sessionError } = await admin.auth.getSession()
+  const accessToken = session.session?.access_token
+  if (sessionError || !accessToken) return { data: null, error: { message: 'ADMIN_AUTH_REQUIRED' } }
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000'
+  const response = await fetch(`${baseUrl}/api/e2e/trainer-security/reinstate`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ targetUserId }),
+  })
+  const body = await response.json().catch(() => null)
+  return response.ok
+    ? { data: body, error: null }
+    : { data: null, error: { message: typeof body?.error === 'string' ? body.error : 'ADMIN_REINSTATEMENT_FAILED' } }
+}
+
+/** Ends the programmed relationship, then proves suspension and reinstatement
+ * through a real authenticated administrator boundary. The new paused
+ * relationship resumes only when its client explicitly consents again. */
+export async function suspendReinstateAndResumeThroughAuthenticatedAdmin(
+  fixture: TrainerProgrammingFixture,
+): Promise<string> {
+  const ended = await (fixture.client.client.rpc as any)('end_coaching_relationship', {
+    p_relationship_id: fixture.relationshipId,
+    p_reason: 'Marketplace journey relationship closure.',
+    p_idempotency_key: randomUUID(),
+  })
+  if (ended.error) throw new Error('Could not end the marketplace relationship')
+  const [{ data: endedState, error: endedError }, deniedInsights, { data: frozenAssignments, error: assignmentError }, { data: inactivePlans, error: planError }] = await Promise.all([
+    (fixture.service.from('coaching_relationships') as any).select('status,ended_at').eq('id', fixture.relationshipId).maybeSingle(),
+    (fixture.trainerA.client.rpc as any)('get_coach_client_insights', {
+      p_client_id: fixture.client.id,
+      p_from_date: '2020-01-01',
+      p_to_date: '2035-01-01',
+    }),
+    (fixture.service.from('trainer_plan_assignments') as any).select('status').eq('relationship_id', fixture.relationshipId),
+    (fixture.service.from('workout_plans') as any).select('is_active').eq('trainer_relationship_id', fixture.relationshipId),
+  ])
+  if (endedError || endedState?.status !== 'ended' || !endedState.ended_at) {
+    throw new Error('Marketplace relationship end was not persisted')
+  }
+  if (deniedInsights.error?.message !== 'COACH_CLIENT_INSIGHTS_UNAVAILABLE') {
+    throw new Error('Ended marketplace relationship did not cut off trainer evidence access')
+  }
+  if (assignmentError || (frozenAssignments ?? []).length === 0
+    || !(frozenAssignments ?? []).every((assignment: { status: string }) => assignment.status === 'frozen')) {
+    throw new Error('Ended marketplace relationship did not freeze its professional assignment')
+  }
+  if (planError || (inactivePlans ?? []).length === 0
+    || !(inactivePlans ?? []).every((plan: { is_active: boolean }) => plan.is_active === false)) {
+    throw new Error('Ended marketplace relationship left a professional plan active')
+  }
+
+  const requested = await (fixture.client.client.rpc as any)('create_coaching_request', {
+    service_id: fixture.trainerA.serviceId,
+    message: 'Marketplace relationship prepared for suspension and explicit resume.',
+    consent_version: 'training-profile-v1',
+    idempotency_key: randomUUID(),
+  })
+  const requestId = requested.data?.[0]?.request_id
+  if (requested.error || !requestId) throw new Error('Could not create the marketplace resume request')
+  fixture.created.requestIds.push(requestId)
+  const accepted = await (fixture.trainerA.client.rpc as any)('accept_coaching_request', {
+    request_id: requestId,
+    idempotency_key: randomUUID(),
+  })
+  const relationshipId = accepted.data?.[0]?.relationship_id
+  if (accepted.error || !relationshipId) throw new Error('Could not accept the marketplace resume request')
+  fixture.created.relationshipIds.push(relationshipId)
+
+  const admin = await independentActor(fixture.admin.email, fixture.password)
+  try {
+    const suspended = await suspendThroughAuthenticatedAdmin(admin, fixture.trainerA.id)
+    if (suspended.error || (suspended.data as { accountSuspended?: boolean } | null)?.accountSuspended !== true) {
+      throw new Error('Authenticated administrator could not suspend the marketplace trainer')
+    }
+    const { data: paused, error: pausedError } = await (fixture.service.from('coaching_relationships') as any)
+      .select('status').eq('id', relationshipId).maybeSingle()
+    if (pausedError || paused?.status !== 'paused_by_platform') {
+      throw new Error('Marketplace suspension did not pause the relationship')
+    }
+    const reinstated = await reinstateThroughAuthenticatedAdmin(admin, fixture.trainerA.id)
+    const reinstatement = reinstated.data as { accountReactivated?: boolean; profileReinstated?: boolean } | null
+    if (reinstated.error || reinstatement?.accountReactivated !== true || reinstatement.profileReinstated !== true) {
+      throw new Error('Authenticated administrator could not reinstate the marketplace trainer')
+    }
+    const [{ data: stillPaused, error: stillPausedError }, { data: activeGrants, error: grantsError }] = await Promise.all([
+      (fixture.service.from('coaching_relationships') as any).select('status').eq('id', relationshipId).maybeSingle(),
+      (fixture.service.from('coaching_consents') as any).select('id').eq('relationship_id', relationshipId).is('revoked_at', null),
+    ])
+    if (stillPausedError || stillPaused?.status !== 'paused_by_platform' || grantsError || (activeGrants ?? []).length !== 0) {
+      throw new Error('Trainer reinstatement bypassed client-controlled relationship consent')
+    }
+  } finally {
+    await admin.auth.signOut()
+  }
+
+  const resumed = await (fixture.client.client.rpc as any)('resume_paused_coaching_relationship', {
+    p_relationship_id: relationshipId,
+    p_idempotency_key: randomUUID(),
+  })
+  if (resumed.error) throw new Error('Client could not explicitly resume the marketplace relationship')
+  const [{ data: resumedState, error: resumedError }, { data: renewedConsents, error: renewedError }] = await Promise.all([
+    (fixture.service.from('coaching_relationships') as any).select('status').eq('id', relationshipId).maybeSingle(),
+    (fixture.service.from('coaching_consents') as any).select('id').eq('relationship_id', relationshipId).eq('scope', 'training_profile').is('revoked_at', null),
+  ])
+  if (resumedError || resumedState?.status !== 'active' || renewedError || (renewedConsents ?? []).length !== 1) {
+    throw new Error('Client resume did not persist one renewed training-profile consent')
+  }
+  return relationshipId
 }
 
 export async function prepareIdempotentProposalRace(scope: string): Promise<PreparedSecurityRace> {

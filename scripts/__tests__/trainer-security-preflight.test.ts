@@ -3,6 +3,7 @@ import {
   TRAINER_SECURITY_ID_FIELDS,
   TRAINER_SECURITY_PREFLIGHT_ERROR,
   assertTrainerSecuritySchemaReady,
+  isTrainerMarketplaceE2EEnabled,
   probeTrainerSecurityReadOnly,
   requireDeniedGenericOutcome,
   runPreparedTrainerSecurityRace,
@@ -24,22 +25,44 @@ describe('trainer security E2E deployment boundary', () => {
     ])
   })
 
-  it('uses only SELECT and the read-only 045 marker for migrations 042-045', async () => {
-    const limit = vi.fn().mockResolvedValue({ error: null })
-    const select = vi.fn(() => ({ limit }))
-    const from = vi.fn(() => ({ select }))
+  it('uses exactly one read-only 045 marker call before marketplace fixture writes', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: 45, error: null })
 
-    await expect(probeTrainerSecurityReadOnly({ from, rpc })).resolves.toEqual({
+    await expect(probeTrainerSecurityReadOnly({ rpc })).resolves.toEqual({
       tableError: null,
       marker: 45,
     })
 
-    expect(from).toHaveBeenCalledTimes(10)
-    expect(select).toHaveBeenCalledTimes(10)
-    expect(limit).toHaveBeenCalledTimes(10)
     expect(rpc).toHaveBeenCalledTimes(1)
     expect(rpc).toHaveBeenCalledWith('trainer_security_preflight')
+  })
+
+  it('requires every destructive dedicated-project acknowledgement for the full marketplace journey', () => {
+    const enabled: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
+      E2E_RUN_ID: 'marketplace-gate-run',
+      E2E_TRAINER_RELATIONSHIPS_ENABLED: 'true',
+      E2E_TRAINER_PROGRAMMING_ENABLED: 'true',
+      E2E_TRAINER_PROGRAMMING_RETENTION_ACK: 'dedicated-project-reset',
+      E2E_TRAINER_INSIGHTS_ENABLED: 'true',
+      E2E_TRAINER_SECURITY_ENABLED: 'true',
+      E2E_TRAINER_MARKETPLACE_ENABLED: 'true',
+      COMMUNITY_ENABLED: 'false',
+      TRAINER_PAYMENTS_ENABLED: 'false',
+      TRAINER_MESSAGING_ENABLED: 'false',
+      TRAINER_REVIEWS_ENABLED: 'false',
+    }
+
+    expect(isTrainerMarketplaceE2EEnabled(enabled)).toBe(true)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, E2E_TRAINER_MARKETPLACE_ENABLED: 'false' })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, E2E_TRAINER_PROGRAMMING_RETENTION_ACK: undefined })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, COMMUNITY_ENABLED: 'true' })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, TRAINER_PAYMENTS_ENABLED: 'true' })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, TRAINER_MESSAGING_ENABLED: 'true' })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, TRAINER_REVIEWS_ENABLED: 'true' })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, STRIPE_SECRET_KEY: 'configured' })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, E2E_RUN_ID: '' })).toBe(false)
+    expect(isTrainerMarketplaceE2EEnabled({ ...enabled, NODE_ENV: 'production' })).toBe(false)
   })
 
   it.each([
