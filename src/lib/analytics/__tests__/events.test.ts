@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { sanitizeEvent, trackEvent, type AnalyticsEventName } from '../events'
+import {
+  sanitizeEvent,
+  trackEvent,
+  type AnalyticsEventName,
+  type AnalyticsEventProperties,
+} from '../events'
 
 const EVENT_NAMES: AnalyticsEventName[] = [
   'landing_view',
@@ -52,18 +57,22 @@ describe('sanitizeEvent', () => {
   })
 
   it.each([
-    ['locale', 'es'], ['locale', 'en'],
-    ['path', '/'], ['path', '/es'], ['path', '/en'], ['path', '/register'], ['path', '/onboarding'],
-    ['stage', 'profile'], ['stage', 'availability'], ['stage', 'equipment'],
-    ['stage', 'safety'], ['stage', 'confirmation'], ['stage', 'generating'],
-    ['source', 'landing'], ['source', 'guide'],
-    ['screen', 'landing'], ['screen', 'register'], ['screen', 'onboarding'],
-    ['authenticated', true], ['authenticated', false],
-    ['duration_bucket', 'short'], ['duration_bucket', 'medium'], ['duration_bucket', 'long'],
-  ])('accepts documented %s value %j', (key, value) => {
+    ['landing_view', 'locale', 'es'], ['landing_view', 'locale', 'en'],
+    ['landing_view', 'path', '/'], ['landing_view', 'path', '/es'], ['landing_view', 'path', '/en'],
+    ['signup_started', 'path', '/register'], ['onboarding_step_completed', 'path', '/onboarding'],
+    ['onboarding_step_completed', 'stage', 'profile'], ['onboarding_step_completed', 'stage', 'availability'],
+    ['onboarding_step_completed', 'stage', 'equipment'], ['onboarding_step_completed', 'stage', 'safety'],
+    ['onboarding_step_completed', 'stage', 'confirmation'], ['plan_generated', 'stage', 'generating'],
+    ['primary_cta_clicked', 'source', 'landing'], ['organic_page_cta_clicked', 'source', 'guide'],
+    ['landing_view', 'screen', 'landing'], ['signup_started', 'screen', 'register'],
+    ['onboarding_step_completed', 'screen', 'onboarding'],
+    ['signup_completed', 'authenticated', true], ['first_session_started', 'authenticated', false],
+    ['first_session_completed', 'duration_bucket', 'short'],
+    ['first_session_completed', 'duration_bucket', 'medium'],
+    ['first_session_completed', 'duration_bucket', 'long'],
+  ] as const)('accepts documented %s.%s value %j', (name, key, value) => {
     const properties = { [key]: value }
-    expect(sanitizeEvent({ name: 'landing_view', properties }))
-      .toEqual({ name: 'landing_view', properties })
+    expect(sanitizeEvent({ name, properties })).toEqual({ name, properties })
   })
 
   it.each([
@@ -87,9 +96,52 @@ describe('sanitizeEvent', () => {
   })
 
   it.each([
+    'Email', 'EMAIL', 'Phone', 'credentialURL', 'Storage_Path', 'NOTES', 'freeReason',
+    'clientId', 'CLIENT_ID', 'progressLogId', 'measurement', 'BODY_FAT_PERCENTAGE',
+    'payload', 'errorPayload', 'rawError', 'stack',
+  ])('rejects sensitive or opaque property names case-insensitively: %s', key => {
+    expect(sanitizeEvent({
+      name: 'coach_client_insights_viewed',
+      properties: { [key]: 'sensitive' },
+    })).toBeNull()
+  })
+
+  it.each([
+    { source: { email: 'private@example.test' } },
+    { source: ['landing', 'private@example.test'] },
+    { authenticated: { payload: { phone: '+5355555555' } } },
+    { duration_bucket: ['short'] },
+    { active_client_count: { value: 3, clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } },
+    { measurements_shared: { value: false, weightKg: 70 } },
+  ])('rejects nested or array payload smuggling %j', properties => {
+    expect(sanitizeEvent({ name: 'coach_overview_viewed', properties })).toBeNull()
+  })
+
+  it.each([
+    ['landing_view', { stage: 'profile' }],
+    ['signup_started', { duration_bucket: 'short' }],
+    ['signup_completed', { source: 'landing' }],
+    ['onboarding_step_completed', { locale: 'es' }],
+    ['first_session_completed', { stage: 'confirmation' }],
+    ['coach_overview_viewed', { measurements_shared: false }],
+    ['coach_client_insights_viewed', { measurements_shared: false }],
+  ] as const)('rejects properties outside the exact schema for %s', (name, properties) => {
+    expect(sanitizeEvent({ name, properties })).toBeNull()
+  })
+
+  it.each([
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'CLIENT-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'private@example.test',
+    '+53 5555 5555',
+  ])('rejects identifier/contact values even when smuggled through a scalar field: %s', value => {
+    expect(sanitizeEvent({ name: 'primary_cta_clicked', properties: { source: value } })).toBeNull()
+  })
+
+  it.each([
     ['coach_overview_viewed', { active_client_count: 3, pending_request_count: 1, paused_relationship_count: 0 }],
-    ['coach_client_insights_viewed', { period_weeks: 4, prescribed_session_count: 8, evidence_session_count: 6, measurements_shared: false }],
-    ['coach_client_insights_viewed', { period_weeks: 12, prescribed_session_count: 24, evidence_session_count: 18, measurements_shared: true }],
+    ['coach_client_insights_viewed', { period_weeks: 4, prescribed_session_count: 8, evidence_session_count: 6 }],
+    ['coach_client_insights_viewed', { period_weeks: 12, prescribed_session_count: 24, evidence_session_count: 18 }],
     ['coach_alert_filter_used', { alert_filter: 'attention', matching_client_count: 2 }],
   ] as const)('accepts the closed aggregate analytics contract for %s', (name, properties) => {
     expect(sanitizeEvent({ name, properties })).toEqual({ name, properties })
@@ -173,6 +225,23 @@ describe('sanitizeEvent', () => {
   })
 })
 
+describe('AnalyticsEventProperties typing', () => {
+  it('keeps each event property schema statically closed', () => {
+    const overview: AnalyticsEventProperties['coach_overview_viewed'] = {
+      active_client_count: 3,
+      pending_request_count: 1,
+      paused_relationship_count: 0,
+    }
+    expect(overview.active_client_count).toBe(3)
+
+    // @ts-expect-error client identifiers are not part of aggregate analytics.
+    const unsafeOverview: AnalyticsEventProperties['coach_overview_viewed'] = { client_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+    // @ts-expect-error a landing view cannot carry onboarding stage data.
+    const unsafeLanding: AnalyticsEventProperties['landing_view'] = { stage: 'profile' }
+    expect([unsafeOverview, unsafeLanding]).toHaveLength(2)
+  })
+})
+
 describe('trackEvent', () => {
   it('uses a same-origin JSON beacon with window.location.pathname', async () => {
     setBrowser('/en')
@@ -242,7 +311,6 @@ describe('trackEvent', () => {
       period_weeks: 4,
       prescribed_session_count: 8,
       evidence_session_count: 6,
-      measurements_shared: false,
     })
 
     const [, body] = sendBeacon.mock.calls[0]!
@@ -252,7 +320,6 @@ describe('trackEvent', () => {
         period_weeks: 4,
         prescribed_session_count: 8,
         evidence_session_count: 6,
-        measurements_shared: false,
       },
     }))
   })

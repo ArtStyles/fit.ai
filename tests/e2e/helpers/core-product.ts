@@ -1054,8 +1054,6 @@ async function cleanupTrainerRelationshipsAccount(service: SupabaseClient, userI
   assertNoError(applicationsError, 'Removing stale trainer relationship applications')
   for (const [table, column] of [
     ['product_notifications', 'user_id'],
-    ['professional_audit_logs', 'actor_user_id'],
-    ['professional_audit_logs', 'subject_user_id'],
     ['admin_audit_logs', 'admin_user_id'],
     ['admin_audit_logs', 'target_user_id'],
   ] as const) {

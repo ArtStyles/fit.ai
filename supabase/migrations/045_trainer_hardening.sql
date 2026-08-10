@@ -624,6 +624,687 @@ ALTER FUNCTION public.get_coach_client_insights(UUID, DATE, DATE) OWNER TO postg
 REVOKE ALL ON FUNCTION public.get_coach_client_insights(UUID, DATE, DATE) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_coach_client_insights(UUID, DATE, DATE) TO authenticated;
 
+-- Professional evidence accepts only the finite domain emitted by migrations
+-- 041-045. Core event fields are rejected rather than truncated so neither a
+-- service client nor a later feature can turn them into free-text storage.
+CREATE OR REPLACE FUNCTION public.is_professional_audit_event_allowed(
+  p_entity_type TEXT,
+  p_action TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT COALESCE(CASE p_entity_type
+    WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')
+    WHEN 'trainer_application' THEN p_action IN (
+      'application_draft_saved', 'application_submitted', 'application_withdrawn',
+      'trainer_application_under_review', 'trainer_application_changes_requested',
+      'trainer_application_interview_required', 'trainer_application_approved',
+      'trainer_application_rejected', 'trainer_interview_scheduled'
+    )
+    WHEN 'trainer_interview' THEN p_action IN ('trainer_interview_outcome_recorded')
+    WHEN 'coaching_request' THEN p_action IN (
+      'created', 'cancelled', 'accepted', 'declined', 'cancelled_after_acceptance'
+    )
+    WHEN 'coaching_relationship' THEN p_action IN (
+      'relationship_created', 'training_profile_consent_granted',
+      'body_measurements_consent_granted', 'body_measurements_consent_revoked',
+      'training_profile_consent_revoked', 'ended', 'resumed',
+      'paused_due_to_account_suspension'
+    )
+    WHEN 'trainer_account' THEN p_action IN ('suspended')
+    WHEN 'trainer_profile' THEN p_action IN (
+      'profile_created', 'profile_updated', 'profile_deleted',
+      'profile_status_changed', 'reinstated'
+    )
+    WHEN 'trainer_service' THEN p_action IN (
+      'service_created', 'service_updated', 'service_deleted',
+      'service_activated', 'service_deactivated'
+    )
+    WHEN 'trainer_program_template' THEN p_action IN (
+      'template_created', 'template_updated', 'template_deleted', 'template_archived'
+    )
+    WHEN 'trainer_template_workout' THEN p_action IN (
+      'template_workout_insert', 'template_workout_update', 'template_workout_delete'
+    )
+    WHEN 'trainer_template_exercise' THEN p_action IN (
+      'template_exercise_insert', 'template_exercise_update', 'template_exercise_delete'
+    )
+    WHEN 'trainer_application_credential' THEN p_action IN (
+      'credential_added', 'credential_removed', 'credential_removal_prepared',
+      'credential_removal_retried', 'credential_cleanup_failed'
+    )
+    WHEN 'trainer_plan_assignment' THEN p_action IN (
+      'proposed', 'accepted', 'revision_published', 'assignment_frozen'
+    )
+    ELSE FALSE
+  END, FALSE)
+$$;
+
+ALTER FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
+
+-- Metadata is reduced to exact keys and value domains. This pure helper is
+-- shared by the one-time legacy redaction and every future insert.
+CREATE OR REPLACE FUNCTION public.sanitize_professional_audit_metadata(
+  p_entity_type TEXT,
+  p_action TEXT,
+  p_metadata JSONB
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_safe JSONB := '{}'::JSONB;
+  v_key TEXT;
+  v_normalized_key TEXT;
+  v_canonical_key TEXT;
+  v_value JSONB;
+  v_text TEXT;
+  v_allowed_keys TEXT[] := '{}'::TEXT[];
+  v_filtered JSONB;
+  v_expected_to_status TEXT;
+BEGIN
+  IF jsonb_typeof(COALESCE(p_metadata, '{}'::JSONB)) <> 'object' THEN
+    RETURN '{}'::JSONB;
+  END IF;
+
+  FOR v_key, v_value IN SELECT key, value FROM jsonb_each(p_metadata)
+  LOOP
+    v_normalized_key := lower(v_key);
+
+    -- These names remain explicit so future changes cannot accidentally turn
+    -- them into allowlisted aliases (matching is case-insensitive).
+    IF v_normalized_key = ANY (ARRAY[
+      'reason', 'free_reason', 'change_summary', 'email', 'contact_email',
+      'phone', 'contact_phone', 'credential', 'credential_url', 'storage',
+      'storage_url', 'storage_path', 'notes', 'public_note', 'internal_note',
+      'measurement', 'measurements', 'body_data', 'payload', 'snapshot',
+      'raw_error', 'error_payload', 'last_error'
+    ]) THEN
+      CONTINUE;
+    END IF;
+
+    v_text := CASE WHEN jsonb_typeof(v_value) = 'string' THEN v_value #>> '{}' ELSE NULL END;
+    v_canonical_key := CASE v_normalized_key
+      WHEN 'applicationid' THEN 'applicationId'
+      WHEN 'interviewid' THEN 'interviewId'
+      WHEN 'fromstatus' THEN 'fromStatus'
+      WHEN 'tostatus' THEN 'toStatus'
+      ELSE v_normalized_key
+    END;
+
+    IF v_normalized_key = ANY (ARRAY[
+      'applicationid', 'interviewid', 'event_id', 'service_id',
+      'relationship_id', 'accepted_request_id', 'trainer_user_id',
+      'client_user_id', 'trainer_profile_id', 'idempotency_key'
+    ]) THEN
+      IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_text);
+      END IF;
+    ELSIF v_normalized_key = 'cancelled_request_ids' THEN
+      IF jsonb_typeof(v_value) = 'array'
+        AND jsonb_array_length(v_value) <= 1000
+        AND NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(v_value) item(value)
+          WHERE item.value !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        )
+      THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_value);
+      END IF;
+    ELSIF v_normalized_key = 'status' THEN
+      IF v_text IN ('completed', 'cancelled') THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_text);
+      END IF;
+    ELSIF v_normalized_key IN ('fromstatus', 'tostatus') THEN
+      IF v_text IN (
+        'draft', 'submitted', 'under_review', 'changes_requested',
+        'interview_required', 'approved', 'rejected', 'withdrawn'
+      ) THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_text);
+      END IF;
+    ELSIF v_normalized_key = 'consent_version' THEN
+      IF v_text = 'training-profile-v1' THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_text);
+      END IF;
+    ELSIF v_normalized_key = 'text_version' THEN
+      IF v_text IN ('training-profile-v1', 'body-measurements-v1') THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_text);
+      END IF;
+    ELSIF v_normalized_key = 'scope' THEN
+      IF v_text IN ('training_profile', 'body_measurements') THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_text);
+      END IF;
+    ELSIF v_normalized_key = 'version_number' THEN
+      IF jsonb_typeof(v_value) = 'number'
+        AND (v_value #>> '{}') ~ '^[0-9]+$'
+        AND (v_value #>> '{}')::NUMERIC BETWEEN 1 AND 100000
+      THEN
+        v_safe := v_safe || jsonb_build_object(v_canonical_key, v_value);
+      END IF;
+    ELSIF v_normalized_key = 'trainer_profile_suspended'
+      AND jsonb_typeof(v_value) = 'boolean'
+    THEN
+      v_safe := v_safe || jsonb_build_object(v_canonical_key, v_value);
+    END IF;
+  END LOOP;
+
+  IF p_entity_type = 'trainer_application' THEN
+    v_expected_to_status := CASE p_action
+      WHEN 'application_submitted' THEN 'submitted'
+      WHEN 'application_withdrawn' THEN 'withdrawn'
+      WHEN 'trainer_application_under_review' THEN 'under_review'
+      WHEN 'trainer_application_changes_requested' THEN 'changes_requested'
+      WHEN 'trainer_application_interview_required' THEN 'interview_required'
+      WHEN 'trainer_application_approved' THEN 'approved'
+      WHEN 'trainer_application_rejected' THEN 'rejected'
+      ELSE NULL
+    END;
+    IF v_expected_to_status IS NOT NULL
+      AND v_safe ->> 'toStatus' IS DISTINCT FROM v_expected_to_status
+    THEN
+      v_safe := v_safe - 'toStatus';
+    END IF;
+  END IF;
+
+  IF p_entity_type = 'coaching_relationship'
+    AND p_action = 'training_profile_consent_granted'
+    AND (
+      v_safe ->> 'text_version' IS DISTINCT FROM 'training-profile-v1'
+      OR v_safe ->> 'scope' IS DISTINCT FROM 'training_profile'
+    )
+  THEN
+    v_safe := v_safe - 'text_version' - 'scope';
+  ELSIF p_entity_type = 'coaching_relationship'
+    AND p_action = 'body_measurements_consent_granted'
+    AND v_safe ->> 'text_version' IS DISTINCT FROM 'body-measurements-v1'
+  THEN
+    v_safe := v_safe - 'text_version';
+  END IF;
+
+  IF p_entity_type = 'trainer_application'
+    AND p_action IN ('application_submitted', 'application_withdrawn')
+  THEN
+    v_allowed_keys := ARRAY['event_id', 'fromStatus', 'toStatus'];
+  ELSIF p_entity_type = 'trainer_application'
+    AND p_action IN (
+      'trainer_application_under_review', 'trainer_application_changes_requested',
+      'trainer_application_interview_required', 'trainer_application_approved',
+      'trainer_application_rejected'
+    )
+  THEN
+    v_allowed_keys := ARRAY['fromStatus', 'toStatus'];
+  ELSIF p_entity_type = 'trainer_application'
+    AND p_action = 'trainer_interview_scheduled'
+  THEN
+    v_allowed_keys := ARRAY['interviewId'];
+  ELSIF p_entity_type = 'trainer_interview'
+    AND p_action = 'trainer_interview_outcome_recorded'
+  THEN
+    v_allowed_keys := ARRAY['applicationId', 'status'];
+  ELSIF p_entity_type = 'coaching_request' AND p_action = 'created' THEN
+    v_allowed_keys := ARRAY['service_id', 'consent_version', 'idempotency_key'];
+  ELSIF p_entity_type = 'coaching_request'
+    AND p_action IN ('cancelled', 'declined')
+  THEN
+    v_allowed_keys := ARRAY['service_id'];
+  ELSIF p_entity_type = 'coaching_request' AND p_action = 'accepted' THEN
+    v_allowed_keys := ARRAY['relationship_id', 'service_id', 'cancelled_request_ids'];
+  ELSIF p_entity_type = 'coaching_request'
+    AND p_action = 'cancelled_after_acceptance'
+  THEN
+    v_allowed_keys := ARRAY['accepted_request_id', 'service_id'];
+  ELSIF p_entity_type = 'coaching_relationship'
+    AND p_action = 'relationship_created'
+  THEN
+    v_allowed_keys := ARRAY['service_id'];
+  ELSIF p_entity_type = 'coaching_relationship'
+    AND p_action = 'training_profile_consent_granted'
+  THEN
+    v_allowed_keys := ARRAY['text_version', 'scope'];
+  ELSIF p_entity_type = 'coaching_relationship'
+    AND p_action = 'body_measurements_consent_granted'
+  THEN
+    v_allowed_keys := ARRAY['text_version', 'idempotency_key'];
+  ELSIF p_entity_type = 'coaching_relationship'
+    AND p_action IN (
+      'body_measurements_consent_revoked', 'training_profile_consent_revoked',
+      'ended', 'resumed'
+    )
+  THEN
+    v_allowed_keys := ARRAY['idempotency_key'];
+  ELSIF p_entity_type = 'coaching_relationship'
+    AND p_action = 'paused_due_to_account_suspension'
+  THEN
+    v_allowed_keys := ARRAY['trainer_user_id', 'client_user_id'];
+  ELSIF p_entity_type = 'trainer_account' AND p_action = 'suspended' THEN
+    v_allowed_keys := ARRAY['trainer_profile_suspended'];
+  ELSIF p_entity_type = 'trainer_profile'
+    AND p_action IN ('profile_created', 'profile_updated')
+  THEN
+    v_allowed_keys := ARRAY['applicationId'];
+  ELSIF p_entity_type = 'trainer_plan_assignment'
+    AND p_action IN ('proposed', 'accepted')
+  THEN
+    v_allowed_keys := ARRAY['relationship_id', 'version_number'];
+  ELSIF p_entity_type = 'trainer_plan_assignment'
+    AND p_action = 'revision_published'
+  THEN
+    v_allowed_keys := ARRAY['version_number'];
+  ELSIF p_entity_type = 'trainer_plan_assignment'
+    AND p_action = 'assignment_frozen'
+  THEN
+    v_allowed_keys := ARRAY['relationship_id'];
+  END IF;
+
+  SELECT COALESCE(jsonb_object_agg(entry.key, entry.value), '{}'::JSONB)
+  INTO v_filtered
+  FROM jsonb_each(v_safe) entry
+  WHERE entry.key = ANY(v_allowed_keys);
+
+  RETURN v_filtered;
+END;
+$$;
+
+ALTER FUNCTION public.sanitize_professional_audit_metadata(TEXT, TEXT, JSONB) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.sanitize_professional_audit_metadata(TEXT, TEXT, JSONB) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.sanitize_professional_audit_log_insert()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NOT public.is_professional_audit_event_allowed(NEW.entity_type, NEW.action) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '22023',
+      MESSAGE = 'PROFESSIONAL_AUDIT_EVENT_INVALID';
+  END IF;
+  NEW.metadata := public.sanitize_professional_audit_metadata(
+    NEW.entity_type,
+    NEW.action,
+    NEW.metadata
+  );
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION public.sanitize_professional_audit_log_insert() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.sanitize_professional_audit_log_insert() FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS sanitize_professional_audit_log_insert ON public.professional_audit_logs;
+CREATE TRIGGER sanitize_professional_audit_log_insert
+  BEFORE INSERT ON public.professional_audit_logs
+  FOR EACH ROW EXECUTE FUNCTION public.sanitize_professional_audit_log_insert();
+
+-- Migration 041-043 historically stored reasons and revision summaries. Do
+-- this one-time redaction before installing the mutation guard. On rerun the
+-- WHERE clause is empty, so the already-installed guard remains effective.
+UPDATE public.professional_audit_logs
+SET entity_type = CASE
+      WHEN public.is_professional_audit_event_allowed(entity_type, action)
+        THEN entity_type ELSE 'professional_audit' END,
+    action = CASE
+      WHEN public.is_professional_audit_event_allowed(entity_type, action)
+        THEN action ELSE 'legacy_event_redacted' END,
+    metadata = public.sanitize_professional_audit_metadata(entity_type, action, metadata)
+WHERE NOT public.is_professional_audit_event_allowed(entity_type, action)
+   OR metadata IS DISTINCT FROM public.sanitize_professional_audit_metadata(entity_type, action, metadata);
+
+CREATE OR REPLACE FUNCTION public.reject_professional_audit_log_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  RAISE EXCEPTION USING
+    ERRCODE = '55000',
+    MESSAGE = 'PROFESSIONAL_AUDIT_APPEND_ONLY';
+END;
+$$;
+
+ALTER FUNCTION public.reject_professional_audit_log_mutation() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.reject_professional_audit_log_mutation() FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS reject_professional_audit_log_mutation ON public.professional_audit_logs;
+CREATE TRIGGER reject_professional_audit_log_mutation
+  BEFORE UPDATE OR DELETE ON public.professional_audit_logs
+  FOR EACH ROW EXECUTE FUNCTION public.reject_professional_audit_log_mutation();
+
+DROP TRIGGER IF EXISTS reject_professional_audit_log_truncate ON public.professional_audit_logs;
+CREATE TRIGGER reject_professional_audit_log_truncate
+  BEFORE TRUNCATE ON public.professional_audit_logs
+  FOR EACH STATEMENT EXECUTE FUNCTION public.reject_professional_audit_log_mutation();
+
+CREATE OR REPLACE FUNCTION public.audit_applicant_trainer_application_event()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_subject_user_id UUID;
+  v_application_kind TEXT;
+  v_profile_id UUID;
+BEGIN
+  SELECT application.user_id, application.application_kind
+  INTO v_subject_user_id, v_application_kind
+  FROM public.trainer_applications application
+  WHERE application.id = NEW.application_id;
+
+  IF NEW.actor_role = 'applicant'
+    AND auth.role() IS NOT DISTINCT FROM 'authenticated'
+    AND auth.uid() IS NOT NULL
+    AND NEW.actor_user_id = auth.uid()
+    AND v_subject_user_id = auth.uid()
+  THEN
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+    ) VALUES (
+      NEW.actor_user_id, v_subject_user_id, 'trainer_application', NEW.application_id,
+      'application_' || NEW.to_status,
+      jsonb_strip_nulls(jsonb_build_object(
+        'event_id', NEW.id,
+        'fromStatus', NEW.from_status,
+        'toStatus', NEW.to_status
+      ))
+    );
+  ELSIF NEW.actor_role = 'admin'
+    AND NEW.to_status = 'approved'
+    AND NEW.actor_user_id IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.profiles admin_profile
+      WHERE admin_profile.id = NEW.actor_user_id
+        AND admin_profile.is_admin = TRUE
+        AND admin_profile.account_status = 'active'
+    )
+  THEN
+    SELECT profile.id INTO v_profile_id
+    FROM public.trainer_profiles profile
+    WHERE profile.user_id = v_subject_user_id
+      AND profile.source_application_id = NEW.application_id;
+
+    IF v_profile_id IS NOT NULL THEN
+      INSERT INTO public.professional_audit_logs (
+        actor_user_id, subject_user_id, entity_type, entity_id, action,
+        metadata
+      ) VALUES (
+        NEW.actor_user_id, v_subject_user_id, 'trainer_profile', v_profile_id,
+        CASE WHEN v_application_kind = 'initial' THEN 'profile_created' ELSE 'profile_updated' END,
+        jsonb_build_object('applicationId', NEW.application_id)
+      );
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION public.audit_applicant_trainer_application_event() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.audit_applicant_trainer_application_event() FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS audit_applicant_trainer_application_event ON public.trainer_application_events;
+CREATE TRIGGER audit_applicant_trainer_application_event
+  AFTER INSERT ON public.trainer_application_events
+  FOR EACH ROW EXECUTE FUNCTION public.audit_applicant_trainer_application_event();
+
+CREATE OR REPLACE FUNCTION public.audit_trainer_application_draft_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF auth.role() <> 'authenticated'
+    OR auth.uid() IS NULL
+    OR NEW.user_id <> auth.uid()
+    OR NEW.status NOT IN ('draft', 'changes_requested')
+    OR (TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status)
+  THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO public.professional_audit_logs (
+    actor_user_id, subject_user_id, entity_type, entity_id, action
+  ) VALUES (
+    auth.uid(), NEW.user_id, 'trainer_application', NEW.id, 'application_draft_saved'
+  );
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION public.audit_trainer_application_draft_change() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.audit_trainer_application_draft_change() FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS audit_trainer_application_draft_change ON public.trainer_applications;
+CREATE TRIGGER audit_trainer_application_draft_change
+  AFTER INSERT OR UPDATE ON public.trainer_applications
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_application_draft_change();
+
+CREATE OR REPLACE FUNCTION public.audit_trainer_owned_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor_user_id UUID := auth.uid();
+  v_subject_user_id UUID;
+  v_entity_id UUID;
+  v_entity_type TEXT;
+  v_action TEXT;
+  v_row JSONB;
+  v_old JSONB;
+BEGIN
+  IF auth.role() <> 'authenticated' OR v_actor_user_id IS NULL THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  v_row := CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
+  v_old := CASE WHEN TG_OP = 'UPDATE' THEN to_jsonb(OLD) ELSE '{}'::JSONB END;
+
+  IF TG_TABLE_NAME = 'trainer_profiles' THEN
+    v_entity_id := (v_row ->> 'id')::UUID;
+    v_subject_user_id := (v_row ->> 'user_id')::UUID;
+    v_entity_type := 'trainer_profile';
+    v_action := CASE
+      WHEN TG_OP = 'INSERT' THEN 'profile_created'
+      WHEN TG_OP = 'DELETE' THEN 'profile_deleted'
+      WHEN v_old ->> 'status' IS DISTINCT FROM v_row ->> 'status' THEN 'profile_status_changed'
+      ELSE 'profile_updated'
+    END;
+  ELSIF TG_TABLE_NAME = 'trainer_service_offerings' THEN
+    v_entity_id := (v_row ->> 'id')::UUID;
+    SELECT profile.user_id INTO v_subject_user_id
+    FROM public.trainer_profiles profile
+    WHERE profile.id = (v_row ->> 'trainer_profile_id')::UUID;
+    v_entity_type := 'trainer_service';
+    v_action := CASE
+      WHEN TG_OP = 'INSERT' THEN 'service_created'
+      WHEN TG_OP = 'DELETE' THEN 'service_deleted'
+      WHEN v_old ->> 'is_active' IS DISTINCT FROM v_row ->> 'is_active'
+        THEN CASE WHEN (v_row ->> 'is_active')::BOOLEAN THEN 'service_activated' ELSE 'service_deactivated' END
+      ELSE 'service_updated'
+    END;
+  ELSIF TG_TABLE_NAME = 'trainer_program_templates' THEN
+    v_entity_id := (v_row ->> 'id')::UUID;
+    v_subject_user_id := (v_row ->> 'trainer_user_id')::UUID;
+    v_entity_type := 'trainer_program_template';
+    v_action := CASE
+      WHEN TG_OP = 'INSERT' THEN 'template_created'
+      WHEN TG_OP = 'DELETE' THEN 'template_deleted'
+      WHEN v_old ->> 'status' IS DISTINCT FROM v_row ->> 'status' AND v_row ->> 'status' = 'archived'
+        THEN 'template_archived'
+      ELSE 'template_updated'
+    END;
+  ELSIF TG_TABLE_NAME = 'trainer_template_workouts' THEN
+    v_entity_id := (v_row ->> 'id')::UUID;
+    v_subject_user_id := v_actor_user_id;
+    v_entity_type := 'trainer_template_workout';
+    v_action := 'template_workout_' || lower(TG_OP);
+  ELSIF TG_TABLE_NAME = 'trainer_template_exercises' THEN
+    v_entity_id := (v_row ->> 'id')::UUID;
+    v_subject_user_id := v_actor_user_id;
+    v_entity_type := 'trainer_template_exercise';
+    v_action := 'template_exercise_' || lower(TG_OP);
+  ELSIF TG_TABLE_NAME = 'trainer_application_credentials' THEN
+    IF TG_OP NOT IN ('INSERT', 'DELETE')
+      OR (TG_OP = 'DELETE' AND v_row ->> 'credential_type' <> 'link')
+    THEN
+      RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+    v_entity_id := (v_row ->> 'id')::UUID;
+    SELECT application.user_id INTO v_subject_user_id
+    FROM public.trainer_applications application
+    WHERE application.id = (v_row ->> 'application_id')::UUID;
+    v_entity_type := 'trainer_application_credential';
+    v_action := CASE WHEN TG_OP = 'INSERT' THEN 'credential_added' ELSE 'credential_removed' END;
+  ELSIF TG_TABLE_NAME = 'trainer_credential_storage_cleanup' THEN
+    IF v_row ->> 'reason' <> 'user_removal' THEN
+      RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    END IF;
+    v_entity_id := (v_row ->> 'credential_id')::UUID;
+    v_subject_user_id := (v_row ->> 'user_id')::UUID;
+    v_entity_type := 'trainer_application_credential';
+    v_action := CASE
+      WHEN TG_OP = 'INSERT' THEN 'credential_removal_prepared'
+      WHEN TG_OP = 'UPDATE'
+        AND (
+          v_old ->> 'attempt_count' IS DISTINCT FROM v_row ->> 'attempt_count'
+          OR v_old ->> 'last_error' IS DISTINCT FROM v_row ->> 'last_error'
+        )
+        THEN 'credential_cleanup_failed'
+      WHEN TG_OP = 'UPDATE' THEN 'credential_removal_retried'
+      ELSE 'credential_removed'
+    END;
+  ELSE
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  IF v_subject_user_id = v_actor_user_id AND v_entity_id IS NOT NULL THEN
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action
+    ) VALUES (
+      v_actor_user_id, v_subject_user_id, v_entity_type, v_entity_id, v_action
+    );
+  END IF;
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+ALTER FUNCTION public.audit_trainer_owned_change() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.audit_trainer_owned_change() FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS audit_trainer_owned_change ON public.trainer_profiles;
+CREATE TRIGGER audit_trainer_owned_change
+  AFTER INSERT OR UPDATE OR DELETE ON public.trainer_profiles
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_owned_change();
+DROP TRIGGER IF EXISTS audit_trainer_owned_change ON public.trainer_service_offerings;
+CREATE TRIGGER audit_trainer_owned_change
+  AFTER INSERT OR UPDATE OR DELETE ON public.trainer_service_offerings
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_owned_change();
+DROP TRIGGER IF EXISTS audit_trainer_owned_change ON public.trainer_program_templates;
+CREATE TRIGGER audit_trainer_owned_change
+  AFTER INSERT OR UPDATE OR DELETE ON public.trainer_program_templates
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_owned_change();
+DROP TRIGGER IF EXISTS audit_trainer_owned_change ON public.trainer_template_workouts;
+CREATE TRIGGER audit_trainer_owned_change
+  AFTER INSERT OR UPDATE OR DELETE ON public.trainer_template_workouts
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_owned_change();
+DROP TRIGGER IF EXISTS audit_trainer_owned_change ON public.trainer_template_exercises;
+CREATE TRIGGER audit_trainer_owned_change
+  AFTER INSERT OR UPDATE OR DELETE ON public.trainer_template_exercises
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_owned_change();
+DROP TRIGGER IF EXISTS audit_trainer_owned_change ON public.trainer_application_credentials;
+CREATE TRIGGER audit_trainer_owned_change
+  AFTER INSERT OR DELETE ON public.trainer_application_credentials
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_owned_change();
+DROP TRIGGER IF EXISTS audit_trainer_owned_change ON public.trainer_credential_storage_cleanup;
+CREATE TRIGGER audit_trainer_owned_change
+  AFTER INSERT OR UPDATE OR DELETE ON public.trainer_credential_storage_cleanup
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_owned_change();
+
+CREATE OR REPLACE FUNCTION public.audit_coaching_materialization()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_trainer_user_id UUID;
+BEGIN
+  IF auth.role() <> 'authenticated' OR auth.uid() IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_TABLE_NAME = 'coaching_relationships' THEN
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+    ) VALUES (
+      auth.uid(), NEW.client_user_id, 'coaching_relationship', NEW.id,
+      'relationship_created', jsonb_build_object('service_id', NEW.service_id)
+    );
+  ELSIF TG_TABLE_NAME = 'coaching_consents' AND NEW.scope = 'training_profile' THEN
+    SELECT relationship.trainer_user_id INTO v_trainer_user_id
+    FROM public.coaching_relationships relationship
+    WHERE relationship.id = NEW.relationship_id;
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+    ) VALUES (
+      NEW.granted_by, v_trainer_user_id, 'coaching_relationship', NEW.relationship_id,
+      'training_profile_consent_granted',
+      jsonb_build_object('text_version', NEW.text_version, 'scope', NEW.scope)
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION public.audit_coaching_materialization() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.audit_coaching_materialization() FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS audit_coaching_materialization ON public.coaching_relationships;
+CREATE TRIGGER audit_coaching_materialization
+  AFTER INSERT ON public.coaching_relationships
+  FOR EACH ROW EXECUTE FUNCTION public.audit_coaching_materialization();
+DROP TRIGGER IF EXISTS audit_coaching_materialization ON public.coaching_consents;
+CREATE TRIGGER audit_coaching_materialization
+  AFTER INSERT ON public.coaching_consents
+  FOR EACH ROW EXECUTE FUNCTION public.audit_coaching_materialization();
+
+CREATE OR REPLACE FUNCTION public.audit_trainer_assignment_freeze()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF OLD.status IS DISTINCT FROM 'frozen' AND NEW.status = 'frozen' THEN
+    INSERT INTO public.professional_audit_logs (
+      actor_user_id, subject_user_id, entity_type, entity_id, action,
+      metadata
+    ) VALUES (
+      auth.uid(), NEW.client_user_id, 'trainer_plan_assignment', NEW.id,
+      'assignment_frozen', jsonb_build_object('relationship_id', NEW.relationship_id)
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION public.audit_trainer_assignment_freeze() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.audit_trainer_assignment_freeze() FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS audit_trainer_assignment_freeze ON public.trainer_plan_assignments;
+CREATE TRIGGER audit_trainer_assignment_freeze
+  AFTER UPDATE ON public.trainer_plan_assignments
+  FOR EACH ROW EXECUTE FUNCTION public.audit_trainer_assignment_freeze();
+
+REVOKE ALL ON TABLE public.professional_audit_logs FROM service_role;
+GRANT SELECT, INSERT ON TABLE public.professional_audit_logs TO service_role;
+
 ALTER TABLE public.product_notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.product_push_tokens ENABLE ROW LEVEL SECURITY;
@@ -904,8 +1585,6 @@ BEGIN
   DELETE FROM public.product_notifications notification WHERE notification.user_id = ANY(v_target_ids);
   DELETE FROM public.product_push_tokens token WHERE token.user_id = ANY(v_target_ids);
   DELETE FROM public.product_notification_preferences preference WHERE preference.user_id = ANY(v_target_ids);
-  DELETE FROM public.professional_audit_logs audit
-  WHERE audit.actor_user_id = ANY(v_target_ids) OR audit.subject_user_id = ANY(v_target_ids);
   DELETE FROM public.admin_audit_logs audit
   WHERE audit.admin_user_id = ANY(v_target_ids) OR audit.target_user_id = ANY(v_target_ids);
 

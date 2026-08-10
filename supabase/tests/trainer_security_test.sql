@@ -423,7 +423,13 @@ ORDER BY field;
 
 -- Published fixture cleanup is an exact-user operation, not a project reset.
 -- It rejects authenticated callers and removes an immutable materialization
--- only when every named auth user carries the requested E2E run marker.
+-- only when every named auth user carries the requested E2E run marker. Audit
+-- evidence is intentionally excluded from fixture deletion.
+CREATE TEMP TABLE security_preserved_audit_count AS
+SELECT count(*) AS total
+FROM public.professional_audit_logs
+WHERE actor_user_id::TEXT LIKE '76000000-0000-4000-8000-%'
+   OR subject_user_id::TEXT LIKE '76000000-0000-4000-8000-%';
 SELECT set_config('request.jwt.claim.sub', '76000000-0000-4000-8000-000000000003', false);
 SELECT set_config('request.jwt.claim.role', 'authenticated', false);
 SET ROLE authenticated;
@@ -516,6 +522,14 @@ BEGIN
     OR EXISTS (SELECT 1 FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id=version.assignment_id WHERE assignment.trainer_user_id::TEXT LIKE '76000000-0000-4000-8000-%')
     OR EXISTS (SELECT 1 FROM public.workout_plans WHERE user_id='76000000-0000-4000-8000-000000000002') THEN
     RAISE EXCEPTION 'trainer security exact fixture cleanup left published rows or users';
+  END IF;
+  IF (SELECT total FROM security_preserved_audit_count) = 0
+    OR (SELECT count(*) FROM public.professional_audit_logs
+        WHERE actor_user_id::TEXT LIKE '76000000-0000-4000-8000-%'
+           OR subject_user_id::TEXT LIKE '76000000-0000-4000-8000-%')
+       <> (SELECT total FROM security_preserved_audit_count)
+  THEN
+    RAISE EXCEPTION 'trainer security cleanup deleted append-only audit evidence';
   END IF;
 END;
 $$;

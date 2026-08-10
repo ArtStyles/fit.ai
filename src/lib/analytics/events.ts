@@ -45,33 +45,51 @@ export type AnalyticsProperties = {
   period_weeks?: (typeof ANALYTICS_INSIGHT_PERIODS)[number]
   prescribed_session_count?: number
   evidence_session_count?: number
-  measurements_shared?: boolean
   alert_filter?: (typeof ANALYTICS_ALERT_FILTERS)[number]
   matching_client_count?: number
 }
 
-export type SanitizedAnalyticsEvent = {
-  name: AnalyticsEventName
-  properties: AnalyticsProperties
+export type AnalyticsEventProperties = {
+  landing_view: Pick<AnalyticsProperties, 'locale' | 'path' | 'screen'>
+  primary_cta_clicked: Pick<AnalyticsProperties, 'locale' | 'path' | 'source' | 'screen'>
+  language_changed: Pick<AnalyticsProperties, 'locale' | 'path' | 'screen'>
+  signup_started: Pick<AnalyticsProperties, 'locale' | 'path' | 'screen'>
+  signup_completed: Pick<AnalyticsProperties, 'locale' | 'path' | 'screen' | 'authenticated'>
+  onboarding_step_completed: Pick<AnalyticsProperties, 'path' | 'stage' | 'screen' | 'authenticated'>
+  onboarding_abandoned: Pick<AnalyticsProperties, 'path' | 'stage' | 'screen' | 'authenticated'>
+  plan_generated: Pick<AnalyticsProperties, 'path' | 'stage' | 'screen' | 'authenticated'>
+  first_session_started: Pick<AnalyticsProperties, 'path' | 'authenticated' | 'duration_bucket'>
+  first_session_completed: Pick<AnalyticsProperties, 'path' | 'authenticated' | 'duration_bucket'>
+  plan_adjustment_used: Pick<AnalyticsProperties, 'path' | 'authenticated' | 'duration_bucket'>
+  organic_page_cta_clicked: Pick<AnalyticsProperties, 'locale' | 'path' | 'source' | 'screen'>
+  coach_overview_viewed: Pick<AnalyticsProperties, 'active_client_count' | 'pending_request_count' | 'paused_relationship_count'>
+  coach_client_insights_viewed: Pick<AnalyticsProperties, 'period_weeks' | 'prescribed_session_count' | 'evidence_session_count'>
+  coach_alert_filter_used: Pick<AnalyticsProperties, 'alert_filter' | 'matching_client_count'>
 }
 
-const EVENT_NAMES = new Set<AnalyticsEventName>([
-  'landing_view',
-  'primary_cta_clicked',
-  'language_changed',
-  'signup_started',
-  'signup_completed',
-  'onboarding_step_completed',
-  'onboarding_abandoned',
-  'plan_generated',
-  'first_session_started',
-  'first_session_completed',
-  'plan_adjustment_used',
-  'organic_page_cta_clicked',
-  'coach_overview_viewed',
-  'coach_client_insights_viewed',
-  'coach_alert_filter_used',
-])
+export type SanitizedAnalyticsEvent = {
+  [Name in AnalyticsEventName]: { name: Name; properties: AnalyticsEventProperties[Name] }
+}[AnalyticsEventName]
+
+const EVENT_PROPERTY_KEYS = {
+  landing_view: ['locale', 'path', 'screen'],
+  primary_cta_clicked: ['locale', 'path', 'source', 'screen'],
+  language_changed: ['locale', 'path', 'screen'],
+  signup_started: ['locale', 'path', 'screen'],
+  signup_completed: ['locale', 'path', 'screen', 'authenticated'],
+  onboarding_step_completed: ['path', 'stage', 'screen', 'authenticated'],
+  onboarding_abandoned: ['path', 'stage', 'screen', 'authenticated'],
+  plan_generated: ['path', 'stage', 'screen', 'authenticated'],
+  first_session_started: ['path', 'authenticated', 'duration_bucket'],
+  first_session_completed: ['path', 'authenticated', 'duration_bucket'],
+  plan_adjustment_used: ['path', 'authenticated', 'duration_bucket'],
+  organic_page_cta_clicked: ['locale', 'path', 'source', 'screen'],
+  coach_overview_viewed: ['active_client_count', 'pending_request_count', 'paused_relationship_count'],
+  coach_client_insights_viewed: ['period_weeks', 'prescribed_session_count', 'evidence_session_count'],
+  coach_alert_filter_used: ['alert_filter', 'matching_client_count'],
+} as const satisfies Record<AnalyticsEventName, readonly (keyof AnalyticsProperties)[]>
+
+const EVENT_NAMES = new Set<AnalyticsEventName>(Object.keys(EVENT_PROPERTY_KEYS) as AnalyticsEventName[])
 
 const COACH_AGGREGATE_EVENT_NAMES = new Set<AnalyticsEventName>(COACH_AGGREGATE_EVENTS)
 
@@ -93,22 +111,9 @@ const PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
   'period_weeks',
   'prescribed_session_count',
   'evidence_session_count',
-  'measurements_shared',
   'alert_filter',
   'matching_client_count',
 ])
-
-const LEGACY_PROPERTY_KEYS = new Set<keyof AnalyticsProperties>([
-  'locale', 'path', 'stage', 'source', 'screen', 'authenticated', 'duration_bucket',
-])
-
-const INSIGHT_EVENT_PROPERTY_KEYS: Record<Extract<AnalyticsEventName,
-  'coach_overview_viewed' | 'coach_client_insights_viewed' | 'coach_alert_filter_used'>,
-readonly (keyof AnalyticsProperties)[]> = {
-  coach_overview_viewed: ['active_client_count', 'pending_request_count', 'paused_relationship_count'],
-  coach_client_insights_viewed: ['period_weeks', 'prescribed_session_count', 'evidence_session_count', 'measurements_shared'],
-  coach_alert_filter_used: ['alert_filter', 'matching_client_count'],
-}
 
 const MAX_PROPERTIES_BYTES = 1024
 
@@ -136,7 +141,6 @@ const PROPERTY_VALIDATORS: Record<keyof AnalyticsProperties, (value: unknown) =>
   period_weeks: value => typeof value === 'number' && (ANALYTICS_INSIGHT_PERIODS as readonly number[]).includes(value),
   prescribed_session_count: value => isAggregateCount(value),
   evidence_session_count: value => isAggregateCount(value),
-  measurements_shared: value => typeof value === 'boolean',
   alert_filter: value => isOneOf(value, ANALYTICS_ALERT_FILTERS),
   matching_client_count: value => isAggregateCount(value),
 }
@@ -146,10 +150,7 @@ function isAggregateCount(value: unknown): value is number {
 }
 
 function allowedPropertiesForEvent(name: AnalyticsEventName): ReadonlySet<keyof AnalyticsProperties> {
-  if (name in INSIGHT_EVENT_PROPERTY_KEYS) {
-    return new Set(INSIGHT_EVENT_PROPERTY_KEYS[name as keyof typeof INSIGHT_EVENT_PROPERTY_KEYS])
-  }
-  return LEGACY_PROPERTY_KEYS
+  return new Set(EVENT_PROPERTY_KEYS[name])
 }
 
 function capturesPath(name: AnalyticsEventName): boolean {
@@ -178,15 +179,15 @@ export function sanitizeEvent(input: unknown): SanitizedAnalyticsEvent | null {
 
     if (serializedByteLength(properties) > MAX_PROPERTIES_BYTES) return null
 
-    return { name: input.name as AnalyticsEventName, properties: properties as AnalyticsProperties }
+    return { name: input.name, properties } as SanitizedAnalyticsEvent
   } catch {
     return null
   }
 }
 
-export async function trackEvent(
-  name: AnalyticsEventName,
-  properties: AnalyticsProperties = {},
+export async function trackEvent<Name extends AnalyticsEventName>(
+  name: Name,
+  properties: AnalyticsEventProperties[Name] = {} as AnalyticsEventProperties[Name],
 ): Promise<void> {
   if (typeof window === 'undefined') return
 

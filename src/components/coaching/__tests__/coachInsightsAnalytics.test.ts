@@ -76,8 +76,8 @@ describe('CoachInsightsAnalytics browser behavior', () => {
       }))
       await page.waitForFunction(() => (window as Window & { __COACH_ANALYTICS_EVENTS__?: unknown[] }).__COACH_ANALYTICS_EVENTS__?.length === 2)
       expect(await page.evaluate(() => (window as Window & { __COACH_ANALYTICS_EVENTS__?: Array<{ name: string; properties: Record<string, unknown> }> }).__COACH_ANALYTICS_EVENTS__)).toEqual([
-        { name: 'coach_client_insights_viewed', properties: { period_weeks: 4, prescribed_session_count: 8, evidence_session_count: 6, measurements_shared: false } },
-        { name: 'coach_client_insights_viewed', properties: { period_weeks: 12, prescribed_session_count: 8, evidence_session_count: 6, measurements_shared: false } },
+        { name: 'coach_client_insights_viewed', properties: { period_weeks: 4, prescribed_session_count: 8, evidence_session_count: 6 } },
+        { name: 'coach_client_insights_viewed', properties: { period_weeks: 12, prescribed_session_count: 8, evidence_session_count: 6 } },
       ])
     } finally { await page.close() }
   }, 15_000)

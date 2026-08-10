@@ -24,7 +24,7 @@ export function coachInsightsViewKey(props: CoachInsightsAnalyticsProps): string
   if (props.kind === 'overview') {
     return `overview:${props.counts.activeClients}:${props.counts.pendingRequests}:${props.counts.pausedRelationships}`
   }
-  return `client-insights:${props.weeks}:${props.prescribedSessionCount}:${props.evidenceSessionCount}:${props.measurementsShared}`
+  return `client-insights:${props.weeks}:${props.prescribedSessionCount}:${props.evidenceSessionCount}`
 }
 
 /** Sends only aggregate interaction metrics; client and relationship identifiers never enter analytics. */
@@ -37,7 +37,6 @@ export function CoachInsightsAnalytics(props: CoachInsightsAnalyticsProps) {
   const periodWeeks = !isOverview ? props.weeks : null
   const prescribedSessionCount = !isOverview ? props.prescribedSessionCount : null
   const evidenceSessionCount = !isOverview ? props.evidenceSessionCount : null
-  const measurementsShared = !isOverview ? props.measurementsShared : null
 
   useEffect(() => {
     if (isOverview) {
@@ -50,12 +49,11 @@ export function CoachInsightsAnalytics(props: CoachInsightsAnalyticsProps) {
       return
     }
 
-    if (periodWeeks === null || prescribedSessionCount === null || evidenceSessionCount === null || measurementsShared === null) return
+    if (periodWeeks === null || prescribedSessionCount === null || evidenceSessionCount === null) return
     void trackEvent('coach_client_insights_viewed', {
       period_weeks: periodWeeks,
       prescribed_session_count: prescribedSessionCount,
       evidence_session_count: evidenceSessionCount,
-      measurements_shared: measurementsShared,
     })
   }, [
     viewKey,
@@ -64,7 +62,6 @@ export function CoachInsightsAnalytics(props: CoachInsightsAnalyticsProps) {
     pendingRequestCount,
     pausedRelationshipCount,
     evidenceSessionCount,
-    measurementsShared,
     prescribedSessionCount,
     periodWeeks,
   ])

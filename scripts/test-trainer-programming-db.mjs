@@ -16,6 +16,38 @@ const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programmi
 const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
+const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
+
+// Represents rows written by migrations 041-043 before migration 045 exists.
+// The hardening migration must redact them once, then remain rerunnable after
+// the append-only guard has been installed.
+const legacyProfessionalAuditSql = `
+INSERT INTO public.professional_audit_logs (
+  id, actor_user_id, subject_user_id, entity_type, entity_id, action, metadata
+) VALUES
+  (
+    'ad900000-0000-4000-8000-000000000001',
+    'ad900000-0000-4000-8000-000000000011',
+    'ad900000-0000-4000-8000-000000000012',
+    'coaching_relationship',
+    'ad900000-0000-4000-8000-000000000021',
+    'ended',
+    jsonb_build_object(
+      'idempotency_key', 'ad900000-0000-4000-8000-000000000031',
+      'reason', 'legacy private reason',
+      'change_summary', 'legacy private summary'
+    )
+  ),
+  (
+    'ad900000-0000-4000-8000-000000000002',
+    NULL,
+    NULL,
+    'private@example.test',
+    NULL,
+    'https://storage.example.test/private/path',
+    jsonb_build_object('notes', 'legacy private note')
+  );
+`
 
 // This is the smallest faithful pre-041 surface: the auth/API roles come from
 // the Supabase image, while these legacy tables/functions are real dependencies
@@ -427,6 +459,7 @@ try {
   runPsql(readFileSync(migrationPaths[7], 'utf8'), 'applying migration 044')
   runPsql(readFileSync(migrationPaths[6], 'utf8'), 'reapplying migration 043 for rerunnability')
   runPsql(readFileSync(migrationPaths[7], 'utf8'), 'reapplying migration 044 for rerunnability')
+  runPsql(legacyProfessionalAuditSql, 'seeding pre-045 professional audit evidence')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   const productionBoundary = loadLegacyOwnerBoundary(repoRoot)
@@ -435,6 +468,8 @@ try {
   runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
   const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against 045')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
+  const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
+  if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
     const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-045')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')

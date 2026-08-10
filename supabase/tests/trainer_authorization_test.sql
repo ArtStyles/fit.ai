@@ -85,7 +85,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    CROSS JOIN LATERAL (VALUES (COALESCE(role.rolname, 'PUBLIC'), privilege.privilege_type)) grant_row(role_name, privilege_type)
    WHERE grant_row.role_name IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  '90c23f3d390d531865d84c8ffc52c9df',
+  '4d0325198c340803225de3b045c1366e',
   'effective public/anon/authenticated/service table ACLs match the reviewed allowlist'
 );
 SELECT is(
@@ -112,7 +112,7 @@ SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  'b1c96e76694dd81ef8c2a12270b73d2f',
+  'e49a9463eb9f9ee5d1a3733167a4b6b2',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -288,7 +288,7 @@ INSERT INTO public.product_notifications (id, user_id, type, title, body, dedupe
   ('61100000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001', 'coaching_assignment_status', 'Client A notification', 'Private body A', 'authorization-client-a'),
   ('61200000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000002', 'coaching_assignment_status', 'Client B notification', 'Private body B', 'authorization-client-b');
 INSERT INTO public.professional_audit_logs (id, actor_user_id, subject_user_id, entity_type, entity_id, action) VALUES
-  ('62100000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001', 'trainer_plan_assignment', '51100000-0000-4000-8000-000000000001', 'fixture_created');
+  ('62100000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001', 'trainer_plan_assignment', '51100000-0000-4000-8000-000000000001', 'proposed');
 
 SELECT set_config('app.trainer_prescription_mutation', 'off', true);
 

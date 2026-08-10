@@ -113,7 +113,6 @@ describe('POST /api/analytics', () => {
     const event = {
       name: 'onboarding_step_completed',
       properties: {
-        locale: 'es',
         path: '/onboarding',
         stage: 'profile',
         screen: 'onboarding',
@@ -132,7 +131,7 @@ describe('POST /api/analytics', () => {
       event_name: 'onboarding_step_completed',
       anonymous_id: VALID_UUID,
       user_id: 'server-user-id',
-      locale: 'es',
+      locale: null,
       path: '/onboarding',
       properties: event.properties,
     })
@@ -165,7 +164,6 @@ describe('POST /api/analytics', () => {
         period_weeks: 4,
         prescribed_session_count: 8,
         evidence_session_count: 6,
-        measurements_shared: false,
       },
     }, { cookie: `fitai-anonymous-id=${VALID_UUID}` }))
 
@@ -218,5 +216,13 @@ describe('POST /api/analytics', () => {
     ))
 
     expect(response.status).toBe(500)
+    const payload = await response.json()
+    expect(payload).toEqual({
+      error: {
+        code: 'ANALYTICS_STORAGE_UNAVAILABLE',
+        correlationId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      },
+    })
+    expect(JSON.stringify(payload)).not.toContain('database unavailable')
   })
 })
