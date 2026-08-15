@@ -42,6 +42,10 @@ describe('DashboardHeader settings access', () => {
 
     expect(html).toContain('href="/settings"')
     expect(html).toContain('aria-label="Abrir avisos"')
+    expect([
+      /<a[^>]+href="\/settings"[^>]*>[\s\S]*?<\/a><button[^>]+aria-label="Abrir avisos"[^>]*>/,
+      /<button[^>]+aria-label="Abrir avisos"[^>]*>[\s\S]*?<\/button><a[^>]+href="\/settings"[^>]*>/,
+    ].some(pattern => pattern.test(html))).toBe(true)
   })
 
   it('renders the user name as text unless an available social profile href is supplied', () => {
