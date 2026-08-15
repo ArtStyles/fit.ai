@@ -20,7 +20,9 @@ import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localiz
 import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPresentation'
 import { createTranslator } from '@/lib/i18n'
 import { buildDashboardFallbackHistory } from '@/lib/dashboard/historyEvidence'
+import { resolveDashboardProfileHref } from '@/lib/dashboard/profileNavigation'
 import { buildWeekContinuity } from '@/lib/dashboard/weekContinuity'
+import { isCommunityEnabled } from '@/lib/features/community'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import {
   DASHBOARD_BANNER_SLOT,
@@ -382,6 +384,7 @@ async function loadRecentInsights(
 
 export default async function DashboardPage() {
   const { supabase, user, profile } = await requireAppUserContext()
+  const communityEnabled = isCommunityEnabled()
   const language = exerciseLanguage(profile.language)
   const t = createTranslator(language)
   const referenceNow = new Date()
@@ -589,7 +592,10 @@ export default async function DashboardPage() {
         firstName={firstName}
         dateLabel={dateLabel}
         avatarUrl={profile?.avatar_url ?? null}
-        username={profile?.username ?? null}
+        profileHref={resolveDashboardProfileHref({
+          communityEnabled,
+          username: profile.username,
+        })}
         noticeLabel={t('Notificaciones')}
         noticeContent={dashboard.noticePlacement === 'hub' ? (
           <DashboardNotice
