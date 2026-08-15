@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState, type ReactNode } from 'react'
-import { Bell, X } from 'lucide-react'
+import { Bell, Settings, X } from 'lucide-react'
 import { AvatarUploader } from '@/components/profile/AvatarUploader'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { useI18n } from '@/components/i18n/I18nProvider'
@@ -12,7 +12,7 @@ interface Props {
   firstName: string
   dateLabel: string
   avatarUrl: string | null
-  username: string | null
+  profileHref: `/u/${string}` | null
   noticeContent?: ReactNode
   noticeLabel?: string
 }
@@ -22,7 +22,7 @@ export function DashboardHeader({
   firstName,
   dateLabel,
   avatarUrl,
-  username,
+  profileHref,
   noticeContent,
   noticeLabel,
 }: Props) {
@@ -38,13 +38,24 @@ export function DashboardHeader({
           <p className="truncate text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground first-letter:uppercase">{dateLabel}</p>
           <div className="truncate text-balance font-display text-xl font-bold leading-tight text-foreground sm:text-2xl">
             <span className="text-base font-medium text-muted-foreground">{greeting}, </span>
-            {username ? (
-              <Link data-marketing-private href={`/u/${username}`} className="inline-flex min-h-11 items-center rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+            {profileHref ? (
+              <Link
+                data-marketing-private
+                href={profileHref}
+                className="inline-flex min-h-11 items-center rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+              >
                 {firstName}
               </Link>
             ) : <span data-marketing-private>{firstName}</span>}
           </div>
         </div>
+        <Link
+          href="/settings"
+          aria-label={t('Abrir ajustes')}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-foreground transition-colors hover:border-violet-400/50 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none"
+        >
+          <Settings className="h-5 w-5" aria-hidden="true" />
+        </Link>
         {noticeContent && (
           <button
             type="button"

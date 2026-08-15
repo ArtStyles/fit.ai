@@ -81,6 +81,7 @@ const ENGLISH: Record<string, string> = {
   'Próximo': 'Upcoming',
   'Pendiente': 'Pending',
   'Abrir avisos': 'Open notices',
+  'Abrir ajustes': 'Open settings',
   'Cerrar avisos': 'Close notices',
   'Duración': 'Duration',
   'Progreso': 'Progress',
