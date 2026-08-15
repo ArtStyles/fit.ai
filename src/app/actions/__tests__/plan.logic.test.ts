@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { orderedIdsToUpdates } from '../plan.logic'
+import * as planLogic from '../plan.logic'
 
 const {
   createClient,
@@ -121,6 +122,34 @@ describe('orderedIdsToUpdates', () => {
   })
   it('devuelve [] con lista vacía', () => {
     expect(orderedIdsToUpdates([])).toEqual([])
+  })
+})
+
+describe('selectedExerciseIds', () => {
+  it('preserves unique multi-selection order and supports the legacy single field', () => {
+    const selectedExerciseIds = (planLogic as typeof planLogic & {
+      selectedExerciseIds?: (formData: FormData) => string[] | null
+    }).selectedExerciseIds
+    const multiple = new FormData()
+    multiple.append('exerciseIds', 'exercise-b')
+    multiple.append('exerciseIds', 'exercise-a')
+    multiple.append('exerciseIds', 'exercise-b')
+    const legacy = new FormData()
+    legacy.set('exerciseId', 'exercise-c')
+
+    expect(selectedExerciseIds?.(multiple)).toEqual(['exercise-b', 'exercise-a'])
+    expect(selectedExerciseIds?.(legacy)).toEqual(['exercise-c'])
+  })
+
+  it('rejects empty and unreasonably large selections', () => {
+    const selectedExerciseIds = (planLogic as typeof planLogic & {
+      selectedExerciseIds?: (formData: FormData) => string[] | null
+    }).selectedExerciseIds
+    const tooMany = new FormData()
+    Array.from({ length: 13 }, (_, index) => tooMany.append('exerciseIds', `exercise-${index}`))
+
+    expect(selectedExerciseIds?.(new FormData())).toBeNull()
+    expect(selectedExerciseIds?.(tooMany)).toBeNull()
   })
 })
 

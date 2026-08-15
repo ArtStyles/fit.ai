@@ -21,9 +21,10 @@ describe('professional template editor browser interactions', () => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
     const viteEntry = path.join(repoRoot, 'node_modules/.pnpm/node_modules/vite/dist/node/index.js')
     const { createServer } = await import(pathToFileURL(viteEntry).href)
-    viteServer = await createServer({ configFile: false, root: repoRoot, appType: 'spa', cacheDir: path.join(repoRoot, 'node_modules', '.vite-program-template-test'), oxc: { jsx: { runtime: 'automatic' } }, resolve: { alias: [
+    viteServer = await createServer({ configFile: false, root: repoRoot, appType: 'spa', cacheDir: path.join(repoRoot, 'node_modules', '.vite-program-template-test'), oxc: { jsx: { runtime: 'automatic' } }, optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'lucide-react', '@radix-ui/react-dialog'] }, resolve: { dedupe: ['react', 'react-dom'], alias: [
       { find: '@/app/actions/trainerPrograms', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerPrograms.fixture.ts') },
       { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
+      { find: 'next/image', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextImage.fixture.tsx') },
       { find: '@', replacement: path.join(repoRoot, 'src') },
     ] }, server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false } })
     await viteServer.listen()
@@ -45,12 +46,15 @@ describe('professional template editor browser interactions', () => {
       await page.waitForFunction(() => !(document.querySelector('button[type="submit"]') as HTMLButtonElement | null)?.disabled)
       await page.getByRole('button', { name: 'Bajar Sentadilla' }).click()
       await page.waitForFunction(() => Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent?.includes('Orden actualizado.')))
-      await page.locator('form').filter({ hasText: 'Ejercicio' }).locator('button').filter({ hasText: 'Sentadilla' }).click()
+      await page.getByRole('button', { name: 'Buscar ejercicio' }).click()
+      const catalog = page.getByRole('dialog', { name: 'Agregar ejercicio' })
+      await catalog.getByRole('button', { name: /Sentadilla/ }).click()
+      await catalog.getByRole('button', { name: 'Agregar 1 ejercicio' }).click()
       await page.getByRole('button', { name: 'Agregar ejercicio' }).click()
       await page.waitForFunction(() => Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent?.includes('Ejercicio agregado.')))
       expect(await page.evaluate(() => (window as Window & { __PROGRAM_REFRESHES__?: number }).__PROGRAM_REFRESHES__)).toBeGreaterThanOrEqual(2)
     } finally { await page.close() }
-  }, 15_000)
+  }, 30_000)
 
   it('wires deterministic workout and exercise edit forms to their update actions and refreshes', async () => {
     const page = await browser.newPage()

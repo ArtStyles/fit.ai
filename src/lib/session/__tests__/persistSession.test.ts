@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '@/store/sessionStore'
 import { MAX_SESSION_SETS } from '../limits'
+import * as sessionPersistence from '../persistSession'
 import { clearBackup, loadBackup, saveBackup, type SessionSnapshot } from '../persistSession'
 
 const snapshot = {
@@ -37,7 +38,86 @@ describe('session backup persistence results', () => {
 
     expect(saveBackup(snapshot)).toEqual({ ok: false, error: 'quota exceeded' })
     expect(saveBackup(snapshot)).toEqual({ ok: true })
-    expect(setItem).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers the active session without requiring its workout id', () => {
+    const values = new Map<string, string>()
+    setItem.mockImplementation((key: string, value: string) => values.set(key, value))
+    getItem.mockImplementation((key: string) => values.get(key) ?? null)
+
+    expect(saveBackup(snapshot)).toEqual({ ok: true })
+
+    const loadActiveSession = (sessionPersistence as typeof sessionPersistence & {
+      loadActiveSession?: () => SessionSnapshot | null
+    }).loadActiveSession
+
+    expect(loadActiveSession?.()).toMatchObject(snapshot)
+  })
+
+  it('notifies the current page when the active session changes', () => {
+    const eventTarget = new EventTarget()
+    const listener = vi.fn()
+    eventTarget.addEventListener('fitai:active-session-changed', listener)
+    vi.stubGlobal('window', eventTarget)
+
+    expect(saveBackup(snapshot)).toEqual({ ok: true })
+
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
+  it('discards the current active session and its backup without needing an id', () => {
+    const values = new Map<string, string>()
+    setItem.mockImplementation((key: string, value: string) => values.set(key, value))
+    getItem.mockImplementation((key: string) => values.get(key) ?? null)
+    removeItem.mockImplementation((key: string) => values.delete(key))
+    saveBackup(snapshot)
+
+    const clearActiveSession = (sessionPersistence as typeof sessionPersistence & {
+      clearActiveSession?: () => ReturnType<typeof clearBackup>
+    }).clearActiveSession
+
+    expect(clearActiveSession?.()).toEqual({ ok: true })
+    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  })
+
+  it('clears the active-session pointer when a completed workout removes its backup', () => {
+    const values = new Map<string, string>()
+    const eventTarget = new EventTarget()
+    const listener = vi.fn()
+    setItem.mockImplementation((key: string, value: string) => values.set(key, value))
+    getItem.mockImplementation((key: string) => values.get(key) ?? null)
+    removeItem.mockImplementation((key: string) => values.delete(key))
+    eventTarget.addEventListener('fitai:active-session-changed', listener)
+    vi.stubGlobal('window', eventTarget)
+
+    saveBackup(snapshot)
+    expect(clearBackup(snapshot.workoutId)).toEqual({ ok: true })
+
+    expect(sessionPersistence.loadActiveSession()).toBeNull()
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats a malformed active-session pointer as stale during completion cleanup', () => {
+    const values = new Map<string, string>([['fitai_active_session', '{malformed']])
+    const eventTarget = new EventTarget()
+    const listener = vi.fn()
+    getItem.mockImplementation((key: string) => values.get(key) ?? null)
+    removeItem.mockImplementation((key: string) => values.delete(key))
+    eventTarget.addEventListener('fitai:active-session-changed', listener)
+    vi.stubGlobal('window', eventTarget)
+
+    expect(clearBackup(snapshot.workoutId)).toEqual({ ok: true })
+    expect(values.has('fitai_active_session')).toBe(false)
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
+  it('can discard a malformed active-session pointer without getting stuck', () => {
+    const values = new Map<string, string>([['fitai_active_session', '{malformed']])
+    getItem.mockImplementation((key: string) => values.get(key) ?? null)
+    removeItem.mockImplementation((key: string) => values.delete(key))
+
+    expect(sessionPersistence.clearActiveSession()).toEqual({ ok: true })
+    expect(values.has('fitai_active_session')).toBe(false)
   })
 
   it('reports a failed deletion and succeeds when cleanup retries', () => {

@@ -8,3 +8,7 @@ export function useRouter() {
     push: () => {},
   }
 }
+
+export function usePathname() {
+  return '/dashboard'
+}

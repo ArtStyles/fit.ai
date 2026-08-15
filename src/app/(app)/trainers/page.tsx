@@ -20,7 +20,7 @@ export default async function TrainersPage({
   const directory = await getTrainerDirectory({ filters, cursor: firstValue(searchParams.cursor) })
 
   return (
-    <main className="mx-auto max-w-lg px-4 pb-24 pt-6">
+    <main className="mx-auto max-w-4xl px-4 pb-24 pt-6 sm:px-6 lg:px-8">
       {directory.error ? <p role="alert" className="rounded-2xl border border-destructive/30 p-4 text-sm text-destructive">{directory.error}</p> : null}
       <TrainerDirectory trainers={directory.trainers} filters={filters} nextCursor={directory.nextCursor} />
     </main>

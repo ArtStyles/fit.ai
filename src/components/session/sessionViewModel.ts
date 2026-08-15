@@ -28,6 +28,43 @@ type SessionFocusExercise = {
   sets: Array<{ completed: boolean }>
 }
 
+export type ActiveSessionProgress = {
+  completedSets: number
+  totalSets: number
+  completedExercises: number
+  totalExercises: number
+  percentage: number
+}
+
+export function summarizeActiveSession(
+  exercises: SessionFocusExercise[],
+): ActiveSessionProgress {
+  const totalSets = exercises.reduce((total, exercise) => total + exercise.sets.length, 0)
+  const completedSets = exercises.reduce(
+    (total, exercise) => total + exercise.sets.filter(set => set.completed).length,
+    0,
+  )
+
+  return {
+    completedSets,
+    totalSets,
+    completedExercises: exercises.filter(exercise => exercise.status === 'completed').length,
+    totalExercises: exercises.length,
+    percentage: totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0,
+  }
+}
+
+export function formatActiveWorkoutElapsed(startedAt: number, now: number): string {
+  const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1_000))
+  if (elapsedSeconds < 60) return `${elapsedSeconds} s`
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60)
+  if (elapsedMinutes < 60) return `${elapsedMinutes} min`
+
+  const hours = Math.floor(elapsedMinutes / 60)
+  return `${hours} h ${elapsedMinutes % 60} min`
+}
+
 export const COMPLETION_SECTION_ORDER = [
   'session-complete',
   'records',

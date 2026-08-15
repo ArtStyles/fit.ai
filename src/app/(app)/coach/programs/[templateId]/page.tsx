@@ -17,7 +17,7 @@ export default async function CoachProgramDetailPage({ params }: { params: { tem
   if (!template) notFound()
   const [workoutResponse, exerciseResponse, relationshipResponse, assignmentResponse] = await Promise.all([
     (supabase.from('trainer_template_workouts') as any).select('id, name, day_of_week, order_in_plan, trainer_template_exercises(id, exercise_id, order_index, sets, reps, weight_kg, target_rpe, rest_seconds, notes, exercises(name))').eq('template_id', template.id).order('order_in_plan'),
-    (supabase.from('exercises') as any).select('id, name, muscle_groups, equipment, difficulty, exercise_type, is_compound').eq('is_public', true).order('name').limit(200),
+    (supabase.from('exercises') as any).select('id, name, image_url, muscle_groups, equipment, difficulty, exercise_type, is_compound').eq('is_public', true).order('name').limit(200),
     (supabase.from('coaching_relationships') as any).select('id, started_at, trainer_service_offerings(name)').eq('trainer_user_id', user.id).eq('status', 'active').order('created_at', { ascending: false }).order('id', { ascending: false }),
     (supabase.from('trainer_plan_assignments') as any).select('id, coaching_relationships!inner(trainer_service_offerings(name))').eq('trainer_user_id', user.id).eq('source_template_id', template.id).eq('status', 'active').order('created_at', { ascending: false }).order('id', { ascending: false }),
   ])

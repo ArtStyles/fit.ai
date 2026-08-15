@@ -340,7 +340,7 @@ export default async function PlanPage() {
       .order('order_in_plan') as unknown as Promise<{ data: WorkoutRow[] | null }>,
     supabase
       .from('exercises')
-      .select('id, name, name_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound')
+      .select('id, name, name_es, image_url, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound')
       .eq('is_public', true)
       .order('name') as unknown as Promise<{ data: PlanExerciseOption[] | null }>,
     supabase

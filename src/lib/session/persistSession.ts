@@ -33,8 +33,30 @@ export type RestorableSessionSnapshot = Omit<SessionSnapshot, 'clientSessionId'>
 
 export type PersistenceResult = { ok: true } | { ok: false; error: string }
 
+const ACTIVE_SESSION_KEY = 'fitai_active_session'
+export const ACTIVE_SESSION_CHANGED_EVENT = 'fitai:active-session-changed'
+
+function dispatchActiveSessionChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(ACTIVE_SESSION_CHANGED_EVENT))
+  }
+}
+
 function backupKey(workoutId: string): string {
   return `fitai_session_${workoutId}`
+}
+
+function activeSessionPointer(raw: string | null): { workoutId: string | null, stale: boolean } {
+  if (!raw) return { workoutId: null, stale: false }
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (isRecord(parsed) && typeof parsed.workoutId === 'string' && parsed.workoutId) {
+      return { workoutId: parsed.workoutId, stale: false }
+    }
+    return { workoutId: null, stale: true }
+  } catch {
+    return { workoutId: null, stale: true }
+  }
 }
 
 function persistenceError(error: unknown): string {
@@ -252,6 +274,34 @@ function normalizeSessionSnapshot(value: unknown, workoutId: string): Restorable
 export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {
   try {
     localStorage.setItem(backupKey(snapshot.workoutId), JSON.stringify(snapshot))
+    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ workoutId: snapshot.workoutId }))
+    dispatchActiveSessionChanged()
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: persistenceError(error) }
+  }
+}
+
+export function loadActiveSession(): RestorableSessionSnapshot | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_SESSION_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed) || typeof parsed.workoutId !== 'string' || !parsed.workoutId) return null
+    return loadBackup(parsed.workoutId)
+  } catch {
+    return null
+  }
+}
+
+export function clearActiveSession(): PersistenceResult {
+  try {
+    const pointer = activeSessionPointer(localStorage.getItem(ACTIVE_SESSION_KEY))
+    if (pointer.workoutId) {
+      localStorage.removeItem(backupKey(pointer.workoutId))
+    }
+    localStorage.removeItem(ACTIVE_SESSION_KEY)
+    dispatchActiveSessionChanged()
     return { ok: true }
   } catch (error) {
     return { ok: false, error: persistenceError(error) }
@@ -272,6 +322,11 @@ export function loadBackup(workoutId: string): RestorableSessionSnapshot | null 
 export function clearBackup(workoutId: string): PersistenceResult {
   try {
     localStorage.removeItem(backupKey(workoutId))
+    const pointer = activeSessionPointer(localStorage.getItem(ACTIVE_SESSION_KEY))
+    if (pointer.workoutId === workoutId || pointer.stale) {
+      localStorage.removeItem(ACTIVE_SESSION_KEY)
+      dispatchActiveSessionChanged()
+    }
     return { ok: true }
   } catch (error) {
     return { ok: false, error: persistenceError(error) }

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { orderedIdsToUpdates } from './plan.logic'
+import { orderedIdsToUpdates, selectedExerciseIds } from './plan.logic'
 import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
 import { requireEditableOwnedPlan } from '@/lib/plans/editability'
 
@@ -285,17 +285,17 @@ export async function addWorkoutExercise(formData: FormData) {
 
   const planId = asNullableString(formData.get('planId'))
   const workoutId = asNullableString(formData.get('workoutId'))
-  const exerciseId = asNullableString(formData.get('exerciseId'))
+  const exerciseIds = selectedExerciseIds(formData)
 
-  if (!planId || !workoutId || !exerciseId) redirect('/plan?error=missing_fields')
+  if (!planId || !workoutId || !exerciseIds) redirect('/plan?error=missing_fields')
 
   try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
 
   const workout = await getOwnedWorkout(supabase, workoutId, user.id)
   if (!workout || workout.plan_id !== planId) redirect('/plan?error=save_failed')
 
-  const validExercise = await exerciseExists(supabase, exerciseId)
-  if (!validExercise) redirect('/plan?error=missing_fields')
+  const validExercises = await Promise.all(exerciseIds.map(exerciseId => exerciseExists(supabase, exerciseId)))
+  if (validExercises.some(validExercise => !validExercise)) redirect('/plan?error=missing_fields')
 
   const { data: lastExercise } = await (supabase.from('workout_exercises') as any)
     .select('order_index')
@@ -309,10 +309,10 @@ export async function addWorkoutExercise(formData: FormData) {
     : 1
 
   const { error } = await (supabase.from('workout_exercises') as any)
-    .insert({
+    .insert(exerciseIds.map((exerciseId, index) => ({
       workout_id: workoutId,
       exercise_id: exerciseId,
-      order_index: nextOrder,
+      order_index: nextOrder + index,
       sets: asIntegerInRange(formData.get('sets'), 1, 12, 3),
       reps: asIntegerInRange(formData.get('reps'), 1, 100, 10),
       rest_seconds: asIntegerInRange(formData.get('restSeconds'), 0, 600, 60),
@@ -320,7 +320,7 @@ export async function addWorkoutExercise(formData: FormData) {
       target_rpe: asIntegerInRange(formData.get('targetRpe'), 1, 10, 8),
       notes: asNullableString(formData.get('notes')),
       weight_suggestion_basis: 'user_baseline_pending',
-    })
+    })))
 
   if (error) redirect('/plan?error=save_failed')
 

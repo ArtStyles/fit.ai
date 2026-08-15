@@ -10,6 +10,7 @@ import { useI18n } from '@/components/i18n/I18nProvider'
 export type PlanExerciseOption = {
   id: string
   name: string
+  image_url?: string | null
   muscle_groups: string[] | null
   equipment: string[] | null
   difficulty: string | null
@@ -94,8 +95,9 @@ export function WorkoutExerciseList({
         <form action={addWorkoutExercise} className="mt-4 space-y-3">
           <input type="hidden" name="planId" value={planId} />
           <input type="hidden" name="workoutId" value={workoutId} />
-          <ExercisePicker name="exerciseId" label={t('Ejercicio')} options={exerciseOptions}
-            disabled={!hasExerciseOptions} placeholder={t('Busca por nombre, músculo o equipo')} />
+          <ExercisePicker name="exerciseIds" label={t('Ejercicio')} options={exerciseOptions}
+            multiple disabled={!hasExerciseOptions} placeholder={t('Busca por nombre, músculo o equipo')}
+            onSelectionChange={() => onDirtyChange?.(true)} />
           <PrescriptionFields />
           <label className="block space-y-1.5">
             <span className="text-xs font-medium text-muted-foreground">{t('Notas')}</span>

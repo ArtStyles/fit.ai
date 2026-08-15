@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { PendingLink } from './PendingLink'
 import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigation'
@@ -8,9 +9,170 @@ import { useI18n } from '@/components/i18n/I18nProvider'
 import { hapticImpact } from '@/lib/native/haptics'
 import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 import type { Workspace } from '@/lib/coaching/workspace'
+import { ChevronUp, Trash2 } from 'lucide-react'
+import {
+  ACTIVE_SESSION_CHANGED_EVENT,
+  clearActiveSession,
+  loadActiveSession,
+  type RestorableSessionSnapshot,
+} from '@/lib/session/persistSession'
+import { formatActiveWorkoutElapsed, summarizeActiveSession } from '@/components/session/sessionViewModel'
+import { useSessionStore } from '@/store/sessionStore'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 // Routes where the bottom bar should be hidden (full-screen flows)
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
+
+type ActiveWorkoutDockViewProps = {
+  workoutId: string
+  workoutName: string
+  elapsedLabel: string
+  completedSets: number
+  totalSets: number
+  percentage: number
+  onDiscard: () => void
+}
+
+export function ActiveWorkoutDockView({
+  workoutId,
+  workoutName,
+  elapsedLabel,
+  completedSets,
+  totalSets,
+  percentage,
+  onDiscard,
+}: ActiveWorkoutDockViewProps) {
+  return (
+    <aside
+      aria-label="Entrenamiento en curso"
+      className="fitai-bottom-nav-offset fixed inset-x-3 z-40 mx-auto max-w-lg overflow-hidden rounded-2xl border border-border/70 bg-card/95 shadow-2xl shadow-black/30 backdrop-blur-xl lg:bottom-6 lg:left-auto lg:right-6 lg:mx-0 lg:w-96"
+    >
+      <div
+        role="progressbar"
+        aria-label="Progreso del entrenamiento"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percentage}
+        className="h-1 bg-muted"
+      >
+        <div className="h-full bg-primary transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${percentage}%` }} />
+      </div>
+      <div className="flex items-center gap-2 p-2">
+        <PendingLink
+          href={`/session/${workoutId}`}
+          showSpinner={false}
+          aria-label={`Continuar ${workoutName}`}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-1.5 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/12 text-primary">
+            <ChevronUp className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" aria-hidden="true" />
+              En curso · {elapsedLabel}
+            </span>
+            <span className="mt-0.5 block truncate text-sm font-semibold text-foreground">{workoutName}</span>
+            <span className="block text-[11px] text-muted-foreground">{completedSets} de {totalSets} series</span>
+          </span>
+        </PendingLink>
+        <button
+          type="button"
+          aria-label="Descartar entrenamiento"
+          onClick={onDiscard}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
+        >
+          <Trash2 className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </div>
+    </aside>
+  )
+}
+
+export function ActiveWorkoutDock() {
+  const pathname = usePathname()
+  const [snapshot, setSnapshot] = useState<RestorableSessionSnapshot | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false)
+  const [discardError, setDiscardError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const refresh = () => setSnapshot(loadActiveSession())
+    refresh()
+    window.addEventListener(ACTIVE_SESSION_CHANGED_EVENT, refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener(ACTIVE_SESSION_CHANGED_EVENT, refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!snapshot) return
+    setNow(Date.now())
+    const interval = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(interval)
+  }, [snapshot])
+
+  if (!snapshot || pathname.startsWith('/session/')) return null
+
+  const progress = summarizeActiveSession(snapshot.exercises)
+
+  return (
+    <>
+      <div data-active-workout-spacer aria-hidden="true" className="h-24 shrink-0 lg:h-28" />
+      <ActiveWorkoutDockView
+        workoutId={snapshot.workoutId}
+        workoutName={snapshot.workoutName}
+        elapsedLabel={formatActiveWorkoutElapsed(snapshot.startedAt, now)}
+        completedSets={progress.completedSets}
+        totalSets={progress.totalSets}
+        percentage={progress.percentage}
+        onDiscard={() => {
+          setDiscardError(null)
+          setConfirmingDiscard(true)
+        }}
+      />
+
+      <Dialog open={confirmingDiscard} onOpenChange={setConfirmingDiscard}>
+        <DialogContent className="max-w-sm gap-0 rounded-2xl border-border/70 bg-popover p-0">
+          <div className="space-y-3 p-5 pr-16">
+            <DialogTitle>¿Descartar entrenamiento?</DialogTitle>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Se eliminará el progreso sin guardar de esta sesión.
+            </p>
+            {discardError ? <p role="alert" className="text-sm text-destructive">{discardError}</p> : null}
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-border/60 p-3">
+            <button
+              type="button"
+              onClick={() => setConfirmingDiscard(false)}
+              className="min-h-11 rounded-xl border border-border px-4 text-sm font-semibold text-foreground"
+            >
+              Continuar sesión
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const result = clearActiveSession()
+                if (!result.ok) {
+                  setDiscardError('No se pudo descartar el entrenamiento. Inténtalo nuevamente.')
+                  return
+                }
+                useSessionStore.getState().clearSession()
+                setSnapshot(null)
+                setConfirmingDiscard(false)
+              }}
+              className="min-h-11 rounded-xl bg-destructive px-4 text-sm font-semibold text-destructive-foreground"
+            >
+              Descartar
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
 
 export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavItem[], workspace?: Workspace }) {
   const pathname = usePathname()

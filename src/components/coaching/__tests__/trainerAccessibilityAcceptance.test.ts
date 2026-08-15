@@ -10,7 +10,7 @@ import {
   runAllCleanupSteps,
 } from '../../../../tests/e2e/helpers/acceptance'
 
-const SURFACES = ['application', 'requests', 'editor', 'assignment', 'timeline', 'proposal', 'workspace', 'public-profile'] as const
+const SURFACES = ['application', 'requests', 'editor', 'assignment', 'timeline', 'proposal', 'workspace', 'public-profile', 'directory', 'catalog', 'active-dock'] as const
 const VIEWPORTS = [
   { width: 375, height: 812 },
   { width: 768, height: 1024 },
@@ -37,7 +37,16 @@ describe('trainer accessibility acceptance in a local browser', () => {
       appType: 'spa',
       cacheDir: path.join(repoRoot, 'node_modules', '.vite-trainer-accessibility-test'),
       oxc: { jsx: { runtime: 'automatic' } },
-      optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'lucide-react'] },
+      optimizeDeps: {
+        include: [
+          'react',
+          'react-dom',
+          'react-dom/client',
+          'lucide-react',
+          '@radix-ui/react-avatar',
+          '@radix-ui/react-dialog',
+        ],
+      },
       resolve: { dedupe: ['react', 'react-dom'], alias: [
         { find: '@/app/actions/trainerApplications', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerApplications.fixture.ts') },
         { find: '@/app/actions/trainerPrograms', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerPrograms.fixture.ts') },
@@ -45,6 +54,8 @@ describe('trainer accessibility acceptance in a local browser', () => {
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
         { find: '@/app/actions/workspace', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
         { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
+        { find: 'next/link', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextLink.fixture.tsx') },
+        { find: 'next/image', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextImage.fixture.tsx') },
         { find: '@', replacement: path.join(repoRoot, 'src') },
       ] },
       server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false },

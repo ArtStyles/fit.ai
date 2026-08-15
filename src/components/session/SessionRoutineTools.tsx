@@ -28,6 +28,7 @@ export function SessionRoutineTools({ exerciseOptions }: SessionRoutineToolsProp
         </p>
         <SessionExercisePicker
           options={exerciseOptions}
+          selectionMode="multiple"
           placeholder={t('Busca por nombre o músculo')}
           onSelect={exercise => {
             addSessionExercise(exercise)

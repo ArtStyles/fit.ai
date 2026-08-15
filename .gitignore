@@ -45,3 +45,7 @@ artifacts/
 test-results/
 playwright-report/
 dashboard-*.png
+
+# Local Superpowers planning artifacts
+.superpowers/brainstorm/
+.superpowers/start-vekira-brainstorm.sh

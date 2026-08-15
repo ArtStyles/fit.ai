@@ -1,95 +1,60 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ExerciseImage } from '@/components/exercises/ExerciseImage'
+import { Search } from 'lucide-react'
+import {
+  ExerciseCatalogDialog,
+  type ExerciseCatalogOption,
+} from '@/components/plan/ExercisePicker'
 import type { SessionExerciseDraft } from '@/store/sessionStore'
 
 type SessionExercisePickerProps = {
   options: SessionExerciseDraft[]
   onSelect: (exercise: SessionExerciseDraft) => void
   placeholder?: string
-}
-
-function getMeta(option: SessionExerciseDraft): string {
-  return option.muscleGroups.slice(0, 3).join(' · ')
+  selectionMode?: 'single' | 'multiple'
 }
 
 export function SessionExercisePicker({
   options,
   onSelect,
   placeholder = 'Buscar ejercicio',
+  selectionMode = 'single',
 }: SessionExercisePickerProps) {
-  const [query, setQuery] = useState('')
-
-  const matches = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    if (normalized.length < 2) return options.slice(0, 6)
-
-    return options
-      .filter(option => {
-        const haystack = [
-          option.name,
-          ...option.muscleGroups,
-        ].join(' ').toLowerCase()
-
-        return haystack.includes(normalized)
-      })
-      .slice(0, 6)
-  }, [options, query])
+  const [open, setOpen] = useState(false)
+  const catalogOptions = useMemo<ExerciseCatalogOption[]>(() => options.map(option => ({
+    id: option.exerciseId,
+    name: option.name,
+    muscleGroups: option.muscleGroups,
+    equipment: [],
+    imageUrl: option.imageUrl,
+  })), [options])
 
   return (
-    <div className="space-y-2">
-      <input
-        type="search"
-        value={query}
-        onChange={event => setQuery(event.target.value)}
-        placeholder={placeholder}
-        className="h-11 w-full rounded-lg border border-border/60 bg-background/80 px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:ring-2 focus:ring-indigo-500"
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-border/60 bg-background/80 px-3 text-left text-sm text-muted-foreground outline-none transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <Search className="h-5 w-5" aria-hidden="true" />
+        <span>{placeholder}</span>
+      </button>
+
+      <ExerciseCatalogDialog
+        open={open}
+        onOpenChange={setOpen}
+        options={catalogOptions}
+        selectionMode={selectionMode}
+        title={selectionMode === 'multiple' ? 'Agregar ejercicios' : 'Seleccionar ejercicio'}
+        confirmVerb={selectionMode === 'multiple' ? 'Agregar' : 'Seleccionar'}
+        onConfirm={ids => {
+          ids.forEach(id => {
+            const selected = options.find(option => option.exerciseId === id)
+            if (selected) onSelect(selected)
+          })
+        }}
       />
-
-      <div className="grid gap-1.5">
-        {matches.map(option => {
-          const meta = getMeta(option)
-
-          return (
-            <div
-              key={option.exerciseId}
-              role="button"
-              tabIndex={0}
-              aria-label={option.name}
-              onClick={() => {
-                onSelect(option)
-                setQuery('')
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  onSelect(option)
-                  setQuery('')
-                }
-              }}
-              className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border/50 bg-muted/10 px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-indigo-500/40 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-            >
-              <ExerciseImage
-                src={option.imageUrl}
-                alt={option.name}
-                variant="thumb"
-                zoomable
-                zoomFocusable={false}
-                className="h-11 w-11 shrink-0"
-              />
-              <span className="min-w-0">
-                <span className="block truncate font-semibold">{option.name}</span>
-                {meta && (
-                  <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
-                    {meta}
-                  </span>
-                )}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
+    </>
   )
 }

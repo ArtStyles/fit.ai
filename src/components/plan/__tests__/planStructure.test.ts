@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 const page = readFileSync(new URL('../../../app/(app)/plan/page.tsx', import.meta.url), 'utf8')
 const workspace = readFileSync(new URL('../PlanWorkoutWorkspace.tsx', import.meta.url), 'utf8')
 const readView = readFileSync(new URL('../PlanWorkoutReadView.tsx', import.meta.url), 'utf8')
+const exerciseList = readFileSync(new URL('../WorkoutExerciseList.tsx', import.meta.url), 'utf8')
 const retireButton = readFileSync(new URL('../PlanRetireButton.tsx', import.meta.url), 'utf8')
 const planErrorUrl = new URL('../../../app/(app)/plan/error.tsx', import.meta.url)
 const planError = existsSync(planErrorUrl) ? readFileSync(planErrorUrl, 'utf8') : ''
@@ -53,6 +54,10 @@ describe('plan information hierarchy', () => {
   it('keeps destructive exercise controls out of the read view', () => {
     expect(readView).not.toContain('removeWorkoutExercise')
     expect(readView).not.toContain('WorkoutExerciseManager')
+  })
+
+  it('marks catalog selections dirty even though the picker renders in a portal', () => {
+    expect(exerciseList).toContain('onSelectionChange={() => onDirtyChange?.(true)}')
   })
 
   it('renders a locked professional plan as read-only without mutation tools', () => {

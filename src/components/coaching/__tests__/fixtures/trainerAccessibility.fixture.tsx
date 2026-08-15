@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import '@/styles/globals.css'
+import { TrainerDirectory } from '../../TrainerDirectory'
 import { ApplicationForm } from '../../ApplicationForm'
 import { ApplicationTimeline } from '../../ApplicationTimeline'
 import { AssignProgramDialog } from '../../AssignProgramDialog'
@@ -8,10 +9,86 @@ import { ProgramTemplateEditor } from '../../ProgramTemplateEditor'
 import { ProposedProgramReview } from '../../ProposedProgramReview'
 import { TrainerPublicProfile } from '../../TrainerPublicProfile'
 import { WorkspaceSwitcher } from '../../../navigation/WorkspaceSwitcher'
+import { ActiveWorkoutDockView } from '../../../navigation/BottomNav'
+import { ExerciseCatalogDialog } from '../../../plan/ExercisePicker'
 
 const surface = new URLSearchParams(window.location.search).get('surface')
 
 function Surface() {
+  if (surface === 'directory') {
+    return <TrainerDirectory
+      filters={{}}
+      nextCursor={null}
+      trainers={[
+        {
+          userId: '11111111-1111-4111-8111-111111111111',
+          slug: 'ada-entrenadora',
+          professionalName: 'Ada Entrenadora',
+          professionalPhotoUrl: null,
+          bio: 'Entrenamiento de fuerza adaptado a tu experiencia y disponibilidad.',
+          specialties: ['Fuerza', 'Hipertrofia'],
+          modalities: ['online', 'in_person'],
+          experienceSummary: 'Ocho años acompañando procesos de fuerza.',
+          generalLocation: 'La Habana',
+          languages: ['Español', 'Inglés'],
+          verifiedAt: '2026-08-08T00:00:00.000Z',
+          services: [],
+        },
+        {
+          userId: '22222222-2222-4222-8222-222222222222',
+          slug: 'lucia-movimiento',
+          professionalName: 'Lucía Movimiento',
+          professionalPhotoUrl: null,
+          bio: 'Movilidad y regreso progresivo al entrenamiento para todos los niveles.',
+          specialties: ['Movilidad', 'Principiantes'],
+          modalities: ['online'],
+          experienceSummary: 'Especialista en movimiento y hábitos sostenibles.',
+          generalLocation: 'Madrid',
+          languages: ['Español'],
+          verifiedAt: '2026-08-08T00:00:00.000Z',
+          services: [],
+        },
+      ]}
+    />
+  }
+  if (surface === 'catalog') {
+    return <ExerciseCatalogDialog
+      open
+      onOpenChange={() => {}}
+      selectionMode="multiple"
+      title="Agregar ejercicios"
+      onConfirm={() => {}}
+      options={[
+        { id: '1', name: 'Press de banca', muscleGroups: ['Pecho'], equipment: ['Barra'], imageUrl: null },
+        { id: '2', name: 'Curl de bíceps', muscleGroups: ['Bíceps'], equipment: ['Mancuernas'], imageUrl: null },
+        { id: '3', name: 'Extensión de pierna', muscleGroups: ['Cuádriceps'], equipment: ['Máquina'], imageUrl: null },
+        { id: '4', name: 'Jalón al pecho', muscleGroups: ['Dorsales'], equipment: ['Cable'], imageUrl: null },
+        { id: '5', name: 'Peso muerto', muscleGroups: ['Glúteos', 'Isquiotibiales'], equipment: ['Barra'], imageUrl: null },
+        { id: '6', name: 'Elevaciones laterales', muscleGroups: ['Hombros'], equipment: ['Mancuernas'], imageUrl: null },
+      ]}
+    />
+  }
+  if (surface === 'active-dock') {
+    return <>
+      <section className="min-h-[70vh] space-y-3" aria-labelledby="active-workout-preview">
+        <h1 id="active-workout-preview" className="text-2xl font-bold">Entrenamiento</h1>
+        <p className="text-sm text-muted-foreground">Tus rutinas están listas para continuar.</p>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <h2 className="font-semibold">Pecho y tríceps</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Press de banca, fondos y extensiones</p>
+        </div>
+      </section>
+      <ActiveWorkoutDockView
+        workoutId="33333333-3333-4333-8333-333333333333"
+        workoutName="Pecho y tríceps"
+        elapsedLabel="12 min"
+        completedSets={5}
+        totalSets={12}
+        percentage={42}
+        onDiscard={() => {}}
+      />
+    </>
+  }
   if (surface === 'application') {
     return <ApplicationForm initialApplication={null} initialCredentials={[]} allowedPhotoUrls={[]} />
   }

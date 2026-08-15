@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import * as sessionViewModel from '../sessionViewModel'
 import {
   COMPLETION_SECTION_ORDER,
   buildSessionFocusWindow,
@@ -14,6 +15,37 @@ import {
 } from '../sessionViewModel'
 
 describe('session presentation', () => {
+  it('summarizes completed sets and exercises for the persistent workout panel', () => {
+    const summarizeActiveSession = (sessionViewModel as typeof sessionViewModel & {
+      summarizeActiveSession?: (exercises: Array<{
+        status: 'pending' | 'active' | 'completed' | 'skipped'
+        sets: Array<{ completed: boolean }>
+      }>) => unknown
+    }).summarizeActiveSession
+
+    expect(summarizeActiveSession?.([
+      { status: 'completed', sets: [{ completed: true }, { completed: true }] },
+      { status: 'active', sets: [{ completed: true }, { completed: false }, { completed: false }] },
+    ])).toEqual({
+      completedSets: 3,
+      totalSets: 5,
+      completedExercises: 1,
+      totalExercises: 2,
+      percentage: 60,
+    })
+  })
+
+  it('formats the live workout duration compactly for the persistent panel', () => {
+    const formatActiveWorkoutElapsed = (sessionViewModel as typeof sessionViewModel & {
+      formatActiveWorkoutElapsed?: (startedAt: number, now: number) => string
+    }).formatActiveWorkoutElapsed
+
+    expect(formatActiveWorkoutElapsed?.(1_000, 50_000)).toBe('49 s')
+    expect(formatActiveWorkoutElapsed?.(1_000, 66_000)).toBe('1 min')
+    expect(formatActiveWorkoutElapsed?.(1_000, 3_661_000)).toBe('1 h 1 min')
+    expect(formatActiveWorkoutElapsed?.(5_000, 1_000)).toBe('0 s')
+  })
+
   it('returns the previous, current, and next set around the active set', () => {
     const result = buildSessionFocusWindow([{ status: 'active', sets: [
       { completed: true },
