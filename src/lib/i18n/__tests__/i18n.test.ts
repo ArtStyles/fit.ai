@@ -71,6 +71,23 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Tu perfil', 'Your profile'],
+    ['Foto, nombre e identidad', 'Photo, name, and identity'],
+    ['Edad, género y altura', 'Age, gender, and height'],
+    ['Peso, perímetros y evolución', 'Weight, measurements, and progress'],
+    ['Tu entrenamiento', 'Your training'],
+    ['Objetivo, agenda y equipo', 'Goal, schedule, and equipment'],
+    ['Aplicación', 'Application'],
+    ['Recordatorios y avisos', 'Reminders and alerts'],
+    ['Idioma de la interfaz', 'Interface language'],
+    ['Acceso y seguridad', 'Access and security'],
+    ['Sesión, documentos y eliminación', 'Session, documents, and deletion'],
+    ['Gestión de la aplicación', 'Application management'],
+  ])('translates grouped settings overview copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['No se pudo preparar la sesión. Inténtalo nuevamente.', 'The session could not be prepared. Try again.'],
     ['No se pudo respaldar la sesión. Libera espacio y vuelve a intentar.', 'The session could not be backed up. Free some space and try again.'],
     ['Preparando sesión…', 'Preparing session…'],

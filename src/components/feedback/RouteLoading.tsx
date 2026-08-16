@@ -594,22 +594,33 @@ export function AccountSettingsLoading() {
 }
 
 export function SettingsLoading() {
+  const groups = [
+    { title: 'Tu perfil', rows: 3 },
+    { title: 'Tu entrenamiento', rows: 1 },
+    { title: 'Aplicación', rows: 2 },
+    { title: 'Acceso y seguridad', rows: 1 },
+  ]
+
   return (
     <AppLoadingShell className="pb-16">
       <BackHeader title="Ajustes" subtitle="Preferencias de tu cuenta" icon={UserRound} />
-      <section className="mt-8 overflow-hidden rounded-2xl border border-border/60 bg-muted/10">
-        {['Perfil', 'Datos personales', 'Entrenamiento', 'Medidas', 'Notificaciones', 'Idioma', 'Cuenta'].map((label, index) => (
-          <div
-            key={label}
-            className={cn(
-              'flex items-center gap-3 px-4 py-3.5',
-              index > 0 && 'border-t border-border/40',
-            )}
-          >
-            <Shimmer className="h-9 w-9 rounded-lg bg-violet-500/15" />
-            <span className="flex-1 text-sm font-medium text-foreground">{label}</span>
-            <Shimmer className="h-4 w-4 rounded bg-muted/40" />
-          </div>
+      <section className="mt-8 space-y-6">
+        {groups.map(({ title, rows }) => (
+          <section key={title} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+            <h2 className="mb-4 text-base font-semibold text-foreground">{title}</h2>
+            <div className="space-y-3">
+              {Array.from({ length: rows }).map((_, index) => (
+                <div key={index} className="flex min-h-11 items-center gap-3 rounded-xl border border-border/40 px-3 py-2.5">
+                  <Shimmer className="h-9 w-9 rounded-lg bg-violet-500/15" />
+                  <div className="min-w-0 flex-1">
+                    <Shimmer className="h-4 w-2/3 rounded" />
+                    <Shimmer className="mt-2 h-3 w-1/2 rounded bg-muted/40" />
+                  </div>
+                  <Shimmer className="h-4 w-4 rounded bg-muted/40" />
+                </div>
+              ))}
+            </div>
+          </section>
         ))}
       </section>
     </AppLoadingShell>

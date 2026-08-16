@@ -24,11 +24,13 @@ describe('route loading skeletons', () => {
     expect(routeLoading).toContain('data-loading-slot="profile-action"')
   })
 
-  it('keeps the settings index skeleton as a section list', () => {
+  it('keeps the settings index skeleton grouped like the overview', () => {
     const routeLoading = source('../RouteLoading.tsx')
 
     expect(routeLoading).toContain('export function SettingsLoading()')
-    expect(routeLoading).toContain("'Perfil', 'Datos personales', 'Entrenamiento', 'Medidas', 'Notificaciones', 'Idioma', 'Cuenta'")
+    for (const label of ['Tu perfil', 'Tu entrenamiento', 'Aplicación', 'Acceso y seguridad']) {
+      expect(routeLoading).toContain(label)
+    }
   })
 
   it.each([
