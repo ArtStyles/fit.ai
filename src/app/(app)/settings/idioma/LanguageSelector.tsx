@@ -78,25 +78,29 @@ export function LanguageSelector({
 
   return (
     <div className="space-y-4">
-      <fieldset role="radiogroup" aria-label={legend} className="space-y-3">
+      <fieldset className="space-y-3">
         <legend className="sr-only">{legend}</legend>
         {options.map(option => {
           const isSelected = selected === option.value
 
           return (
-            <button
+            <label
               key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={isSelected}
-              disabled={pending}
-              onClick={() => selectLanguage(option.value)}
-              className={`flex min-h-11 w-full items-center gap-3 rounded-2xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60 ${
+              className={`relative flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-2xl border p-4 text-left transition-colors has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:disabled]:cursor-wait has-[:disabled]:opacity-60 ${
                 isSelected
                   ? 'border-violet-500/60 bg-violet-500/10'
                   : 'border-border/60 bg-muted/10 hover:bg-muted/20'
               }`}
             >
+              <input
+                type="radio"
+                name="language"
+                value={option.value}
+                checked={isSelected}
+                disabled={pending}
+                onChange={() => selectLanguage(option.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
               <span
                 aria-hidden="true"
                 className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
@@ -109,7 +113,7 @@ export function LanguageSelector({
                 <span className="block text-sm font-semibold text-foreground">{option.title}</span>
                 <span className="mt-1 block text-sm text-muted-foreground">{option.description}</span>
               </span>
-            </button>
+            </label>
           )
         })}
       </fieldset>

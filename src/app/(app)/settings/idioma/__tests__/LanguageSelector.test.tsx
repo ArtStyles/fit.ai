@@ -22,6 +22,22 @@ describe('LanguageSelector', () => {
 
     expect(html).toContain('Interfaz en español')
     expect(html).toContain('role="status"')
-    expect(html).toContain('aria-checked="true"')
+    expect(html).toContain('checked=""')
+  })
+
+  it('provides native radio keyboard navigation between language options', () => {
+    const html = renderToStaticMarkup(
+      <LanguageSelector
+        currentLanguage="es"
+        legend="Idioma de la aplicación"
+        options={[
+          { value: 'es', title: 'Español', description: 'Interfaz en español' },
+          { value: 'en', title: 'English', description: 'Interface in English' },
+        ]}
+      />,
+    )
+
+    expect(html).toContain('type="radio"')
+    expect(html).toContain('name="language"')
   })
 })
