@@ -2,6 +2,7 @@
 
 import { Clock3, Dumbbell, Pencil, Play } from 'lucide-react'
 
+import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import type { PlanDaySummary } from './planViewModel'
@@ -58,9 +59,16 @@ export function PlanWorkoutReadView({
           return (
             <li key={row.id} className="rounded-2xl border border-border/60 bg-background/45 p-4">
               <div className="flex gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/12 text-xs font-bold text-violet-200">{index + 1}</span>
+                <ExerciseImage
+                  src={exercise?.image_url}
+                  alt={exercise?.name ?? t('Ejercicio')}
+                  variant="thumb"
+                  zoomable
+                  className="h-12 w-12 shrink-0 rounded-full"
+                  frameClassName="rounded-full"
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-foreground">{exercise?.name ?? t('Ejercicio')}</p>
+                  <p className="font-semibold text-foreground">{index + 1}. {exercise?.name ?? t('Ejercicio')}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{prescription(row, t) || t('Prescripción pendiente')}</p>
                   {(exercise?.muscle_groups?.length ?? 0) > 0 && (
                     <p className="mt-2 text-xs text-violet-300">{exercise?.muscle_groups?.join(' · ')}</p>
