@@ -566,7 +566,7 @@ export function NotificationsSettingsLoading() {
         </div>
       </div>
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <p className="text-sm font-semibold text-foreground">Actividad social</p>
+        <p className="text-sm font-semibold text-foreground">Avisos de Vekira</p>
         <div className="mt-4 space-y-3">
           <Shimmer className="h-12 rounded-xl bg-muted/40" />
           <Shimmer className="h-12 rounded-xl bg-muted/40" />

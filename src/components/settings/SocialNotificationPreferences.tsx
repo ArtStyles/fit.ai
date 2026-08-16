@@ -9,6 +9,8 @@ import {
 import { useToast } from '@/components/feedback/ToastProvider'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { SettingsSection } from '@/components/settings/SettingsSection'
+import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
 
 type PreferenceKey = keyof SocialNotificationPreferencesInput
 
@@ -31,44 +33,44 @@ export function SocialNotificationPreferences({
 }) {
   const [preferences, setPreferences] = useState(initialPreferences)
   const [pending, startTransition] = useTransition()
+  const [statusMessage, setStatusMessage] = useState('')
   const { showToast } = useToast()
   const { t } = useI18n()
 
   function toggle(key: PreferenceKey) {
-    const next = { ...preferences, [key]: !preferences[key] }
+    if (pending) return
+    const previous = { ...preferences }
+    const next = { ...previous, [key]: !previous[key] }
     setPreferences(next)
     startTransition(async () => {
       const result = await updateSocialNotificationPreferences(next)
       if (!result.ok) {
-        setPreferences(preferences)
+        setPreferences(previous)
+        setStatusMessage(result.error)
         showToast({ title: result.error, variant: 'error' })
+        return
       }
+      const message = t('Preferencias guardadas')
+      setStatusMessage(message)
+      showToast({ title: message, variant: 'success' })
     })
   }
 
   return (
-    <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-      <div>
-        <p className="text-sm font-semibold text-foreground">{t('Actividad social')}</p>
-        <p className="text-xs text-muted-foreground">{t('Push en la app instalada')}</p>
-      </div>
-
-      <div className="mt-4 divide-y divide-border/50">
+    <SettingsSection title={t('Actividad social')} description={t('Push en la app instalada')}>
+      <p className="sr-only" role="status" aria-live="polite">{statusMessage}</p>
+      <div className="space-y-3">
         {OPTIONS.map(option => {
           const Icon = option.icon
           const enabled = preferences[option.key]
           return (
-            <div key={option.key} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background/70 text-muted-foreground">
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{t(option.label)}</p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">{t(option.description)}</p>
-                </div>
-              </div>
-              <button
+            <SettingsSwitchRow
+              key={option.key}
+              title={t(option.label)}
+              description={t(option.description)}
+              icon={<Icon className="h-4 w-4" />}
+              control={(
+                <button
                 type="button"
                 role="switch"
                 aria-checked={enabled}
@@ -87,11 +89,12 @@ export function SocialNotificationPreferences({
                     enabled ? 'translate-x-5' : 'translate-x-0',
                   )}
                 />
-              </button>
-            </div>
+                </button>
+              )}
+            />
           )
         })}
       </div>
-    </section>
+    </SettingsSection>
   )
 }

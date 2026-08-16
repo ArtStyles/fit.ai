@@ -88,6 +88,17 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Recordatorios de entrenamiento', 'Workout reminders'],
+    ['Notificación local en tus días preferidos', 'Local notifications on your preferred days'],
+    ['Avisos de Vekira', 'Vekira alerts'],
+    ['Notificaciones profesionales', 'Professional notifications'],
+    ['Lunes', 'Monday'],
+    ['Lun', 'Mon'],
+  ])('translates notification preference copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['Identidad', 'Identity'],
     ['Así te reconoce Vekira en tu cuenta.', 'This is how Vekira recognizes you in your account.'],
     ['Sin nombre', 'No name'],

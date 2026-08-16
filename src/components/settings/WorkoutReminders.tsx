@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react'
 import { BellRing, Smartphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/components/feedback/ToastProvider'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { SettingsSection } from '@/components/settings/SettingsSection'
+import { SettingsStatus } from '@/components/settings/SettingsStatus'
+import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
 import {
   remindersSupported,
   scheduleWorkoutReminders,
@@ -13,9 +17,7 @@ import {
 const STORAGE_KEY = 'fitai:workout-reminders'
 const DEFAULT_TIME = '18:00'
 
-const DAY_LABELS: Record<number, string> = {
-  1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb', 7: 'Dom',
-}
+const DAY_KEYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as const
 
 interface StoredPref {
   enabled: boolean
@@ -61,6 +63,7 @@ interface Props {
 
 export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   const { showToast } = useToast()
+  const { t } = useI18n()
   const [supported, setSupported] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [time, setTime] = useState(DEFAULT_TIME)
@@ -92,8 +95,8 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
         const ok = await scheduleWorkoutReminders(days, parseTime(time))
         if (!ok) {
           showToast({
-            title: 'Permiso necesario',
-            description: 'Activa las notificaciones de Vekira en los ajustes del teléfono.',
+            title: t('Permiso necesario'),
+            description: t('Activa las notificaciones de Vekira en los ajustes del teléfono.'),
             variant: 'error',
           })
           return
@@ -101,15 +104,15 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
         setEnabled(true)
         persist({ enabled: true, time })
         showToast({
-          title: 'Recordatorios activados',
-          description: `Te avisaremos a las ${time} en tus días de entrenamiento.`,
+          title: t('Recordatorios activados'),
+          description: t('Te avisaremos a las {time} en tus días de entrenamiento.', { time }),
           variant: 'success',
         })
       } else {
         await cancelWorkoutReminders()
         setEnabled(false)
         persist({ enabled: false, time })
-        showToast({ title: 'Recordatorios desactivados', variant: 'success' })
+        showToast({ title: t('Recordatorios desactivados'), variant: 'success' })
       }
     } finally {
       setBusy(false)
@@ -125,50 +128,43 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   }
 
   return (
-    <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
-          <BellRing className="h-4 w-4" />
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-foreground">Recordatorios de entrenamiento</p>
-          <p className="text-xs text-muted-foreground">Notificación local en tus días preferidos</p>
-        </div>
-      </div>
+    <SettingsSection
+      title={t('Recordatorios de entrenamiento')}
+      description={t('Notificación local en tus días preferidos')}
+    >
 
       {/* Web/PWA: las notificaciones locales solo operan en la app instalada */}
       {!supported ? (
-        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-border/50 bg-background/60 px-3.5 py-3">
-          <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Los recordatorios funcionan en la <span className="font-medium text-foreground">app instalada</span> en tu
-            teléfono. Ábrela desde tu dispositivo para activarlos.
-          </p>
-        </div>
+        <SettingsStatus tone="info">
+          <span className="flex items-start gap-2.5">
+            <Smartphone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            {t('Los recordatorios funcionan en la app instalada en tu teléfono. Ábrela desde tu dispositivo para activarlos.')}
+          </span>
+        </SettingsStatus>
       ) : !hasDays ? (
-        <p className="mt-4 rounded-xl border border-border/50 bg-background/60 px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
-          Elige tus <span className="font-medium text-foreground">días preferidos</span> en la sección de
-          entrenamiento y guarda para poder activar los recordatorios.
-        </p>
+        <SettingsStatus tone="warning">
+          {t('Elige tus días preferidos en la sección de entrenamiento y guarda para poder activar los recordatorios.')}
+        </SettingsStatus>
       ) : (
         <>
-          <div className="mt-4 flex items-center justify-between gap-4">
-            <label htmlFor="reminder-time" className="text-sm text-foreground">
-              Hora del aviso
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                id="reminder-time"
-                type="time"
-                value={time}
-                onChange={e => handleTimeChange(e.target.value)}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-              />
-              <button
+          <SettingsSwitchRow
+            title={t('Hora del aviso')}
+            icon={<BellRing className="h-4 w-4" />}
+            control={(
+              <div className="flex items-center gap-3">
+                <input
+                  id="reminder-time"
+                  aria-label={t('Hora del aviso')}
+                  type="time"
+                  value={time}
+                  onChange={e => handleTimeChange(e.target.value)}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                />
+                <button
                 type="button"
                 role="switch"
                 aria-checked={enabled}
-                aria-label={enabled ? 'Desactivar recordatorios' : 'Activar recordatorios'}
+                aria-label={t(enabled ? 'Desactivar recordatorios' : 'Activar recordatorios')}
                 onClick={handleToggle}
                 disabled={busy}
                 className={cn(
@@ -183,9 +179,10 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
                     enabled ? 'translate-x-5' : 'translate-x-0',
                   )}
                 />
-              </button>
-            </div>
-          </div>
+                </button>
+              </div>
+            )}
+          />
 
           <div className="mt-3 flex flex-wrap gap-1.5">
             {days.map(day => (
@@ -198,12 +195,12 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
                     : 'bg-muted/30 text-muted-foreground',
                 )}
               >
-                {DAY_LABELS[day]}
+                {t(DAY_KEYS[day - 1] ?? '')}
               </span>
             ))}
           </div>
         </>
       )}
-    </section>
+    </SettingsSection>
   )
 }

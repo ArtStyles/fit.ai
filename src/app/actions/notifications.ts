@@ -218,11 +218,11 @@ export async function updateProductNotificationPreferences(input: {
 
   const { error } = await (supabase
     .from('product_notification_preferences') as any)
-    .update({
+    .upsert({
+      user_id: user.id,
       professional_enabled: input.professionalEnabled,
       push_enabled: input.pushEnabled,
-    })
-    .eq('user_id', user.id)
+    }, { onConflict: 'user_id' })
 
   if (error) return { ok: false, error: 'No se pudieron guardar las preferencias.' }
   return { ok: true }

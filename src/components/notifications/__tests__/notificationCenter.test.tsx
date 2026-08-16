@@ -236,14 +236,17 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-async function renderNotificationSettings(communityEnabled: boolean): Promise<string> {
+async function renderNotificationSettings(
+  communityEnabled: boolean,
+  language: 'es' | 'en' = 'es',
+): Promise<string> {
   vi.doMock('@/lib/features/community', () => ({
     isCommunityEnabled: () => communityEnabled,
   }))
   vi.doMock('@/lib/auth/server', () => ({
     requireAppUserContext: () => Promise.resolve({
       user: { id: 'user-1' },
-      profile: { language: 'es' },
+      profile: { language },
       supabase: {
         from: (table: string) => ({
           select: () => ({
@@ -271,7 +274,7 @@ async function renderNotificationSettings(communityEnabled: boolean): Promise<st
   const { I18nProvider: CurrentI18nProvider } = await import('@/components/i18n/I18nProvider')
   const page = await NotificationsSettingsPage()
   return renderToStaticMarkup(
-    <CurrentI18nProvider language="es" syncDocumentLanguage={false}>
+      <CurrentI18nProvider language={language} syncDocumentLanguage={false}>
       <CurrentToastProvider>{page}</CurrentToastProvider>
     </CurrentI18nProvider>,
   )
@@ -290,5 +293,14 @@ describe('notification settings visibility', () => {
 
     expect(html).toContain('Notificaciones profesionales')
     expect(html).toContain('Actividad social')
+  })
+
+  it('localizes reminder headings in English and provides polite preference feedback', async () => {
+    const html = await renderNotificationSettings(false, 'en')
+
+    expect(html).toContain('Workout reminders')
+    expect(html).toContain('Vekira alerts')
+    expect(html).toContain('role="status"')
+    expect(html).toContain('aria-live="polite"')
   })
 })

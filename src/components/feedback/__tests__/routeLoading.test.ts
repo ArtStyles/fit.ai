@@ -39,6 +39,18 @@ describe('route loading skeletons', () => {
     expect(profileLoading).not.toContain('Privacidad')
   })
 
+  it('keeps social preferences out of the notifications loading boundary', () => {
+    const routeLoading = source('../RouteLoading.tsx')
+    const notificationsLoading = routeLoading.slice(
+      routeLoading.indexOf('export function NotificationsSettingsLoading()'),
+      routeLoading.indexOf('export function AccountSettingsLoading()'),
+    )
+
+    expect(notificationsLoading).toContain('Recordatorios')
+    expect(notificationsLoading).toContain('Avisos de Vekira')
+    expect(notificationsLoading).not.toContain('Actividad social')
+  })
+
   it('keeps the settings index skeleton grouped like the overview', () => {
     const routeLoading = source('../RouteLoading.tsx')
 
