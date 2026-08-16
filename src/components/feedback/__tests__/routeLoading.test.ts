@@ -51,6 +51,16 @@ describe('route loading skeletons', () => {
     expect(notificationsLoading).not.toContain('Actividad social')
   })
 
+  it('keeps notification controls at the 44px touch target', () => {
+    const productPreferences = source('../../settings/ProductNotificationPreferences.tsx')
+    const socialPreferences = source('../../settings/SocialNotificationPreferences.tsx')
+    const workoutReminders = source('../../settings/WorkoutReminders.tsx')
+
+    expect(productPreferences).toContain('min-h-11 min-w-11')
+    expect(socialPreferences).toContain('min-h-11 min-w-11')
+    expect(workoutReminders).toContain('min-h-11 min-w-11')
+  })
+
   it('keeps the settings index skeleton grouped like the overview', () => {
     const routeLoading = source('../RouteLoading.tsx')
 

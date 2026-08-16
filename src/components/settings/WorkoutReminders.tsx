@@ -8,6 +8,7 @@ import { useI18n } from '@/components/i18n/I18nProvider'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { SettingsStatus } from '@/components/settings/SettingsStatus'
 import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
+import { rescheduleWorkoutReminder } from '@/components/settings/notificationPreferenceFeedback'
 import {
   remindersSupported,
   scheduleWorkoutReminders,
@@ -68,6 +69,7 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   const [enabled, setEnabled] = useState(false)
   const [time, setTime] = useState(DEFAULT_TIME)
   const [busy, setBusy] = useState(false)
+  const [statusMessage, setStatusMessage] = useState('')
 
   const days = [...preferredWorkoutDays].sort((a, b) => a - b)
   const hasDays = days.length > 0
@@ -99,6 +101,7 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
             description: t('Activa las notificaciones de Vekira en los ajustes del teléfono.'),
             variant: 'error',
           })
+          setStatusMessage(t('Permiso necesario'))
           return
         }
         setEnabled(true)
@@ -108,11 +111,13 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
           description: t('Te avisaremos a las {time} en tus días de entrenamiento.', { time }),
           variant: 'success',
         })
+        setStatusMessage(t('Recordatorios activados'))
       } else {
         await cancelWorkoutReminders()
         setEnabled(false)
         persist({ enabled: false, time })
         showToast({ title: t('Recordatorios desactivados'), variant: 'success' })
+        setStatusMessage(t('Recordatorios desactivados'))
       }
     } finally {
       setBusy(false)
@@ -120,10 +125,22 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   }
 
   async function handleTimeChange(value: string) {
+    const previousTime = time
     setTime(value)
     persist({ enabled, time: value })
     if (enabled && supported) {
-      await scheduleWorkoutReminders(days, parseTime(value))
+      const scheduled = await rescheduleWorkoutReminder({
+        schedule: () => scheduleWorkoutReminders(days, parseTime(value)),
+        onRollback: () => {
+          setTime(previousTime)
+          persist({ enabled, time: previousTime })
+        },
+      })
+      if (!scheduled) {
+        const message = t('No se pudieron actualizar los recordatorios.')
+        setStatusMessage(message)
+        showToast({ title: message, variant: 'error' })
+      }
     }
   }
 
@@ -132,6 +149,7 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
       title={t('Recordatorios de entrenamiento')}
       description={t('Notificación local en tus días preferidos')}
     >
+      <p className="sr-only" role="status" aria-live="polite">{statusMessage}</p>
 
       {/* Web/PWA: las notificaciones locales solo operan en la app instalada */}
       {!supported ? (
@@ -158,7 +176,7 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
                   type="time"
                   value={time}
                   onChange={e => handleTimeChange(e.target.value)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                  className="h-11 min-h-11 min-w-11 rounded-md border border-input bg-background px-3 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-violet-500"
                 />
                 <button
                 type="button"
@@ -168,14 +186,14 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
                 onClick={handleToggle}
                 disabled={busy}
                 className={cn(
-                  'relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
+                  'relative flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
                   enabled ? 'bg-violet-500' : 'bg-muted/50',
                   busy && 'opacity-50',
                 )}
               >
                 <span
                   className={cn(
-                    'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                    'h-5 w-5 rounded-full bg-white shadow transition-transform',
                     enabled ? 'translate-x-5' : 'translate-x-0',
                   )}
                 />

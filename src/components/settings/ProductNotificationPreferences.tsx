@@ -7,6 +7,7 @@ import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
+import { persistOptimisticPreference } from '@/components/settings/notificationPreferenceFeedback'
 import { cn } from '@/lib/utils'
 
 export type ProductNotificationPreferencesInput = {
@@ -53,17 +54,24 @@ export function ProductNotificationPreferences({
     const next = { ...previous, [key]: !previous[key] }
     setPreferences(next)
 
-    startTransition(async () => {
-      const result = await updateProductNotificationPreferences(next)
-      if (!result.ok) {
-        setPreferences(previous)
-        setStatusMessage(result.error)
-        showToast({ title: result.error, variant: 'error' })
-        return
-      }
-      const message = t('Preferencias guardadas')
-      setStatusMessage(message)
-      showToast({ title: message, variant: 'success' })
+    startTransition(() => {
+      void persistOptimisticPreference({
+        previous,
+        next,
+        save: updateProductNotificationPreferences,
+        fallbackError: t('No se pudieron guardar las preferencias.'),
+        onRollback: (restored, error) => {
+          const message = t(error)
+          setPreferences(restored)
+          setStatusMessage(message)
+          showToast({ title: message, variant: 'error' })
+        },
+        onSuccess: () => {
+          const message = t('Preferencias guardadas')
+          setStatusMessage(message)
+          showToast({ title: message, variant: 'success' })
+        },
+      })
     })
   }
 
@@ -91,7 +99,7 @@ export function ProductNotificationPreferences({
                   aria-label={`${t(enabled ? 'Desactivar' : 'Activar')} ${t(option.label)}`}
                   onClick={() => toggle(option.key)}
                   disabled={pending}
-                  className="flex h-11 w-12 shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span
                     aria-hidden="true"

@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
+import { persistOptimisticPreference } from '@/components/settings/notificationPreferenceFeedback'
 
 type PreferenceKey = keyof SocialNotificationPreferencesInput
 
@@ -42,17 +43,24 @@ export function SocialNotificationPreferences({
     const previous = { ...preferences }
     const next = { ...previous, [key]: !previous[key] }
     setPreferences(next)
-    startTransition(async () => {
-      const result = await updateSocialNotificationPreferences(next)
-      if (!result.ok) {
-        setPreferences(previous)
-        setStatusMessage(result.error)
-        showToast({ title: result.error, variant: 'error' })
-        return
-      }
-      const message = t('Preferencias guardadas')
-      setStatusMessage(message)
-      showToast({ title: message, variant: 'success' })
+    startTransition(() => {
+      void persistOptimisticPreference({
+        previous,
+        next,
+        save: updateSocialNotificationPreferences,
+        fallbackError: t('No se pudieron guardar las preferencias.'),
+        onRollback: (restored, error) => {
+          const message = t(error)
+          setPreferences(restored)
+          setStatusMessage(message)
+          showToast({ title: message, variant: 'error' })
+        },
+        onSuccess: () => {
+          const message = t('Preferencias guardadas')
+          setStatusMessage(message)
+          showToast({ title: message, variant: 'success' })
+        },
+      })
     })
   }
 
@@ -78,14 +86,14 @@ export function SocialNotificationPreferences({
                 onClick={() => toggle(option.key)}
                 disabled={pending}
                 className={cn(
-                  'relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
+                  'relative flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
                   enabled ? 'bg-violet-500' : 'bg-muted/50',
                   pending && 'opacity-60',
                 )}
               >
                 <span
                   className={cn(
-                    'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                    'h-5 w-5 rounded-full bg-white shadow transition-transform',
                     enabled ? 'translate-x-5' : 'translate-x-0',
                   )}
                 />

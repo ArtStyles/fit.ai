@@ -303,4 +303,9 @@ describe('notification settings visibility', () => {
     expect(html).toContain('role="status"')
     expect(html).toContain('aria-live="polite"')
   })
+
+  it('localizes product preference errors in English', async () => {
+    expect((await import('@/lib/i18n')).translate('en', 'No se pudieron guardar las preferencias.'))
+      .toBe('Could not save notification preferences.')
+  })
 })
