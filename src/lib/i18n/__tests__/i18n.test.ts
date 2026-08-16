@@ -110,6 +110,17 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Cuenta de acceso', 'Access account'],
+    ['Sesión', 'Session'],
+    ['Documentos', 'Documents'],
+    ['Zona peligrosa', 'Danger zone'],
+    ['Interfaz en español', 'Interface in Spanish'],
+    ['Interfaz en inglés', 'Interface in English'],
+  ])('translates language and account settings copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['El nombre no puede superar 100 caracteres.', 'Name cannot exceed 100 characters.'],
     ['Sesión no válida.', 'Invalid session.'],
     ['No se pudo guardar el nombre.', 'Could not save the name.'],

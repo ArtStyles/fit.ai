@@ -577,13 +577,26 @@ export function NotificationsSettingsLoading() {
 }
 
 export function AccountSettingsLoading() {
+  const { t } = useI18n()
+
   return (
-    <SettingsDetailShell title="Cuenta" icon={UserRound} view="settings-account">
+    <SettingsDetailShell title={t('Cuenta')} icon={UserRound} view="settings-account">
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <SettingsFieldSkeleton label="Correo electrónico" />
+        <p className="text-base font-semibold text-foreground">{t('Cuenta de acceso')}</p>
+        <SettingsFieldSkeleton label={t('Correo electrónico')} className="mt-4" />
+      </div>
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <p className="text-base font-semibold text-foreground">{t('Sesión')}</p>
+        <SettingsSaveSkeleton />
+      </div>
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <p className="text-base font-semibold text-foreground">{t('Documentos')}</p>
+        <Shimmer className="mt-4 h-11 w-full rounded-md bg-muted/40" />
+        <Shimmer className="mt-2 h-11 w-full rounded-md bg-muted/40" />
       </div>
       <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
-        <p className="text-sm font-semibold text-red-200">Eliminar cuenta</p>
+        <p className="text-base font-semibold text-red-200">{t('Zona peligrosa')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('Eliminar cuenta')}</p>
         <Shimmer className="mt-4 h-10 rounded-md bg-red-500/15" />
       </div>
     </SettingsDetailShell>
@@ -626,15 +639,17 @@ export function SettingsLoading() {
 }
 
 export function LanguageSettingsLoading() {
+  const { t } = useI18n()
+
   return (
     <AppLoadingShell className="pb-16">
       <BackHeader
-        backLabel="Ajustes"
-        title="Idioma"
+        backLabel={t('Ajustes')}
+        title={t('Idioma')}
         icon={Languages}
       />
 
-      <section className="mt-8 space-y-5" aria-label="Cargando ajustes de idioma">
+      <section className="mt-8 space-y-5" aria-label={t('Cargando ajustes de idioma')}>
         <div className="space-y-3">
           {['Español', 'English'].map((label, index) => (
             <div
@@ -645,10 +660,14 @@ export function LanguageSettingsLoading() {
                 className="h-4 w-4 shrink-0 rounded-full bg-violet-500/20"
                 style={{ animationDelay: `${index * 80}ms` } as React.CSSProperties}
               />
-              <p className="text-sm font-semibold text-foreground">{label}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">{label}</p>
+                <Shimmer className="mt-2 h-3 w-1/2 rounded bg-muted/40" />
+              </div>
             </div>
           ))}
         </div>
+        <Shimmer data-loading-slot="language-save-status" className="h-10 rounded-xl bg-muted/40" />
       </section>
     </AppLoadingShell>
   )

@@ -128,30 +128,28 @@ export async function updateProfileName(
   return { ok: true, message: 'Nombre actualizado.', fieldErrors: {} }
 }
 
-export async function updateLanguage(formData: FormData) {
+export async function updateLanguage(language: string): Promise<ActionResult> {
+  if (language !== 'es' && language !== 'en') return { ok: false, error: 'Idioma no válido.' }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login?error=auth_required')
-
-  const language = formData.get('language')
-  if (language !== 'es' && language !== 'en') {
-    redirect('/settings/idioma?error=save_failed')
-  }
+  if (!user) return { ok: false, error: 'Sesión no válida.' }
 
   const { error } = await (supabase
     .from('profiles') as any)
     .update({ language })
     .eq('id', user.id)
 
-  if (error) redirect('/settings/idioma?error=save_failed')
+  if (error) return { ok: false, error: 'No se pudo guardar el idioma.' }
 
   cookies().set('fitai-language', language, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
-    maxAge: 60 * 60 * 24 * 365,
+    maxAge: 31_536_000,
   })
   revalidatePath('/', 'layout')
+  return { ok: true }
 }
 
 export async function setPrivacy(isPrivate: boolean): Promise<ActionResult> {

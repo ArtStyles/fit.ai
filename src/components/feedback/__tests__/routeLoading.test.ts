@@ -105,6 +105,28 @@ describe('route loading skeletons', () => {
     expect(routeLoading).toContain(expectedCopy)
   })
 
+  it('matches the four account preference groups while loading', () => {
+    const routeLoading = source('../RouteLoading.tsx')
+    const accountLoading = routeLoading.slice(
+      routeLoading.indexOf('export function AccountSettingsLoading()'),
+      routeLoading.indexOf('export function SettingsLoading()'),
+    )
+
+    for (const label of ['Cuenta de acceso', 'Sesión', 'Documentos', 'Zona peligrosa']) {
+      expect(accountLoading).toContain(label)
+    }
+  })
+
+  it('reserves feedback space for the language save state while loading', () => {
+    const routeLoading = source('../RouteLoading.tsx')
+    const languageLoading = routeLoading.slice(
+      routeLoading.indexOf('export function LanguageSettingsLoading()'),
+      routeLoading.indexOf('export function SessionLoading()'),
+    )
+
+    expect(languageLoading).toContain('data-loading-slot="language-save-status"')
+  })
+
   it.each([
     ['perfil', 'ProfileSettingsLoading'],
     ['datos', 'PersonalDataSettingsLoading'],
