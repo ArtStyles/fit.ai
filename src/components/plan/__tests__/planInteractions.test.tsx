@@ -52,6 +52,80 @@ describe('plan editor mobile interactions', () => {
     await viteServer?.close()
   }, 30_000)
 
+  it('shows a circular exercise image that opens its preview from the day detail', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/plan/__tests__/fixtures/planInteractions.html?surface=workspace`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PLAN_INTERACTIONS_READY__?: boolean }).__PLAN_INTERACTIONS_READY__))
+      await page.getByRole('button', { name: /Día A/ }).click()
+
+      const workoutDialog = page.getByRole('dialog', { name: 'Día A' })
+      const imageTrigger = workoutDialog.getByRole('button', { name: /Ampliar imagen de/ })
+      await pwExpect(imageTrigger).toBeVisible()
+      expect(await imageTrigger.evaluate(element => {
+        const bounds = element.getBoundingClientRect()
+        return {
+          width: bounds.width,
+          height: bounds.height,
+          borderRadius: getComputedStyle(element).borderRadius,
+        }
+      })).toEqual({ width: 48, height: 48, borderRadius: '9999px' })
+
+      await imageTrigger.click()
+      const preview = page.getByRole('dialog', { name: /NombreDeEjercicioExtremadamenteLargo/ })
+      await pwExpect(preview).toBeVisible()
+      await pwExpect(preview.getByRole('img', { name: /NombreDeEjercicioExtremadamenteLargo/ })).toBeVisible()
+    } finally {
+      await context.close()
+    }
+  }, 20_000)
+
+  it('keeps the circular image preview available while editing the workout structure', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/plan/__tests__/fixtures/planInteractions.html?surface=workspace`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PLAN_INTERACTIONS_READY__?: boolean }).__PLAN_INTERACTIONS_READY__))
+      await page.getByRole('button', { name: /Día A/ }).click()
+      await page.getByRole('button', { name: 'Editar estructura' }).click()
+
+      const workoutDialog = page.getByRole('dialog', { name: 'Día A' })
+      const imageTrigger = workoutDialog.getByRole('button', { name: /Ampliar imagen de/ })
+      await pwExpect(imageTrigger).toBeVisible()
+      expect(await imageTrigger.evaluate(element => {
+        const bounds = element.getBoundingClientRect()
+        return {
+          width: bounds.width,
+          height: bounds.height,
+          borderRadius: getComputedStyle(element).borderRadius,
+        }
+      })).toEqual({ width: 48, height: 48, borderRadius: '9999px' })
+
+      await imageTrigger.click()
+      await pwExpect(page.getByRole('dialog', { name: /NombreDeEjercicioExtremadamenteLargo/ })).toBeVisible()
+    } finally {
+      await context.close()
+    }
+  }, 20_000)
+
+  it('does not offer a coach adjustment from the workout structure editor', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/plan/__tests__/fixtures/planInteractions.html?surface=workspace`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PLAN_INTERACTIONS_READY__?: boolean }).__PLAN_INTERACTIONS_READY__))
+      await page.getByRole('button', { name: /Día A/ }).click()
+      await page.getByRole('button', { name: 'Editar estructura' }).click()
+
+      const workoutDialog = page.getByRole('dialog', { name: 'Día A' })
+      await pwExpect(workoutDialog.getByRole('button', { name: 'Volver a lectura' })).toBeVisible()
+      await pwExpect(workoutDialog.getByRole('button', { name: 'Pedir ajuste al coach' })).toHaveCount(0)
+    } finally {
+      await context.close()
+    }
+  }, 20_000)
+
   it('keeps long names inside the mobile editor and executes long-press actions', async () => {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
     const page = await context.newPage()

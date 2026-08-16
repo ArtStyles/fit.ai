@@ -28,7 +28,7 @@ function WorkspaceFixture() {
   const exercise = {
     id: 'exercise-long',
     name: longName,
-    image_url: null,
+    image_url: '/icon.svg',
     muscle_groups: ['Pecho'],
     equipment: ['Barra'],
     difficulty: 'intermediate',

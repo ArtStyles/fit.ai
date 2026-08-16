@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { GripVertical, PencilLine, Repeat2, Trash2, TrendingUp } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import { LongPressMenu, type LongPressAction } from '@/components/ui'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { useToast } from '@/components/feedback/ToastProvider'
@@ -242,6 +243,14 @@ function ExerciseRow({
             className="mt-0.5 flex h-11 w-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted-foreground/60 outline-none hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 active:cursor-grabbing">
             <GripVertical className="h-5 w-5" />
           </button>
+          <ExerciseImage
+            src={exercise?.image_url}
+            alt={exercise?.name ?? t('Ejercicio')}
+            variant="thumb"
+            zoomable
+            className="h-12 w-12 shrink-0 rounded-full"
+            frameClassName="rounded-full"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">

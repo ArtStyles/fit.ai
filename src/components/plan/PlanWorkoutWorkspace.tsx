@@ -17,7 +17,6 @@ import {
 
 import { PlanDayTimeline } from './PlanDayTimeline'
 import { PlanWorkoutReadView } from './PlanWorkoutReadView'
-import { WorkoutAdjustButton } from './WorkoutAdjustButton'
 import {
   WorkoutExerciseList,
   type PlanExerciseOption,
@@ -70,12 +69,11 @@ function WorkoutEditView({
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
         <button type="button" onClick={onBack} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           {t('Volver a lectura')}
         </button>
-        <WorkoutAdjustButton workoutId={workout.summary.id} workoutName={workout.summary.name} />
       </div>
 
       <div className="mt-4 rounded-2xl border border-border/60 bg-background/40 p-4">
