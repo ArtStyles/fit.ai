@@ -186,17 +186,23 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
                 onClick={handleToggle}
                 disabled={busy}
                 className={cn(
-                  'relative flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
-                  enabled ? 'bg-violet-500' : 'bg-muted/50',
+                  'flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
                   busy && 'opacity-50',
                 )}
               >
                 <span
                   className={cn(
-                    'h-5 w-5 rounded-full bg-white shadow transition-transform',
-                    enabled ? 'translate-x-5' : 'translate-x-0',
+                    'relative block h-7 w-12 rounded-full transition-colors',
+                    enabled ? 'bg-violet-500' : 'bg-muted/50',
                   )}
-                />
+                >
+                  <span
+                    className={cn(
+                      'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                      enabled ? 'translate-x-5' : 'translate-x-0',
+                    )}
+                  />
+                </span>
                 </button>
               </div>
             )}

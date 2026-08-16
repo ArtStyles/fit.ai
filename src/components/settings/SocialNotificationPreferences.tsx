@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState } from 'react'
 import { Heart, MessageCircle, UserCheck, UserPlus } from 'lucide-react'
 import {
   updateSocialNotificationPreferences,
@@ -11,7 +11,10 @@ import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
-import { persistOptimisticPreference } from '@/components/settings/notificationPreferenceFeedback'
+import {
+  createSingleFlight,
+  persistOptimisticPreference,
+} from '@/components/settings/notificationPreferenceFeedback'
 
 type PreferenceKey = keyof SocialNotificationPreferencesInput
 
@@ -33,18 +36,19 @@ export function SocialNotificationPreferences({
   initialPreferences: SocialNotificationPreferencesInput
 }) {
   const [preferences, setPreferences] = useState(initialPreferences)
-  const [pending, startTransition] = useTransition()
+  const [saving, setSaving] = useState(false)
+  const persistence = useRef(createSingleFlight()).current
   const [statusMessage, setStatusMessage] = useState('')
   const { showToast } = useToast()
   const { t } = useI18n()
 
   function toggle(key: PreferenceKey) {
-    if (pending) return
+    if (persistence.isPending) return
     const previous = { ...preferences }
     const next = { ...previous, [key]: !previous[key] }
     setPreferences(next)
-    startTransition(() => {
-      void persistOptimisticPreference({
+    setSaving(true)
+    void persistence.run(() => persistOptimisticPreference({
         previous,
         next,
         save: updateSocialNotificationPreferences,
@@ -60,8 +64,7 @@ export function SocialNotificationPreferences({
           setStatusMessage(message)
           showToast({ title: message, variant: 'success' })
         },
-      })
-    })
+      })).finally(() => setSaving(false))
   }
 
   return (
@@ -84,19 +87,25 @@ export function SocialNotificationPreferences({
                 aria-checked={enabled}
                 aria-label={`${t(enabled ? 'Desactivar' : 'Activar')} ${t(option.label)}`}
                 onClick={() => toggle(option.key)}
-                disabled={pending}
+                disabled={saving}
                 className={cn(
-                  'relative flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
-                  enabled ? 'bg-violet-500' : 'bg-muted/50',
-                  pending && 'opacity-60',
+                  'flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
+                  saving && 'opacity-60',
                 )}
               >
                 <span
                   className={cn(
-                    'h-5 w-5 rounded-full bg-white shadow transition-transform',
-                    enabled ? 'translate-x-5' : 'translate-x-0',
+                    'relative block h-7 w-12 rounded-full transition-colors',
+                    enabled ? 'bg-violet-500' : 'bg-muted/50',
                   )}
-                />
+                >
+                  <span
+                    className={cn(
+                      'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                      enabled ? 'translate-x-5' : 'translate-x-0',
+                    )}
+                  />
+                </span>
                 </button>
               )}
             />

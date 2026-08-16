@@ -2,6 +2,29 @@ type PreferenceUpdateResult =
   | { ok: true }
   | { ok: false; error: string }
 
+type SingleFlightResult<T> =
+  | { started: true; value: T }
+  | { started: false }
+
+export function createSingleFlight() {
+  let pending = false
+
+  return {
+    get isPending() {
+      return pending
+    },
+    async run<T>(task: () => Promise<T>): Promise<SingleFlightResult<T>> {
+      if (pending) return { started: false }
+      pending = true
+      try {
+        return { started: true, value: await task() }
+      } finally {
+        pending = false
+      }
+    },
+  }
+}
+
 export async function persistOptimisticPreference<T>({
   previous,
   next,

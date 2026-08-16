@@ -61,6 +61,14 @@ describe('route loading skeletons', () => {
     expect(workoutReminders).toContain('min-h-11 min-w-11')
   })
 
+  it('keeps compact visual tracks inside the larger social and reminder switch targets', () => {
+    const socialPreferences = source('../../settings/SocialNotificationPreferences.tsx')
+    const workoutReminders = source('../../settings/WorkoutReminders.tsx')
+
+    expect(socialPreferences).toContain("'relative block h-7 w-12 rounded-full transition-colors'")
+    expect(workoutReminders).toContain("'relative block h-7 w-12 rounded-full transition-colors'")
+  })
+
   it('keeps the settings index skeleton grouped like the overview', () => {
     const routeLoading = source('../RouteLoading.tsx')
 

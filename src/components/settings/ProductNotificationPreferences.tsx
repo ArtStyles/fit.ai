@@ -1,13 +1,16 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState } from 'react'
 import { BellRing, Smartphone } from 'lucide-react'
 import { updateProductNotificationPreferences } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
-import { persistOptimisticPreference } from '@/components/settings/notificationPreferenceFeedback'
+import {
+  createSingleFlight,
+  persistOptimisticPreference,
+} from '@/components/settings/notificationPreferenceFeedback'
 import { cn } from '@/lib/utils'
 
 export type ProductNotificationPreferencesInput = {
@@ -43,19 +46,19 @@ export function ProductNotificationPreferences({
   initialPreferences: ProductNotificationPreferencesInput
 }) {
   const [preferences, setPreferences] = useState(initialPreferences)
-  const [pending, startTransition] = useTransition()
+  const [saving, setSaving] = useState(false)
+  const persistence = useRef(createSingleFlight()).current
   const [statusMessage, setStatusMessage] = useState('')
   const { showToast } = useToast()
   const { t } = useI18n()
 
   function toggle(key: PreferenceKey) {
-    if (pending) return
+    if (persistence.isPending) return
     const previous = { ...preferences }
     const next = { ...previous, [key]: !previous[key] }
     setPreferences(next)
-
-    startTransition(() => {
-      void persistOptimisticPreference({
+    setSaving(true)
+    void persistence.run(() => persistOptimisticPreference({
         previous,
         next,
         save: updateProductNotificationPreferences,
@@ -71,8 +74,7 @@ export function ProductNotificationPreferences({
           setStatusMessage(message)
           showToast({ title: message, variant: 'success' })
         },
-      })
-    })
+      })).finally(() => setSaving(false))
   }
 
   return (
@@ -98,7 +100,7 @@ export function ProductNotificationPreferences({
                   aria-checked={enabled}
                   aria-label={`${t(enabled ? 'Desactivar' : 'Activar')} ${t(option.label)}`}
                   onClick={() => toggle(option.key)}
-                  disabled={pending}
+                  disabled={saving}
                   className="flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span
