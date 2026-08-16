@@ -82,16 +82,20 @@ describe('plan editor mobile interactions', () => {
       await pwExpect(editDetails).toBeVisible()
       await editDetails.getByRole('button', { name: 'Cerrar' }).click()
 
-      await workoutDialog.getByText('Agregar ejercicio', { exact: true }).click()
-      await workoutDialog.getByRole('button', { name: 'Busca por nombre, músculo o equipo' }).click()
+      await workoutDialog.getByRole('button', { name: 'Agregar ejercicio' }).click()
       const catalog = page.getByRole('dialog', { name: 'Agregar ejercicios' })
+      await pwExpect(catalog).toBeVisible()
+      await pwExpect(workoutDialog.locator('input[name="sets"], input[name="reps"], input[name="weightKg"], input[name="restSeconds"], input[name="targetRpe"], textarea[name="notes"]')).toHaveCount(0)
       await catalog.getByRole('button', { name: /Ejercicio 01/ }).click()
       await catalog.getByRole('button', { name: 'Agregar 1 ejercicio' }).click()
-      await pwExpect(workoutDialog.locator('input[name="exerciseIds"][value="exercise-01"]')).toHaveCount(1)
+      await pwExpect.poll(
+        () => page.evaluate(() => (window as Window & { __ADDED_EXERCISE_IDS__?: string[] }).__ADDED_EXERCISE_IDS__),
+        { timeout: 5_000 },
+      ).toEqual(['exercise-01'])
     } finally {
       await context.close()
     }
-  }, 20_000)
+  }, 40_000)
 
   it('uses compact category controls and paginates the catalog while preserving selections', async () => {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 } })

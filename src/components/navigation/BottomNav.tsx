@@ -19,6 +19,7 @@ import {
 import { formatActiveWorkoutElapsed, summarizeActiveSession } from '@/components/session/sessionViewModel'
 import { useSessionStore } from '@/store/sessionStore'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { releaseSessionAuthorization } from '@/app/actions/authorizeSession'
 
 // Routes where the bottom bar should be hidden (full-screen flows)
 const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
@@ -31,6 +32,36 @@ type ActiveWorkoutDockViewProps = {
   totalSets: number
   percentage: number
   onDiscard: () => void
+}
+
+type DiscardSessionDependencies = {
+  releaseAuthorization: typeof releaseSessionAuthorization
+  clearPersistedSession: typeof clearActiveSession
+}
+
+export async function discardActiveWorkoutSession(
+  session: Pick<RestorableSessionSnapshot, 'clientSessionId' | 'workoutId'>,
+  dependencies: DiscardSessionDependencies = {
+    releaseAuthorization: releaseSessionAuthorization,
+    clearPersistedSession: clearActiveSession,
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (session.clientSessionId) {
+    let released: Awaited<ReturnType<typeof dependencies.releaseAuthorization>>
+    try {
+      released = await dependencies.releaseAuthorization(session.clientSessionId, session.workoutId)
+    } catch {
+      return { ok: false, error: 'No se pudo descartar el entrenamiento. Inténtalo nuevamente.' }
+    }
+    if (!released.success) return { ok: false, error: released.error }
+  }
+
+  const cleared = dependencies.clearPersistedSession()
+  if (!cleared.ok) {
+    return { ok: false, error: 'No se pudo descartar el entrenamiento. Inténtalo nuevamente.' }
+  }
+
+  return { ok: true }
 }
 
 export function ActiveWorkoutDockView({
@@ -95,6 +126,7 @@ export function ActiveWorkoutDock() {
   const [now, setNow] = useState(() => Date.now())
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
   const [discardError, setDiscardError] = useState<string | null>(null)
+  const [discarding, setDiscarding] = useState(false)
 
   useEffect(() => {
     const refresh = () => setSnapshot(loadActiveSession())
@@ -134,7 +166,12 @@ export function ActiveWorkoutDock() {
         }}
       />
 
-      <Dialog open={confirmingDiscard} onOpenChange={setConfirmingDiscard}>
+      <Dialog
+        open={confirmingDiscard}
+        onOpenChange={open => {
+          if (!discarding) setConfirmingDiscard(open)
+        }}
+      >
         <DialogContent className="max-w-sm gap-0 rounded-2xl border-border/70 bg-popover p-0">
           <div className="space-y-3 p-5 pr-16">
             <DialogTitle>¿Descartar entrenamiento?</DialogTitle>
@@ -147,6 +184,7 @@ export function ActiveWorkoutDock() {
             <button
               type="button"
               onClick={() => setConfirmingDiscard(false)}
+              disabled={discarding}
               className="min-h-11 rounded-xl border border-border px-4 text-sm font-semibold text-foreground"
             >
               Continuar sesión
@@ -154,18 +192,24 @@ export function ActiveWorkoutDock() {
             <button
               type="button"
               onClick={() => {
-                const result = clearActiveSession()
-                if (!result.ok) {
-                  setDiscardError('No se pudo descartar el entrenamiento. Inténtalo nuevamente.')
-                  return
-                }
-                useSessionStore.getState().clearSession()
-                setSnapshot(null)
-                setConfirmingDiscard(false)
+                if (discarding) return
+                setDiscarding(true)
+                setDiscardError(null)
+                void discardActiveWorkoutSession(snapshot).then(result => {
+                  setDiscarding(false)
+                  if (!result.ok) {
+                    setDiscardError(result.error)
+                    return
+                  }
+                  useSessionStore.getState().clearSession()
+                  setSnapshot(null)
+                  setConfirmingDiscard(false)
+                })
               }}
+              disabled={discarding}
               className="min-h-11 rounded-xl bg-destructive px-4 text-sm font-semibold text-destructive-foreground"
             >
-              Descartar
+              {discarding ? 'Descartando…' : 'Descartar'}
             </button>
           </div>
         </DialogContent>

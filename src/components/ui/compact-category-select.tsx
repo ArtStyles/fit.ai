@@ -56,16 +56,16 @@ export function CompactCategorySelect({
         <SelectTrigger
           aria-label={ariaLabel}
           className={cn(
-            'h-12 min-w-0 rounded-xl border-border/70 bg-background px-3 font-normal text-foreground',
+            'h-12 min-w-0 overflow-hidden rounded-xl border-border/70 bg-background px-3 font-normal text-foreground [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0',
             className,
           )}
         >
           <SelectValue>{currentLabel}</SelectValue>
         </SelectTrigger>
-        <SelectContent className="z-[80] max-h-64 min-w-[var(--radix-select-trigger-width)] rounded-xl">
-          <SelectItem value={ALL_VALUE} className="min-h-12">{allLabel}</SelectItem>
+        <SelectContent className="z-[80] max-h-64 w-[var(--radix-select-trigger-width)] min-w-0 max-w-[calc(100vw-2rem)] rounded-xl">
+          <SelectItem value={ALL_VALUE} className="min-h-12 min-w-0 overflow-hidden [&>span:last-child]:truncate">{allLabel}</SelectItem>
           {options.map(option => (
-            <SelectItem key={option.value} value={option.value} className="min-h-12">
+            <SelectItem key={option.value} value={option.value} className="min-h-12 min-w-0 overflow-hidden [&>span:last-child]:truncate">
               {option.label}
             </SelectItem>
           ))}

@@ -1816,6 +1816,13 @@ export interface Database {
         }
         Returns: Json
       }
+      release_session_authorization: {
+        Args: {
+          p_client_session_id: string
+          p_workout_id: string
+        }
+        Returns: undefined
+      }
       save_session_log_atomic_v2: {
         Args: {
           p_client_session_id: string

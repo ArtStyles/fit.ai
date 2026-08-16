@@ -1,4 +1,8 @@
+'use client'
+
+import { useEffect, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
   CheckCircle2,
@@ -62,7 +66,28 @@ export function TrainerDirectory({
   filters: DirectoryFilters
   nextCursor: string | null
 }) {
-  const appliedFilters = activeFilters(filters)
+  const router = useRouter()
+  const [draftFilters, setDraftFilters] = useState<DirectoryFilters>(filters)
+  const [appliedFilterState, setAppliedFilterState] = useState<DirectoryFilters>(filters)
+
+  useEffect(() => {
+    setDraftFilters(filters)
+    setAppliedFilterState(filters)
+  }, [filters])
+
+  function setFilter<K extends keyof DirectoryFilters>(key: K, value: DirectoryFilters[K]) {
+    setDraftFilters(current => ({ ...current, [key]: value || undefined }))
+  }
+
+  function navigateToFilters(next: DirectoryFilters, event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault()
+    setDraftFilters(next)
+    setAppliedFilterState(next)
+    const query = queryString(next)
+    router.push(query ? `/trainers?${query}` : '/trainers')
+  }
+
+  const appliedFilters = activeFilters(appliedFilterState)
   const advancedFilterCount = appliedFilters.filter(filter => filter.key !== 'text').length
   const advancedFilterLabel = advancedFilterCount === 1
     ? '1 filtro activo'
@@ -84,9 +109,9 @@ export function TrainerDirectory({
       </header>
 
       <form
-        key={queryString(filters) || 'all-trainers'}
         action="/trainers"
         method="get"
+        onSubmit={() => setAppliedFilterState(draftFilters)}
         className="rounded-2xl border border-border/70 bg-card/70 p-3 shadow-sm"
       >
         <div className="flex gap-2">
@@ -96,7 +121,8 @@ export function TrainerDirectory({
             <input
               name="q"
               type="search"
-              defaultValue={filters.text ?? ''}
+              value={draftFilters.text ?? ''}
+              onChange={event => setFilter('text', event.target.value)}
               placeholder="Buscar por nombre o experiencia"
               className="h-12 w-full rounded-xl border border-input bg-background pl-11 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
             />
@@ -121,7 +147,7 @@ export function TrainerDirectory({
           <div className="grid gap-3 border-t border-border/60 p-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-muted-foreground">
               Especialidad
-              <input name="especialidad" defaultValue={filters.specialty ?? ''} placeholder="Fuerza, movilidad…" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
+              <input name="especialidad" value={draftFilters.specialty ?? ''} onChange={event => setFilter('specialty', event.target.value)} placeholder="Fuerza, movilidad…" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
             </label>
             <div className="text-xs font-semibold text-muted-foreground">
               <span>Modalidad</span>
@@ -129,7 +155,8 @@ export function TrainerDirectory({
                 <CompactCategorySelect
                   ariaLabel="Modalidad"
                   name="modalidad"
-                  defaultValue={filters.modality ?? ''}
+                  value={draftFilters.modality ?? ''}
+                  onValueChange={value => setFilter('modality', value)}
                   allLabel="Todas"
                   options={[
                     { value: 'online', label: 'En línea' },
@@ -141,11 +168,11 @@ export function TrainerDirectory({
             </div>
             <label className="text-xs font-semibold text-muted-foreground">
               Idioma
-              <input name="idioma" defaultValue={filters.language ?? ''} placeholder="Español, inglés…" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
+              <input name="idioma" value={draftFilters.language ?? ''} onChange={event => setFilter('language', event.target.value)} placeholder="Español, inglés…" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
             </label>
             <label className="text-xs font-semibold text-muted-foreground">
               Ubicación
-              <input name="ubicacion" defaultValue={filters.location ?? ''} placeholder="Ciudad o región" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
+              <input name="ubicacion" value={draftFilters.location ?? ''} onChange={event => setFilter('location', event.target.value)} placeholder="Ciudad o región" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
             </label>
             <button type="submit" className="min-h-11 rounded-xl border border-primary/30 bg-primary/10 px-4 text-sm font-semibold text-primary sm:col-span-2">
               Aplicar filtros
@@ -159,7 +186,8 @@ export function TrainerDirectory({
           {appliedFilters.map(filter => (
             <Link
               key={filter.key}
-              href={hrefWithoutFilter(filters, filter.key)}
+              href={hrefWithoutFilter(appliedFilterState, filter.key)}
+              onClick={event => navigateToFilters({ ...appliedFilterState, [filter.key]: undefined }, event)}
               aria-label={`Quitar ${filter.label}`}
               className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 text-xs font-semibold capitalize text-primary"
             >
@@ -167,7 +195,7 @@ export function TrainerDirectory({
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
           ))}
-          <Link href="/trainers" className="inline-flex min-h-9 items-center px-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
+          <Link href="/trainers" onClick={event => navigateToFilters({}, event)} className="inline-flex min-h-9 items-center px-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
             Limpiar filtros
           </Link>
         </div>
@@ -230,7 +258,7 @@ export function TrainerDirectory({
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground"><Search className="h-5 w-5" aria-hidden="true" /></span>
           <h2 className="mt-4 font-bold text-foreground">No encontramos entrenadores con esos filtros</h2>
           <p className="mt-1 text-sm text-muted-foreground">Prueba ampliando la ubicación o quitando algún filtro.</p>
-          <Link href="/trainers" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">
+          <Link href="/trainers" onClick={event => navigateToFilters({}, event)} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">
             Limpiar filtros
           </Link>
         </div>

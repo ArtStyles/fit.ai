@@ -156,6 +156,12 @@ describe('trainer accessibility acceptance in a local browser', () => {
       await pwExpect(page.locator('select[name="modalidad"]')).toHaveCount(0)
       await pwExpect(page.getByRole('combobox', { name: 'Modalidad' })).toContainText('En línea')
 
+      await page.getByRole('link', { name: 'Quitar Modalidad: En línea' }).click()
+      await pwExpect(page.getByRole('link', { name: 'Quitar Modalidad: En línea' })).toHaveCount(0)
+      await pwExpect(page.getByRole('searchbox', { name: 'Buscar entrenadores' })).toHaveValue('fuerza')
+      await pwExpect(page.getByRole('textbox', { name: 'Ubicación' })).toHaveValue('La Habana')
+      await pwExpect(page.getByRole('combobox', { name: 'Modalidad' })).toContainText('Todas')
+
       await page.getByRole('link', { name: 'Limpiar filtros' }).first().click()
       await pwExpect(page.getByRole('searchbox', { name: 'Buscar entrenadores' })).toHaveValue('')
       await page.getByText('Filtros avanzados', { exact: true }).click()

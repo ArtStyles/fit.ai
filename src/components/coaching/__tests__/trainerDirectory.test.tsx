@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 import { TrainerDirectory } from '../TrainerDirectory'
 import { TrainerPublicProfile } from '../TrainerPublicProfile'
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const TRAINER: PublicTrainerDirectoryRow = {
   userId: '11111111-1111-4111-8111-111111111111',

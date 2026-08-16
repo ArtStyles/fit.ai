@@ -49,4 +49,83 @@ describe('persistent active workout panel', () => {
     expect(bottomNavSource).not.toMatch(/data-active-workout-spacer[\s\S]{0,120}lg:hidden/)
     expect(appShellSource.indexOf('<ActiveWorkoutDock')).toBeLessThan(appShellSource.indexOf('</AppScrollViewport>'))
   })
+
+  it('releases the server reservation before deleting the local backup', async () => {
+    const discardActiveWorkoutSession = (bottomNavigation as typeof bottomNavigation & {
+      discardActiveWorkoutSession?: (
+        session: { clientSessionId?: string; workoutId: string },
+        dependencies: {
+          releaseAuthorization: (clientSessionId: string, workoutId: string) => Promise<{ success: boolean; error?: string }>
+          clearPersistedSession: () => { ok: boolean }
+        },
+      ) => Promise<{ ok: boolean; error?: string }>
+    }).discardActiveWorkoutSession
+
+    expect(discardActiveWorkoutSession).toBeTypeOf('function')
+    if (!discardActiveWorkoutSession) return
+
+    const order: string[] = []
+    const result = await discardActiveWorkoutSession(
+      { clientSessionId: 'session-1', workoutId: 'workout-1' },
+      {
+        releaseAuthorization: async () => {
+          order.push('server')
+          return { success: true }
+        },
+        clearPersistedSession: () => {
+          order.push('local')
+          return { ok: true }
+        },
+      },
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(order).toEqual(['server', 'local'])
+  })
+
+  it('preserves the local backup when releasing the server reservation fails', async () => {
+    const discardActiveWorkoutSession = (bottomNavigation as typeof bottomNavigation & {
+      discardActiveWorkoutSession?: (
+        session: { clientSessionId?: string; workoutId: string },
+        dependencies: {
+          releaseAuthorization: (clientSessionId: string, workoutId: string) => Promise<{ success: boolean; error?: string }>
+          clearPersistedSession: () => { ok: boolean }
+        },
+      ) => Promise<{ ok: boolean; error?: string }>
+    }).discardActiveWorkoutSession
+
+    expect(discardActiveWorkoutSession).toBeTypeOf('function')
+    if (!discardActiveWorkoutSession) return
+
+    const clearPersistedSession = vi.fn(() => ({ ok: true as const }))
+    const result = await discardActiveWorkoutSession(
+      { clientSessionId: 'session-1', workoutId: 'workout-1' },
+      {
+        releaseAuthorization: vi.fn().mockResolvedValue({ success: false, error: 'Sin conexión' }),
+        clearPersistedSession,
+      },
+    )
+
+    expect(result).toEqual({ ok: false, error: 'Sin conexión' })
+    expect(clearPersistedSession).not.toHaveBeenCalled()
+  })
+
+  it('turns a network rejection into a recoverable discard error', async () => {
+    const discardActiveWorkoutSession = bottomNavigation.discardActiveWorkoutSession
+    const clearPersistedSession = vi.fn(() => ({ ok: true as const }))
+
+    const result = await discardActiveWorkoutSession(
+      { clientSessionId: 'session-1', workoutId: 'workout-1' },
+      {
+        releaseAuthorization: vi.fn().mockRejectedValue(new Error('network unavailable')),
+        clearPersistedSession,
+      },
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'No se pudo descartar el entrenamiento. Inténtalo nuevamente.',
+    })
+    expect(clearPersistedSession).not.toHaveBeenCalled()
+  })
 })

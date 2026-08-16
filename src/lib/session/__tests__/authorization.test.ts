@@ -10,6 +10,10 @@ const migration = readFileSync(
   new URL('../../../../supabase/migrations/038_session_authorizations.sql', import.meta.url),
   'utf8',
 )
+const releaseMigration = readFileSync(
+  new URL('../../../../supabase/migrations/046_release_session_authorization.sql', import.meta.url),
+  'utf8',
+)
 const contextMigration = readFileSync(
   new URL('../../../../supabase/migrations/036_completed_session_context.sql', import.meta.url),
   'utf8',
@@ -248,11 +252,22 @@ describe('session authorization migration', () => {
   it('publishes the authorization table and both RPC contracts in database types', () => {
     expect(databaseTypes).toContain('session_authorizations:')
     expect(databaseTypes).toContain('authorize_session_start:')
+    expect(databaseTypes).toContain('release_session_authorization:')
     expect(databaseTypes).toContain('save_session_log_atomic_v2:')
     expect(databaseTypes).toMatch(/session_authorizations:[\s\S]+policy_timezone: string[\s\S]+policy_date: string[\s\S]+policy_day_start: string[\s\S]+policy_day_end: string[\s\S]+workout_window_start: string/i)
   })
 
   it('translates safe authorization errors at the client boundary', () => {
     expect(sessionClient).toContain('setAuthorizationError(t(result.error))')
+  })
+
+  it('releases only the caller own unconsumed authorization under the session lock', () => {
+    expect(releaseMigration).toContain('CREATE OR REPLACE FUNCTION public.release_session_authorization')
+    expect(releaseMigration).toMatch(/SECURITY DEFINER[\s\S]+v_user_id UUID := auth\.uid\(\)/i)
+    expect(releaseMigration).toMatch(/pg_advisory_xact_lock[\s\S]+UPDATE public\.session_authorizations/i)
+    expect(releaseMigration).toMatch(/client_session_id = p_client_session_id[\s\S]+workout_id = p_workout_id[\s\S]+user_id = v_user_id[\s\S]+consumed_at IS NULL/i)
+    expect(releaseMigration).toMatch(/SET released_at = COALESCE\(released_at, NOW\(\)\)/i)
+    expect(releaseMigration).not.toMatch(/\bDELETE\s+FROM\b|\bTRUNCATE\b/i)
+    expect(releaseMigration).toMatch(/REVOKE ALL ON FUNCTION[\s\S]+FROM PUBLIC[\s\S]+GRANT EXECUTE[\s\S]+TO authenticated/i)
   })
 })

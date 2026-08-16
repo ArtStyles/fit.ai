@@ -56,8 +56,12 @@ describe('plan information hierarchy', () => {
     expect(readView).not.toContain('WorkoutExerciseManager')
   })
 
-  it('marks catalog selections dirty even though the picker renders in a portal', () => {
-    expect(exerciseList).toContain('onSelectionChange={() => onDirtyChange?.(true)}')
+  it('adds catalog selections directly without staging prescription fields', () => {
+    expect(exerciseList).toContain('addSelectedExercises')
+    expect(exerciseList).toContain('await addWorkoutExercise(formData)')
+    expect(exerciseList).not.toContain('PrescriptionFields')
+    expect(exerciseList).not.toContain('name="sets"')
+    expect(exerciseList).not.toContain('name="notes"')
   })
 
   it('renders a locked professional plan as read-only without mutation tools', () => {

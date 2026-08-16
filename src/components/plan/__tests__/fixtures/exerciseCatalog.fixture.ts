@@ -5,6 +5,8 @@ type CatalogRequest = {
   equipment?: string
 }
 
+const longEquipmentLabel = 'Máquina multifunción con poleas y accesorios de entrenamiento extremadamente largos'
+
 const allOptions = Array.from({ length: 30 }, (_, index) => ({
   id: `exercise-${String(index + 1).padStart(2, '0')}`,
   name: `Ejercicio ${String(index + 1).padStart(2, '0')}`,
@@ -27,7 +29,11 @@ export async function loadExerciseCatalogPage(request: CatalogRequest = {}) {
     totalPages: Math.ceil(allOptions.length / pageSize),
     facets: {
       muscles: [{ value: 'Pecho', label: 'Pecho' }, { value: 'Espalda', label: 'Espalda' }],
-      equipment: [{ value: 'Barra', label: 'Barra' }, { value: 'Mancuernas', label: 'Mancuernas' }],
+      equipment: [
+        { value: longEquipmentLabel, label: longEquipmentLabel },
+        { value: 'Barra', label: 'Barra' },
+        { value: 'Mancuernas', label: 'Mancuernas' },
+      ],
     },
   }
 }

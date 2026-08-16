@@ -1,7 +1,7 @@
 'use client'
 
-import { SubmitButton } from '@/components/feedback/SubmitButton'
-import { ExercisePicker } from '@/components/plan/ExercisePicker'
+import { useState } from 'react'
+import { ExerciseCatalogDialog, toExerciseCatalogOptions } from '@/components/plan/ExercisePicker'
 import { WorkoutExerciseManager } from '@/components/plan/WorkoutExerciseManager'
 import { addWorkoutExercise } from '@/app/actions/plan'
 import { PlusCircle } from 'lucide-react'
@@ -42,29 +42,6 @@ type WorkoutExerciseListProps = {
   onFormSubmit?: () => void
 }
 
-const textareaClass =
-  'w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500'
-const inputClass =
-  'h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500'
-
-function PrescriptionFields() {
-  const { t } = useI18n()
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Series')}</span>
-        <input name="sets" type="number" min={1} max={12} defaultValue={3} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Reps')}</span>
-        <input name="reps" type="number" min={1} max={100} defaultValue={10} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Peso kg')}</span>
-        <input name="weightKg" type="number" min={0} step={0.25} defaultValue="" placeholder={t('Opcional')} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Descanso seg.')}</span>
-        <input name="restSeconds" type="number" min={0} max={600} defaultValue={60} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('RPE objetivo')}</span>
-        <input name="targetRpe" type="number" min={1} max={10} defaultValue={8} className={inputClass} /></label>
-    </div>
-  )
-}
-
 export function WorkoutExerciseList({
   planId,
   workoutId,
@@ -76,7 +53,31 @@ export function WorkoutExerciseList({
 }: WorkoutExerciseListProps) {
   const hasExerciseOptions = exerciseOptions.length > 0
   const { t } = useI18n()
+  const [catalogOpen, setCatalogOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
   if (!editing) return null
+
+  async function addSelectedExercises(exerciseIds: string[]) {
+    if (adding || exerciseIds.length === 0) return
+    setAdding(true)
+    setAddError(null)
+
+    const formData = new FormData()
+    formData.set('planId', planId)
+    formData.set('workoutId', workoutId)
+    exerciseIds.forEach(exerciseId => formData.append('exerciseIds', exerciseId))
+
+    try {
+      onFormSubmit?.()
+      await addWorkoutExercise(formData)
+      setCatalogOpen(false)
+    } catch {
+      setAddError(t('No se pudieron agregar los ejercicios. Inténtalo nuevamente.'))
+    } finally {
+      setAdding(false)
+    }
+  }
 
   return (
     <div
@@ -86,27 +87,34 @@ export function WorkoutExerciseList({
     >
       <WorkoutExerciseManager planId={planId} workoutId={workoutId} exercises={exercises} exerciseOptions={exerciseOptions} />
 
-      <details className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
-        <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-violet-200">
-          <PlusCircle className="h-4 w-4" />
-          {t('Agregar ejercicio')}
-        </summary>
+      <button
+        type="button"
+        disabled={!hasExerciseOptions || adding}
+        onClick={() => {
+          setAddError(null)
+          setCatalogOpen(true)
+        }}
+        className="mt-4 flex min-h-11 w-full items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/5 px-3 text-sm font-semibold text-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <PlusCircle className="h-4 w-4" />
+        {adding ? t('Agregando ejercicio') : t('Agregar ejercicio')}
+      </button>
 
-        <form action={addWorkoutExercise} className="mt-4 space-y-3">
-          <input type="hidden" name="planId" value={planId} />
-          <input type="hidden" name="workoutId" value={workoutId} />
-          <ExercisePicker name="exerciseIds" label={t('Ejercicio')} options={exerciseOptions}
-            multiple paginated disabled={!hasExerciseOptions} placeholder={t('Busca por nombre, músculo o equipo')}
-            onSelectionChange={() => onDirtyChange?.(true)} />
-          <PrescriptionFields />
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">{t('Notas')}</span>
-            <textarea name="notes" rows={2} placeholder={t('Opcional')} className={textareaClass} />
-          </label>
-          <SubmitButton label={t('Agregar al entrenamiento')} pendingLabel={t('Agregando ejercicio')}
-            disabled={!hasExerciseOptions} className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600" />
-        </form>
-      </details>
+      {addError ? <p role="alert" className="mt-2 text-sm text-destructive">{addError}</p> : null}
+
+      <ExerciseCatalogDialog
+        open={catalogOpen}
+        onOpenChange={open => {
+          if (!adding) setCatalogOpen(open)
+        }}
+        options={toExerciseCatalogOptions(exerciseOptions)}
+        selectionMode="multiple"
+        paginated
+        title={t('Agregar ejercicios')}
+        onConfirm={ids => {
+          void addSelectedExercises(ids)
+        }}
+      />
     </div>
   )
 }
