@@ -506,12 +506,6 @@ export function ProfileSettingsLoading() {
         <Shimmer className="mt-4 h-9 w-36 rounded-md bg-muted/40" />
       </div>
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <SettingsFieldSkeleton label="Usuario" />
-      </div>
-      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <SettingsFieldSkeleton label="Privacidad" />
-      </div>
-      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
         <SettingsFieldSkeleton label="Nombre" />
       </div>
       <SettingsSaveSkeleton />

@@ -28,6 +28,17 @@ describe('route loading skeletons', () => {
     expect(routeLoading).toContain('data-loading-slot="profile-action"')
   })
 
+  it('keeps social controls out of the profile settings loading boundary', () => {
+    const routeLoading = source('../RouteLoading.tsx')
+    const profileLoading = routeLoading.slice(
+      routeLoading.indexOf('export function ProfileSettingsLoading()'),
+      routeLoading.indexOf('export function PersonalDataSettingsLoading()'),
+    )
+
+    expect(profileLoading).not.toContain('Usuario')
+    expect(profileLoading).not.toContain('Privacidad')
+  })
+
   it('keeps the settings index skeleton grouped like the overview', () => {
     const routeLoading = source('../RouteLoading.tsx')
 

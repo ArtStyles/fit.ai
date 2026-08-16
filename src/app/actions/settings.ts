@@ -92,22 +92,40 @@ export async function updateTrainingSettings(formData: FormData) {
   redirect('/settings/entrenamiento?notice=settings_saved')
 }
 
+export type ProfileNameActionState = {
+  ok: boolean
+  message: string | null
+  fieldErrors: { fullName?: string }
+}
+
 // Perfil (/settings/perfil): solo el nombre (la foto va por su propia acción).
-export async function updateProfileName(formData: FormData) {
+export async function updateProfileName(
+  _previous: ProfileNameActionState,
+  formData: FormData,
+): Promise<ProfileNameActionState> {
+  const fullName = String(formData.get('fullName') ?? '').trim()
+  if (fullName.length > 100) {
+    return {
+      ok: false,
+      message: null,
+      fieldErrors: { fullName: 'El nombre no puede superar 100 caracteres.' },
+    }
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login?error=auth_required')
+  if (!user) return { ok: false, message: 'Sesión no válida.', fieldErrors: {} }
 
   const { error } = await (supabase
     .from('profiles') as any)
-    .update({ full_name: nullableText(formData, 'fullName') })
+    .update({ full_name: fullName || null })
     .eq('id', user.id)
 
-  if (error) redirect('/settings/perfil?error=save_failed')
+  if (error) return { ok: false, message: 'No se pudo guardar el nombre.', fieldErrors: {} }
 
   revalidatePath('/settings/perfil')
   revalidatePath('/dashboard')
-  redirect('/settings/perfil?notice=settings_saved')
+  return { ok: true, message: 'Nombre actualizado.', fieldErrors: {} }
 }
 
 export async function updateLanguage(formData: FormData) {
