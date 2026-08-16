@@ -99,6 +99,21 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['El nombre no puede superar 100 caracteres.', 'Name cannot exceed 100 characters.'],
+    ['Sesión no válida.', 'Invalid session.'],
+    ['No se pudo guardar el nombre.', 'Could not save the name.'],
+    ['Nombre actualizado.', 'Name updated.'],
+    ['No se recibió ninguna imagen.', 'No image was received.'],
+    ['El archivo debe ser una imagen.', 'The file must be an image.'],
+    ['El archivo está vacío.', 'The file is empty.'],
+    ['La imagen supera el tamaño máximo (5 MB).', 'The image exceeds the maximum size (5 MB).'],
+    ['No se pudo subir la imagen.', 'Could not upload the image.'],
+    ['No se pudo guardar el avatar.', 'Could not save the avatar.'],
+  ])('translates profile name and avatar action results: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['No se pudo preparar la sesión. Inténtalo nuevamente.', 'The session could not be prepared. Try again.'],
     ['No se pudo respaldar la sesión. Libera espacio y vuelve a intentar.', 'The session could not be backed up. Free some space and try again.'],
     ['Preparando sesión…', 'Preparing session…'],

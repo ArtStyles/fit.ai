@@ -22,6 +22,14 @@ const SIZES = {
   lg:     { box: 'h-24 w-24', text: 'text-2xl', badge: 'h-7 w-7', icon: 'h-3.5 w-3.5' },
 }
 
+export function avatarUploadFailureToast(t: (source: string) => string, error: string) {
+  return {
+    title: t('No se pudo guardar la foto'),
+    description: t(error),
+    variant: 'error' as const,
+  }
+}
+
 export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemove = false }: Props) {
   const router = useRouter()
   const { showToast } = useToast()
@@ -58,7 +66,7 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
         router.refresh()
       } else {
         setPreview(null)
-        showToast({ title: t('No se pudo guardar la foto'), description: res.error, variant: 'error' })
+        showToast(avatarUploadFailureToast(t, res.error))
       }
     })
   }

@@ -19,7 +19,11 @@ export function ProfileNameForm({ initialName }: { initialName: string }) {
 
   return (
     <form action={formAction} className="space-y-4">
-      <SettingsField id="fullName" label={t('Nombre')} error={state.fieldErrors.fullName}>
+      <SettingsField
+        id="fullName"
+        label={t('Nombre')}
+        error={state.fieldErrors.fullName ? t(state.fieldErrors.fullName) : undefined}
+      >
         <input
           id="fullName"
           name="fullName"
@@ -30,7 +34,7 @@ export function ProfileNameForm({ initialName }: { initialName: string }) {
       </SettingsField>
 
       {state.message ? (
-        <SettingsStatus tone={state.ok ? 'success' : 'error'}>{state.message}</SettingsStatus>
+        <SettingsStatus tone={state.ok ? 'success' : 'error'}>{t(state.message)}</SettingsStatus>
       ) : null}
 
       <SettingsSaveBar label={t('Guardar')} pendingLabel={t('Guardando')} />
