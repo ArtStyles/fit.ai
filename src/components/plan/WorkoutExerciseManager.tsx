@@ -147,7 +147,7 @@ export function WorkoutExerciseManager({
       </Reorder.Group>
 
       <Dialog open={dialog?.kind === 'adjust'} onOpenChange={(o) => !o && setDialog(null)}>
-        <DialogContent className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
+        <DialogContent aria-describedby={undefined} className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="text-base text-white">{t('Editar detalles')}</DialogTitle>
           </DialogHeader>
@@ -168,7 +168,7 @@ export function WorkoutExerciseManager({
       </Dialog>
 
       <Dialog open={dialog?.kind === 'replace'} onOpenChange={(o) => !o && setDialog(null)}>
-        <DialogContent className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
+        <DialogContent aria-describedby={undefined} className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/40 px-5 py-4">
             <DialogTitle className="text-base text-white">{t('Reemplazar ejercicio')}</DialogTitle>
           </DialogHeader>
@@ -229,7 +229,7 @@ function ExerciseRow({
   return (
     <Reorder.Item value={row} dragListener={false} dragControls={dragControls}>
       <LongPressMenu actions={actions} label={`${exercise?.name ?? t('Ejercicio')}`}>
-        <div className="flex items-start gap-2 rounded-xl border border-border/40 bg-background/50 p-3.5">
+        <div className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden rounded-xl border border-border/40 bg-background/50 p-3.5">
           <button type="button" aria-label={t('Arrastrar para reordenar')}
             onPointerDown={(e) => { e.stopPropagation(); dragControls.start(e) }}
             className="mt-0.5 flex h-11 w-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted-foreground/60 outline-none hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 active:cursor-grabbing">
@@ -237,8 +237,8 @@ function ExerciseRow({
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">{index + 1}. {exercise?.name ?? 'Ejercicio'}</p>
+              <div className="min-w-0 flex-1">
+                <p className="min-w-0 break-words text-sm font-medium text-foreground [overflow-wrap:anywhere]">{index + 1}. {exercise?.name ?? 'Ejercicio'}</p>
                 {muscleLabel && <p className="mt-1 text-xs text-muted-foreground">{muscleLabel}</p>}
               </div>
               {detail && <p className="max-w-[46%] shrink-0 text-right text-xs leading-relaxed text-muted-foreground">{detail}</p>}

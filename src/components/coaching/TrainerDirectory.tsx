@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { CompactCategorySelect } from '@/components/ui/compact-category-select'
 import type { DirectoryFilters, PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 
 const modalityLabels: Record<PublicTrainerDirectoryRow['modalities'][number], string> = {
@@ -82,7 +83,12 @@ export function TrainerDirectory({
         </p>
       </header>
 
-      <form action="/trainers" method="get" className="rounded-2xl border border-border/70 bg-card/70 p-3 shadow-sm">
+      <form
+        key={queryString(filters) || 'all-trainers'}
+        action="/trainers"
+        method="get"
+        className="rounded-2xl border border-border/70 bg-card/70 p-3 shadow-sm"
+      >
         <div className="flex gap-2">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">Buscar entrenadores</span>
@@ -117,15 +123,22 @@ export function TrainerDirectory({
               Especialidad
               <input name="especialidad" defaultValue={filters.specialty ?? ''} placeholder="Fuerza, movilidad…" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />
             </label>
-            <label className="text-xs font-semibold text-muted-foreground">
-              Modalidad
-              <select name="modalidad" defaultValue={filters.modality ?? ''} className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20">
-                <option value="">Todas</option>
-                <option value="online">En línea</option>
-                <option value="in_person">Presencial</option>
-                <option value="hybrid">Híbrida</option>
-              </select>
-            </label>
+            <div className="text-xs font-semibold text-muted-foreground">
+              <span>Modalidad</span>
+              <span className="mt-1.5 block">
+                <CompactCategorySelect
+                  ariaLabel="Modalidad"
+                  name="modalidad"
+                  defaultValue={filters.modality ?? ''}
+                  allLabel="Todas"
+                  options={[
+                    { value: 'online', label: 'En línea' },
+                    { value: 'in_person', label: 'Presencial' },
+                    { value: 'hybrid', label: 'Híbrida' },
+                  ]}
+                />
+              </span>
+            </div>
             <label className="text-xs font-semibold text-muted-foreground">
               Idioma
               <input name="idioma" defaultValue={filters.language ?? ''} placeholder="Español, inglés…" className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal text-foreground outline-none focus:ring-2 focus:ring-primary/20" />

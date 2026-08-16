@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@/styles/globals.css'
 import { TrainerDirectory } from '../../TrainerDirectory'
@@ -11,45 +12,62 @@ import { TrainerPublicProfile } from '../../TrainerPublicProfile'
 import { WorkspaceSwitcher } from '../../../navigation/WorkspaceSwitcher'
 import { ActiveWorkoutDockView } from '../../../navigation/BottomNav'
 import { ExerciseCatalogDialog } from '../../../plan/ExercisePicker'
+import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 
 const surface = new URLSearchParams(window.location.search).get('surface')
 
+const trainerRows: PublicTrainerDirectoryRow[] = [
+  {
+    userId: '11111111-1111-4111-8111-111111111111',
+    slug: 'ada-entrenadora',
+    professionalName: 'Ada Entrenadora',
+    professionalPhotoUrl: null,
+    bio: 'Entrenamiento de fuerza adaptado a tu experiencia y disponibilidad.',
+    specialties: ['Fuerza', 'Hipertrofia'],
+    modalities: ['online', 'in_person'],
+    experienceSummary: 'Ocho años acompañando procesos de fuerza.',
+    generalLocation: 'La Habana',
+    languages: ['Español', 'Inglés'],
+    verifiedAt: '2026-08-08T00:00:00.000Z',
+    services: [],
+  },
+  {
+    userId: '22222222-2222-4222-8222-222222222222',
+    slug: 'lucia-movimiento',
+    professionalName: 'Lucía Movimiento',
+    professionalPhotoUrl: null,
+    bio: 'Movilidad y regreso progresivo al entrenamiento para todos los niveles.',
+    specialties: ['Movilidad', 'Principiantes'],
+    modalities: ['online'],
+    experienceSummary: 'Especialista en movimiento y hábitos sostenibles.',
+    generalLocation: 'Madrid',
+    languages: ['Español'],
+    verifiedAt: '2026-08-08T00:00:00.000Z',
+    services: [],
+  },
+]
+
+function DirectoryFixture() {
+  const filtered = new URLSearchParams(window.location.search).get('filtered') === '1'
+  const [filters, setFilters] = useState(filtered
+    ? { text: 'fuerza', modality: 'online', location: 'La Habana' }
+    : {})
+
+  useEffect(() => {
+    (window as Window & { __NEXT_LINK_NAVIGATE__?: (href: string) => void }).__NEXT_LINK_NAVIGATE__ = href => {
+      if (href === '/trainers') setFilters({})
+    }
+    return () => {
+      delete (window as Window & { __NEXT_LINK_NAVIGATE__?: (href: string) => void }).__NEXT_LINK_NAVIGATE__
+    }
+  }, [])
+
+  return <TrainerDirectory filters={filters} nextCursor={null} trainers={trainerRows} />
+}
+
 function Surface() {
   if (surface === 'directory') {
-    return <TrainerDirectory
-      filters={{}}
-      nextCursor={null}
-      trainers={[
-        {
-          userId: '11111111-1111-4111-8111-111111111111',
-          slug: 'ada-entrenadora',
-          professionalName: 'Ada Entrenadora',
-          professionalPhotoUrl: null,
-          bio: 'Entrenamiento de fuerza adaptado a tu experiencia y disponibilidad.',
-          specialties: ['Fuerza', 'Hipertrofia'],
-          modalities: ['online', 'in_person'],
-          experienceSummary: 'Ocho años acompañando procesos de fuerza.',
-          generalLocation: 'La Habana',
-          languages: ['Español', 'Inglés'],
-          verifiedAt: '2026-08-08T00:00:00.000Z',
-          services: [],
-        },
-        {
-          userId: '22222222-2222-4222-8222-222222222222',
-          slug: 'lucia-movimiento',
-          professionalName: 'Lucía Movimiento',
-          professionalPhotoUrl: null,
-          bio: 'Movilidad y regreso progresivo al entrenamiento para todos los niveles.',
-          specialties: ['Movilidad', 'Principiantes'],
-          modalities: ['online'],
-          experienceSummary: 'Especialista en movimiento y hábitos sostenibles.',
-          generalLocation: 'Madrid',
-          languages: ['Español'],
-          verifiedAt: '2026-08-08T00:00:00.000Z',
-          services: [],
-        },
-      ]}
-    />
+    return <DirectoryFixture />
   }
   if (surface === 'catalog') {
     return <ExerciseCatalogDialog

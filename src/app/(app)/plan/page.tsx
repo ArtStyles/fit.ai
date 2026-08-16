@@ -342,7 +342,8 @@ export default async function PlanPage() {
       .from('exercises')
       .select('id, name, name_es, image_url, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound')
       .eq('is_public', true)
-      .order('name') as unknown as Promise<{ data: PlanExerciseOption[] | null }>,
+      .order('name')
+      .limit(24) as unknown as Promise<{ data: PlanExerciseOption[] | null }>,
     supabase
       .from('profiles')
       .select('gym_type, available_equipment, cardio_preferences, session_duration_minutes, readiness_status, movement_limitations')

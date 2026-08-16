@@ -191,7 +191,16 @@ export function PlanWorkoutWorkspace(props: WorkspaceProps) {
           else requestIntent({ kind: 'close' })
         }}
       >
-        <DialogContent className="border-border/70 bg-background p-5 lg:hidden">
+        <DialogContent
+          aria-describedby={undefined}
+          className="border-border/70 bg-background p-5 lg:hidden"
+          onPointerDownOutside={event => {
+            const target = event.detail.originalEvent.target
+            if (target instanceof Element && target.closest('[data-long-press-menu-layer]')) {
+              event.preventDefault()
+            }
+          }}
+        >
           <DialogHeader className="pr-8 text-left">
             <DialogTitle>{selectedWorkout?.summary.name ?? t('Detalle de sesión')}</DialogTitle>
           </DialogHeader>

@@ -45,6 +45,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
           'lucide-react',
           '@radix-ui/react-avatar',
           '@radix-ui/react-dialog',
+          '@radix-ui/react-select',
         ],
       },
       resolve: { dedupe: ['react', 'react-dom'], alias: [
@@ -53,6 +54,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
         { find: '@/app/actions/trainerAssignments', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerAssignments.fixture.ts') },
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
         { find: '@/app/actions/workspace', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
+        { find: '@/app/actions/exerciseCatalog', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/exerciseCatalog.fixture.ts') },
         { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
         { find: 'next/link', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextLink.fixture.tsx') },
         { find: 'next/image', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextImage.fixture.tsx') },
@@ -139,6 +141,25 @@ describe('trainer accessibility acceptance in a local browser', () => {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=public-profile`)
       await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
       await pwExpect(page.getByRole('heading', { level: 1, name: 'Ada Entrenadora' })).toBeFocused()
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it('clears trainer filters immediately and avoids native full-screen selectors', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=directory&filtered=1`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      await pwExpect(page.getByRole('searchbox', { name: 'Buscar entrenadores' })).toHaveValue('fuerza')
+      await pwExpect(page.locator('select[name="modalidad"]')).toHaveCount(0)
+      await pwExpect(page.getByRole('combobox', { name: 'Modalidad' })).toContainText('En línea')
+
+      await page.getByRole('link', { name: 'Limpiar filtros' }).first().click()
+      await pwExpect(page.getByRole('searchbox', { name: 'Buscar entrenadores' })).toHaveValue('')
+      await page.getByText('Filtros avanzados', { exact: true }).click()
+      await pwExpect(page.getByRole('combobox', { name: 'Modalidad' })).toContainText('Todas')
     } finally {
       await context.close()
     }

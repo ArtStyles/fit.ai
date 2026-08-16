@@ -96,7 +96,7 @@ export function WorkoutExerciseList({
           <input type="hidden" name="planId" value={planId} />
           <input type="hidden" name="workoutId" value={workoutId} />
           <ExercisePicker name="exerciseIds" label={t('Ejercicio')} options={exerciseOptions}
-            multiple disabled={!hasExerciseOptions} placeholder={t('Busca por nombre, músculo o equipo')}
+            multiple paginated disabled={!hasExerciseOptions} placeholder={t('Busca por nombre, músculo o equipo')}
             onSelectionChange={() => onDirtyChange?.(true)} />
           <PrescriptionFields />
           <label className="block space-y-1.5">

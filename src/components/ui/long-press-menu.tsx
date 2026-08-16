@@ -166,8 +166,8 @@ export function LongPressMenu({
   }
 
   const overlay = open && rect ? (
-    <motion.div key="lpm-overlay" role="presentation"
-      className="fixed inset-0 z-[60]"
+    <motion.div key="lpm-overlay" role="presentation" data-long-press-menu-layer
+      className="pointer-events-auto fixed inset-0 z-[60]"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.16 }}
       onPointerDown={close}

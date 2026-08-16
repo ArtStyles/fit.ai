@@ -1,7 +1,12 @@
 import { createElement, type ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFile } from 'node:fs/promises'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/app/actions/exerciseCatalog', () => ({
+  loadExerciseCatalogPage: vi.fn(),
+}))
+
 import * as exercisePicker from '../ExercisePicker'
 
 const options = [
@@ -119,6 +124,25 @@ describe('professional exercise picker search', () => {
       equipment: ['Barra'],
       imageUrl: 'https://cdn.example.test/bench.webp',
     }])
+  })
+
+  it('keeps remotely paginated selections available when the catalog is reopened', () => {
+    const mergeExerciseCatalogOptions = (exercisePicker as typeof exercisePicker & {
+      mergeExerciseCatalogOptions?: (
+        initial: Array<{
+          id: string; name: string; muscle_groups: string[] | null; equipment: string[] | null; image_url: string | null
+        }>,
+        selected: Array<{
+          id: string; name: string; muscle_groups: string[] | null; equipment: string[] | null; image_url: string | null
+        }>,
+      ) => TestOption[]
+    }).mergeExerciseCatalogOptions
+
+    expect(mergeExerciseCatalogOptions?.([{
+      id: 'bench', name: 'Press de banca', muscle_groups: ['Pecho'], equipment: ['Barra'], image_url: null,
+    }], [{
+      id: 'remote-page-two', name: 'Ejercicio remoto', muscle_groups: ['Espalda'], equipment: ['Cable'], image_url: null,
+    }]).map(option => option.id)).toEqual(['bench', 'remote-page-two'])
   })
 
   it('queries thumbnail URLs for personal and professional routine catalogs', async () => {

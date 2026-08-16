@@ -29,7 +29,7 @@ function readBlock(source: string, marker: string) {
 describe('shared dialog layout contract', () => {
   it('uses a safe mobile bottom sheet with a 44px close control', () => {
     expect(dialog).toContain('fitai-dialog-content')
-    expect(dialog).toContain('h-11 w-11')
+    expect(dialog).toContain('h-12 w-12')
     expect(dialog).toContain('<span className="sr-only">Cerrar</span>')
 
     const mobile = readRule(css, '.fitai-dialog-content')

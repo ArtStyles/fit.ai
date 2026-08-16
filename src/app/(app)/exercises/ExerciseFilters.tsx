@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useRef, useTransition } from 'react'
 import type { Difficulty, ExerciseType } from '@/types/exercise'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { CompactCategorySelect } from '@/components/ui/compact-category-select'
 
 interface Props {
   muscleGroups:  { value: string; label: string }[]
@@ -18,21 +19,8 @@ interface Props {
   total: number
 }
 
-// ─── native select ─────────────────────────────────────────────────────────────
-
-const SELECT_CLS = `
-  h-9 rounded-xl px-3 pr-8 text-sm appearance-none cursor-pointer
-  border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/40
-  bg-zinc-800/70 border-zinc-700 text-zinc-300
-  hover:bg-zinc-700/70 hover:border-zinc-600
-`
-
-const SELECT_ACTIVE_CLS = `
-  h-9 rounded-xl px-3 pr-8 text-sm appearance-none cursor-pointer
-  border transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500/40
-  bg-orange-500/15 border-orange-500/50 text-orange-300
-  hover:bg-orange-500/20
-`
+const SELECT_CLS = 'w-auto min-w-36 border-zinc-700 bg-zinc-800/70 text-zinc-300 hover:bg-zinc-700/70'
+const SELECT_ACTIVE_CLS = 'w-auto min-w-36 border-orange-500/50 bg-orange-500/15 text-orange-300'
 
 const DIFF_OPTS: { v: Difficulty | ''; label: string }[] = [
   { v: '',             label: 'Todos los niveles' },
@@ -107,66 +95,44 @@ export default function ExerciseFilters({ muscleGroups, equipmentList, current }
         </form>
 
         {/* Difficulty */}
-        <div className="relative">
-          <select
-            className={current.difficulty ? SELECT_ACTIVE_CLS : SELECT_CLS}
-            value={current.difficulty}
-            onChange={e => push({ difficulty: e.target.value })}
-          >
-            {DIFF_OPTS.map(o => <option key={o.v} value={o.v}>{t(o.label)}</option>)}
-          </select>
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7"/>
-          </svg>
-        </div>
+        <CompactCategorySelect
+          ariaLabel={t('Nivel')}
+          value={current.difficulty}
+          onValueChange={value => push({ difficulty: value })}
+          allLabel={t(DIFF_OPTS[0].label)}
+          options={DIFF_OPTS.slice(1).map(option => ({ value: option.v, label: t(option.label) }))}
+          className={current.difficulty ? SELECT_ACTIVE_CLS : SELECT_CLS}
+        />
 
         {/* Type */}
-        <div className="relative">
-          <select
-            className={current.exercise_type ? SELECT_ACTIVE_CLS : SELECT_CLS}
-            value={current.exercise_type}
-            onChange={e => push({ exercise_type: e.target.value })}
-          >
-            {TYPE_OPTS.map(o => <option key={o.v} value={o.v}>{t(o.label)}</option>)}
-          </select>
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7"/>
-          </svg>
-        </div>
+        <CompactCategorySelect
+          ariaLabel={t('Tipo')}
+          value={current.exercise_type}
+          onValueChange={value => push({ exercise_type: value })}
+          allLabel={t(TYPE_OPTS[0].label)}
+          options={TYPE_OPTS.slice(1).map(option => ({ value: option.v, label: t(option.label) }))}
+          className={current.exercise_type ? SELECT_ACTIVE_CLS : SELECT_CLS}
+        />
 
         {/* Muscle */}
-        <div className="relative">
-          <select
-            className={current.muscle_group ? SELECT_ACTIVE_CLS : SELECT_CLS}
-            value={current.muscle_group}
-            onChange={e => push({ muscle_group: e.target.value })}
-          >
-            <option value="">{t('Todos los músculos')}</option>
-            {muscleGroups.map(option => <option key={option.value} value={option.value} className="capitalize">{option.label}</option>)}
-          </select>
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7"/>
-          </svg>
-        </div>
+        <CompactCategorySelect
+          ariaLabel={t('Músculo')}
+          value={current.muscle_group}
+          onValueChange={value => push({ muscle_group: value })}
+          allLabel={t('Todos los músculos')}
+          options={muscleGroups}
+          className={current.muscle_group ? SELECT_ACTIVE_CLS : SELECT_CLS}
+        />
 
         {/* Equipment */}
-        <div className="relative">
-          <select
-            className={current.equipment ? SELECT_ACTIVE_CLS : SELECT_CLS}
-            value={current.equipment}
-            onChange={e => push({ equipment: e.target.value })}
-          >
-            <option value="">{t('Todo el equipo')}</option>
-            {equipmentList.map(option => <option key={option.value} value={option.value} className="capitalize">{option.label}</option>)}
-          </select>
-          <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-500 pointer-events-none"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7"/>
-          </svg>
-        </div>
+        <CompactCategorySelect
+          ariaLabel={t('Equipo')}
+          value={current.equipment}
+          onValueChange={value => push({ equipment: value })}
+          allLabel={t('Todo el equipo')}
+          options={equipmentList}
+          className={current.equipment ? SELECT_ACTIVE_CLS : SELECT_CLS}
+        />
 
         {/* Clear all */}
         {activeChips.length > 0 && (
