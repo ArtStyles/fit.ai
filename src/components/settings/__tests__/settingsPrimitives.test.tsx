@@ -1,11 +1,17 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
 import { SettingsChoiceGroup } from '../SettingsChoiceGroup'
 import { SettingsField } from '../SettingsField'
+import { SettingsSaveBar } from '../SettingsSaveBar'
 import { SettingsSection } from '../SettingsSection'
 import { SettingsStatus } from '../SettingsStatus'
 import { SettingsSwitchRow } from '../SettingsSwitchRow'
 import { SettingsScreen } from '../SettingsScreen'
+
+vi.mock('react-dom', () => ({
+  useFormStatus: () => ({ pending: true }),
+}))
 
 describe('settings primitives', () => {
   it('associates help and error copy with a field', () => {
@@ -75,5 +81,14 @@ describe('settings primitives', () => {
     expect(html).toContain('aria-label="Perfil"')
     expect(html).toContain('Ajustes')
     expect(html).toContain('Actualiza cómo te reconoce Vekira.')
+  })
+  it('localizes the default pending save label', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="en" syncDocumentLanguage={false}>
+        <SettingsSaveBar label="Save" />
+      </I18nProvider>,
+    )
+
+    expect(html).toContain('Saving')
   })
 })
