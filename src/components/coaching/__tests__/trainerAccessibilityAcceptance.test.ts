@@ -91,7 +91,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
     } finally {
       await context.close()
     }
-  }, 15_000)
+  }, 30_000)
 
   it.each(VIEWPORTS)('keeps trainer controls and wide content contained at $width px', async viewport => {
     const context = await browser.newContext({ viewport })

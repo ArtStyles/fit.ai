@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 const migration = readFileSync(
   new URL('../../../../supabase/migrations/043_trainer_programming.sql', import.meta.url),
   'utf8',
-)
+).replace(/\r\n?/g, '\n')
 const databaseTypes = readFileSync(new URL('../../../types/database.ts', import.meta.url), 'utf8')
 
 const tables = [

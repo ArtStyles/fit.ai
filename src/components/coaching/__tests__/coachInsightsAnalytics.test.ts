@@ -80,5 +80,5 @@ describe('CoachInsightsAnalytics browser behavior', () => {
         { name: 'coach_client_insights_viewed', properties: { period_weeks: 12, prescribed_session_count: 8, evidence_session_count: 6 } },
       ])
     } finally { await page.close() }
-  }, 15_000)
+  }, 30_000)
 })

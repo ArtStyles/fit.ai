@@ -1,6 +1,25 @@
 import { defineConfig } from 'vitest/config'
 import tsconfigPaths   from 'vite-tsconfig-paths'
 
+const baseExclude = [
+  '**/node_modules/**',
+  '**/.next/**',
+  '**/.worktrees/**',
+  '**/android/**/build/**',
+  '**/tests/e2e/**',
+]
+
+const browserFixtureTests = [
+  'src/components/coaching/__tests__/applicationForm.test.tsx',
+  'src/components/coaching/__tests__/coachInsightsAnalytics.test.ts',
+  'src/components/coaching/__tests__/coachingRequestForm.test.tsx',
+  'src/components/coaching/__tests__/consentManager.test.tsx',
+  'src/components/coaching/__tests__/programTemplateEditor.test.tsx',
+  'src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts',
+  'src/components/coaching/__tests__/trainerAssignmentUi.test.tsx',
+  'src/components/plan/__tests__/planInteractions.test.tsx',
+]
+
 export default defineConfig({
   plugins: [tsconfigPaths()],
   oxc: {
@@ -9,15 +28,32 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'node',
-    setupFiles:  ['./src/lib/ai/__tests__/setup.ts'],
-    // Excluir archivos de Next.js (app/, pages/) que no son tests
-    exclude:     [
-      '**/node_modules/**',
-      '**/.next/**',
-      '**/.worktrees/**',
-      '**/android/**/build/**',
-      '**/tests/e2e/**',
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          environment: 'node',
+          setupFiles: ['./src/lib/ai/__tests__/setup.ts'],
+          exclude: [...baseExclude, ...browserFixtureTests],
+          sequence: { groupOrder: 0 },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'browser-fixtures',
+          environment: 'node',
+          setupFiles: ['./src/lib/ai/__tests__/setup.ts'],
+          include: browserFixtureTests,
+          exclude: baseExclude,
+          fileParallelism: false,
+          maxWorkers: 1,
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
+          sequence: { groupOrder: 1 },
+        },
+      },
     ],
   },
 })

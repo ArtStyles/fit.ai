@@ -4,7 +4,7 @@ import type { Database } from '../../../types/database'
 
 function readArtifact(url: URL): string {
   try {
-    return readFileSync(url, 'utf8')
+    return readFileSync(url, 'utf8').replace(/\r\n?/g, '\n')
   } catch {
     return ''
   }

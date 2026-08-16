@@ -11,7 +11,9 @@ describe('latest proposed assignment selection', () => {
   })
 
   it('keeps the coaching query ordered by created_at and then id', async () => {
-    const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../../../app/(app)/coaching/page.tsx', import.meta.url), 'utf8'))
+    const source = await import('node:fs/promises')
+      .then(fs => fs.readFile(new URL('../../../app/(app)/coaching/page.tsx', import.meta.url), 'utf8'))
+      .then(text => text.replace(/\r\n?/g, '\n'))
     expect(source).toContain(".order('created_at', { ascending: false })\n      .order('id', { ascending: false })")
   })
 })

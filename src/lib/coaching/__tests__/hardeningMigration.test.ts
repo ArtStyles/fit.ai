@@ -13,7 +13,7 @@ const migrationNames = [
 const migrations = migrationNames.map(name => readFileSync(
   new URL(`../../../../supabase/migrations/${name}`, import.meta.url),
   'utf8',
-))
+).replace(/\r\n?/g, '\n'))
 const history = migrations.join('\n')
 const hardening = migrations.at(-1) ?? ''
 
