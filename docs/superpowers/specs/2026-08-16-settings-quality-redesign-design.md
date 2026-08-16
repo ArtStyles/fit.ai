@@ -1,7 +1,7 @@
 # Renovación integral de Ajustes
 
 **Fecha:** 2026-08-16
-**Estado:** aprobado para revisión de especificación
+**Estado:** aprobado para implementación
 
 ## Contexto
 
@@ -110,9 +110,10 @@ sociales:
   ni “Ver mi perfil”;
 - con Comunidad activa esos tres controles conservarán su comportamiento;
 - desactivar la función no borrará `username`, `is_private` ni contenido social;
-- `updateUsername`, la consulta de disponibilidad y `setPrivacy` comprobarán
-  también el feature flag en el servidor y devolverán “Comunidad no disponible”
-  cuando esté apagado.
+- las acciones de nombre de usuario seguirán disponibles porque el onboarding
+  todavía las utiliza como parte del alta; Ajustes no las invocará mientras
+  Comunidad esté apagada. Las rutas y lecturas públicas continuarán protegidas
+  por el feature flag existente.
 
 ### Datos personales y Medidas
 
@@ -220,9 +221,11 @@ nativas actuales, pero todos sus textos, días y mensajes pasarán por i18n.
 
 La acción de preferencias de producto cambiará de `update` a `upsert` con
 `user_id`, para que el estado inicial mostrado pueda persistirse aun cuando no
-exista una fila. Las preferencias sociales solo se consultarán y renderizarán con
-Comunidad activa. Cada error restaurará el estado anterior y se anunciará mediante
-toast y región accesible.
+exista una fila. Una migración concederá inserción únicamente sobre las columnas
+de preferencias y una política RLS exigirá `auth.uid() = user_id`; no se ampliará
+el acceso de lectura o modificación entre cuentas. Las preferencias sociales solo
+se consultarán y renderizarán con Comunidad activa. Cada error restaurará el
+estado anterior y se anunciará mediante toast y región accesible.
 
 ### Idioma
 
