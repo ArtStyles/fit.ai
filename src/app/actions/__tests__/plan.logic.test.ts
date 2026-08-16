@@ -112,6 +112,50 @@ function data(values: Record<string, string>) {
   return result
 }
 
+function editablePlanClient() {
+  const from = vi.fn((table: string) => {
+    let selection = ''
+    const rows = table === 'workout_exercises'
+      ? [{ id: 'row-1', order_index: 1 }, { id: 'row-2', order_index: 2 }]
+      : []
+    const builder: any = {
+      data: rows,
+      error: null,
+      select: vi.fn((value: string) => { selection = value; return builder }),
+      eq: vi.fn(() => builder),
+      is: vi.fn(() => builder),
+      order: vi.fn(() => builder),
+      limit: vi.fn(() => builder),
+      in: vi.fn(() => builder),
+      update: vi.fn(() => builder),
+      insert: vi.fn(() => builder),
+      delete: vi.fn(() => builder),
+      maybeSingle: vi.fn(async () => {
+        if (table === 'workouts') return { data: { id: 'workout-1', plan_id: 'plan-1', user_id: 'user-1' }, error: null }
+        if (table === 'exercises') return { data: { id: 'exercise-2' }, error: null }
+        if (table === 'workout_exercises' && selection === 'order_index') return { data: { order_index: 2 }, error: null }
+        if (table === 'workout_exercises') {
+          return {
+            data: { id: 'row-1', workout_id: 'workout-1', exercise_id: 'exercise-1', order_index: 1, weight_kg: 20 },
+            error: null,
+          }
+        }
+        return { data: null, error: null }
+      }),
+      then: (resolve: (value: { data: unknown[]; error: null }) => unknown, reject: (reason: unknown) => unknown) => (
+        Promise.resolve({ data: rows, error: null }).then(resolve, reject)
+      ),
+    }
+    return builder
+  })
+
+  return {
+    auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } } })) },
+    rpc: vi.fn(),
+    from,
+  }
+}
+
 describe('orderedIdsToUpdates', () => {
   it('asigna order_index 1-based en el orden dado', () => {
     expect(orderedIdsToUpdates(['c', 'a', 'b'])).toEqual([
@@ -207,4 +251,28 @@ describe('trainer prescription action barriers', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+})
+
+describe('inline workout editor actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    requireEditableOwnedPlan.mockResolvedValue(undefined)
+    createClient.mockResolvedValue(editablePlanClient())
+  })
+
+  it.each([
+    ['workout summary', (actions: typeof import('../plan')) => actions.updateWorkoutSummary(data({ planId: 'plan-1', workoutId: 'workout-1', name: 'Día A' }))],
+    ['exercise addition', (actions: typeof import('../plan')) => actions.addWorkoutExercise(data({ planId: 'plan-1', workoutId: 'workout-1', exerciseId: 'exercise-2' }))],
+    ['exercise details', (actions: typeof import('../plan')) => actions.updateWorkoutExercise(data({ planId: 'plan-1', workoutExerciseId: 'row-1', sets: '3', reps: '12' }))],
+    ['exercise replacement', (actions: typeof import('../plan')) => actions.replaceWorkoutExercise(data({ planId: 'plan-1', workoutExerciseId: 'row-1', exerciseId: 'exercise-2' }))],
+    ['exercise removal', (actions: typeof import('../plan')) => actions.removeWorkoutExercise(data({ planId: 'plan-1', workoutExerciseId: 'row-1' }))],
+    ['exercise movement', (actions: typeof import('../plan')) => actions.moveWorkoutExercise(data({ planId: 'plan-1', workoutExerciseId: 'row-1', direction: 'down' }))],
+  ])('revalidates %s without navigating away from the open editor', async (_label, invoke) => {
+    const actions = await import('../plan')
+
+    await invoke(actions)
+
+    expect(redirect).not.toHaveBeenCalled()
+    expect(revalidatePath).toHaveBeenCalledWith('/plan')
+  })
 })

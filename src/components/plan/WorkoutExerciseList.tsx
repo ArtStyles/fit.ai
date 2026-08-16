@@ -5,6 +5,7 @@ import { ExerciseCatalogDialog, toExerciseCatalogOptions } from '@/components/pl
 import { WorkoutExerciseManager } from '@/components/plan/WorkoutExerciseManager'
 import { addWorkoutExercise } from '@/app/actions/plan'
 import { PlusCircle } from 'lucide-react'
+import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 
 export type PlanExerciseOption = {
@@ -53,6 +54,7 @@ export function WorkoutExerciseList({
 }: WorkoutExerciseListProps) {
   const hasExerciseOptions = exerciseOptions.length > 0
   const { t } = useI18n()
+  const { showToast } = useToast()
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
@@ -72,6 +74,7 @@ export function WorkoutExerciseList({
       onFormSubmit?.()
       await addWorkoutExercise(formData)
       setCatalogOpen(false)
+      showToast({ title: t('Ejercicio agregado'), variant: 'success' })
     } catch {
       setAddError(t('No se pudieron agregar los ejercicios. Inténtalo nuevamente.'))
     } finally {

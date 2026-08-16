@@ -275,7 +275,6 @@ export async function updateWorkoutSummary(formData: FormData) {
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')
-  redirect('/plan?notice=workout_saved')
 }
 
 export async function addWorkoutExercise(formData: FormData) {
@@ -326,7 +325,6 @@ export async function addWorkoutExercise(formData: FormData) {
 
   await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(workoutId)
-  redirect('/plan?notice=exercise_added')
 }
 
 export async function updateWorkoutExercise(formData: FormData) {
@@ -363,7 +361,6 @@ export async function updateWorkoutExercise(formData: FormData) {
 
   await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(row.workout_id)
-  redirect('/plan?notice=exercise_updated')
 }
 
 export async function replaceWorkoutExercise(formData: FormData) {
@@ -400,7 +397,6 @@ export async function replaceWorkoutExercise(formData: FormData) {
 
   await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(row.workout_id)
-  redirect('/plan?notice=exercise_replaced')
 }
 
 export async function removeWorkoutExercise(formData: FormData) {
@@ -430,7 +426,6 @@ export async function removeWorkoutExercise(formData: FormData) {
   await normalizeWorkoutExerciseOrder(supabase, row.workout_id)
   await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(row.workout_id)
-  redirect('/plan?notice=exercise_removed')
 }
 
 export async function moveWorkoutExercise(formData: FormData) {
@@ -463,7 +458,7 @@ export async function moveWorkoutExercise(formData: FormData) {
   const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
 
   if (currentIndex < 0 || targetIndex < 0 || targetIndex >= rows.length) {
-    redirect('/plan?notice=exercise_moved')
+    return
   }
 
   const reordered = [...rows]
@@ -483,7 +478,6 @@ export async function moveWorkoutExercise(formData: FormData) {
 
   await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(row.workout_id)
-  redirect('/plan?notice=exercise_moved')
 }
 
 export async function reorderWorkoutExercises(

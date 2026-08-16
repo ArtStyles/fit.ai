@@ -49,7 +49,19 @@ function WorkspaceFixture() {
         target_rpe: 8, weight_suggestion_basis: null, exercise,
       }],
     }]}
-    exerciseOptions={[exercise]}
+    exerciseOptions={[
+      exercise,
+      ...initialCatalogOptions.map(option => ({
+        id: option.id,
+        name: option.name,
+        image_url: option.imageUrl,
+        muscle_groups: option.muscleGroups,
+        equipment: option.equipment,
+        difficulty: 'intermediate',
+        exercise_type: 'strength',
+        is_compound: false,
+      })),
+    ]}
     todayIso={2}
   />
 }

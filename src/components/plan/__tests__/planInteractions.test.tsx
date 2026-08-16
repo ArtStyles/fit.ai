@@ -131,4 +131,63 @@ describe('plan editor mobile interactions', () => {
       await context.close()
     }
   }, 20_000)
+
+  it('keeps the workout structure open after saving exercise details', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/plan/__tests__/fixtures/planInteractions.html?surface=workspace`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PLAN_INTERACTIONS_READY__?: boolean }).__PLAN_INTERACTIONS_READY__))
+      await page.getByRole('button', { name: /Día A/ }).click()
+      await page.getByRole('button', { name: 'Editar estructura' }).click()
+
+      const workoutDialog = page.getByRole('dialog', { name: 'Día A' })
+      const exerciseName = workoutDialog.locator('p').filter({ hasText: /NombreDeEjercicioExtremadamenteLargo/ })
+      await exerciseName.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Editar detalles' }).click()
+
+      const detailsDialog = page.getByRole('dialog', { name: 'Editar detalles' })
+      await detailsDialog.locator('input[name="reps"]').fill('12')
+      await detailsDialog.getByRole('button', { name: 'Guardar detalles' }).click()
+
+      await pwExpect.poll(
+        () => page.evaluate(() => (window as Window & { __UPDATED_EXERCISE_REPS__?: string }).__UPDATED_EXERCISE_REPS__),
+      ).toBe('12')
+      await pwExpect(detailsDialog).toBeHidden()
+      await pwExpect(workoutDialog).toBeVisible()
+      await pwExpect(workoutDialog.getByRole('button', { name: 'Volver a lectura' })).toBeVisible()
+    } finally {
+      await context.close()
+    }
+  }, 40_000)
+
+  it('uses the full exercise catalog to replace the selected workout row', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/plan/__tests__/fixtures/planInteractions.html?surface=workspace`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PLAN_INTERACTIONS_READY__?: boolean }).__PLAN_INTERACTIONS_READY__))
+      await page.getByRole('button', { name: /Día A/ }).click()
+      await page.getByRole('button', { name: 'Editar estructura' }).click()
+
+      const workoutDialog = page.getByRole('dialog', { name: 'Día A' })
+      const exerciseName = workoutDialog.locator('p').filter({ hasText: /NombreDeEjercicioExtremadamenteLargo/ })
+      await exerciseName.click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Reemplazar ejercicio' }).click()
+
+      const catalog = page.getByRole('dialog', { name: 'Reemplazar ejercicio' })
+      await pwExpect(catalog.getByRole('searchbox', { name: 'Buscar ejercicios' })).toBeVisible()
+      await pwExpect(catalog.getByRole('combobox')).toHaveCount(2)
+      await catalog.getByRole('button', { name: /Ejercicio 02/ }).click()
+      await catalog.getByRole('button', { name: 'Reemplazar 1 ejercicio' }).click()
+
+      await pwExpect.poll(
+        () => page.evaluate(() => (window as Window & { __REPLACED_EXERCISE__?: { rowId: string; exerciseId: string } }).__REPLACED_EXERCISE__),
+      ).toEqual({ rowId: 'row-1', exerciseId: 'exercise-02' })
+      await pwExpect(workoutDialog).toBeVisible()
+      await pwExpect(workoutDialog.getByRole('button', { name: 'Volver a lectura' })).toBeVisible()
+    } finally {
+      await context.close()
+    }
+  }, 40_000)
 })

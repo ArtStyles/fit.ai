@@ -6,6 +6,7 @@ import { GripVertical, PencilLine, Repeat2, Trash2, TrendingUp } from 'lucide-re
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { LongPressMenu, type LongPressAction } from '@/components/ui'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
+import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import {
   reorderWorkoutExercises,
@@ -13,6 +14,7 @@ import {
   replaceWorkoutExercise,
   updateWorkoutExercise,
 } from '@/app/actions/plan'
+import { ExerciseCatalogDialog, toExerciseCatalogOptions } from './ExercisePicker'
 import type { PlanExerciseOption, PlanWorkoutExerciseRow } from './WorkoutExerciseList'
 
 const inputClass =
@@ -23,31 +25,6 @@ const textareaClass =
 function getExercise(row: PlanWorkoutExerciseRow): PlanExerciseOption | null {
   if (Array.isArray(row.exercise)) return row.exercise[0] ?? null
   return row.exercise
-}
-function normalizeList(values: string[] | null | undefined): string[] {
-  return (values ?? []).map(v => v.toLowerCase())
-}
-function overlapCount(a: string[] | null | undefined, b: string[] | null | undefined): number {
-  const bSet = new Set(normalizeList(b))
-  return normalizeList(a).filter(v => bSet.has(v)).length
-}
-function scoreReplacement(current: PlanExerciseOption, candidate: PlanExerciseOption): number {
-  let score = overlapCount(current.muscle_groups, candidate.muscle_groups) * 4
-  score += overlapCount(current.equipment, candidate.equipment)
-  if (current.exercise_type && current.exercise_type === candidate.exercise_type) score += 2
-  if (current.is_compound === candidate.is_compound) score += 2
-  if (current.difficulty && current.difficulty === candidate.difficulty) score += 1
-  return score
-}
-function getReplacementCandidates(current: PlanExerciseOption | null, options: PlanExerciseOption[]): PlanExerciseOption[] {
-  if (!current) return options.slice(0, 4)
-  return options
-    .filter(o => o.id !== current.id)
-    .map(o => ({ o, s: scoreReplacement(current, o) }))
-    .filter(i => i.s > 0)
-    .sort((a, b) => b.s - a.s || a.o.name.localeCompare(b.o.name))
-    .slice(0, 4)
-    .map(i => i.o)
 }
 function formatExerciseDetail(row: PlanWorkoutExerciseRow, t: (source: string) => string): string {
   return [
@@ -99,10 +76,13 @@ export function WorkoutExerciseManager({
   exerciseOptions: PlanExerciseOption[]
 }) {
   const { t } = useI18n()
+  const { showToast } = useToast()
   const [order, setOrder] = useState<PlanWorkoutExerciseRow[]>(
     [...exercises].sort((a, b) => a.order_index - b.order_index),
   )
   const [dialog, setDialog] = useState<{ kind: 'adjust' | 'replace'; row: PlanWorkoutExerciseRow } | null>(null)
+  const [savingDetails, setSavingDetails] = useState(false)
+  const [replacing, setReplacing] = useState(false)
   const [, startTransition] = useTransition()
 
   useEffect(() => {
@@ -119,7 +99,47 @@ export function WorkoutExerciseManager({
     fd.set('planId', planId)
     fd.set('workoutExerciseId', row.id)
     setOrder(prev => prev.filter(r => r.id !== row.id))
-    startTransition(() => { void removeWorkoutExercise(fd) })
+    startTransition(() => {
+      void removeWorkoutExercise(fd)
+        .then(() => showToast({ title: t('Ejercicio quitado'), variant: 'success' }))
+        .catch(() => showToast({ title: t('No se pudo guardar'), variant: 'error' }))
+    })
+  }
+
+  async function saveExerciseDetails(formData: FormData) {
+    if (savingDetails) return
+    setSavingDetails(true)
+    try {
+      await updateWorkoutExercise(formData)
+      setDialog(null)
+      showToast({ title: t('Ejercicio actualizado'), variant: 'success' })
+    } catch {
+      showToast({ title: t('No se pudo guardar'), variant: 'error' })
+    } finally {
+      setSavingDetails(false)
+    }
+  }
+
+  async function replaceSelectedExercise(exerciseIds: string[]) {
+    const row = dialog?.kind === 'replace' ? dialog.row : null
+    const exerciseId = exerciseIds[0]
+    if (!row || !exerciseId || replacing) return
+
+    const formData = new FormData()
+    formData.set('planId', planId)
+    formData.set('workoutExerciseId', row.id)
+    formData.set('exerciseId', exerciseId)
+
+    setReplacing(true)
+    try {
+      await replaceWorkoutExercise(formData)
+      setDialog(null)
+      showToast({ title: t('Ejercicio cambiado'), variant: 'success' })
+    } catch {
+      showToast({ title: t('No se pudo guardar'), variant: 'error' })
+    } finally {
+      setReplacing(false)
+    }
   }
 
   if (order.length === 0) {
@@ -152,7 +172,13 @@ export function WorkoutExerciseManager({
             <DialogTitle className="text-base text-white">{t('Editar detalles')}</DialogTitle>
           </DialogHeader>
           {dialog?.kind === 'adjust' && (
-            <form action={updateWorkoutExercise} className="space-y-3 p-5">
+            <form
+              className="space-y-3 p-5"
+              onSubmit={event => {
+                event.preventDefault()
+                void saveExerciseDetails(new FormData(event.currentTarget))
+              }}
+            >
               <HiddenFields planId={planId} workoutExerciseId={dialog.row.id} />
               <PrescriptionFields row={dialog.row} />
               <label className="block space-y-1.5">
@@ -160,47 +186,28 @@ export function WorkoutExerciseManager({
                 <textarea name="notes" defaultValue={dialog.row.notes ?? ''} rows={2}
                   placeholder={t('Ej. bajar rango si necesitas ajustar técnica o rango')} className={textareaClass} />
               </label>
-              <SubmitButton label={t('Guardar detalles')} pendingLabel={t('Guardando detalles')}
+              <SubmitButton label={savingDetails ? t('Guardando detalles') : t('Guardar detalles')}
+                disabled={savingDetails}
                 className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600" />
             </form>
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialog?.kind === 'replace'} onOpenChange={(o) => !o && setDialog(null)}>
-        <DialogContent aria-describedby={undefined} className="max-w-sm gap-0 rounded-2xl border-border/60 bg-popover p-0">
-          <DialogHeader className="border-b border-border/40 px-5 py-4">
-            <DialogTitle className="text-base text-white">{t('Reemplazar ejercicio')}</DialogTitle>
-          </DialogHeader>
-          {dialog?.kind === 'replace' && (() => {
-            const candidates = getReplacementCandidates(getExercise(dialog.row), exerciseOptions)
-            return (
-              <div className="grid gap-2 p-5">
-                {candidates.length === 0 && (
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {t('No encontramos alternativas cercanas. Puedes agregar otro ejercicio y quitar este.')}
-                  </p>
-                )}
-                {candidates.map(c => (
-                  <form key={c.id} action={replaceWorkoutExercise}>
-                    <HiddenFields planId={planId} workoutExerciseId={dialog.row.id} />
-                    <input type="hidden" name="exerciseId" value={c.id} />
-                    <SubmitButton label={c.name} pendingLabel={t('Cambiando')} variant="outline"
-                      className="h-auto min-h-11 w-full justify-start whitespace-normal border-border/60 bg-muted/10 px-3 py-2 text-left text-xs text-foreground hover:bg-muted/20">
-                      <Repeat2 className="mr-2 h-3.5 w-3.5 shrink-0 text-violet-300" />
-                      <span>{c.name}
-                        {formatMuscles(c.muscle_groups) && (
-                          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">{formatMuscles(c.muscle_groups)}</span>
-                        )}
-                      </span>
-                    </SubmitButton>
-                  </form>
-                ))}
-              </div>
-            )
-          })()}
-        </DialogContent>
-      </Dialog>
+      <ExerciseCatalogDialog
+        open={dialog?.kind === 'replace'}
+        onOpenChange={open => {
+          if (!open && !replacing) setDialog(null)
+        }}
+        options={toExerciseCatalogOptions(exerciseOptions)}
+        selectionMode="single"
+        paginated
+        title={t('Reemplazar ejercicio')}
+        confirmVerb={t('Reemplazar')}
+        onConfirm={exerciseIds => {
+          void replaceSelectedExercise(exerciseIds)
+        }}
+      />
     </div>
   )
 }
