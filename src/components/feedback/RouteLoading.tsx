@@ -1,3 +1,5 @@
+'use client'
+
 import {
   ArrowLeft,
   Bell,
@@ -12,6 +14,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 type IconComponent = React.ComponentType<{ className?: string }>
 
@@ -594,16 +597,17 @@ export function AccountSettingsLoading() {
 }
 
 export function SettingsLoading() {
+  const { t } = useI18n()
   const groups = [
-    { title: 'Tu perfil', rows: 3 },
-    { title: 'Tu entrenamiento', rows: 1 },
-    { title: 'Aplicación', rows: 2 },
-    { title: 'Acceso y seguridad', rows: 1 },
+    { title: t('Tu perfil'), rows: 3 },
+    { title: t('Tu entrenamiento'), rows: 1 },
+    { title: t('Aplicación'), rows: 2 },
+    { title: t('Acceso y seguridad'), rows: 1 },
   ]
 
   return (
     <AppLoadingShell className="pb-16">
-      <BackHeader title="Ajustes" subtitle="Preferencias de tu cuenta" icon={UserRound} />
+      <BackHeader title={t('Ajustes')} subtitle={t('Preferencias de tu cuenta')} icon={UserRound} />
       <section className="mt-8 space-y-6">
         {groups.map(({ title, rows }) => (
           <section key={title} className="rounded-2xl border border-border/60 bg-muted/10 p-5">

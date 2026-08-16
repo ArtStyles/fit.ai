@@ -11,6 +11,7 @@ const ENGLISH: Record<string, string> = {
   'Entrenar': 'Train',
   'Comunidad': 'Community',
   'Ajustes': 'Settings',
+  'Preferencias de tu cuenta': 'Your account preferences',
   'Historial': 'History',
   'Navegación principal': 'Main navigation',
   'Abrir Coach IA': 'Open AI Coach',

@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
+import { SettingsLoading } from '../RouteLoading'
 
 function source(relativePath: string): string {
   const path = fileURLToPath(new URL(relativePath, import.meta.url))
@@ -31,6 +35,18 @@ describe('route loading skeletons', () => {
     for (const label of ['Tu perfil', 'Tu entrenamiento', 'Aplicación', 'Acceso y seguridad']) {
       expect(routeLoading).toContain(label)
     }
+  })
+
+  it('renders the grouped settings skeleton in English', () => {
+    const html = renderToStaticMarkup(createElement(
+      I18nProvider,
+      { language: 'en', syncDocumentLanguage: false, children: createElement(SettingsLoading) },
+    ))
+
+    for (const label of ['Settings', 'Your account preferences', 'Your profile', 'Your training', 'Application', 'Access and security']) {
+      expect(html).toContain(label)
+    }
+    expect(html).not.toContain('Tu perfil')
   })
 
   it.each([
