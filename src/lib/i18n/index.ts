@@ -357,6 +357,7 @@ const ENGLISH: Record<string, string> = {
   'Revisar o adaptar el plan': 'Review or adjust plan',
   'Guardar preferencias': 'Save preferences',
   'Guardando preferencias': 'Saving preferences',
+  'No se pudieron guardar las preferencias de entrenamiento.': 'Could not save training preferences.',
   'Preferencias guardadas.': 'Preferences saved.',
   'Revisa los campos indicados.': 'Review the highlighted fields.',
   'Selecciona un objetivo válido.': 'Select a valid goal.',

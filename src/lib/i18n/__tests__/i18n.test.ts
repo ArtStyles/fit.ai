@@ -47,6 +47,7 @@ describe('UI translations', () => {
     ['Elige {count} días más para continuar.', 'Choose {count} more days to continue.'],
     ['Guardar preferencias', 'Save preferences'],
     ['Guardando preferencias', 'Saving preferences'],
+    ['No se pudieron guardar las preferencias de entrenamiento.', 'Could not save training preferences.'],
   ])('translates structured training settings copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })

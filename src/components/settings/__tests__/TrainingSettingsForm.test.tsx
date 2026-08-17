@@ -1,15 +1,24 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
+import type { TrainingSettingsActionState } from '@/app/actions/settings'
 import { createTranslator } from '@/lib/i18n'
 import type { TrainingSettingsValue } from '@/lib/profile/trainingPreferences'
 import { TrainingSettingsForm, daySelectionMessage } from '../TrainingSettingsForm'
+
+const initialActionState: TrainingSettingsActionState = {
+  ok: false,
+  message: null,
+  formError: null,
+  fieldErrors: {},
+}
+let actionState: TrainingSettingsActionState = initialActionState
 
 vi.mock('react-dom', async importOriginal => {
   const reactDom = await importOriginal<typeof import('react-dom')>()
   return {
     ...reactDom,
-    useFormState: () => [{ ok: false, message: null, formError: null, fieldErrors: {} }, vi.fn()],
+    useFormState: () => [actionState, vi.fn()],
     useFormStatus: () => ({ pending: false }),
   }
 })
@@ -25,13 +34,17 @@ const initial: TrainingSettingsValue = {
   injuries: null,
 }
 
-function renderWithProviders(element: React.ReactElement) {
+function renderWithProviders(element: React.ReactElement, language: 'es' | 'en' = 'es') {
   return renderToStaticMarkup(
-    <I18nProvider language="es" syncDocumentLanguage={false}>
+    <I18nProvider language={language} syncDocumentLanguage={false}>
       {element}
     </I18nProvider>,
   )
 }
+
+afterEach(() => {
+  actionState = initialActionState
+})
 
 describe('TrainingSettingsForm', () => {
   it('renders canonical equipment controls instead of CSV text', () => {
@@ -78,6 +91,34 @@ describe('TrainingSettingsForm', () => {
 
     expect(html).toContain('no cambia automáticamente tu plan activo')
     expect(html).toContain('href="/plan"')
+  })
+
+  it('renders all seven weekday controls in English without Spanish abbreviations', () => {
+    const html = renderWithProviders(
+      <TrainingSettingsForm initial={initial} readinessStatus="cleared" hasActivePlan={false} />,
+      'en',
+    )
+
+    for (const weekday of ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']) {
+      expect(html).toContain(`<span>${weekday}</span>`)
+    }
+  })
+
+  it('translates a training-preferences persistence error for English users', () => {
+    actionState = {
+      ok: false,
+      message: null,
+      formError: 'No se pudieron guardar las preferencias de entrenamiento.',
+      fieldErrors: {},
+    }
+
+    const html = renderWithProviders(
+      <TrainingSettingsForm initial={initial} readinessStatus="cleared" hasActivePlan={false} />,
+      'en',
+    )
+
+    expect(html).toContain('Could not save training preferences.')
+    expect(html).not.toContain('No se pudieron guardar las preferencias de entrenamiento.')
   })
 })
 

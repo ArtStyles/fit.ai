@@ -108,6 +108,23 @@ describe('updateTrainingSettings', () => {
     expect(from).not.toHaveBeenCalled()
   })
 
+  it('returns a training-specific form error when profile persistence fails', async () => {
+    const eq = vi.fn().mockResolvedValue({ error: { message: 'write failed' } })
+    const update = vi.fn(() => ({ eq }))
+    const from = vi.fn(() => ({ update }))
+    mockCreateClient({ user: { id: 'user-1' }, from })
+
+    await expect(updateTrainingSettings(
+      INITIAL_TRAINING_SETTINGS_STATE,
+      validTrainingForm(),
+    )).resolves.toEqual({
+      ok: false,
+      message: null,
+      formError: 'No se pudieron guardar las preferencias de entrenamiento.',
+      fieldErrors: {},
+    })
+  })
+
   it('never opens a workout-plan table', async () => {
     const tables: string[] = []
     const eq = vi.fn().mockResolvedValue({ error: null })

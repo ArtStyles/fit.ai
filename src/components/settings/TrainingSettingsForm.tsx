@@ -180,7 +180,7 @@ export function TrainingSettingsForm({
           <SettingsChoiceGroup
             id="preferredWorkoutDays"
             label={t('Semana de entrenamiento')}
-            options={WEEK_DAYS.map(day => ({ value: day.value, label: `${day.shortLabel} · ${t(day.label)}` }))}
+            options={WEEK_DAYS.map(day => ({ value: day.value, label: t(day.label) }))}
             selected={form.preferredWorkoutDays}
             multiple
             onToggle={toggleDay}

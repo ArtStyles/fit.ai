@@ -112,7 +112,7 @@ export async function updateTrainingSettings(
     return respond({
       ok: false,
       message: null,
-      formError: 'No se pudieron guardar las preferencias.',
+      formError: 'No se pudieron guardar las preferencias de entrenamiento.',
       fieldErrors: {},
     })
   }
