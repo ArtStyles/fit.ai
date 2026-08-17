@@ -72,7 +72,11 @@ function createActionClient(userId: string | null = 'user-1') {
           return { error: null }
         }
         if (table === 'product_notification_preferences') {
-          preferences.set(String(value.user_id), {
+          const owner = value.user_id === undefined ? userId : String(value.user_id)
+          if (!owner || owner !== userId) {
+            return { error: new Error('notification preference owner rejected by RLS') }
+          }
+          preferences.set(owner, {
             professional_enabled: Boolean(value.professional_enabled),
             push_enabled: Boolean(value.push_enabled),
           })
