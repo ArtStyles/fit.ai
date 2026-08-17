@@ -84,6 +84,10 @@ function getTexts(formData: FormData, name: string): string[] | null {
     : null
 }
 
+const TRAINING_FREQUENCY_TOKENS = TRAINING_FREQUENCIES.map(String)
+const SESSION_DURATION_TOKENS = SESSION_DURATIONS.map(String)
+const WEEK_DAY_TOKENS = WEEK_DAYS.map(option => String(option.value))
+
 export function parseTrainingSettingsForm(formData: FormData): TrainingSettingsParseResult {
   const fieldErrors: TrainingSettingsFieldErrors = {}
 
@@ -93,13 +97,19 @@ export function parseTrainingSettingsForm(formData: FormData): TrainingSettingsP
   const fitnessLevel = getText(formData, 'fitnessLevel')
   if (!includes(values(FITNESS_LEVELS), fitnessLevel)) fieldErrors.fitnessLevel = 'Selecciona un nivel válido.'
 
-  const daysPerWeek = Number(getText(formData, 'daysPerWeek'))
-  if (!Number.isInteger(daysPerWeek) || !includes(TRAINING_FREQUENCIES, daysPerWeek)) {
+  const daysPerWeekText = getText(formData, 'daysPerWeek')
+  const daysPerWeek = includes(TRAINING_FREQUENCY_TOKENS, daysPerWeekText)
+    ? Number(daysPerWeekText)
+    : null
+  if (daysPerWeek === null) {
     fieldErrors.daysPerWeek = 'Selecciona entre 2 y 6 días por semana.'
   }
 
-  const sessionDurationMinutes = Number(getText(formData, 'sessionDurationMinutes'))
-  if (!Number.isInteger(sessionDurationMinutes) || !includes(SESSION_DURATIONS, sessionDurationMinutes)) {
+  const sessionDurationText = getText(formData, 'sessionDurationMinutes')
+  const sessionDurationMinutes = includes(SESSION_DURATION_TOKENS, sessionDurationText)
+    ? Number(sessionDurationText)
+    : null
+  if (sessionDurationMinutes === null) {
     fieldErrors.sessionDurationMinutes = 'Selecciona una duración de sesión válida.'
   }
 
@@ -107,12 +117,13 @@ export function parseTrainingSettingsForm(formData: FormData): TrainingSettingsP
   if (!includes(values(GYM_TYPES), gymType)) fieldErrors.gymType = 'Selecciona un lugar de entrenamiento válido.'
 
   const rawPreferredWorkoutDays = getTexts(formData, 'preferredWorkoutDays')
-  const preferredWorkoutDays = rawPreferredWorkoutDays === null
+  const hasValidWorkoutDayTokens = rawPreferredWorkoutDays !== null &&
+    rawPreferredWorkoutDays.every(day => includes(WEEK_DAY_TOKENS, day))
+  const preferredWorkoutDays = !hasValidWorkoutDayTokens
     ? []
     : Array.from(new Set(rawPreferredWorkoutDays.map(day => Number(day)))).sort((a, b) => a - b)
   if (
-    rawPreferredWorkoutDays === null ||
-    preferredWorkoutDays.some(day => !Number.isInteger(day) || !includes(WEEK_DAYS.map(option => option.value), day)) ||
+    !hasValidWorkoutDayTokens ||
     preferredWorkoutDays.length !== daysPerWeek
   ) {
     fieldErrors.preferredWorkoutDays = 'Selecciona días únicos que coincidan con tu frecuencia semanal.'

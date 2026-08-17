@@ -45,6 +45,24 @@ describe('parseTrainingSettingsForm', () => {
     expect(result).toMatchObject({ ok: false, fieldErrors: { sessionDurationMinutes: expect.any(String) } })
   })
 
+  it.each(['2e0', '0x2', '02'])('rejects coercible frequency token %s', frequency => {
+    const result = parseTrainingSettingsForm(validForm({
+      daysPerWeek: frequency,
+      preferredWorkoutDays: ['1', '3'],
+    }))
+    expect(result).toMatchObject({ ok: false, fieldErrors: { daysPerWeek: expect.any(String) } })
+  })
+
+  it.each(['6e1', '0x3c', '060'])('rejects coercible duration token %s', duration => {
+    const result = parseTrainingSettingsForm(validForm({ sessionDurationMinutes: duration }))
+    expect(result).toMatchObject({ ok: false, fieldErrors: { sessionDurationMinutes: expect.any(String) } })
+  })
+
+  it('rejects a coercible ISO day token', () => {
+    const result = parseTrainingSettingsForm(validForm({ preferredWorkoutDays: ['01', '3', '5'] }))
+    expect(result).toMatchObject({ ok: false, fieldErrors: { preferredWorkoutDays: expect.any(String) } })
+  })
+
   it('requires the selected-day count to equal frequency after deduplication', () => {
     const result = parseTrainingSettingsForm(validForm({ preferredWorkoutDays: ['1', '1', '5'] }))
     expect(result).toMatchObject({ ok: false, fieldErrors: { preferredWorkoutDays: expect.any(String) } })
