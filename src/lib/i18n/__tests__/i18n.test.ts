@@ -23,6 +23,35 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Objetivo y experiencia', 'Goal and experience'],
+    ['Disponibilidad', 'Availability'],
+    ['Espacio y equipo', 'Space and equipment'],
+    ['Seguridad', 'Safety'],
+    ['{count} días por semana', '{count} days per week'],
+    ['Mancuernas', 'Dumbbells'],
+    ['Barra', 'Barbell'],
+    ['Banco', 'Bench'],
+    ['Bandas', 'Resistance bands'],
+    ['Polea o cable', 'Cable machine'],
+    ['Barra de dominadas', 'Pull-up bar'],
+    ['Lunes', 'Monday'],
+    ['Domingo', 'Sunday'],
+    ['Estado de preparación', 'Readiness status'],
+    ['Listo para entrenar.', 'Ready to train.'],
+    ['Entrena con las adaptaciones indicadas.', 'Train with the indicated adaptations.'],
+    ['Consulta a un profesional antes de entrenar.', 'Consult a professional before training.'],
+    ['Completa tu información de preparación para recibir orientación.', 'Complete your readiness information to receive guidance.'],
+    ['Quita {count} día para continuar.', 'Remove {count} day to continue.'],
+    ['Quita {count} días para continuar.', 'Remove {count} days to continue.'],
+    ['Elige {count} día más para continuar.', 'Choose {count} more day to continue.'],
+    ['Elige {count} días más para continuar.', 'Choose {count} more days to continue.'],
+    ['Guardar preferencias', 'Save preferences'],
+    ['Guardando preferencias', 'Saving preferences'],
+  ])('translates structured training settings copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['Archivar', 'Archive'],
     ['El plan se archivará, pero tu historial permanecerá intacto.', 'The plan will be archived, but your history will remain intact.'],
     ['No se puede cambiar a Free', 'Cannot switch to Free'],
