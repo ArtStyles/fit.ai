@@ -7,10 +7,8 @@ const { createClient } = vi.hoisted(() => ({
 vi.mock('@/lib/supabase/server', () => ({ createClient }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
-import {
-  INITIAL_TRAINING_SETTINGS_STATE,
-  updateTrainingSettings,
-} from '../settings'
+import { INITIAL_TRAINING_SETTINGS_STATE } from '@/lib/profile/trainingSettingsActionState'
+import { updateTrainingSettings } from '../settings'
 
 function validTrainingForm(overrides: Record<string, string | string[]> = {}) {
   const form = new FormData()

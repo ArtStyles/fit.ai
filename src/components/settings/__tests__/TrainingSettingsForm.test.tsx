@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
-import type { TrainingSettingsActionState } from '@/app/actions/settings'
 import { createTranslator } from '@/lib/i18n'
 import type { TrainingSettingsValue } from '@/lib/profile/trainingPreferences'
+import type { TrainingSettingsActionState } from '@/lib/profile/trainingSettingsActionState'
 import { TrainingSettingsForm, daySelectionMessage } from '../TrainingSettingsForm'
 
 const initialActionState: TrainingSettingsActionState = {

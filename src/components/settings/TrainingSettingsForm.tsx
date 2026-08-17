@@ -2,10 +2,7 @@
 
 import { useState } from 'react'
 import { useFormState } from 'react-dom'
-import {
-  INITIAL_TRAINING_SETTINGS_STATE,
-  updateTrainingSettings,
-} from '@/app/actions/settings'
+import { updateTrainingSettings } from '@/app/actions/settings'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import {
   EQUIPMENT_OPTIONS,
@@ -17,6 +14,7 @@ import {
   WEEK_DAYS,
   type TrainingSettingsValue,
 } from '@/lib/profile/trainingPreferences'
+import { INITIAL_TRAINING_SETTINGS_STATE } from '@/lib/profile/trainingSettingsActionState'
 import { SettingsChoiceGroup } from './SettingsChoiceGroup'
 import { SettingsField } from './SettingsField'
 import { SettingsSaveBar } from './SettingsSaveBar'

@@ -4,10 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import {
-  parseTrainingSettingsForm,
-  type TrainingSettingsFieldErrors,
-} from '@/lib/profile/trainingPreferences'
+import { parseTrainingSettingsForm } from '@/lib/profile/trainingPreferences'
+import type { TrainingSettingsActionState } from '@/lib/profile/trainingSettingsActionState'
 import type { ActionResult } from './posts'
 
 function nullableText(formData: FormData, key: string): string | null {
@@ -45,20 +43,6 @@ export async function updatePersonalData(formData: FormData) {
   revalidatePath('/settings/datos')
   revalidatePath('/dashboard')
   redirect('/settings/datos?notice=settings_saved')
-}
-
-export type TrainingSettingsActionState = {
-  ok: boolean
-  message: string | null
-  formError: string | null
-  fieldErrors: TrainingSettingsFieldErrors
-}
-
-export const INITIAL_TRAINING_SETTINGS_STATE: TrainingSettingsActionState = {
-  ok: false,
-  message: null,
-  formError: null,
-  fieldErrors: {},
 }
 
 // Entrenamiento (/settings/entrenamiento): objetivos, disponibilidad y equipo.
