@@ -487,10 +487,16 @@ function SettingsDetailShell({
   view: string
   children: React.ReactNode
 }) {
+  const { t } = useI18n()
+
   return (
     <AppLoadingShell className="pb-16">
-      <BackHeader backLabel="Ajustes" title={title} icon={icon} />
-      <section data-loading-view={view} className="mt-8 space-y-6" aria-label={`Cargando ${title}`}>
+      <BackHeader backLabel={t('Ajustes')} title={title} icon={icon} />
+      <section
+        data-loading-view={view}
+        className="mt-8 space-y-6"
+        aria-label={t('Cargando {title}', { title })}
+      >
         {children}
       </section>
     </AppLoadingShell>
@@ -498,15 +504,17 @@ function SettingsDetailShell({
 }
 
 export function ProfileSettingsLoading() {
+  const { t } = useI18n()
+
   return (
-    <SettingsDetailShell title="Perfil" icon={UserRound} view="settings-profile">
+    <SettingsDetailShell title={t('Perfil')} icon={UserRound} view="settings-profile">
       <div className="flex flex-col items-center rounded-2xl border border-border/60 bg-muted/10 p-6">
-        <p className="sr-only">Avatar</p>
+        <p className="sr-only">{t('Avatar')}</p>
         <Shimmer className="h-24 w-24 rounded-full bg-violet-500/15" />
         <Shimmer className="mt-4 h-9 w-36 rounded-md bg-muted/40" />
       </div>
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <SettingsFieldSkeleton label="Nombre" />
+        <SettingsFieldSkeleton label={t('Nombre')} />
       </div>
       <SettingsSaveSkeleton />
     </SettingsDetailShell>
@@ -556,17 +564,19 @@ export function TrainingSettingsLoading() {
 }
 
 export function NotificationsSettingsLoading() {
+  const { t } = useI18n()
+
   return (
-    <SettingsDetailShell title="Notificaciones" icon={Bell} view="settings-notifications">
+    <SettingsDetailShell title={t('Notificaciones')} icon={Bell} view="settings-notifications">
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <p className="text-sm font-semibold text-foreground">Recordatorios</p>
+        <p className="text-sm font-semibold text-foreground">{t('Recordatorios')}</p>
         <div className="mt-4 space-y-3">
-          <SettingsFieldSkeleton label="Hora preferida" />
-          <SettingsFieldSkeleton label="Días activos" />
+          <SettingsFieldSkeleton label={t('Hora preferida')} />
+          <SettingsFieldSkeleton label={t('Días activos')} />
         </div>
       </div>
       <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <p className="text-sm font-semibold text-foreground">Avisos de Vekira</p>
+        <p className="text-sm font-semibold text-foreground">{t('Avisos de Vekira')}</p>
         <div className="mt-4 space-y-3">
           <Shimmer className="h-12 rounded-xl bg-muted/40" />
           <Shimmer className="h-12 rounded-xl bg-muted/40" />
@@ -617,11 +627,19 @@ export function SettingsLoading() {
       <BackHeader title={t('Ajustes')} subtitle={t('Preferencias de tu cuenta')} icon={UserRound} />
       <section className="mt-8 space-y-6">
         {groups.map(({ title, rows }) => (
-          <section key={title} className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+          <section
+            key={title}
+            data-loading-group={title}
+            className="rounded-2xl border border-border/60 bg-muted/10 p-5"
+          >
             <h2 className="mb-4 text-base font-semibold text-foreground">{title}</h2>
             <div className="space-y-3">
               {Array.from({ length: rows }).map((_, index) => (
-                <div key={index} className="flex min-h-11 items-center gap-3 rounded-xl border border-border/40 px-3 py-2.5">
+                <div
+                  key={index}
+                  data-loading-row="true"
+                  className="flex min-h-11 items-center gap-3 rounded-xl border border-border/40 px-3 py-2.5"
+                >
                   <Shimmer className="h-9 w-9 rounded-lg bg-violet-500/15" />
                   <div className="min-w-0 flex-1">
                     <Shimmer className="h-4 w-2/3 rounded" />

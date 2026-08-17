@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useReducer, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateLanguage } from '@/app/actions/settings'
-import { useToast } from '@/components/feedback/ToastProvider'
 import { SettingsStatus } from '@/components/settings/SettingsStatus'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import type { AppLanguage } from '@/lib/i18n'
@@ -20,10 +19,87 @@ type FeedbackCopy = {
   error: string
 }
 
+type LanguageFeedbackState = {
+  message: string
+  tone: 'info' | 'success' | 'error'
+}
+
+export type LanguageSelectionState = {
+  selected: AppLanguage
+  pending: boolean
+  feedback: LanguageFeedbackState | null
+}
+
+type LanguageSelectionAction =
+  | { type: 'select'; language: AppLanguage; message: string }
+  | { type: 'success'; message: string }
+  | { type: 'failure'; language: AppLanguage; message: string }
+
+type LanguageSaveResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
 const DEFAULT_FEEDBACK_COPY: FeedbackCopy = {
   saving: 'Guardando idioma…',
   saved: 'Idioma guardado.',
   error: 'No se pudo guardar el idioma.',
+}
+
+export function languageSelectionReducer(
+  state: LanguageSelectionState,
+  action: LanguageSelectionAction,
+): LanguageSelectionState {
+  if (action.type === 'select') {
+    return {
+      selected: action.language,
+      pending: true,
+      feedback: { message: action.message, tone: 'info' },
+    }
+  }
+  if (action.type === 'success') {
+    return {
+      ...state,
+      pending: false,
+      feedback: { message: action.message, tone: 'success' },
+    }
+  }
+  return {
+    selected: action.language,
+    pending: false,
+    feedback: { message: action.message, tone: 'error' },
+  }
+}
+
+export async function persistLanguageSelection({
+  language,
+  save,
+  refresh,
+  fallbackError,
+}: {
+  language: AppLanguage
+  save: (language: AppLanguage) => Promise<{ ok: boolean; error?: string }>
+  refresh: () => void
+  fallbackError: string
+}): Promise<LanguageSaveResult> {
+  let result: { ok: boolean; error?: string }
+  try {
+    result = await save(language)
+  } catch {
+    return { ok: false, error: fallbackError }
+  }
+
+  if (!result.ok) return { ok: false, error: result.error || fallbackError }
+  refresh()
+  return { ok: true }
+}
+
+export function LanguageFeedback({
+  feedback,
+}: {
+  feedback: LanguageFeedbackState | null
+}) {
+  if (!feedback) return null
+  return <SettingsStatus tone={feedback.tone}>{feedback.message}</SettingsStatus>
 }
 
 export function LanguageSelector({
@@ -38,41 +114,37 @@ export function LanguageSelector({
   feedbackCopy?: FeedbackCopy
 }) {
   const router = useRouter()
-  const { showToast } = useToast()
   const { t } = useI18n()
-  const [selected, setSelected] = useState(currentLanguage)
-  const [pending, setPending] = useState(false)
+  const [state, dispatch] = useReducer(languageSelectionReducer, {
+    selected: currentLanguage,
+    pending: false,
+    feedback: null,
+  })
   const [, startTransition] = useTransition()
-  const [announcement, setAnnouncement] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null)
 
   function selectLanguage(language: AppLanguage) {
-    if (pending || language === selected) return
+    if (state.pending || language === state.selected) return
 
-    const previousLanguage = selected
-    setSelected(language)
-    setPending(true)
-    setAnnouncement({ message: feedbackCopy.saving, tone: 'info' })
+    const previousLanguage = state.selected
+    dispatch({ type: 'select', language, message: feedbackCopy.saving })
 
     startTransition(() => {
-      void updateLanguage(language)
-        .then(result => {
-          if (!result.ok) {
-            const message = t(result.error || feedbackCopy.error)
-            setSelected(previousLanguage)
-            setAnnouncement({ message, tone: 'error' })
-            showToast({ title: message, variant: 'error' })
-            return
-          }
-
-          setAnnouncement({ message: feedbackCopy.saved, tone: 'success' })
-          router.refresh()
+      void persistLanguageSelection({
+        language,
+        save: updateLanguage,
+        refresh: () => router.refresh(),
+        fallbackError: feedbackCopy.error,
+      }).then(result => {
+        if (result.ok) {
+          dispatch({ type: 'success', message: feedbackCopy.saved })
+          return
+        }
+        dispatch({
+          type: 'failure',
+          language: previousLanguage,
+          message: t(result.error),
         })
-        .catch(() => {
-          setSelected(previousLanguage)
-          setAnnouncement({ message: feedbackCopy.error, tone: 'error' })
-          showToast({ title: feedbackCopy.error, variant: 'error' })
-        })
-        .finally(() => setPending(false))
+      })
     })
   }
 
@@ -81,7 +153,7 @@ export function LanguageSelector({
       <fieldset className="space-y-3">
         <legend className="sr-only">{legend}</legend>
         {options.map(option => {
-          const isSelected = selected === option.value
+          const isSelected = state.selected === option.value
 
           return (
             <label
@@ -97,7 +169,7 @@ export function LanguageSelector({
                 name="language"
                 value={option.value}
                 checked={isSelected}
-                disabled={pending}
+                disabled={state.pending}
                 onChange={() => selectLanguage(option.value)}
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               />
@@ -118,8 +190,7 @@ export function LanguageSelector({
         })}
       </fieldset>
 
-      <p role="status" aria-live="polite" className="sr-only">{announcement?.message ?? ''}</p>
-      {announcement ? <SettingsStatus tone={announcement.tone}>{announcement.message}</SettingsStatus> : null}
+      <LanguageFeedback feedback={state.feedback} />
     </div>
   )
 }
