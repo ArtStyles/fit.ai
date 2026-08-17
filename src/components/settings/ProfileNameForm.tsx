@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useFormState } from 'react-dom'
 import { updateProfileName, type ProfileNameActionState } from '@/app/actions/settings'
 import { SettingsField } from './SettingsField'
 import { SettingsSaveBar } from './SettingsSaveBar'
@@ -15,7 +15,7 @@ const initialState: ProfileNameActionState = {
 
 export function ProfileNameForm({ initialName }: { initialName: string }) {
   const { t } = useI18n()
-  const [state, formAction] = useActionState(updateProfileName, initialState)
+  const [state, formAction] = useFormState(updateProfileName, initialState)
 
   return (
     <form action={formAction} className="space-y-4">

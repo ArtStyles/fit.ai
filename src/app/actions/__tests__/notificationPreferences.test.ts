@@ -38,7 +38,6 @@ describe('updateProductNotificationPreferences', () => {
     })).resolves.toEqual({ ok: true })
 
     expect(upsert).toHaveBeenCalledWith({
-      user_id: 'user-1',
       professional_enabled: false,
       push_enabled: true,
     }, { onConflict: 'user_id' })

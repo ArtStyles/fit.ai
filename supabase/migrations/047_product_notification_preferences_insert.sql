@@ -5,5 +5,10 @@ CREATE POLICY "product_notification_preferences: insert own"
   FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
-GRANT INSERT (user_id, professional_enabled, push_enabled)
+ALTER TABLE public.product_notification_preferences
+  ALTER COLUMN user_id SET DEFAULT auth.uid();
+
+REVOKE INSERT (user_id)
+  ON TABLE public.product_notification_preferences FROM authenticated;
+GRANT INSERT (professional_enabled, push_enabled)
   ON TABLE public.product_notification_preferences TO authenticated;

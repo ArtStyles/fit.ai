@@ -9,9 +9,9 @@ let actionState = {
   fieldErrors: {} as { fullName?: string },
 }
 
-vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>()
-  return { ...react, useActionState: () => [actionState, vi.fn()] }
+vi.mock('react-dom', async importOriginal => {
+  const reactDom = await importOriginal<typeof import('react-dom')>()
+  return { ...reactDom, useFormState: () => [actionState, vi.fn()] }
 })
 
 vi.mock('../SettingsSaveBar', () => ({

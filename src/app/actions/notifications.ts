@@ -219,7 +219,6 @@ export async function updateProductNotificationPreferences(input: {
   const { error } = await (supabase
     .from('product_notification_preferences') as any)
     .upsert({
-      user_id: user.id,
       professional_enabled: input.professionalEnabled,
       push_enabled: input.pushEnabled,
     }, { onConflict: 'user_id' })
