@@ -4,6 +4,10 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import {
+  parseTrainingSettingsForm,
+  type TrainingSettingsFieldErrors,
+} from '@/lib/profile/trainingPreferences'
 import type { ActionResult } from './posts'
 
 function nullableText(formData: FormData, key: string): string | null {
@@ -16,21 +20,6 @@ function nullableNumber(formData: FormData, key: string): number | null {
   const value = formData.get(key)
   const parsed = Number.parseFloat(typeof value === 'string' ? value : '')
   return Number.isFinite(parsed) ? parsed : null
-}
-
-function nullableInteger(formData: FormData, key: string): number | null {
-  const value = formData.get(key)
-  const parsed = Number.parseInt(typeof value === 'string' ? value : '', 10)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function csvList(formData: FormData, key: string): string[] {
-  const value = nullableText(formData, key)
-  if (!value) return []
-  return value
-    .split(',')
-    .map(item => item.trim())
-    .filter(Boolean)
 }
 
 // Datos personales (/settings/datos): solo escribe sus columnas para no
@@ -58,38 +47,80 @@ export async function updatePersonalData(formData: FormData) {
   redirect('/settings/datos?notice=settings_saved')
 }
 
+export type TrainingSettingsActionState = {
+  ok: boolean
+  message: string | null
+  formError: string | null
+  fieldErrors: TrainingSettingsFieldErrors
+}
+
+export const INITIAL_TRAINING_SETTINGS_STATE: TrainingSettingsActionState = {
+  ok: false,
+  message: null,
+  formError: null,
+  fieldErrors: {},
+}
+
 // Entrenamiento (/settings/entrenamiento): objetivos, disponibilidad y equipo.
-export async function updateTrainingSettings(formData: FormData) {
+export function updateTrainingSettings(formData: FormData): Promise<void>
+export function updateTrainingSettings(
+  previousState: TrainingSettingsActionState,
+  formData: FormData,
+): Promise<TrainingSettingsActionState>
+export async function updateTrainingSettings(
+  previousStateOrFormData: TrainingSettingsActionState | FormData,
+  statefulFormData?: FormData,
+): Promise<TrainingSettingsActionState | void> {
+  const isDirectFormAction = statefulFormData === undefined
+  const formData = isDirectFormAction
+    ? previousStateOrFormData as FormData
+    : statefulFormData
+  const respond = (state: TrainingSettingsActionState) => isDirectFormAction ? undefined : state
+
+  const parsed = parseTrainingSettingsForm(formData)
+  if (!parsed.ok) {
+    return respond({
+      ok: false,
+      message: null,
+      formError: parsed.formError,
+      fieldErrors: parsed.fieldErrors,
+    })
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login?error=auth_required')
-
-  const preferredWorkoutDays = formData
-    .getAll('preferredWorkoutDays')
-    .map(value => Number.parseInt(String(value), 10))
-    .filter(value => Number.isFinite(value) && value >= 1 && value <= 7)
+  if (!user) {
+    return respond({ ok: false, message: null, formError: 'Sesión no válida.', fieldErrors: {} })
+  }
 
   const { error } = await (supabase
     .from('profiles') as any)
     .update({
-      fitness_level: nullableText(formData, 'fitnessLevel'),
-      primary_goal: nullableText(formData, 'primaryGoal'),
-      days_per_week: nullableInteger(formData, 'daysPerWeek'),
-      session_duration_minutes: nullableInteger(formData, 'sessionDurationMinutes'),
-      gym_type: nullableText(formData, 'gymType'),
-      available_equipment: csvList(formData, 'availableEquipment'),
-      injuries: nullableText(formData, 'injuries'),
-      preferred_workout_days: preferredWorkoutDays.length > 0 ? preferredWorkoutDays : null,
+      fitness_level: parsed.value.fitnessLevel,
+      primary_goal: parsed.value.primaryGoal,
+      days_per_week: parsed.value.daysPerWeek,
+      session_duration_minutes: parsed.value.sessionDurationMinutes,
+      gym_type: parsed.value.gymType,
+      available_equipment: parsed.value.availableEquipment,
+      injuries: parsed.value.injuries,
+      preferred_workout_days: parsed.value.preferredWorkoutDays,
       last_check_in_at: new Date().toISOString(),
     })
     .eq('id', user.id)
 
-  if (error) redirect('/settings/entrenamiento?error=save_failed')
+  if (error) {
+    return respond({
+      ok: false,
+      message: null,
+      formError: 'No se pudieron guardar las preferencias.',
+      fieldErrors: {},
+    })
+  }
 
   revalidatePath('/settings/entrenamiento')
   revalidatePath('/dashboard')
   revalidatePath('/plan')
-  redirect('/settings/entrenamiento?notice=settings_saved')
+  return respond({ ok: true, message: 'Preferencias guardadas.', formError: null, fieldErrors: {} })
 }
 
 export type ProfileNameActionState = {
