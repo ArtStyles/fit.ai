@@ -538,26 +538,30 @@ export function PersonalDataSettingsLoading() {
 }
 
 export function TrainingSettingsLoading() {
+  const { t } = useI18n()
+  const sections = [
+    { title: t('Objetivo y experiencia'), rows: 2 },
+    { title: t('Disponibilidad'), rows: 3 },
+    { title: t('Espacio y equipo'), rows: 2 },
+    { title: t('Seguridad'), rows: 2 },
+  ]
+
   return (
-    <SettingsDetailShell title="Entrenamiento" icon={Dumbbell} view="settings-training">
-      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <SettingsFieldSkeleton label="Objetivo" />
-            <SettingsFieldSkeleton label="Nivel" />
-            <SettingsFieldSkeleton label="Gimnasio" />
+    <SettingsDetailShell title={t('Entrenamiento')} icon={Dumbbell} view="settings-training">
+      {sections.map(({ title, rows }) => (
+        <section
+          key={title}
+          data-loading-section="training"
+          className="rounded-2xl border border-border/60 bg-muted/10 p-5"
+        >
+          <p className="text-base font-semibold text-foreground">{title}</p>
+          <div className="mt-4 space-y-3">
+            {Array.from({ length: rows }).map((_, index) => (
+              <Shimmer key={index} className="h-11 rounded-xl bg-muted/40" />
+            ))}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <SettingsFieldSkeleton label="Días por semana" />
-            <SettingsFieldSkeleton label="Minutos por sesión" />
-          </div>
-          <SettingsFieldSkeleton label="Equipamiento disponible" />
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">Lesiones o limitaciones</p>
-            <Shimmer className="h-24 rounded-md bg-muted/40" />
-          </div>
-        </div>
-      </div>
+        </section>
+      ))}
       <SettingsSaveSkeleton />
     </SettingsDetailShell>
   )

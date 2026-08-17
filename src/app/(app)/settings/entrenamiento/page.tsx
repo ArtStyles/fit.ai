@@ -1,10 +1,18 @@
-import { Dumbbell, Save } from 'lucide-react'
+import { Dumbbell } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
-import { SelectField, GOALS, LEVELS, GYMS, DAY_OPTIONS } from '@/components/settings/fields'
-import { SubmitButton } from '@/components/feedback/SubmitButton'
+import { TrainingSettingsForm } from '@/components/settings/TrainingSettingsForm'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { updateTrainingSettings } from '@/app/actions/settings'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
+import {
+  EQUIPMENT_OPTIONS,
+  FITNESS_LEVELS,
+  GYM_TYPES,
+  SESSION_DURATIONS,
+  TRAINING_FREQUENCIES,
+  TRAINING_GOALS,
+  type TrainingSettingsValue,
+} from '@/lib/profile/trainingPreferences'
+import type { ReadinessStatus } from '@/lib/training-engine/types'
 
 export const metadata = { title: 'Entrenamiento · Vekira' }
 
@@ -17,6 +25,41 @@ type TrainingProfile = {
   available_equipment: string[] | null
   injuries: string | null
   preferred_workout_days: number[] | null
+  readiness_status: ReadinessStatus | null
+}
+
+function optionOrFirst<T extends { value: string | number }>(options: readonly T[], stored: unknown): T['value'] {
+  return options.some(option => option.value === stored) ? stored as T['value'] : options[0].value
+}
+
+function numericOptionOrDefault<T extends number>(
+  options: readonly T[],
+  stored: number | null,
+  absentDefault: T,
+): T {
+  if (stored === null) return absentDefault
+  return options.includes(stored as T) ? stored as T : options[0]
+}
+
+function normalizeTrainingProfile(profile: TrainingProfile | null): TrainingSettingsValue {
+  const gymType = optionOrFirst(GYM_TYPES, profile?.gym_type)
+  const availableEquipment = gymType === 'home_no_equipment'
+    ? []
+    : (profile?.available_equipment ?? []).filter(equipment =>
+      EQUIPMENT_OPTIONS.some(option => option.value === equipment),
+    )
+
+  return {
+    primaryGoal: optionOrFirst(TRAINING_GOALS, profile?.primary_goal) as TrainingSettingsValue['primaryGoal'],
+    fitnessLevel: optionOrFirst(FITNESS_LEVELS, profile?.fitness_level) as TrainingSettingsValue['fitnessLevel'],
+    daysPerWeek: numericOptionOrDefault(TRAINING_FREQUENCIES, profile?.days_per_week ?? null, 3),
+    sessionDurationMinutes: numericOptionOrDefault(SESSION_DURATIONS, profile?.session_duration_minutes ?? null, 60),
+    gymType: gymType as TrainingSettingsValue['gymType'],
+    // Show legacy selections unchanged so the client can ask the user to correct them.
+    preferredWorkoutDays: profile?.preferred_workout_days ?? [],
+    availableEquipment: availableEquipment as TrainingSettingsValue['availableEquipment'],
+    injuries: profile?.injuries ?? null,
+  }
 }
 
 export default async function TrainingSettingsPage() {
@@ -24,114 +67,49 @@ export default async function TrainingSettingsPage() {
   const language = normalizeLanguage(appProfile.language)
   const t = createTranslator(language)
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select(`
-      fitness_level,
-      primary_goal,
-      days_per_week,
-      session_duration_minutes,
-      gym_type,
-      available_equipment,
-      injuries,
-      preferred_workout_days
-    `)
-    .eq('id', user.id)
-    .single() as unknown as { data: TrainingProfile | null }
+  const [profileResult, activePlanResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select(`
+        fitness_level,
+        primary_goal,
+        days_per_week,
+        session_duration_minutes,
+        gym_type,
+        available_equipment,
+        injuries,
+        preferred_workout_days,
+        readiness_status
+      `)
+      .eq('id', user.id)
+      .single(),
+    supabase
+      .from('workout_plans')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle(),
+  ]) as unknown as [
+    { data: TrainingProfile | null },
+    { data: { id: string } | null },
+  ]
 
-  const selectedDays = new Set(profile?.preferred_workout_days ?? [])
+  const initial = normalizeTrainingProfile(profileResult.data)
 
   return (
     <SettingsScreen
       title={t('Entrenamiento')}
+      description={t('Elige el objetivo y el nivel que guiarán tus próximas generaciones.')}
       backHref="/settings"
       backLabel={t('Ajustes')}
       icon={<Dumbbell className="h-5 w-5" />}
     >
-      <form action={updateTrainingSettings} className="space-y-6">
-        <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-          <div className="space-y-3">
-            <SelectField label={t('Objetivo')} name="primaryGoal" value={profile?.primary_goal ?? null} options={GOALS.map(([value, label]) => [value, t(label)])} emptyLabel={t('Sin definir')} />
-            <SelectField label={t('Nivel')} name="fitnessLevel" value={profile?.fitness_level ?? null} options={LEVELS.map(([value, label]) => [value, t(label)])} emptyLabel={t('Sin definir')} />
-            <SelectField label={t('Gimnasio')} name="gymType" value={profile?.gym_type ?? null} options={GYMS.map(([value, label]) => [value, t(label)])} emptyLabel={t('Sin definir')} />
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">{t('Días/semana')}</span>
-                <input
-                  name="daysPerWeek"
-                  type="number"
-                  min={2}
-                  max={6}
-                  defaultValue={profile?.days_per_week ?? ''}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">{t('Min/sesión')}</span>
-                <input
-                  name="sessionDurationMinutes"
-                  type="number"
-                  min={20}
-                  max={120}
-                  defaultValue={profile?.session_duration_minutes ?? ''}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              </label>
-            </div>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('Días preferidos')}</span>
-              <div className="grid grid-cols-7 gap-1.5">
-                {DAY_OPTIONS.map(day => (
-                  <label
-                    key={day.value}
-                    className="flex h-10 items-center justify-center rounded-md border border-border/60 bg-background text-sm font-semibold text-foreground has-[:checked]:border-violet-500 has-[:checked]:bg-violet-500/15 has-[:checked]:text-violet-200"
-                  >
-                    <input
-                      type="checkbox"
-                      name="preferredWorkoutDays"
-                      value={day.value}
-                      defaultChecked={selectedDays.has(day.value)}
-                      className="sr-only"
-                    />
-                    {language === 'en' ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'][day.value - 1] : day.label}
-                  </label>
-                ))}
-              </div>
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('Equipo disponible')}</span>
-              <input
-                name="availableEquipment"
-                defaultValue={(profile?.available_equipment ?? []).join(', ')}
-                placeholder={t('mancuernas, barra, polea')}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-              />
-            </label>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">{t('Lesiones o limitaciones')}</span>
-              <textarea
-                name="injuries"
-                rows={3}
-                defaultValue={profile?.injuries ?? ''}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-              />
-            </label>
-          </div>
-        </section>
-
-        <SubmitButton
-          label={t('Guardar')}
-          pendingLabel={t('Guardando')}
-          className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
-        >
-          <Save className="mr-2 h-4 w-4" />
-          {t('Guardar')}
-        </SubmitButton>
-      </form>
+      <TrainingSettingsForm
+        initial={initial}
+        readinessStatus={profileResult.data?.readiness_status ?? 'pending'}
+        hasActivePlan={Boolean(activePlanResult.data)}
+      />
     </SettingsScreen>
   )
 }

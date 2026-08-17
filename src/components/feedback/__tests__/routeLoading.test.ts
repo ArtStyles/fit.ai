@@ -126,6 +126,13 @@ describe('route loading skeletons', () => {
     expect(html).toContain(expectedCopy)
   })
 
+  it('matches the four training preference sections without a CSV equipment field', () => {
+    const html = renderLoading(TrainingSettingsLoading)
+
+    expect(html.match(/data-loading-section="training"/g)).toHaveLength(4)
+    expect(html).not.toContain('Equipamiento disponible')
+  })
+
   it('localizes the detail shell plus Profile, Notifications and Account loading copy in English', () => {
     const profile = renderLoading(ProfileSettingsLoading, 'en')
     expect(profile).toContain('aria-label="Loading Profile"')
