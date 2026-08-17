@@ -9,9 +9,12 @@
 
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
+import { translate, type AppLanguage } from '@/lib/i18n'
 
 /** Base de IDs reservada para los recordatorios (uno por día de semana, 1..7). */
 const REMINDER_ID_BASE = 7100
+const REMINDER_TITLE = '\u00a1Hora de entrenar! \ud83d\udcaa'
+const REMINDER_BODY = 'Tu sesi\u00f3n de hoy te espera. Vamos a por ella.'
 
 export interface ReminderTime {
   hour: number
@@ -49,29 +52,51 @@ function appDayToWeekday(appDay: number): number {
 export async function scheduleWorkoutReminders(
   days: number[],
   time: ReminderTime,
+  language: AppLanguage,
 ): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false
   const granted = await ensureNotificationPermission()
   if (!granted) return false
 
+  const pending = await LocalNotifications.getPending()
+  const previousReminders = pending.notifications.filter(notification => (
+    notification.id > REMINDER_ID_BASE
+      && notification.id <= REMINDER_ID_BASE + 7
+  ))
+
   await cancelWorkoutReminders()
   if (days.length === 0) return true
 
-  await LocalNotifications.schedule({
-    notifications: days.map(appDay => ({
-      id: REMINDER_ID_BASE + appDay,
-      title: '¡Hora de entrenar! 💪',
-      body: 'Tu sesión de hoy te espera. Vamos a por ella.',
-      schedule: {
-        on: {
-          weekday: appDayToWeekday(appDay),
-          hour: time.hour,
-          minute: time.minute,
+  try {
+    await LocalNotifications.schedule({
+      notifications: days.map(appDay => ({
+        id: REMINDER_ID_BASE + appDay,
+        title: translate(language, REMINDER_TITLE),
+        body: translate(language, REMINDER_BODY),
+        schedule: {
+          on: {
+            weekday: appDayToWeekday(appDay),
+            hour: time.hour,
+            minute: time.minute,
+          },
+          allowWhileIdle: true,
         },
-        allowWhileIdle: true,
-      },
-    })),
-  })
+      })),
+    })
+  } catch (schedulingError) {
+    try {
+      await cancelWorkoutReminders()
+      if (previousReminders.length > 0) {
+        await LocalNotifications.schedule({ notifications: previousReminders })
+      }
+    } catch (restorationError) {
+      throw new AggregateError(
+        [schedulingError, restorationError],
+        'Workout reminder scheduling and restoration both failed.',
+      )
+    }
+    throw schedulingError
+  }
   return true
 }
 
@@ -79,9 +104,5 @@ export async function scheduleWorkoutReminders(
 export async function cancelWorkoutReminders(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
   const notifications = [1, 2, 3, 4, 5, 6, 7].map(day => ({ id: REMINDER_ID_BASE + day }))
-  try {
-    await LocalNotifications.cancel({ notifications })
-  } catch {
-    /* no había recordatorios pendientes que cancelar */
-  }
+  await LocalNotifications.cancel({ notifications })
 }

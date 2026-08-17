@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BellRing, Smartphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/components/feedback/ToastProvider'
@@ -8,7 +8,11 @@ import { useI18n } from '@/components/i18n/I18nProvider'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { SettingsStatus } from '@/components/settings/SettingsStatus'
 import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
-import { rescheduleWorkoutReminder } from '@/components/settings/notificationPreferenceFeedback'
+import {
+  applyWorkoutReminderToggle,
+  createSingleFlight,
+  rescheduleWorkoutReminder,
+} from '@/components/settings/notificationPreferenceFeedback'
 import {
   remindersSupported,
   scheduleWorkoutReminders,
@@ -62,9 +66,69 @@ interface Props {
   preferredWorkoutDays: number[]
 }
 
+export function WorkoutReminderControls({
+  time,
+  enabled,
+  busy,
+  timeLabel,
+  toggleLabel,
+  onTimeChange,
+  onToggle,
+}: {
+  time: string
+  enabled: boolean
+  busy: boolean
+  timeLabel: string
+  toggleLabel: string
+  onTimeChange: (value: string) => void
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3" aria-busy={busy}>
+      <input
+        id="reminder-time"
+        aria-label={timeLabel}
+        type="time"
+        value={time}
+        onChange={event => onTimeChange(event.target.value)}
+        disabled={busy}
+        className="h-11 min-h-11 min-w-11 rounded-md border border-input bg-background px-3 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-violet-500 disabled:cursor-wait disabled:opacity-60"
+      />
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={toggleLabel}
+        onClick={onToggle}
+        disabled={busy}
+        className={cn(
+          'flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:cursor-wait',
+          busy && 'opacity-50',
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            'relative block h-7 w-12 rounded-full transition-colors',
+            enabled ? 'bg-violet-500' : 'bg-muted/50',
+          )}
+        >
+          <span
+            className={cn(
+              'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
+              enabled ? 'translate-x-5' : 'translate-x-0',
+            )}
+          />
+        </span>
+      </button>
+    </div>
+  )
+}
+
 export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   const { showToast } = useToast()
-  const { t } = useI18n()
+  const { language, t } = useI18n()
+  const operations = useRef(createSingleFlight()).current
   const [supported, setSupported] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [time, setTime] = useState(DEFAULT_TIME)
@@ -73,6 +137,33 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
 
   const days = [...preferredWorkoutDays].sort((a, b) => a - b)
   const hasDays = days.length > 0
+
+  async function runOperation<T>(task: () => Promise<T>): Promise<T | undefined> {
+    if (operations.isPending) return undefined
+    setBusy(true)
+    try {
+      const result = await operations.run(task)
+      return result.started ? result.value : undefined
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function reportPermissionRequired() {
+    const message = t('Permiso necesario')
+    setStatusMessage(message)
+    showToast({
+      title: message,
+      description: t('Activa las notificaciones de Vekira en los ajustes del teléfono.'),
+      variant: 'error',
+    })
+  }
+
+  function reportNativeFailure() {
+    const message = t('No se pudieron actualizar los recordatorios.')
+    setStatusMessage(message)
+    showToast({ title: message, variant: 'error' })
+  }
 
   // Hidratar preferencia + detectar plataforma (solo en cliente). Si ya estaba
   // activado, reprograma con los días actuales para captar cambios del perfil.
@@ -83,29 +174,38 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
     setEnabled(pref.enabled)
     setTime(pref.time)
     if (native && pref.enabled && days.length > 0) {
-      void scheduleWorkoutReminders(days, parseTime(pref.time))
+      void runOperation(() => applyWorkoutReminderToggle({
+        enable: true,
+        schedule: () => scheduleWorkoutReminders(days, parseTime(pref.time), language),
+        cancel: cancelWorkoutReminders,
+      })).then(outcome => {
+        if (outcome !== 'permission-denied') return
+        setEnabled(false)
+        persist({ enabled: false, time: pref.time })
+        reportPermissionRequired()
+      }).catch(reportNativeFailure)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleToggle() {
-    if (busy || !hasDays) return
+    if (operations.isPending || !hasDays) return
     const next = !enabled
-    setBusy(true)
     try {
+      const outcome = await runOperation(() => applyWorkoutReminderToggle({
+        enable: next,
+        schedule: () => scheduleWorkoutReminders(days, parseTime(time), language),
+        cancel: cancelWorkoutReminders,
+      }))
+      if (!outcome) return
+      if (outcome === 'permission-denied') {
+        reportPermissionRequired()
+        return
+      }
+
+      setEnabled(next)
+      persist({ enabled: next, time })
       if (next) {
-        const ok = await scheduleWorkoutReminders(days, parseTime(time))
-        if (!ok) {
-          showToast({
-            title: t('Permiso necesario'),
-            description: t('Activa las notificaciones de Vekira en los ajustes del teléfono.'),
-            variant: 'error',
-          })
-          setStatusMessage(t('Permiso necesario'))
-          return
-        }
-        setEnabled(true)
-        persist({ enabled: true, time })
         showToast({
           title: t('Recordatorios activados'),
           description: t('Te avisaremos a las {time} en tus días de entrenamiento.', { time }),
@@ -113,34 +213,38 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
         })
         setStatusMessage(t('Recordatorios activados'))
       } else {
-        await cancelWorkoutReminders()
-        setEnabled(false)
-        persist({ enabled: false, time })
         showToast({ title: t('Recordatorios desactivados'), variant: 'success' })
         setStatusMessage(t('Recordatorios desactivados'))
       }
-    } finally {
-      setBusy(false)
+    } catch {
+      reportNativeFailure()
     }
   }
 
   async function handleTimeChange(value: string) {
+    if (operations.isPending) return
     const previousTime = time
     setTime(value)
-    persist({ enabled, time: value })
-    if (enabled && supported) {
-      const scheduled = await rescheduleWorkoutReminder({
-        schedule: () => scheduleWorkoutReminders(days, parseTime(value)),
+    if (!enabled || !supported) {
+      persist({ enabled, time: value })
+      return
+    }
+
+    try {
+      const scheduled = await runOperation(() => rescheduleWorkoutReminder({
+        schedule: () => scheduleWorkoutReminders(days, parseTime(value), language),
         onRollback: () => {
           setTime(previousTime)
           persist({ enabled, time: previousTime })
         },
-      })
-      if (!scheduled) {
-        const message = t('No se pudieron actualizar los recordatorios.')
-        setStatusMessage(message)
-        showToast({ title: message, variant: 'error' })
+      }))
+      if (scheduled) {
+        persist({ enabled, time: value })
+      } else if (scheduled === false) {
+        reportPermissionRequired()
       }
+    } catch {
+      reportNativeFailure()
     }
   }
 
@@ -169,42 +273,15 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
             title={t('Hora del aviso')}
             icon={<BellRing className="h-4 w-4" />}
             control={(
-              <div className="flex items-center gap-3">
-                <input
-                  id="reminder-time"
-                  aria-label={t('Hora del aviso')}
-                  type="time"
-                  value={time}
-                  onChange={e => handleTimeChange(e.target.value)}
-                  className="h-11 min-h-11 min-w-11 rounded-md border border-input bg-background px-3 text-sm tabular-nums text-foreground outline-none focus:ring-2 focus:ring-violet-500"
-                />
-                <button
-                type="button"
-                role="switch"
-                aria-checked={enabled}
-                aria-label={t(enabled ? 'Desactivar recordatorios' : 'Activar recordatorios')}
-                onClick={handleToggle}
-                disabled={busy}
-                className={cn(
-                  'flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
-                  busy && 'opacity-50',
-                )}
-              >
-                <span
-                  className={cn(
-                    'relative block h-7 w-12 rounded-full transition-colors',
-                    enabled ? 'bg-violet-500' : 'bg-muted/50',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
-                      enabled ? 'translate-x-5' : 'translate-x-0',
-                    )}
-                  />
-                </span>
-                </button>
-              </div>
+              <WorkoutReminderControls
+                time={time}
+                enabled={enabled}
+                busy={busy}
+                timeLabel={t('Hora del aviso')}
+                toggleLabel={t(enabled ? 'Desactivar recordatorios' : 'Activar recordatorios')}
+                onTimeChange={value => { void handleTimeChange(value) }}
+                onToggle={() => { void handleToggle() }}
+              />
             )}
           />
 

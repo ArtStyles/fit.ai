@@ -20,6 +20,8 @@ const ENGLISH: Record<string, string> = {
   'Entrenamiento': 'Training',
   'Medidas': 'Measurements',
   'Notificaciones': 'Notifications',
+  '\u00a1Hora de entrenar! \ud83d\udcaa': 'Time to work out! \ud83d\udcaa',
+  'Tu sesi\u00f3n de hoy te espera. Vamos a por ella.': "Today's session is waiting. Let's get moving.",
   'Recordatorios de entrenamiento': 'Workout reminders',
   'Notificación local en tus días preferidos': 'Local notifications on your preferred days',
   'Los recordatorios funcionan en la app instalada en tu teléfono. Ábrela desde tu dispositivo para activarlos.': 'Reminders work in the installed app on your phone. Open it from your device to enable them.',

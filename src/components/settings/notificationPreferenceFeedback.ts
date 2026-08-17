@@ -62,9 +62,24 @@ export async function rescheduleWorkoutReminder({
 }): Promise<boolean> {
   try {
     if (await schedule()) return true
-  } catch {
-    // The UI restores the persisted preference through the supplied callback.
+  } catch (error) {
+    onRollback()
+    throw error
   }
   onRollback()
   return false
+}
+
+export async function applyWorkoutReminderToggle({
+  enable,
+  schedule,
+  cancel,
+}: {
+  enable: boolean
+  schedule: () => Promise<boolean>
+  cancel: () => Promise<void>
+}): Promise<'enabled' | 'disabled' | 'permission-denied'> {
+  if (enable) return await schedule() ? 'enabled' : 'permission-denied'
+  await cancel()
+  return 'disabled'
 }

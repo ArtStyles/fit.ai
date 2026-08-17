@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { translate } from '@/lib/i18n'
 import {
+  applyWorkoutReminderToggle,
   createSingleFlight,
   persistOptimisticPreference,
   rescheduleWorkoutReminder,
@@ -42,17 +43,36 @@ describe('notification preference feedback', () => {
     expect(success).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['returns false', async () => false],
-    ['throws', async () => { throw new Error('native unavailable') }],
-  ])('restores the previous reminder time when rescheduling %s', async (_scenario, schedule) => {
+  it('restores the previous reminder time when rescheduling returns false', async () => {
     const rollback = vi.fn()
 
     await expect(rescheduleWorkoutReminder({
-      schedule,
+      schedule: async () => false,
       onRollback: rollback,
     })).resolves.toBe(false)
 
     expect(rollback).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores the previous reminder time and propagates a native rescheduling failure', async () => {
+    const rollback = vi.fn()
+    const schedulingError = new Error('native unavailable')
+
+    await expect(rescheduleWorkoutReminder({
+      schedule: async () => { throw schedulingError },
+      onRollback: rollback,
+    })).rejects.toBe(schedulingError)
+
+    expect(rollback).toHaveBeenCalledTimes(1)
+  })
+
+  it('propagates a native cancellation failure without reporting reminders as disabled', async () => {
+    const cancellationError = new Error('native cancellation failed')
+
+    await expect(applyWorkoutReminderToggle({
+      enable: false,
+      schedule: vi.fn(),
+      cancel: async () => { throw cancellationError },
+    })).rejects.toBe(cancellationError)
   })
 })
