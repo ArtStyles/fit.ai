@@ -121,6 +121,20 @@ export function RowSkeletons({ count = 3, avatar = true, className }: RowSkeleto
   )
 }
 
+export function NotificationCenterLoading() {
+  return (
+    <AppLoadingShell>
+      <BackHeader
+        backLabel="Dashboard"
+        title="Notificaciones"
+        subtitle="Novedades de tu entrenamiento"
+        icon={Bell}
+      />
+      <RowSkeletons count={5} avatar={false} className="mt-8" />
+    </AppLoadingShell>
+  )
+}
+
 export function CardSkeletons({ count = 3, className }: CardSkeletonsProps) {
   return (
     <div className={cn('mt-6 space-y-4', className)}>

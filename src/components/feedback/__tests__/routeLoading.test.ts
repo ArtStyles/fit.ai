@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { createElement, type ComponentType } from 'react'
+import { Children, createElement, isValidElement, type ComponentType, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import NotificationsRouteLoading from '@/app/(app)/notifications/loading'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import {
   AccountSettingsLoading,
@@ -38,7 +39,38 @@ function renderedGroup(html: string, title: string): string {
   return html.slice(start, next === -1 ? html.length : next)
 }
 
+function hasForwardRefProp(node: ReactNode): boolean {
+  if (!isValidElement(node)) return false
+
+  const element = node as ReactElement<Record<string, unknown>>
+  const hasForwardRef = Object.values(element.props).some((value) => (
+    typeof value === 'object'
+    && value !== null
+    && '$$typeof' in value
+    && value.$$typeof === Symbol.for('react.forward_ref')
+  ))
+
+  return hasForwardRef || Children.toArray(element.props.children as ReactNode).some(hasForwardRefProp)
+}
+
 describe('route loading skeletons', () => {
+  it('keeps product notification loading icons inside a no-props client boundary', () => {
+    const route = NotificationsRouteLoading()
+    const html = renderLoading(NotificationsRouteLoading)
+
+    expect(route.props).toEqual({})
+    expect(hasForwardRefProp(route)).toBe(false)
+    expect(html).toContain('<span class="sr-only">Dashboard</span>')
+    expect(html).toContain('Notificaciones')
+    expect(html).toContain('Novedades de tu entrenamiento')
+    expect(html).toContain('h-11 w-11')
+    expect(html).toContain('h-10 w-10')
+    expect(html).toContain('lucide-bell h-5 w-5')
+    expect(html).toContain('mt-8')
+    expect(html).not.toContain('h-11 w-11 shrink-0 rounded-xl bg-violet-500/15')
+    expect(html.match(/animation-delay:/g)).toHaveLength(5)
+  })
+
   it('matches the real dashboard top bar structure without extra right-side chrome', () => {
     const routeLoading = source('../RouteLoading.tsx')
 
