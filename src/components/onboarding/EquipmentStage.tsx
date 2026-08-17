@@ -14,28 +14,31 @@ import {
   Waves,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { EQUIPMENT_OPTIONS, GYM_TYPES } from '@/lib/profile/trainingPreferences'
 import { canContinueStage } from './onboardingStages'
 import { OptionButton, StageShell, type OnboardingStageProps } from './StageShell'
 
-const LOCATIONS = [
-  { value: 'home_no_equipment', label: 'Casa sin equipo', description: 'Entrenamiento con peso corporal', icon: Home },
-  { value: 'home_basic', label: 'Casa con equipo básico', description: 'Mancuernas, bandas u otros accesorios', icon: Dumbbell },
-  { value: 'full_gym', label: 'Gimnasio completo', description: 'Máquinas, pesos libres y estaciones', icon: Building2 },
-] as const
+const LOCATION_DETAILS = {
+  home_no_equipment: { description: 'Entrenamiento con peso corporal', icon: Home },
+  home_basic: { description: 'Mancuernas, bandas u otros accesorios', icon: Dumbbell },
+  full_gym: { description: 'Máquinas, pesos libres y estaciones', icon: Building2 },
+} as const
 
-const EQUIPMENT_OPTIONS = [
-  { value: 'dumbbells', label: 'Mancuernas', icon: Dumbbell },
-  { value: 'barbell', label: 'Barra', icon: Minus },
-  { value: 'bench', label: 'Banco', icon: RectangleHorizontal },
-  { value: 'kettlebell', label: 'Kettlebell', icon: CircleDot },
-  { value: 'resistance_bands', label: 'Bandas', icon: Waves },
-  { value: 'cable_machine', label: 'Polea o cable', icon: GitBranch },
-  { value: 'pull_up_bar', label: 'Barra de dominadas', icon: Grip },
-  { value: 'trx', label: 'TRX', icon: Target },
-] as const
+const EQUIPMENT_ICONS = {
+  dumbbells: Dumbbell,
+  barbell: Minus,
+  bench: RectangleHorizontal,
+  kettlebell: CircleDot,
+  resistance_bands: Waves,
+  cable_machine: GitBranch,
+  pull_up_bar: Grip,
+  trx: Target,
+} as const
+
+const LOCATIONS = GYM_TYPES.map(option => ({ ...option, ...LOCATION_DETAILS[option.value] }))
 
 export function EquipmentStage({ answers, update, current, total, onBack, onNext }: OnboardingStageProps) {
-  function chooseLocation(value: typeof LOCATIONS[number]['value']) {
+  function chooseLocation(value: typeof GYM_TYPES[number]['value']) {
     update('gym_type', value)
     if (value === 'home_no_equipment') update('equipment', [])
   }
@@ -86,7 +89,7 @@ export function EquipmentStage({ answers, update, current, total, onBack, onNext
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {EQUIPMENT_OPTIONS.map(option => {
                 const selected = answers.equipment.includes(option.value)
-                const Icon = option.icon
+                const Icon = EQUIPMENT_ICONS[option.value]
                 return (
                   <button
                     key={option.value}

@@ -1,6 +1,7 @@
 import { defaultAnswers, type OnboardingAnswers } from '@/app/onboarding/types'
 import { validateUsername } from '@/lib/social/username'
 import { parseDecimalAge } from '@/lib/profile/age'
+import { EQUIPMENT_OPTIONS, FITNESS_LEVELS, GYM_TYPES, SESSION_DURATIONS, TRAINING_FREQUENCIES, TRAINING_GOALS } from '@/lib/profile/trainingPreferences'
 import { validateConfirmationFields } from './confirmationValidation'
 
 export const ONBOARDING_STAGES = [
@@ -54,10 +55,10 @@ const LEGACY_STAGE_MAP = {
   generating: 'generating',
 } as const satisfies Record<string, OnboardingStageId>
 
-const GOALS = ['lose_weight', 'build_muscle', 'gain_strength', 'stay_active', 'improve_endurance'] as const
-const FITNESS_LEVELS = ['beginner', 'intermediate', 'advanced'] as const
-const GYM_TYPES = ['home_no_equipment', 'home_basic', 'full_gym'] as const
-const EQUIPMENT = ['dumbbells', 'barbell', 'bench', 'kettlebell', 'resistance_bands', 'cable_machine', 'pull_up_bar', 'trx'] as const
+const GOALS = TRAINING_GOALS.filter(option => option.value !== 'other').map(option => option.value)
+const FITNESS_LEVEL_VALUES = FITNESS_LEVELS.map(option => option.value)
+const GYM_TYPE_VALUES = GYM_TYPES.map(option => option.value)
+const EQUIPMENT = EQUIPMENT_OPTIONS.map(option => option.value)
 const CARDIO = ['walking', 'running', 'cycling', 'elliptical', 'rowing', 'stairs', 'jump_rope'] as const
 const ACTIVITY_LEVELS = ['inactive', 'insufficiently_active', 'regularly_active'] as const
 const WARNING_SYMPTOMS = ['chest_discomfort', 'dyspnea_at_rest_or_mild', 'dizziness_or_syncope', 'palpitations_or_unusual_fatigue'] as const
@@ -98,10 +99,10 @@ function parsePersistedAnswers(value: unknown): OnboardingAnswers | null {
     typeof fullName !== 'string' ||
     typeof username !== 'string' ||
     !isNullableOneOf(value.goal, GOALS) ||
-    !isNullableOneOf(value.fitness_level, FITNESS_LEVELS) ||
-    !(value.days_per_week === null || isOneOf(value.days_per_week, [2, 3, 4, 5, 6] as const)) ||
-    !(value.session_duration === null || isOneOf(value.session_duration, [30, 45, 60, 90] as const)) ||
-    !isNullableOneOf(value.gym_type, GYM_TYPES) ||
+    !isNullableOneOf(value.fitness_level, FITNESS_LEVEL_VALUES) ||
+    !(value.days_per_week === null || isOneOf(value.days_per_week, TRAINING_FREQUENCIES)) ||
+    !(value.session_duration === null || isOneOf(value.session_duration, SESSION_DURATIONS)) ||
+    !isNullableOneOf(value.gym_type, GYM_TYPE_VALUES) ||
     !isStringArrayOf(value.equipment, EQUIPMENT) ||
     typeof value.injuries !== 'string' ||
     !isStringArrayOf(value.cardio_preferences, CARDIO) ||
