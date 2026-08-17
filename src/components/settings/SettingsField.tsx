@@ -2,6 +2,7 @@ import { Children, cloneElement, type ReactElement, type ReactNode } from 'react
 
 type FieldControlProps = {
   'aria-describedby'?: string
+  'aria-invalid'?: boolean | 'true' | 'false'
 }
 
 export function SettingsField({
@@ -31,7 +32,10 @@ export function SettingsField({
       <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
         {label}{unit ? <span className="ml-1 text-muted-foreground">({unit})</span> : null}
       </label>
-      {cloneElement(control, describedBy ? { 'aria-describedby': describedBy } : {})}
+      {cloneElement(control, {
+        ...(describedBy ? { 'aria-describedby': describedBy } : {}),
+        ...(error ? { 'aria-invalid': true } : {}),
+      })}
       {help ? <p id={`${id}-help`} className="text-xs text-muted-foreground">{help}</p> : null}
       {error ? <p id={`${id}-error`} role="alert" className="text-xs text-red-300">{error}</p> : null}
     </div>

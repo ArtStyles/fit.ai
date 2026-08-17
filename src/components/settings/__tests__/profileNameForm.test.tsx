@@ -37,6 +37,7 @@ describe('ProfileNameForm', () => {
     const html = renderForm()
 
     expect(html).toContain('Name cannot exceed 100 characters.')
+    expect(html).toContain('aria-invalid="true"')
     expect(html).not.toContain('El nombre no puede superar 100 caracteres.')
   })
 

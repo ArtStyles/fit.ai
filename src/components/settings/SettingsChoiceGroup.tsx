@@ -1,6 +1,7 @@
 'use client'
 
-import type { ComponentType } from 'react'
+import { useId, type ComponentType } from 'react'
+import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type SettingsChoice<T extends string | number> = {
@@ -11,6 +12,7 @@ export type SettingsChoice<T extends string | number> = {
 }
 
 export function SettingsChoiceGroup<T extends string | number>({
+  id,
   label,
   options,
   selected,
@@ -18,6 +20,7 @@ export function SettingsChoiceGroup<T extends string | number>({
   onToggle,
   error,
 }: {
+  id?: string
   label: string
   options: readonly SettingsChoice<T>[]
   selected: readonly T[]
@@ -25,8 +28,14 @@ export function SettingsChoiceGroup<T extends string | number>({
   onToggle: (value: T) => void
   error?: string
 }) {
+  const generatedId = useId()
+  const errorId = `${id ?? generatedId}-error`
+
   return (
-    <fieldset aria-invalid={Boolean(error)}>
+    <fieldset
+      aria-invalid={Boolean(error)}
+      aria-describedby={error ? errorId : undefined}
+    >
       <legend className="mb-3 text-sm font-semibold text-foreground">{label}</legend>
       <div data-selection-mode={multiple ? 'multiple' : 'single'} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {options.map(option => {
@@ -45,13 +54,22 @@ export function SettingsChoiceGroup<T extends string | number>({
               )}
             >
               {Icon ? <Icon className="mx-auto mb-1 h-4 w-4" aria-hidden="true" /> : null}
-              {option.label}
+              <span className="flex items-center justify-center gap-1.5">
+                {active ? (
+                  <Check
+                    aria-hidden="true"
+                    data-selected-indicator="true"
+                    className="h-4 w-4 shrink-0"
+                  />
+                ) : null}
+                <span>{option.label}</span>
+              </span>
               {option.description ? <span className="mt-1 block text-xs font-normal text-muted-foreground">{option.description}</span> : null}
             </button>
           )
         })}
       </div>
-      {error ? <p role="alert" className="mt-2 text-xs text-red-300">{error}</p> : null}
+      {error ? <p id={errorId} role="alert" className="mt-2 text-xs text-red-300">{error}</p> : null}
     </fieldset>
   )
 }

@@ -17,11 +17,12 @@ describe('settings primitives', () => {
   it('associates help and error copy with a field', () => {
     const html = renderToStaticMarkup(
       <SettingsField id="height" label="Altura" help="En centímetros" error="Valor inválido">
-        <input id="height" aria-invalid />
+        <input id="height" />
       </SettingsField>,
     )
 
     expect(html).toContain('aria-describedby="height-help height-error"')
+    expect(html).toContain('aria-invalid="true"')
     expect(html).toContain('id="height-error"')
     expect(html).toContain('role="alert"')
   })
@@ -29,15 +30,21 @@ describe('settings primitives', () => {
   it('exposes pressed state and 44px targets', () => {
     const html = renderToStaticMarkup(
       <SettingsChoiceGroup
+        id="duration"
         label="Duración"
         options={[{ value: 30, label: '30 min' }, { value: 60, label: '1 hora' }]}
         selected={[60]}
         multiple={false}
         onToggle={vi.fn()}
+        error="Selecciona una duración"
       />,
     )
 
     expect(html).toContain('aria-pressed="true"')
+    expect(html).toContain('aria-invalid="true"')
+    expect(html).toContain('aria-describedby="duration-error"')
+    expect(html).toContain('id="duration-error"')
+    expect(html).toContain('data-selected-indicator="true"')
     expect(html).toContain('min-h-11')
     expect(html).toContain('<fieldset')
   })
