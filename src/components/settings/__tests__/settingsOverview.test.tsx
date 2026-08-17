@@ -1,6 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { UserRound } from 'lucide-react'
 import { SettingsNavGroup } from '../SettingsNavGroup'
 
 const { mockRequireAppUserContext } = vi.hoisted(() => ({
@@ -18,7 +17,7 @@ describe('SettingsNavGroup', () => {
     const html = renderToStaticMarkup(
       <SettingsNavGroup
         title="Tu perfil"
-        entries={[{ href: '/settings/perfil', label: 'Perfil', description: 'Foto y nombre', icon: UserRound }]}
+        entries={[{ href: '/settings/perfil', label: 'Perfil', description: 'Foto y nombre', icon: 'user-round' }]}
       />,
     )
 
