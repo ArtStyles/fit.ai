@@ -79,7 +79,7 @@ describe('settings primitives', () => {
         description="Actualiza cómo te reconoce Vekira."
         backHref="/settings"
         backLabel="Ajustes"
-        icon={<span aria-hidden="true" />}
+        icon="user-round"
       >
         <p>Contenido</p>
       </SettingsScreen>,

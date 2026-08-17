@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { UserRound } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { AvatarUploader } from '@/components/profile/AvatarUploader'
@@ -25,7 +24,7 @@ export default async function ProfilePage() {
       title={t('Perfil')}
       backHref="/settings"
       backLabel={t('Ajustes')}
-      icon={<UserRound className="h-5 w-5" />}
+      icon="user-round"
     >
       <div className="space-y-6">
         <SettingsSection title={t('Identidad')} description={t('Así te reconoce Vekira en tu cuenta.')}>

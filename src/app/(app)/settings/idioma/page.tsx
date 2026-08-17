@@ -1,4 +1,3 @@
-import { Languages } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
@@ -30,7 +29,7 @@ export default async function LanguageSettingsPage() {
       description={t('Este ajuste cambia la interfaz completa y el contenido técnico de los ejercicios.')}
       backHref="/settings"
       backLabel={t('Ajustes')}
-      icon={<Languages className="h-5 w-5" />}
+      icon="languages"
     >
       <LanguageSelector
         currentLanguage={language}

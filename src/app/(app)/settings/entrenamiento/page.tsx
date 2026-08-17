@@ -1,4 +1,3 @@
-import { Dumbbell } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { TrainingSettingsForm } from '@/components/settings/TrainingSettingsForm'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -103,7 +102,7 @@ export default async function TrainingSettingsPage() {
       description={t('Elige el objetivo y el nivel que guiarán tus próximas generaciones.')}
       backHref="/settings"
       backLabel={t('Ajustes')}
-      icon={<Dumbbell className="h-5 w-5" />}
+      icon="dumbbell"
     >
       <TrainingSettingsForm
         initial={initial}

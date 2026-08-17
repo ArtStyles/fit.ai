@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { LogOut, UserCog } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { Button } from '@/components/ui/button'
@@ -26,7 +26,7 @@ export default async function AccountSettingsPage() {
       description={t('Gestiona tu acceso, sesión y documentos.')}
       backHref="/settings"
       backLabel={t('Ajustes')}
-      icon={<UserCog className="h-5 w-5" />}
+      icon="user-cog"
     >
       <div className="space-y-4">
         <SettingsSection title={t('Cuenta de acceso')} description={t('La dirección que usas para acceder a Vekira.')}>

@@ -1,4 +1,4 @@
-import { Save, UserRound } from 'lucide-react'
+import { Save } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { SelectField, GENDERS } from '@/components/settings/fields'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
@@ -30,7 +30,7 @@ export default async function PersonalDataPage() {
       title={t('Datos personales')}
       backHref="/settings"
       backLabel={t('Ajustes')}
-      icon={<UserRound className="h-5 w-5" />}
+      icon="user-round"
     >
       <form action={updatePersonalData} className="space-y-6">
         <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">

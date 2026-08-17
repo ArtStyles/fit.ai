@@ -6,9 +6,11 @@ import {
 } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { FixedTopBar } from '../FixedTopBar'
 import { PageTopBar } from '../PageTopBar'
 import { PendingLink } from '../PendingLink'
 import { SettingsNavGroup } from '@/components/settings/SettingsNavGroup'
+import { SettingsScreen } from '@/components/settings/SettingsScreen'
 
 function findElementsOfType(node: ReactNode, type: ReactElement['type']): ReactElement[] {
   const matches: ReactElement[] = []
@@ -26,6 +28,7 @@ function findElementsOfType(node: ReactNode, type: ReactElement['type']): ReactE
 function containsRawForwardRef(node: ReactNode): boolean {
   if (Array.isArray(node)) return node.some(containsRawForwardRef)
   if (!isValidElement(node)) return false
+  if (node.type === PendingLink) return false
 
   const elementType = node.type as unknown
   if (
@@ -42,6 +45,28 @@ function containsRawForwardRef(node: ReactNode): boolean {
 }
 
 describe('PendingLink RSC boundaries', () => {
+  it('keeps the SettingsScreen header icon inside the serializable FixedTopBar boundary', () => {
+    const screenOutput = SettingsScreen({
+      title: 'Notificaciones',
+      backHref: '/dashboard',
+      backLabel: 'Dashboard',
+      icon: 'bell-ring',
+      children: null,
+    })
+    const pageTopBar = findElementsOfType(screenOutput, PageTopBar)[0]
+    const topBarOutput = PageTopBar(
+      pageTopBar?.props as Parameters<typeof PageTopBar>[0],
+    )
+    const fixedTopBars = findElementsOfType(topBarOutput, FixedTopBar)
+
+    expect(fixedTopBars).toHaveLength(1)
+    expect(containsRawForwardRef(fixedTopBars[0]?.props.children)).toBe(false)
+
+    const html = renderToStaticMarkup(screenOutput)
+    expect(html).toContain('lucide-bell-ring')
+    expect(html).toContain('h-5 w-5')
+  })
+
   it('keeps the PageTopBar back icon inside a serializable client boundary', () => {
     const output = PageTopBar({
       title: 'Notificaciones',

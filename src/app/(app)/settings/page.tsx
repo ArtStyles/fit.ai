@@ -1,4 +1,3 @@
-import { UserRound } from 'lucide-react'
 import { SettingsNavGroup } from '@/components/settings/SettingsNavGroup'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -41,7 +40,7 @@ export default async function SettingsPage() {
       subtitle={user.email}
       backHref="/dashboard"
       backLabel="Dashboard"
-      icon={<UserRound className="h-5 w-5" />}
+      icon="user-round"
     >
       <div className="space-y-6">
         {groups.map(group => <SettingsNavGroup key={group.title} {...group} />)}

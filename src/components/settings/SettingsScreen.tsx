@@ -1,4 +1,8 @@
 import { PageTopBar } from '@/components/navigation/PageTopBar'
+import {
+  PendingLinkIcon,
+  type PendingLinkIconName,
+} from '@/components/navigation/PendingLinkIcon'
 
 type Props = {
   title: string
@@ -7,7 +11,7 @@ type Props = {
   description?: string
   backHref: string
   backLabel: string
-  icon: React.ReactNode
+  icon: PendingLinkIconName
   children: React.ReactNode
 }
 
@@ -30,7 +34,7 @@ export function SettingsScreen({
         subtitle={subtitle}
         backHref={backHref}
         backLabel={backLabel}
-        icon={icon}
+        icon={<PendingLinkIcon name={icon} className="h-5 w-5" />}
       />
 
       <main aria-label={title} className="mx-auto max-w-lg px-4 py-8">
