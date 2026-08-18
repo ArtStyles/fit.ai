@@ -2,12 +2,16 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { SettingsNavGroup } from '../SettingsNavGroup'
 
-const { mockRequireAppUserContext } = vi.hoisted(() => ({
+const { mockGetTrainerAccess, mockRequireAppUserContext } = vi.hoisted(() => ({
+  mockGetTrainerAccess: vi.fn(),
   mockRequireAppUserContext: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/server', () => ({
   requireAppUserContext: mockRequireAppUserContext,
+}))
+vi.mock('@/lib/coaching/access', () => ({
+  getTrainerAccess: mockGetTrainerAccess,
 }))
 
 import SettingsPage from '@/app/(app)/settings/page'
@@ -28,9 +32,11 @@ describe('SettingsNavGroup', () => {
   })
 
   it('isolates administration from non-admin profiles', async () => {
+    mockGetTrainerAccess.mockResolvedValue({ granted: false, reason: 'missing_profile' })
     mockRequireAppUserContext.mockResolvedValue({
-      user: { email: 'member@example.com' },
+      user: { id: 'member', email: 'member@example.com' },
       profile: { language: 'es', is_admin: false },
+      supabase: {},
     })
 
     const memberHtml = renderToStaticMarkup(await SettingsPage())
@@ -38,8 +44,9 @@ describe('SettingsNavGroup', () => {
     expect(memberHtml).not.toContain('Administración')
 
     mockRequireAppUserContext.mockResolvedValue({
-      user: { email: 'admin@example.com' },
+      user: { id: 'admin', email: 'admin@example.com' },
       profile: { language: 'es', is_admin: true },
+      supabase: {},
     })
 
     const adminHtml = renderToStaticMarkup(await SettingsPage())

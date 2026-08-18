@@ -5,6 +5,7 @@ import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { ApplicationForm, type TrainerApplicationView } from '@/components/coaching/ApplicationForm'
 import { ApplicationTimeline, type TrainerApplicationEventView, type TrainerInterviewView } from '@/components/coaching/ApplicationTimeline'
 import type { TrainerCredentialView } from '@/components/coaching/CredentialFields'
+import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
 type ApplicationRow = {
   id: string
@@ -67,8 +68,16 @@ function mapApplication(row: ApplicationRow): TrainerApplicationView {
   }
 }
 
-export default async function TrainerApplicationPage() {
+export default async function TrainerApplicationPage({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined>
+}) {
+  const openedFromSettings = searchParams?.from === 'settings'
+  const backHref = openedFromSettings ? '/settings' : '/trainers'
+  const backLabelKey = openedFromSettings ? 'Volver a ajustes' : 'Volver a entrenadores'
   const { supabase, user, profile } = await requireAppUserContext()
+  const t = createTranslator(normalizeLanguage(profile.language))
   const { data: applicationRow, error: applicationError } = await supabase.from('trainer_applications')
     .select('id, status, professional_name, professional_photo_url, bio, specialties, modalities, experience_summary, general_location, languages, contact_email, contact_phone, preferred_contact, timezone, interview_availability')
     .eq('user_id', user.id)
@@ -142,7 +151,7 @@ export default async function TrainerApplicationPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 pb-24">
       <FixedTopBar>
-        <Link href="/trainers" aria-label="Volver a entrenadores" className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+        <Link href={backHref} aria-label={t(backLabelKey)} className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </Link>
         <h1 className="text-lg font-bold">Solicitud de entrenador</h1>

@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   BellRing,
+  Briefcase,
   ChevronRight,
   Contact as ContactRound,
   Dumbbell,
@@ -17,6 +18,7 @@ import {
 const ICONS = {
   'arrow-left': ArrowLeft,
   'bell-ring': BellRing,
+  briefcase: Briefcase,
   'chevron-right': ChevronRight,
   'contact-round': ContactRound,
   dumbbell: Dumbbell,

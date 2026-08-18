@@ -20,8 +20,9 @@
     </style>
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <!-- Android 11 e inferiores usan la imagen completa. -->
-        <item name="android:background">@drawable/splash</item>
+        <!-- Android 11 e inferiores usan la imagen completa solo en la ventana.
+             Un background gen\u00e9rico se hereda en los selectores nativos. -->
+        <item name="android:windowBackground">@drawable/splash</item>
         <!-- Android 12+ usa el splash del sistema: marca transparente, sin disco. -->
         <item name="windowSplashScreenBackground">@color/vekira_splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/vekira_splash_mark</item>
