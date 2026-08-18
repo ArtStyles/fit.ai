@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   logMeasurement,
   updateMeasurement,
+  type MeasurementActionResult,
   type LogMeasurementPayload,
   type MeasurementRow,
 } from '@/app/actions/measurements'
@@ -18,10 +19,17 @@ type Props = {
   initial?: MeasurementRow
   onSaved: (row: MeasurementRow) => void
   onClose: () => void
+  onPendingChange?: (pending: boolean) => void
 }
 
 type Translate = (source: string, values?: Record<string, string | number>) => string
 type NumericField = Exclude<MeasurementField, 'notes'>
+
+export type MeasurementDraft = Record<NumericField, string> & { notes: string }
+
+export type MeasurementSubmissionDecision =
+  | { ok: true; id: string; fieldErrors: MeasurementFieldErrors }
+  | { ok: false; error: string; fieldErrors: MeasurementFieldErrors }
 
 const PRIMARY_FIELDS: Array<{ field: NumericField; label: string; unit: string; step: string }> = [
   { field: 'weight_kg', label: 'Peso', unit: 'kg', step: '0.1' },
@@ -37,6 +45,67 @@ const EXTRA_FIELDS: Array<{ field: NumericField; label: string; unit: string; st
   { field: 'legs_cm', label: 'Piernas', unit: 'cm', step: '0.5' },
 ]
 
+export function shouldRevealExtraMeasurementFields(fieldErrors: MeasurementFieldErrors): boolean {
+  return EXTRA_FIELDS.some(({ field }) => Boolean(fieldErrors[field]))
+}
+
+function draftValue(value: number | null | undefined): string {
+  return value === null || value === undefined ? '' : String(value)
+}
+
+export function createMeasurementDraft(initial?: MeasurementRow): MeasurementDraft {
+  return {
+    weight_kg: draftValue(initial?.weight_kg),
+    body_fat_percentage: draftValue(initial?.body_fat_percentage),
+    muscle_mass_kg: draftValue(initial?.muscle_mass_kg),
+    chest_cm: draftValue(initial?.chest_cm),
+    waist_cm: draftValue(initial?.waist_cm),
+    hips_cm: draftValue(initial?.hips_cm),
+    arms_cm: draftValue(initial?.arms_cm),
+    legs_cm: draftValue(initial?.legs_cm),
+    notes: initial?.notes ?? '',
+  }
+}
+
+function numericDraftValue(value: string): number | null {
+  return value.trim() === '' ? null : Number(value)
+}
+
+export function measurementPayloadFromDraft(draft: MeasurementDraft): LogMeasurementPayload {
+  return {
+    weight_kg: numericDraftValue(draft.weight_kg),
+    body_fat_percentage: numericDraftValue(draft.body_fat_percentage),
+    muscle_mass_kg: numericDraftValue(draft.muscle_mass_kg),
+    chest_cm: numericDraftValue(draft.chest_cm),
+    waist_cm: numericDraftValue(draft.waist_cm),
+    hips_cm: numericDraftValue(draft.hips_cm),
+    arms_cm: numericDraftValue(draft.arms_cm),
+    legs_cm: numericDraftValue(draft.legs_cm),
+    notes: draft.notes.trim() || null,
+  }
+}
+
+export async function submitMeasurementInteraction(
+  action: () => Promise<MeasurementActionResult>,
+  onPendingChange?: (pending: boolean) => void,
+): Promise<MeasurementSubmissionDecision> {
+  onPendingChange?.(true)
+  try {
+    const result = await action()
+    if (!result.success) {
+      return { ok: false, error: result.error, fieldErrors: result.fieldErrors ?? {} }
+    }
+    if (!result.id) {
+      return { ok: false, error: 'No se pudo guardar la medida.', fieldErrors: {} }
+    }
+    return { ok: true, id: result.id, fieldErrors: {} }
+  } catch {
+    return { ok: false, error: 'No se pudo guardar la medida.', fieldErrors: {} }
+  } finally {
+    onPendingChange?.(false)
+  }
+}
+
 function localizeMeasurementError(error: string, t: Translate): string {
   const range = /^Debe ser un número entre ([\d.]+) y ([\d.]+)\.$/.exec(error)
   return range
@@ -44,18 +113,13 @@ function localizeMeasurementError(error: string, t: Translate): string {
     : t(error)
 }
 
-function numericValue(formData: FormData, field: NumericField): number | null {
-  const raw = formData.get(field)
-  if (raw === null || String(raw).trim() === '') return null
-  return Number(raw)
-}
-
 function NumericInput({
   field,
   label,
   unit,
   step,
-  initial,
+  value,
+  onChange,
   error,
   t,
 }: {
@@ -63,7 +127,8 @@ function NumericInput({
   label: string
   unit: string
   step: string
-  initial?: MeasurementRow
+  value: string
+  onChange: (value: string) => void
   error?: string
   t: Translate
 }) {
@@ -84,7 +149,8 @@ function NumericInput({
         step={step}
         min={minimum}
         max={maximum}
-        defaultValue={initial?.[field] ?? undefined}
+        value={value}
+        onChange={event => onChange(event.target.value)}
         placeholder="—"
         aria-describedby={`${helpId}${error ? ` ${errorId}` : ''}`}
         aria-invalid={error ? true : undefined}
@@ -98,69 +164,53 @@ function NumericInput({
   )
 }
 
-export function MeasurementForm({ initial, onSaved, onClose }: Props) {
+export function MeasurementForm({ initial, onSaved, onClose, onPendingChange }: Props) {
   const { t } = useI18n()
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<MeasurementFieldErrors>({})
+  const [draft, setDraft] = useState<MeasurementDraft>(() => createMeasurementDraft(initial))
+  const submitPending = useRef(false)
   const [showExtra, setShowExtra] = useState(
     Boolean(initial && (initial.chest_cm ?? initial.hips_cm ?? initial.arms_cm ?? initial.legs_cm)),
   )
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaving(true)
+    if (submitPending.current) return
     setFormError(null)
     setFieldErrors({})
 
-    const formData = new FormData(event.currentTarget)
-    const payload: LogMeasurementPayload = {
-      weight_kg: numericValue(formData, 'weight_kg'),
-      body_fat_percentage: numericValue(formData, 'body_fat_percentage'),
-      muscle_mass_kg: numericValue(formData, 'muscle_mass_kg'),
-      chest_cm: numericValue(formData, 'chest_cm'),
-      waist_cm: numericValue(formData, 'waist_cm'),
-      hips_cm: numericValue(formData, 'hips_cm'),
-      arms_cm: numericValue(formData, 'arms_cm'),
-      legs_cm: numericValue(formData, 'legs_cm'),
-      notes: String(formData.get('notes') ?? '').trim() || null,
+    const payload = measurementPayloadFromDraft(draft)
+    const result = await submitMeasurementInteraction(() => initial
+      ? updateMeasurement(initial.id, payload)
+      : logMeasurement(payload), pending => {
+      submitPending.current = pending
+      setSaving(pending)
+      onPendingChange?.(pending)
+    })
+
+    if (!result.ok) {
+      setFormError(localizeMeasurementError(result.error, t))
+      setFieldErrors(result.fieldErrors)
+      if (shouldRevealExtraMeasurementFields(result.fieldErrors)) setShowExtra(true)
+      return
     }
 
-    try {
-      const result = initial
-        ? await updateMeasurement(initial.id, payload)
-        : await logMeasurement(payload)
-
-      if (!result.success) {
-        setFormError(localizeMeasurementError(result.error, t))
-        setFieldErrors(result.fieldErrors ?? {})
-        return
-      }
-
-      if (!result.id) {
-        setFormError(t('No se pudo guardar la medida.'))
-        return
-      }
-
-      onSaved({
-        id: result.id,
-        recorded_at: initial?.recorded_at ?? new Date().toISOString(),
-        weight_kg: payload.weight_kg ?? null,
-        body_fat_percentage: payload.body_fat_percentage ?? null,
-        muscle_mass_kg: payload.muscle_mass_kg ?? null,
-        chest_cm: payload.chest_cm ?? null,
-        waist_cm: payload.waist_cm ?? null,
-        hips_cm: payload.hips_cm ?? null,
-        arms_cm: payload.arms_cm ?? null,
-        legs_cm: payload.legs_cm ?? null,
-        notes: payload.notes ?? null,
-      })
-      onClose()
-    } catch {
-      setFormError(t('No se pudo guardar la medida.'))
-    } finally {
-      setSaving(false)
-    }
+    onSaved({
+      id: result.id,
+      recorded_at: initial?.recorded_at ?? new Date().toISOString(),
+      weight_kg: payload.weight_kg ?? null,
+      body_fat_percentage: payload.body_fat_percentage ?? null,
+      muscle_mass_kg: payload.muscle_mass_kg ?? null,
+      chest_cm: payload.chest_cm ?? null,
+      waist_cm: payload.waist_cm ?? null,
+      hips_cm: payload.hips_cm ?? null,
+      arms_cm: payload.arms_cm ?? null,
+      legs_cm: payload.legs_cm ?? null,
+      notes: payload.notes ?? null,
+    })
+    onClose()
   }
 
   return (
@@ -176,7 +226,8 @@ export function MeasurementForm({ initial, onSaved, onClose }: Props) {
           <NumericInput
             key={field.field}
             {...field}
-            initial={initial}
+            value={draft[field.field]}
+            onChange={value => setDraft(current => ({ ...current, [field.field]: value }))}
             error={fieldErrors[field.field]}
             t={t}
           />
@@ -198,7 +249,8 @@ export function MeasurementForm({ initial, onSaved, onClose }: Props) {
             <NumericInput
               key={field.field}
               {...field}
-              initial={initial}
+              value={draft[field.field]}
+              onChange={value => setDraft(current => ({ ...current, [field.field]: value }))}
               error={fieldErrors[field.field]}
               t={t}
             />
@@ -214,7 +266,8 @@ export function MeasurementForm({ initial, onSaved, onClose }: Props) {
           rows={3}
           maxLength={500}
           placeholder={t('Notas opcionales…')}
-          defaultValue={initial?.notes ?? ''}
+          value={draft.notes}
+          onChange={event => setDraft(current => ({ ...current, notes: event.target.value }))}
           aria-describedby={fieldErrors.notes ? 'notes-help notes-error' : 'notes-help'}
           aria-invalid={fieldErrors.notes ? true : undefined}
           className="min-h-24 w-full resize-y rounded-xl border border-border/60 bg-muted/10 px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-violet-400 focus:ring-2 focus:ring-violet-400/30"

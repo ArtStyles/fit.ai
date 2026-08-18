@@ -2,7 +2,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { MeasurementRow } from '@/app/actions/measurements'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
+import { MeasurementHistory } from '../MeasurementHistory'
 import { MeasurementForm } from '../MeasurementForm'
+import * as MeasurementFormModule from '../MeasurementForm'
 import { MeasurementsClient } from '../MeasurementsClient'
 import { WeightChart } from '../WeightChart'
 
@@ -30,6 +32,28 @@ function measurement(overrides: Partial<MeasurementRow> = {}): MeasurementRow {
     ...overrides,
   }
 }
+
+type FormInteractionContract = {
+  createMeasurementDraft?: (initial?: MeasurementRow) => Record<string, string>
+  measurementPayloadFromDraft?: (draft: Record<string, string>) => Record<string, number | string | null>
+  submitMeasurementInteraction?: (
+    action: () => Promise<{
+      success: boolean
+      id?: string
+      error?: string
+      fieldErrors?: Record<string, string>
+    }>,
+    onPendingChange?: (pending: boolean) => void,
+  ) => Promise<{
+    ok: boolean
+    id?: string
+    error?: string
+    fieldErrors: Record<string, string>
+  }>
+  shouldRevealExtraMeasurementFields?: (fieldErrors: Record<string, string>) => boolean
+}
+
+const formContract = MeasurementFormModule as unknown as FormInteractionContract
 
 describe('MeasurementsClient', () => {
   it('renders the empty state with a Settings-aware 44px navigation target', () => {
@@ -88,5 +112,97 @@ describe('MeasurementsClient', () => {
     expect(renderWithProviders(<WeightChart data={[measurement()]} />)).toContain(
       'Registra al menos 2 medidas para ver la gráfica',
     )
+  })
+
+  it('preserves edited circumferences in the payload after their section is collapsed', () => {
+    const createDraft = formContract.createMeasurementDraft
+    const payloadFromDraft = formContract.measurementPayloadFromDraft
+    expect(createDraft).toBeTypeOf('function')
+    expect(payloadFromDraft).toBeTypeOf('function')
+    if (!createDraft || !payloadFromDraft) return
+
+    const expandedDraft = createDraft(measurement({ chest_cm: 96, hips_cm: 99 }))
+    const editedBeforeCollapse = { ...expandedDraft, chest_cm: '101.5' }
+    const payloadAfterCollapse = payloadFromDraft(editedBeforeCollapse)
+
+    expect(payloadAfterCollapse.chest_cm).toBe(101.5)
+    expect(payloadAfterCollapse.hips_cm).toBe(99)
+  })
+
+  it('keeps field errors and the form open when submission fails or rejects', async () => {
+    const submit = formContract.submitMeasurementInteraction
+    expect(submit).toBeTypeOf('function')
+    if (!submit) return
+
+    await expect(submit(async () => ({
+      success: false,
+      error: 'Revisa los campos de la medida.',
+      fieldErrors: { chest_cm: 'Debe ser un número entre 10 y 300.' },
+    }))).resolves.toEqual({
+      ok: false,
+      error: 'Revisa los campos de la medida.',
+      fieldErrors: { chest_cm: 'Debe ser un número entre 10 y 300.' },
+    })
+
+    await expect(submit(async () => { throw new Error('offline') })).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo guardar la medida.',
+      fieldErrors: {},
+    })
+  })
+
+  it('confines other mutations for the complete async submission window', async () => {
+    const submit = formContract.submitMeasurementInteraction
+    expect(submit).toBeTypeOf('function')
+    if (!submit) return
+
+    let release!: (result: { success: true; id: string }) => void
+    const action = new Promise<{ success: true; id: string }>(resolve => { release = resolve })
+    const transitions: boolean[] = []
+
+    const submission = submit(() => action, pending => transitions.push(pending))
+    expect(transitions).toEqual([true])
+
+    release({ success: true, id: '641ca1dc-3816-4b76-a474-c22b368d710a' })
+    await expect(submission).resolves.toMatchObject({ ok: true })
+    expect(transitions).toEqual([true, false])
+  })
+
+  it('reveals collapsed circumference controls when the server rejects one of them', () => {
+    const shouldReveal = formContract.shouldRevealExtraMeasurementFields
+    expect(shouldReveal).toBeTypeOf('function')
+    if (!shouldReveal) return
+
+    expect(shouldReveal({ chest_cm: 'Debe ser un número entre 10 y 300.' })).toBe(true)
+    expect(shouldReveal({ weight_kg: 'Debe ser un número entre 30 y 300.' })).toBe(false)
+  })
+
+  it('renders muscle mass as a unique history metric instead of an empty row', () => {
+    const html = renderWithProviders(
+      <MeasurementHistory
+        rows={[measurement({
+          weight_kg: null,
+          body_fat_percentage: null,
+          muscle_mass_kg: 34.5,
+          waist_cm: null,
+        })]}
+        onDelete={() => undefined}
+        onEdit={() => undefined}
+        disabled={false}
+        pendingDeleteId={null}
+      />,
+    )
+
+    expect(html.match(/34,5 kg masa muscular/g)).toHaveLength(1)
+    expect(html).not.toContain('Sin datos principales')
+  })
+
+  it('keeps the operation live region mounted in the empty state', () => {
+    const html = renderWithProviders(
+      <MeasurementsClient initialMeasurements={[]} fromSettings />,
+    )
+
+    expect(html).toContain('aria-live="polite"')
+    expect(html).toContain('aria-atomic="true"')
   })
 })

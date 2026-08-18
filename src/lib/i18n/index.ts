@@ -66,6 +66,7 @@ const ENGLISH: Record<string, string> = {
   'Editar medida del {date}': 'Edit measurement from {date}',
   'Eliminar medida del {date}': 'Delete measurement from {date}',
   '{value}% grasa': '{value}% body fat',
+  '{value} kg masa muscular': '{value} kg muscle mass',
   '{value} cm cintura': '{value} cm waist',
   'Pecho: {value}': 'Chest: {value}',
   'Cadera: {value}': 'Hips: {value}',

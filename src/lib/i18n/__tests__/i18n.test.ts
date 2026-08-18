@@ -102,6 +102,7 @@ describe('UI translations', () => {
     ['Identificador de medida inválido.', 'Invalid measurement identifier.'],
     ['Medida guardada.', 'Measurement saved.'],
     ['Medida actualizada.', 'Measurement updated.'],
+    ['{value} kg masa muscular', '{value} kg muscle mass'],
   ])('translates measurements copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })

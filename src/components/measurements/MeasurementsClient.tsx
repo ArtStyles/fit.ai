@@ -1,20 +1,71 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { BarChart3, Minus, Plus, Scale, TrendingDown, TrendingUp } from 'lucide-react'
-import type { MeasurementRow } from '@/app/actions/measurements'
+import { deleteMeasurement, type MeasurementRow } from '@/app/actions/measurements'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { dateLocale } from '@/lib/i18n'
 import { MeasurementForm } from './MeasurementForm'
-import { MeasurementHistory } from './MeasurementHistory'
+import { deleteMeasurementInteraction, MeasurementHistory } from './MeasurementHistory'
 import { WeightChart } from './WeightChart'
 
 type Props = {
   initialMeasurements: MeasurementRow[]
   fromSettings: boolean
+}
+
+type RemovedMeasurement = { row: MeasurementRow; index: number }
+
+export function confirmMeasurementDeletion(
+  confirm: (message: string) => boolean,
+  message: string,
+): boolean {
+  return confirm(message)
+}
+
+export function removeMeasurementOptimistically(
+  rows: MeasurementRow[],
+  id: string,
+): { rows: MeasurementRow[]; removed: RemovedMeasurement | null } {
+  const index = rows.findIndex(row => row.id === id)
+  if (index < 0) return { rows, removed: null }
+  return {
+    rows: rows.filter(row => row.id !== id),
+    removed: { row: rows[index]!, index },
+  }
+}
+
+export function restoreMeasurementRow(
+  rows: MeasurementRow[],
+  removed: RemovedMeasurement,
+): MeasurementRow[] {
+  if (rows.some(row => row.id === removed.row.id)) return rows
+  const restored = [...rows]
+  restored.splice(Math.min(removed.index, restored.length), 0, removed.row)
+  return restored
+}
+
+export function createExclusiveMutationCoordinator() {
+  let pending = false
+
+  return {
+    isPending: () => pending,
+    async run<T>(operation: () => Promise<T>): Promise<
+      | { accepted: true; value: T }
+      | { accepted: false }
+    > {
+      if (pending) return { accepted: false }
+      pending = true
+      try {
+        return { accepted: true, value: await operation() }
+      } finally {
+        pending = false
+      }
+    },
+  }
 }
 
 function formatNumber(value: number | null, locale: string, suffix = ''): string {
@@ -69,16 +120,51 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
   const locale = dateLocale(language)
   const [measurements, setMeasurements] = useState(initialMeasurements)
   const [formState, setFormState] = useState<{ open: boolean; editing?: MeasurementRow }>({ open: false })
-  const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
+  const [operationFeedback, setOperationFeedback] = useState<{ message: string; error: boolean } | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [formSaving, setFormSaving] = useState(false)
+  const mutationCoordinator = useRef(createExclusiveMutationCoordinator())
   const latest = measurements[0] ?? null
   const previous = measurements[1] ?? null
+  const mutationPending = pendingDeleteId !== null || formSaving
+
+  function openForm(editing?: MeasurementRow) {
+    if (mutationCoordinator.current.isPending() || formSaving) return
+    setFormState(editing ? { open: true, editing } : { open: true })
+  }
 
   function handleSaved(row: MeasurementRow) {
     const exists = measurements.some(measurement => measurement.id === row.id)
     setMeasurements(current => exists
       ? current.map(measurement => measurement.id === row.id ? row : measurement)
       : [row, ...current])
-    setSaveFeedback(t(exists ? 'Medida actualizada.' : 'Medida guardada.'))
+    setOperationFeedback({ message: t(exists ? 'Medida actualizada.' : 'Medida guardada.'), error: false })
+  }
+
+  async function handleDelete(id: string) {
+    if (mutationCoordinator.current.isPending() || formSaving) return
+    if (!confirmMeasurementDeletion(message => window.confirm(message), t('¿Eliminar esta medida?'))) return
+
+    const optimistic = removeMeasurementOptimistically(measurements, id)
+    if (!optimistic.removed) return
+
+    await mutationCoordinator.current.run(async () => {
+      setPendingDeleteId(id)
+      setOperationFeedback(null)
+      setMeasurements(current => removeMeasurementOptimistically(current, id).rows)
+
+      try {
+        const result = await deleteMeasurementInteraction(measurements, id, deleteMeasurement)
+        if (result.error) {
+          setMeasurements(current => restoreMeasurementRow(current, optimistic.removed!))
+          setOperationFeedback({ message: t(result.error), error: true })
+          return
+        }
+        setOperationFeedback({ message: t('Medida eliminada.'), error: false })
+      } finally {
+        setPendingDeleteId(null)
+      }
+    })
   }
 
   const latestDate = latest
@@ -105,9 +191,10 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
             </PendingLink>
             <button
               type="button"
-              onClick={() => setFormState({ open: true })}
+              onClick={() => openForm()}
+              disabled={mutationPending}
               aria-label={t('Registrar')}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">{t('Registrar')}</span>
@@ -128,8 +215,9 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
             </p>
             <button
               type="button"
-              onClick={() => setFormState({ open: true })}
-              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => openForm()}
+              disabled={mutationPending}
+              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" aria-hidden="true" /> {t('Primera medida')}
             </button>
@@ -164,7 +252,13 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
                 {t('Historial')}
               </h2>
               <div className="mt-3">
-                <MeasurementHistory rows={measurements} onRowsChange={setMeasurements} onEdit={row => setFormState({ open: true, editing: row })} />
+                <MeasurementHistory
+                  rows={measurements}
+                  onDelete={id => void handleDelete(id)}
+                  onEdit={openForm}
+                  disabled={mutationPending}
+                  pendingDeleteId={pendingDeleteId}
+                />
               </div>
             </section>
           </>
@@ -172,14 +266,14 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
       </main>
 
       <div aria-live="polite" aria-atomic="true" className="pointer-events-none fixed inset-x-4 bottom-24 z-40 flex justify-center">
-        {saveFeedback ? (
-          <p className="rounded-xl border border-emerald-500/30 bg-background/95 px-4 py-3 text-sm font-medium text-emerald-300 shadow-lg backdrop-blur">
-            {saveFeedback}
+        {operationFeedback ? (
+          <p className={`rounded-xl border bg-background/95 px-4 py-3 text-sm font-medium shadow-lg backdrop-blur ${operationFeedback.error ? 'border-red-500/30 text-red-300' : 'border-emerald-500/30 text-emerald-300'}`}>
+            {operationFeedback.message}
           </p>
         ) : null}
       </div>
 
-      <Dialog open={formState.open} onOpenChange={open => { if (!open) setFormState({ open: false }) }}>
+      <Dialog open={formState.open} onOpenChange={open => { if (!open && !formSaving) setFormState({ open: false }) }}>
         <DialogContent className="max-h-[90vh] max-w-lg gap-0 overflow-y-auto rounded-2xl border-border/60 bg-popover p-0">
           <DialogHeader className="border-b border-border/60 px-5 py-4">
             <DialogTitle className="text-base text-foreground">
@@ -190,6 +284,7 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
             initial={formState.editing}
             onSaved={handleSaved}
             onClose={() => setFormState({ open: false })}
+            onPendingChange={setFormSaving}
           />
         </DialogContent>
       </Dialog>

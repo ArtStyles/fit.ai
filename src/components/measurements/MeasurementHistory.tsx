@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { ChevronDown, Pencil, Trash2 } from 'lucide-react'
 import {
-  deleteMeasurement,
   type MeasurementActionResult,
   type MeasurementRow,
 } from '@/app/actions/measurements'
@@ -40,31 +39,22 @@ function value(value: number | null, suffix: string, locale: string): string | n
 
 export function MeasurementHistory({
   rows,
-  onRowsChange,
+  onDelete,
   onEdit,
+  disabled,
+  pendingDeleteId,
 }: {
   rows: MeasurementRow[]
-  onRowsChange: (rows: MeasurementRow[]) => void
+  onDelete: (id: string) => void
   onEdit: (row: MeasurementRow) => void
+  disabled: boolean
+  pendingDeleteId: string | null
 }) {
   const { language, t } = useI18n()
   const locale = dateLocale(language)
   const [showAll, setShowAll] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [feedback, setFeedback] = useState<{ message: string; error: boolean } | null>(null)
   const visibleRows = showAll ? rows : rows.slice(0, 5)
-
-  async function handleDelete(id: string) {
-    if (!window.confirm(t('¿Eliminar esta medida?'))) return
-
-    const snapshot = rows
-    onRowsChange(rows.filter(row => row.id !== id))
-    const result = await deleteMeasurementInteraction(snapshot, id, deleteMeasurement)
-    onRowsChange(result.rows)
-    setFeedback(result.error
-      ? { message: t(result.error), error: true }
-      : { message: t('Medida eliminada.'), error: false })
-  }
 
   return (
     <>
@@ -81,6 +71,7 @@ export function MeasurementHistory({
           const summary = [
             value(row.weight_kg, ' kg', locale),
             row.body_fat_percentage === null ? null : t('{value}% grasa', { value: formatNumber(row.body_fat_percentage, locale) }),
+            row.muscle_mass_kg === null ? null : t('{value} kg masa muscular', { value: formatNumber(row.muscle_mass_kg, locale) }),
             row.waist_cm === null ? null : t('{value} cm cintura', { value: formatNumber(row.waist_cm, locale) }),
           ].filter((item): item is string => item !== null)
           const hasDisclosure = details.length > 0 || Boolean(row.notes)
@@ -116,16 +107,19 @@ export function MeasurementHistory({
                 <button
                   type="button"
                   onClick={() => onEdit(row)}
+                  disabled={disabled}
                   aria-label={t('Editar medida del {date}', { date })}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-muted/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-muted/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Pencil className="h-4 w-4" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleDelete(row.id)}
+                  onClick={() => onDelete(row.id)}
+                  disabled={disabled}
+                  aria-busy={pendingDeleteId === row.id ? true : undefined}
                   aria-label={t('Eliminar medida del {date}', { date })}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-red-300 transition hover:bg-red-500/10 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-red-300 transition hover:bg-red-500/10 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -154,11 +148,6 @@ export function MeasurementHistory({
         </button>
       ) : null}
 
-      <div aria-live="polite" aria-atomic="true" className="mt-3 min-h-5">
-        {feedback ? (
-          <p className={`text-sm ${feedback.error ? 'text-red-300' : 'text-emerald-300'}`}>{feedback.message}</p>
-        ) : null}
-      </div>
     </>
   )
 }
