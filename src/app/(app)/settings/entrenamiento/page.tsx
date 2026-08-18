@@ -1,4 +1,6 @@
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
+import { SettingsRetryButton } from '@/components/settings/SettingsRetryButton'
+import { SettingsStatus } from '@/components/settings/SettingsStatus'
 import { TrainingSettingsForm } from '@/components/settings/TrainingSettingsForm'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
@@ -27,6 +29,11 @@ type TrainingProfile = {
   readiness_status: ReadinessStatus | null
 }
 
+type QueryResult<T> = {
+  data: T | null
+  error: { message: string } | null
+}
+
 function optionOrFirst<T extends { value: string | number }>(options: readonly T[], stored: unknown): T['value'] {
   return options.some(option => option.value === stored) ? stored as T['value'] : options[0].value
 }
@@ -40,13 +47,22 @@ function numericOptionOrDefault<T extends number>(
   return options.includes(stored as T) ? stored as T : options[0]
 }
 
+function normalizePreferredWorkoutDays(days: number[] | null): number[] {
+  return Array.from(new Set((days ?? []).filter(day => Number.isInteger(day) && day >= 1 && day <= 7)))
+    .sort((a, b) => a - b)
+}
+
+function normalizeAvailableEquipment(gymType: string, equipment: string[] | null): TrainingSettingsValue['availableEquipment'] {
+  if (gymType === 'home_no_equipment') return []
+
+  const known = new Set(equipment ?? [])
+  return EQUIPMENT_OPTIONS
+    .map(option => option.value)
+    .filter(option => known.has(option)) as TrainingSettingsValue['availableEquipment']
+}
+
 function normalizeTrainingProfile(profile: TrainingProfile | null): TrainingSettingsValue {
   const gymType = optionOrFirst(GYM_TYPES, profile?.gym_type)
-  const availableEquipment = gymType === 'home_no_equipment'
-    ? []
-    : (profile?.available_equipment ?? []).filter(equipment =>
-      EQUIPMENT_OPTIONS.some(option => option.value === equipment),
-    )
 
   return {
     primaryGoal: optionOrFirst(TRAINING_GOALS, profile?.primary_goal) as TrainingSettingsValue['primaryGoal'],
@@ -54,9 +70,8 @@ function normalizeTrainingProfile(profile: TrainingProfile | null): TrainingSett
     daysPerWeek: numericOptionOrDefault(TRAINING_FREQUENCIES, profile?.days_per_week ?? null, 3),
     sessionDurationMinutes: numericOptionOrDefault(SESSION_DURATIONS, profile?.session_duration_minutes ?? null, 60),
     gymType: gymType as TrainingSettingsValue['gymType'],
-    // Show legacy selections unchanged so the client can ask the user to correct them.
-    preferredWorkoutDays: profile?.preferred_workout_days ?? [],
-    availableEquipment: availableEquipment as TrainingSettingsValue['availableEquipment'],
+    preferredWorkoutDays: normalizePreferredWorkoutDays(profile?.preferred_workout_days ?? null),
+    availableEquipment: normalizeAvailableEquipment(gymType, profile?.available_equipment ?? null),
     injuries: profile?.injuries ?? null,
   }
 }
@@ -89,12 +104,9 @@ export default async function TrainingSettingsPage() {
       .eq('is_active', true)
       .limit(1)
       .maybeSingle(),
-  ]) as unknown as [
-    { data: TrainingProfile | null },
-    { data: { id: string } | null },
-  ]
+  ]) as unknown as [QueryResult<TrainingProfile>, QueryResult<{ id: string }>]
 
-  const initial = normalizeTrainingProfile(profileResult.data)
+  const loadFailed = profileResult.error !== null || activePlanResult.error !== null
 
   return (
     <SettingsScreen
@@ -104,11 +116,22 @@ export default async function TrainingSettingsPage() {
       backLabel={t('Ajustes')}
       icon="dumbbell"
     >
-      <TrainingSettingsForm
-        initial={initial}
-        readinessStatus={profileResult.data?.readiness_status ?? 'pending'}
-        hasActivePlan={Boolean(activePlanResult.data)}
-      />
+      {loadFailed ? (
+        <div className="space-y-3">
+          <SettingsStatus tone="error">{t('No se pudo cargar esta vista')}</SettingsStatus>
+          <p className="text-sm leading-6 text-muted-foreground">{t('Tus datos siguen guardados. Intenta nuevamente.')}</p>
+          <SettingsRetryButton
+            label={t('Reintentar')}
+            ariaLabel={t('Reintentar carga de entrenamiento')}
+          />
+        </div>
+      ) : (
+        <TrainingSettingsForm
+          initial={normalizeTrainingProfile(profileResult.data)}
+          readinessStatus={profileResult.data?.readiness_status ?? 'pending'}
+          hasActivePlan={Boolean(activePlanResult.data)}
+        />
+      )}
     </SettingsScreen>
   )
 }

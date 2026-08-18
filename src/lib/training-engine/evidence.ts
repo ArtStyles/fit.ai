@@ -73,6 +73,16 @@ const BASE_PRESCRIPTIONS: Record<TrainingGoal, ResistancePrescription> = {
     compoundRestSeconds: 90,
     isolationRestSeconds: 60,
   },
+  other: {
+    // `other` is a persisted compatibility goal; prescribe general fitness.
+    compoundSets: 2,
+    isolationSets: 2,
+    compoundReps: 10,
+    isolationReps: 12,
+    targetRpe: 7,
+    compoundRestSeconds: 90,
+    isolationRestSeconds: 60,
+  },
 }
 
 export function getResistancePrescription(

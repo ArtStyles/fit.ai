@@ -28,7 +28,7 @@ export function daySelectionMessage(
   selectedDays: readonly number[],
   t: (key: string, values?: Record<string, string | number>) => string,
 ): string | null {
-  const difference = selectedDays.length - daysPerWeek
+  const difference = new Set(selectedDays).size - daysPerWeek
   if (difference === 0) return null
 
   const count = Math.abs(difference)
@@ -58,6 +58,21 @@ function toggleSelection<T extends string | number>(selected: readonly T[], valu
     : [...selected, value]
 }
 
+export function toggleSelectedWorkoutDay(selectedDays: readonly number[], day: number): number[] {
+  return Array.from(new Set(toggleSelection(selectedDays, day))).sort((a, b) => a - b)
+}
+
+export function selectTrainingGymType(
+  form: TrainingSettingsValue,
+  gymType: TrainingSettingsValue['gymType'],
+): TrainingSettingsValue {
+  return {
+    ...form,
+    gymType,
+    availableEquipment: gymType === 'home_no_equipment' ? [] : form.availableEquipment,
+  }
+}
+
 export function TrainingSettingsForm({
   initial,
   readinessStatus,
@@ -70,6 +85,7 @@ export function TrainingSettingsForm({
   const { t } = useI18n()
   const [form, setForm] = useState({
     ...initial,
+    preferredWorkoutDays: Array.from(new Set(initial.preferredWorkoutDays)).sort((a, b) => a - b),
     availableEquipment: initial.gymType === 'home_no_equipment' ? [] : initial.availableEquipment,
   })
   const [state, action] = useFormState(updateTrainingSettings, INITIAL_TRAINING_SETTINGS_STATE)
@@ -90,16 +106,12 @@ export function TrainingSettingsForm({
     setForm(current => ({ ...current, sessionDurationMinutes }))
   }
   const setGymType = (gymType: TrainingSettingsValue['gymType']) => {
-    setForm(current => ({
-      ...current,
-      gymType,
-      availableEquipment: gymType === 'home_no_equipment' ? [] : current.availableEquipment,
-    }))
+    setForm(current => selectTrainingGymType(current, gymType))
   }
   const toggleDay = (day: number) => {
     setForm(current => ({
       ...current,
-      preferredWorkoutDays: toggleSelection(current.preferredWorkoutDays, day).sort((a, b) => a - b),
+      preferredWorkoutDays: toggleSelectedWorkoutDay(current.preferredWorkoutDays, day),
     }))
   }
   const toggleEquipment = (equipment: TrainingSettingsValue['availableEquipment'][number]) => {

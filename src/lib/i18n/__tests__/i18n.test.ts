@@ -48,6 +48,7 @@ describe('UI translations', () => {
     ['Guardar preferencias', 'Save preferences'],
     ['Guardando preferencias', 'Saving preferences'],
     ['No se pudieron guardar las preferencias de entrenamiento.', 'Could not save training preferences.'],
+    ['Reintentar carga de entrenamiento', 'Retry loading training settings'],
   ])('translates structured training settings copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })

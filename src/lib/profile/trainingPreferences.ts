@@ -7,6 +7,9 @@ export const TRAINING_GOALS = [
   { value: 'other', label: 'Otro' },
 ] as const
 
+// Settings and legacy profiles use this name at the persistence boundary.
+export const PRIMARY_GOAL_OPTIONS = TRAINING_GOALS
+
 export const FITNESS_LEVELS = [
   { value: 'beginner', label: 'Principiante' },
   { value: 'intermediate', label: 'Intermedio' },

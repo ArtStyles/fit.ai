@@ -28,6 +28,8 @@ const defaultProfile: TrainingProfile = {
 
 let profile: TrainingProfile = defaultProfile
 let hasActivePlan = false
+let profileError: { message: string } | null = null
+let activePlanError: { message: string } | null = null
 const selectCalls: Array<{ table: string; columns: string }> = []
 
 vi.mock('react-dom', async importOriginal => {
@@ -38,6 +40,11 @@ vi.mock('react-dom', async importOriginal => {
     useFormStatus: () => ({ pending: false }),
   }
 })
+
+vi.mock('next/navigation', async importOriginal => ({
+  ...await importOriginal<typeof import('next/navigation')>(),
+  useRouter: () => ({ refresh: vi.fn() }),
+}))
 
 vi.mock('@/lib/auth/server', () => ({
   requireAppUserContext: async () => ({
@@ -52,8 +59,8 @@ vi.mock('@/lib/auth/server', () => ({
           },
           eq: () => filters,
           limit: () => filters,
-          single: async () => ({ data: profile }),
-          maybeSingle: async () => ({ data: hasActivePlan ? { id: 'plan-1' } : null }),
+          single: async () => ({ data: profileError ? null : profile, error: profileError }),
+          maybeSingle: async () => ({ data: activePlanError ? null : hasActivePlan ? { id: 'plan-1' } : null, error: activePlanError }),
         }
         return filters
       },
@@ -78,6 +85,8 @@ describe('TrainingSettingsPage', () => {
   afterEach(() => {
     profile = defaultProfile
     hasActivePlan = false
+    profileError = null
+    activePlanError = null
     selectCalls.length = 0
   })
 
@@ -103,6 +112,30 @@ describe('TrainingSettingsPage', () => {
 
     expect(html).toContain('Quita 1 día para continuar.')
     expect(html).toContain('disabled')
+  })
+
+  it('canonicalizes duplicate legacy days before the form validates their count', async () => {
+    mockTrainingProfile({ days_per_week: 3, preferred_workout_days: [1, 1, 3] })
+
+    const html = await renderTrainingSettings()
+
+    expect(html.match(/name="preferredWorkoutDays"/g)).toHaveLength(2)
+    expect(html).toContain('Elige 1 ')
+    expect(html).toContain('disabled')
+  })
+
+  it.each(['profile', 'active plan'] as const)('renders a localized retry state instead of defaults when the %s read fails', async source => {
+    if (source === 'profile') profileError = { message: 'profile unavailable' }
+    else activePlanError = { message: 'plan unavailable' }
+
+    const html = await renderTrainingSettings()
+
+    expect(html).toContain('No se pudo cargar esta vista')
+    expect(html).toContain('Tus datos siguen guardados. Intenta nuevamente.')
+    expect(html).toContain('Reintentar')
+    expect(html).toContain('aria-label="Reintentar carga de entrenamiento"')
+    expect(html).not.toContain('<form')
+    expect(html).not.toContain('Perder peso')
   })
 
   it('uses only the profile fields needed by the form and an id-only active-plan lookup', async () => {

@@ -4,6 +4,7 @@ export const TRAINING_GOALS = [
   'gain_strength',
   'improve_endurance',
   'stay_active',
+  'other',
 ] as const
 
 export type TrainingGoal = (typeof TRAINING_GOALS)[number]

@@ -4,7 +4,12 @@ import { I18nProvider } from '@/components/i18n/I18nProvider'
 import { createTranslator } from '@/lib/i18n'
 import type { TrainingSettingsValue } from '@/lib/profile/trainingPreferences'
 import type { TrainingSettingsActionState } from '@/lib/profile/trainingSettingsActionState'
-import { TrainingSettingsForm, daySelectionMessage } from '../TrainingSettingsForm'
+import {
+  TrainingSettingsForm,
+  daySelectionMessage,
+  selectTrainingGymType,
+  toggleSelectedWorkoutDay,
+} from '../TrainingSettingsForm'
 
 const initialActionState: TrainingSettingsActionState = {
   ok: false,
@@ -128,5 +133,19 @@ describe('daySelectionMessage', () => {
 
     expect(daySelectionMessage(5, [1, 2, 3, 4, 5, 6], t)).toBe('Quita 1 día para continuar.')
     expect(daySelectionMessage(5, [1, 2, 3], t)).toBe('Elige 2 días más para continuar.')
+  })
+})
+
+describe('training preference interactions', () => {
+  it('keeps the selected days unique and ordered across toggles', () => {
+    expect(toggleSelectedWorkoutDay([3, 1], 1)).toEqual([3])
+    expect(toggleSelectedWorkoutDay([3, 1], 2)).toEqual([1, 2, 3])
+  })
+
+  it('clears selected equipment when switching to home without equipment', () => {
+    expect(selectTrainingGymType(initial, 'home_no_equipment')).toMatchObject({
+      gymType: 'home_no_equipment',
+      availableEquipment: [],
+    })
   })
 })
