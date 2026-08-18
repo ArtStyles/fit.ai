@@ -77,6 +77,36 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Medidas corporales', 'Body measurements'],
+    ['Peso, composición y perímetros', 'Weight, composition, and circumferences'],
+    ['Registrar', 'Log measurement'],
+    ['Sin medidas registradas', 'No measurements logged'],
+    ['Registra tu peso y medidas para ver tu evolución', 'Log your weight and measurements to see your progress'],
+    ['Primera medida', 'First measurement'],
+    ['Última medida · {date}', 'Latest measurement · {date}'],
+    ['Grasa corporal', 'Body fat'],
+    ['Masa muscular', 'Muscle mass'],
+    ['Cintura', 'Waist'],
+    ['vs. anterior', 'vs. previous'],
+    ['Sin cambio', 'No change'],
+    ['Evolución del peso', 'Weight progress'],
+    ['Registra al menos 2 medidas para ver la gráfica', 'Log at least 2 measurements to see the chart'],
+    ['Registrar medidas', 'Log measurements'],
+    ['Editar medida', 'Edit measurement'],
+    ['Más perímetros', 'More circumferences'],
+    ['Menos campos', 'Fewer fields'],
+    ['Notas opcionales…', 'Optional notes…'],
+    ['¿Eliminar esta medida?', 'Delete this measurement?'],
+    ['Medida eliminada.', 'Measurement deleted.'],
+    ['No se pudo eliminar la medida.', 'Could not delete the measurement.'],
+    ['Identificador de medida inválido.', 'Invalid measurement identifier.'],
+    ['Medida guardada.', 'Measurement saved.'],
+    ['Medida actualizada.', 'Measurement updated.'],
+  ])('translates measurements copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['Archivar', 'Archive'],
     ['El plan se archivará, pero tu historial permanecerá intacto.', 'The plan will be archived, but your history will remain intact.'],
     ['No se puede cambiar a Free', 'Cannot switch to Free'],

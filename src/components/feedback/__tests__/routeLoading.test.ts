@@ -8,6 +8,7 @@ import { I18nProvider } from '@/components/i18n/I18nProvider'
 import {
   AccountSettingsLoading,
   LanguageSettingsLoading,
+  MeasurementsLoading,
   NotificationsSettingsLoading,
   PersonalDataSettingsLoading,
   ProfileSettingsLoading,
@@ -174,6 +175,25 @@ describe('route loading skeletons', () => {
     expect(html).toContain('data-loading-section="personal-data"')
     expect(html).toContain('data-loading-section="current-weight"')
     expect(html).not.toContain('Peso kg')
+  })
+
+  it('matches the measurements title, summary, chart and history landmarks', () => {
+    const html = renderLoading(MeasurementsLoading)
+
+    expect(html).toContain('Medidas corporales')
+    expect(html).toContain('Peso, composición y perímetros')
+    for (const landmark of ['summary', 'chart', 'history']) {
+      expect(html).toContain(`data-loading-section="${landmark}"`)
+    }
+  })
+
+  it('localizes the measurements loading landmarks in English', () => {
+    const html = renderLoading(MeasurementsLoading, 'en')
+
+    for (const copy of ['Body measurements', 'Weight, composition, and circumferences', 'Latest measurement', 'Weight progress', 'History']) {
+      expect(html).toContain(copy)
+    }
+    expect(html).not.toContain('Medidas corporales')
   })
 
   it('localizes the personal-data loading skeleton in English', () => {

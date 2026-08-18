@@ -8,7 +8,7 @@ import {
   History,
   Languages,
   PlusCircle,
-  Ruler,
+  Scale,
   Search,
   UserRound,
 } from 'lucide-react'
@@ -348,18 +348,44 @@ export function CalendarLoading() {
 }
 
 export function MeasurementsLoading() {
+  const { t } = useI18n()
+
   return (
     <AppLoadingShell>
-      <BackHeader title="Medidas" subtitle="Peso y composicion corporal" icon={Ruler} />
-      <section className="mt-8 rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Evolucion</p>
-          <Shimmer className="h-9 w-24 rounded-lg bg-violet-500/15" />
+      <BackHeader
+        title={t('Medidas corporales')}
+        subtitle={t('Peso, composición y perímetros')}
+        icon={Scale}
+        right={(
+          <div className="flex gap-2">
+            <Shimmer className="h-11 w-11 rounded-xl bg-muted/40" />
+            <Shimmer className="h-11 w-11 rounded-xl bg-violet-500/20 sm:w-28" />
+          </div>
+        )}
+      />
+      <section data-loading-section="summary" className="mt-8">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-300">{t('Última medida')}</p>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {['Peso', 'Grasa corporal', 'Masa muscular', 'Cintura'].map((label, index) => (
+            <div key={label} className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+              <p className="text-xs text-muted-foreground">{t(label)}</p>
+              <Shimmer className="mt-2 h-7 w-16 rounded" style={{ animationDelay: `${index * 60}ms` }} />
+            </div>
+          ))}
         </div>
-        <Shimmer className="mt-5 h-40 rounded-xl bg-muted/40" />
       </section>
-      <MetricStripSkeleton labels={['Peso', 'Cintura', 'Grasa']} />
-      <RowSkeletons count={3} />
+      <section data-loading-section="chart" className="mt-8">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-300">{t('Evolución del peso')}</p>
+        <div className="mt-3 rounded-2xl border border-border/60 bg-muted/10 p-4">
+          <Shimmer className="h-40 rounded-xl bg-muted/40" />
+        </div>
+      </section>
+      <section data-loading-section="history" className="mt-8">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-300">{t('Historial')}</p>
+        <div className="mt-3">
+          <RowSkeletons count={3} />
+        </div>
+      </section>
     </AppLoadingShell>
   )
 }
