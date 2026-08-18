@@ -377,7 +377,7 @@ export default async function PlanPage() {
         notes,
         target_rpe,
         weight_suggestion_basis,
-        exercise:exercises(id, name, name_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound)
+        exercise:exercises(id, name, name_es, image_url, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound)
       `)
       .in('workout_id', workoutIds)
       .order('order_index') as unknown as { data: PlanWorkoutExerciseRow[] | null }
