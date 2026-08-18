@@ -13,8 +13,14 @@ BEGIN
     v_user_id := NEW.user_id;
     v_should_sync := NEW.weight_kg IS NOT NULL;
   ELSIF TG_OP = 'UPDATE' THEN
+    IF OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+      RAISE EXCEPTION 'measurement owner cannot be changed'
+        USING ERRCODE = 'P0001';
+    END IF;
     v_user_id := NEW.user_id;
-    v_should_sync := OLD.weight_kg IS DISTINCT FROM NEW.weight_kg;
+    v_should_sync := OLD.weight_kg IS DISTINCT FROM NEW.weight_kg
+      OR OLD.recorded_at IS DISTINCT FROM NEW.recorded_at
+      OR OLD.id IS DISTINCT FROM NEW.id;
   ELSE
     v_user_id := OLD.user_id;
     v_should_sync := OLD.weight_kg IS NOT NULL;
@@ -32,6 +38,10 @@ BEGIN
    WHERE p.id = v_user_id
    FOR UPDATE;
 
+  INSERT INTO private.profile_weight_sync_context (transaction_id, backend_pid, profile_id)
+  VALUES (pg_catalog.txid_current(), pg_catalog.pg_backend_pid(), v_user_id)
+  ON CONFLICT DO NOTHING;
+
   SELECT m.weight_kg
     INTO v_latest_weight
     FROM public.measurements AS m
@@ -43,6 +53,11 @@ BEGIN
   UPDATE public.profiles
      SET weight_kg = v_latest_weight
    WHERE id = v_user_id;
+
+  DELETE FROM private.profile_weight_sync_context
+   WHERE transaction_id = pg_catalog.txid_current()
+     AND backend_pid = pg_catalog.pg_backend_pid()
+     AND profile_id = v_user_id;
 
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
@@ -57,27 +72,56 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
+DECLARE
+  v_sync_authorized BOOLEAN := FALSE;
+  v_has_weighted_history BOOLEAN := FALSE;
 BEGIN
-  IF NEW.weight_kg IS NOT DISTINCT FROM OLD.weight_kg THEN
+  IF NEW.weight_kg IS NOT DISTINCT FROM OLD.weight_kg
+     AND NEW.onboarding_done IS NOT DISTINCT FROM OLD.onboarding_done THEN
     RETURN NEW;
   END IF;
 
-  IF pg_trigger_depth() > 1 THEN
+  DELETE FROM private.profile_weight_sync_context
+   WHERE transaction_id = pg_catalog.txid_current()
+     AND backend_pid = pg_catalog.pg_backend_pid()
+     AND profile_id = NEW.id
+   RETURNING TRUE INTO v_sync_authorized;
+
+  IF v_sync_authorized THEN
     RETURN NEW;
   END IF;
 
-  IF NOT OLD.onboarding_done
-     AND NEW.onboarding_done
-     AND NOT EXISTS (
+  IF current_setting('role', true) IN ('service_role', 'supabase_admin')
+     OR current_setting('request.jwt.claim.role', true) = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.onboarding_done AND NOT NEW.onboarding_done THEN
+    RAISE EXCEPTION 'onboarding state cannot be reverted'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  IF NOT OLD.onboarding_done AND NEW.onboarding_done THEN
+    SELECT EXISTS (
        SELECT 1
          FROM public.measurements AS m
         WHERE m.user_id = NEW.id
           AND m.weight_kg IS NOT NULL
-     ) THEN
+    ) INTO v_has_weighted_history;
+
+    IF NOT v_has_weighted_history THEN
+      RETURN NEW;
+    END IF;
+
+    IF NEW.weight_kg IS DISTINCT FROM OLD.weight_kg THEN
+      RAISE EXCEPTION 'profile weight is derived from measurements'
+        USING ERRCODE = 'P0001';
+    END IF;
+
     RETURN NEW;
   END IF;
 
-  IF OLD.onboarding_done OR NEW.onboarding_done THEN
+  IF OLD.onboarding_done AND NEW.weight_kg IS DISTINCT FROM OLD.weight_kg THEN
     RAISE EXCEPTION 'profile weight is derived from measurements'
       USING ERRCODE = 'P0001';
   END IF;
@@ -86,10 +130,22 @@ BEGIN
 END;
 $$;
 
+CREATE SCHEMA IF NOT EXISTS private;
+REVOKE ALL ON SCHEMA private FROM PUBLIC;
+CREATE TABLE IF NOT EXISTS private.profile_weight_sync_context (
+  transaction_id BIGINT NOT NULL,
+  backend_pid INTEGER NOT NULL,
+  profile_id UUID NOT NULL,
+  PRIMARY KEY (transaction_id, backend_pid, profile_id)
+);
+REVOKE ALL ON TABLE private.profile_weight_sync_context FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.sync_profile_weight_from_measurements() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.guard_profile_weight_derived() FROM PUBLIC;
 DROP TRIGGER IF EXISTS trg_profiles_guard_derived_weight ON public.profiles;
 DROP TRIGGER IF EXISTS trg_measurements_sync_profile_weight ON public.measurements;
 CREATE TRIGGER trg_measurements_sync_profile_weight
-AFTER INSERT OR DELETE OR UPDATE OF weight_kg ON public.measurements
+AFTER INSERT OR DELETE OR UPDATE OF weight_kg, recorded_at, id, user_id ON public.measurements
 FOR EACH ROW EXECUTE FUNCTION public.sync_profile_weight_from_measurements();
 
 WITH latest AS (
@@ -105,5 +161,5 @@ UPDATE public.profiles AS p
    AND p.weight_kg IS DISTINCT FROM latest.weight_kg;
 
 CREATE TRIGGER trg_profiles_guard_derived_weight
-BEFORE UPDATE OF weight_kg ON public.profiles
+BEFORE UPDATE OF weight_kg, onboarding_done ON public.profiles
 FOR EACH ROW EXECUTE FUNCTION public.guard_profile_weight_derived();

@@ -30,11 +30,32 @@ CREATE TABLE public.measurements (
   notes TEXT
 );
 
+GRANT USAGE ON SCHEMA public, extensions TO authenticated, service_role;
+GRANT SELECT, UPDATE (weight_kg, onboarding_done) ON public.profiles TO authenticated;
+GRANT ALL ON public.profiles TO service_role;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "settings weight test authenticated profile updates"
+  ON public.profiles
+  FOR UPDATE TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+CREATE POLICY "settings weight test authenticated profile reads"
+  ON public.profiles
+  FOR SELECT TO authenticated
+  USING (auth.uid() = id);
+
 INSERT INTO auth.users (id, email)
 VALUES ('10000000-0000-4000-8000-000000000002', 'no-history@example.test');
 
 INSERT INTO public.profiles (id, weight_kg, onboarding_done)
 VALUES ('10000000-0000-4000-8000-000000000002', 72, TRUE);
+
+INSERT INTO auth.users (id, email)
+VALUES ('10000000-0000-4000-8000-000000000005', 'backfill-weight@example.test');
+INSERT INTO public.profiles (id, weight_kg, onboarding_done)
+VALUES ('10000000-0000-4000-8000-000000000005', 60, TRUE);
+INSERT INTO public.measurements (id, user_id, recorded_at, weight_kg)
+VALUES ('20000000-0000-4000-8000-000000000007', '10000000-0000-4000-8000-000000000005', '2026-07-01T12:00:00Z', 71);
 `
 
 function docker(args, { input, print = true } = {}) {
@@ -211,6 +232,7 @@ try {
   )
   runPsql(bootstrapSql, 'applying minimal bootstrap')
   runPsql(readFileSync(migrationPath, 'utf8'), 'applying migration 048')
+  runPsql(readFileSync(migrationPath, 'utf8'), 'reapplying migration 048')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running pgTAP suite')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) {
     throw new Error('pgTAP reported one or more failed assertions')
