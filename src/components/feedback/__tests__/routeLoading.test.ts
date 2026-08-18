@@ -147,7 +147,7 @@ describe('route loading skeletons', () => {
 
   it.each([
     ['settings-profile', ProfileSettingsLoading, 'Avatar'],
-    ['settings-personal-data', PersonalDataSettingsLoading, 'Altura cm'],
+    ['settings-personal-data', PersonalDataSettingsLoading, 'Altura'],
     ['settings-training', TrainingSettingsLoading, 'Objetivo'],
     ['settings-notifications', NotificationsSettingsLoading, 'Recordatorios'],
     ['settings-account', AccountSettingsLoading, 'Eliminar cuenta'],
@@ -163,6 +163,26 @@ describe('route loading skeletons', () => {
 
     expect(html.match(/data-loading-section="training"/g)).toHaveLength(4)
     expect(html).not.toContain('Equipamiento disponible')
+  })
+
+  it('matches the personal-data fields and separates the read-only current-weight summary', () => {
+    const html = renderLoading(PersonalDataSettingsLoading)
+
+    for (const label of ['Altura', 'Fecha de nacimiento', 'Género', 'Peso actual']) {
+      expect(html).toContain(label)
+    }
+    expect(html).toContain('data-loading-section="personal-data"')
+    expect(html).toContain('data-loading-section="current-weight"')
+    expect(html).not.toContain('Peso kg')
+  })
+
+  it('localizes the personal-data loading skeleton in English', () => {
+    const html = renderLoading(PersonalDataSettingsLoading, 'en')
+
+    for (const label of ['Personal information', 'Height', 'Date of birth', 'Gender', 'Current weight']) {
+      expect(html).toContain(label)
+    }
+    expect(html).not.toContain('Datos personales')
   })
 
   it('localizes the detail shell plus Profile, Notifications and Account loading copy in English', () => {

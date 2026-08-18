@@ -54,6 +54,29 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Información personal', 'Personal information'],
+    ['Datos opcionales para adaptar tus recomendaciones.', 'Optional information used to tailor your recommendations.'],
+    ['Altura', 'Height'],
+    ['En centímetros, entre 100 y 250.', 'In centimeters, between 100 and 250.'],
+    ['Fecha de nacimiento', 'Date of birth'],
+    ['Debes tener entre 18 y 100 años.', 'You must be between 18 and 100 years old.'],
+    ['Este dato es opcional.', 'This information is optional.'],
+    ['Peso actual', 'Current weight'],
+    ['El peso se actualiza desde tu historial de medidas.', 'Weight is updated from your measurement history.'],
+    ['Sin peso registrado', 'No weight recorded'],
+    ['Registrar o actualizar peso', 'Log or update weight'],
+    ['Guardar datos', 'Save personal information'],
+    ['Guardando datos', 'Saving personal information'],
+    ['Datos personales guardados.', 'Personal information saved.'],
+    ['La altura debe estar entre 100 y 250 cm.', 'Height must be between 100 and 250 cm.'],
+    ['La fecha debe ser válida y corresponder a una edad entre 18 y 100 años.', 'Enter a valid date for an age between 18 and 100.'],
+    ['Selecciona un género válido.', 'Select a valid gender.'],
+    ['No se pudieron guardar los datos personales.', 'Could not save personal information.'],
+  ])('translates personal-data copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['Archivar', 'Archive'],
     ['El plan se archivará, pero tu historial permanecerá intacto.', 'The plan will be archived, but your history will remain intact.'],
     ['No se puede cambiar a Free', 'Cannot switch to Free'],

@@ -536,16 +536,22 @@ export function ProfileSettingsLoading() {
 }
 
 export function PersonalDataSettingsLoading() {
+  const { t } = useI18n()
+
   return (
-    <SettingsDetailShell title="Datos personales" icon={UserRound} view="settings-personal-data">
-      <div className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-        <div className="grid grid-cols-2 gap-3">
-          <SettingsFieldSkeleton label="Altura cm" />
-          <SettingsFieldSkeleton label="Peso kg" />
-          <SettingsFieldSkeleton label="Nacimiento" />
-          <SettingsFieldSkeleton label="Género" />
+    <SettingsDetailShell title={t('Datos personales')} icon={UserRound} view="settings-personal-data">
+      <section data-loading-section="personal-data" className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <p className="text-base font-semibold text-foreground">{t('Información personal')}</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <SettingsFieldSkeleton label={t('Altura')} />
+          <SettingsFieldSkeleton label={t('Fecha de nacimiento')} />
+          <SettingsFieldSkeleton label={t('Género')} />
         </div>
-      </div>
+      </section>
+      <section data-loading-section="current-weight" className="rounded-2xl border border-border/60 bg-muted/10 p-5">
+        <p className="text-base font-semibold text-foreground">{t('Peso actual')}</p>
+        <Shimmer className="mt-4 h-16 rounded-xl bg-muted/40" />
+      </section>
       <SettingsSaveSkeleton />
     </SettingsDetailShell>
   )
