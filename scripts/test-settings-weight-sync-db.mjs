@@ -32,8 +32,10 @@ CREATE TABLE public.measurements (
 
 GRANT USAGE ON SCHEMA public, extensions TO authenticated, service_role;
 GRANT SELECT, UPDATE (weight_kg, onboarding_done) ON public.profiles TO authenticated;
+GRANT SELECT, INSERT ON public.measurements TO authenticated;
 GRANT ALL ON public.profiles TO service_role;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.measurements ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "settings weight test authenticated profile updates"
   ON public.profiles
   FOR UPDATE TO authenticated
@@ -43,6 +45,10 @@ CREATE POLICY "settings weight test authenticated profile reads"
   ON public.profiles
   FOR SELECT TO authenticated
   USING (auth.uid() = id);
+CREATE POLICY "settings weight test authenticated measurement inserts"
+  ON public.measurements
+  FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = user_id);
 
 INSERT INTO auth.users (id, email)
 VALUES ('10000000-0000-4000-8000-000000000002', 'no-history@example.test');

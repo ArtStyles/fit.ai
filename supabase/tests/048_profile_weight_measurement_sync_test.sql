@@ -1,6 +1,6 @@
 BEGIN;
 SET LOCAL search_path = public, extensions;
-SELECT plan(18);
+SELECT plan(22);
 
 INSERT INTO auth.users (id, email)
 VALUES ('10000000-0000-4000-8000-000000000001', 'weight-sync@example.test');
@@ -80,6 +80,37 @@ SELECT is(
   (SELECT ROW(onboarding_done, weight_kg)::text FROM profiles WHERE id = '10000000-0000-4000-8000-000000000003'),
   '(t,73.0)'::text,
   'rejected authenticated sequence leaves onboarding and weight unchanged'
+);
+RESET ROLE;
+
+INSERT INTO auth.users (id, email)
+VALUES ('10000000-0000-4000-8000-000000000006', 'pre-onboarding-measurement@example.test');
+INSERT INTO public.profiles (id, weight_kg, onboarding_done)
+VALUES ('10000000-0000-4000-8000-000000000006', NULL, FALSE);
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000006', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$INSERT INTO public.measurements (id, user_id, recorded_at, weight_kg)
+    VALUES ('20000000-0000-4000-8000-000000000006', '10000000-0000-4000-8000-000000000006', '2026-08-05T12:00:00Z', 69)$$,
+  'authenticated user can log an initial weighted measurement before onboarding completes'
+);
+SELECT is(
+  (SELECT weight_kg::numeric FROM profiles WHERE id = '10000000-0000-4000-8000-000000000006'),
+  69::numeric,
+  'initial weighted measurement synchronizes the incomplete profile'
+);
+SELECT throws_ok(
+  $$UPDATE public.profiles
+      SET weight_kg = 70
+    WHERE id = '10000000-0000-4000-8000-000000000006'$$,
+  'P0001', 'profile weight is derived from measurements',
+  'authenticated direct weight update is rejected after the first weighted measurement'
+);
+SELECT is(
+  (SELECT weight_kg::numeric FROM profiles WHERE id = '10000000-0000-4000-8000-000000000006'),
+  69::numeric,
+  'rejected direct update preserves the measurement-derived weight'
 );
 RESET ROLE;
 

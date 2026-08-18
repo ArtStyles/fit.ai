@@ -101,7 +101,7 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  IF NOT OLD.onboarding_done AND NEW.onboarding_done THEN
+  IF NEW.weight_kg IS DISTINCT FROM OLD.weight_kg THEN
     SELECT EXISTS (
        SELECT 1
          FROM public.measurements AS m
@@ -109,21 +109,10 @@ BEGIN
           AND m.weight_kg IS NOT NULL
     ) INTO v_has_weighted_history;
 
-    IF NOT v_has_weighted_history THEN
-      RETURN NEW;
-    END IF;
-
-    IF NEW.weight_kg IS DISTINCT FROM OLD.weight_kg THEN
+    IF OLD.onboarding_done OR v_has_weighted_history THEN
       RAISE EXCEPTION 'profile weight is derived from measurements'
         USING ERRCODE = 'P0001';
     END IF;
-
-    RETURN NEW;
-  END IF;
-
-  IF OLD.onboarding_done AND NEW.weight_kg IS DISTINCT FROM OLD.weight_kg THEN
-    RAISE EXCEPTION 'profile weight is derived from measurements'
-      USING ERRCODE = 'P0001';
   END IF;
 
   RETURN NEW;
