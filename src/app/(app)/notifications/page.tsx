@@ -1,4 +1,3 @@
-import { BellRing } from 'lucide-react'
 import { listProductNotifications } from '@/app/actions/notifications'
 import { NotificationCenter } from '@/components/notifications/NotificationCenter'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
@@ -14,7 +13,7 @@ export default async function NotificationsPage() {
       subtitle="Novedades de tu entrenamiento"
       backHref="/dashboard"
       backLabel="Dashboard"
-      icon={<BellRing className="h-5 w-5" />}
+      icon="bell-ring"
     >
       <NotificationCenter initialPage={initialPage} />
     </SettingsScreen>

@@ -1,4 +1,3 @@
-import { BellRing } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import {
   ProductNotificationPreferences,
@@ -63,7 +62,7 @@ export default async function NotificationsSettingsPage() {
       title={t('Notificaciones')}
       backHref="/settings"
       backLabel={t('Ajustes')}
-      icon={<BellRing className="h-5 w-5" />}
+      icon="bell-ring"
     >
       <div className="space-y-4">
         <WorkoutReminders preferredWorkoutDays={profile?.preferred_workout_days ?? []} />

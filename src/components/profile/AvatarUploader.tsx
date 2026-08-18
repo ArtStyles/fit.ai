@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { updateAvatar, removeAvatar } from '@/app/actions/avatar'
 import { resizeImageToSquare } from '@/lib/images/avatar'
 import { useToast } from '@/components/feedback/ToastProvider'
+import { useI18n } from '@/components/i18n/I18nProvider'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -21,9 +22,18 @@ const SIZES = {
   lg:     { box: 'h-24 w-24', text: 'text-2xl', badge: 'h-7 w-7', icon: 'h-3.5 w-3.5' },
 }
 
+export function avatarUploadFailureToast(t: (source: string) => string, error: string) {
+  return {
+    title: t('No se pudo guardar la foto'),
+    description: t(error),
+    variant: 'error' as const,
+  }
+}
+
 export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemove = false }: Props) {
   const router = useRouter()
   const { showToast } = useToast()
+  const { t } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -38,7 +48,7 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
     try {
       processed = await resizeImageToSquare(file)
     } catch {
-      showToast({ title: 'No se pudo procesar la imagen', variant: 'error' })
+      showToast({ title: t('No se pudo procesar la imagen'), variant: 'error' })
       return
     }
 
@@ -52,11 +62,11 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
       const res = await updateAvatar(fd)
       URL.revokeObjectURL(localUrl)
       if (res.ok) {
-        showToast({ title: 'Foto actualizada', variant: 'success' })
+        showToast({ title: t('Foto actualizada'), variant: 'success' })
         router.refresh()
       } else {
         setPreview(null)
-        showToast({ title: 'No se pudo guardar la foto', description: res.error, variant: 'error' })
+        showToast(avatarUploadFailureToast(t, res.error))
       }
     })
   }
@@ -66,10 +76,10 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
       const res = await removeAvatar()
       if (res.ok) {
         setPreview(null)
-        showToast({ title: 'Foto eliminada', variant: 'success' })
+        showToast({ title: t('Foto eliminada'), variant: 'success' })
         router.refresh()
       } else {
-        showToast({ title: 'No se pudo eliminar la foto', variant: 'error' })
+        showToast({ title: t('No se pudo eliminar la foto'), variant: 'error' })
       }
     })
   }
@@ -83,10 +93,10 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
         onClick={() => inputRef.current?.click()}
         disabled={pending}
         className="relative rounded-full ring-offset-background transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        aria-label="Cambiar foto de perfil"
+        aria-label={t('Cambiar foto')}
       >
         <Avatar className={s.box}>
-          {shown && <AvatarImage src={shown} alt="Foto de perfil" />}
+          {shown && <AvatarImage src={shown} alt={t('Foto de perfil')} />}
           <AvatarFallback className={cn('bg-gradient-to-br from-violet-500 to-violet-700 font-semibold text-white', s.text)}>
             {initials}
           </AvatarFallback>
@@ -106,10 +116,10 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
         <button
           type="button"
           onClick={handleRemove}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-red-300"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          Quitar foto
+          {t('Quitar foto')}
         </button>
       )}
     </div>

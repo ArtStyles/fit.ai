@@ -1,19 +1,20 @@
 import Link from 'next/link'
-import { Save, UserRound } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
+import { SettingsSection } from '@/components/settings/SettingsSection'
 import { AvatarUploader } from '@/components/profile/AvatarUploader'
-import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { UsernameField } from '@/components/settings/UsernameField'
 import { PrivacyToggle } from '@/components/settings/PrivacyToggle'
+import { ProfileNameForm } from '@/components/settings/ProfileNameForm'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { updateProfileName } from '@/app/actions/settings'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
+import { isCommunityEnabled } from '@/lib/features/community'
 
 export const metadata = { title: 'Perfil · Vekira' }
 
 export default async function ProfilePage() {
   const { user, profile } = await requireAppUserContext()
   const t = createTranslator(normalizeLanguage(profile.language))
+  const communityEnabled = isCommunityEnabled()
 
   const firstName = profile?.full_name?.split(' ')[0] ?? user.email?.split('@')[0] ?? '?'
   const initials = firstName.slice(0, 2).toUpperCase()
@@ -23,53 +24,45 @@ export default async function ProfilePage() {
       title={t('Perfil')}
       backHref="/settings"
       backLabel={t('Ajustes')}
-      icon={<UserRound className="h-5 w-5" />}
+      icon="user-round"
     >
-      <section className="flex flex-col items-center rounded-2xl border border-border/60 bg-muted/10 p-6">
-        <AvatarUploader
-          avatarUrl={profile?.avatar_url ?? null}
-          initials={initials}
-          size="lg"
-          showRemove
-        />
-      </section>
-
-      <div className="mt-6">
-        <UsernameField initialUsername={profile?.username ?? ''} />
-      </div>
-      <div className="mt-4">
-        <PrivacyToggle initialPrivate={profile?.is_private ?? false} />
-      </div>
-      {profile?.username && (
-        <Link
-          href={`/u/${profile.username}`}
-          className="mt-3 flex h-10 items-center justify-center rounded-md border border-border/60 text-sm font-medium text-foreground"
-        >
-          {t('Ver mi perfil')}
-        </Link>
-      )}
-
-      <form action={updateProfileName} className="mt-6 space-y-6">
-        <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">{t('Nombre')}</span>
-            <input
-              name="fullName"
-              defaultValue={profile?.full_name ?? ''}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+      <div className="space-y-6">
+        <SettingsSection title={t('Identidad')} description={t('Así te reconoce Vekira en tu cuenta.')}>
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:text-left">
+            <AvatarUploader
+              avatarUrl={profile?.avatar_url ?? null}
+              initials={initials}
+              size="lg"
+              showRemove
             />
-          </label>
-        </section>
+            <div className="min-w-0 text-center sm:text-left">
+              <p className="font-semibold text-foreground">{profile.full_name || t('Sin nombre')}</p>
+              <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+            </div>
+          </div>
+        </SettingsSection>
 
-        <SubmitButton
-          label={t('Guardar')}
-          pendingLabel={t('Guardando')}
-          className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600"
-        >
-          <Save className="mr-2 h-4 w-4" />
-          {t('Guardar')}
-        </SubmitButton>
-      </form>
+        <SettingsSection title={t('Nombre')}>
+          <ProfileNameForm initialName={profile?.full_name ?? ''} />
+        </SettingsSection>
+
+        {communityEnabled ? (
+          <SettingsSection title={t('Perfil en Comunidad')}>
+            <div className="space-y-4">
+              <UsernameField initialUsername={profile?.username ?? ''} />
+              <PrivacyToggle initialPrivate={profile?.is_private ?? false} />
+              {profile?.username ? (
+                <Link
+                  href={`/u/${profile.username}`}
+                  className="flex min-h-11 items-center justify-center rounded-md border border-border/60 px-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+                >
+                  {t('Ver mi perfil')}
+                </Link>
+              ) : null}
+            </div>
+          </SettingsSection>
+        ) : null}
+      </div>
     </SettingsScreen>
   )
 }

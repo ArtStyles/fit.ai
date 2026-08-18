@@ -16,24 +16,31 @@ import {
   Zap,
 } from 'lucide-react'
 import { checkUsernameAvailable, updateUsername } from '@/app/actions/username'
+import { FITNESS_LEVELS, TRAINING_GOALS } from '@/lib/profile/trainingPreferences'
 import { validateUsername } from '@/lib/social/username'
 import { canContinueStage } from './onboardingStages'
 import { checkUsernameAvailability, commitUsername } from './profileUsername'
 import { focusableControlClass, OptionButton, StageShell, type OnboardingStageProps } from './StageShell'
 
-const GOALS = [
-  { value: 'lose_weight', label: 'Perder grasa', description: 'Reducir grasa corporal', icon: Flame },
-  { value: 'build_muscle', label: 'Ganar músculo', description: 'Hipertrofia y volumen', icon: Dumbbell },
-  { value: 'gain_strength', label: 'Ganar fuerza', description: 'Levantar más peso', icon: Zap },
-  { value: 'stay_active', label: 'Mantenerme activo', description: 'Fitness general y salud', icon: HeartPulse },
-  { value: 'improve_endurance', label: 'Mejorar resistencia', description: 'Cardio y aguante', icon: Activity },
-] as const
+const GOAL_DETAILS = {
+  lose_weight: { description: 'Reducir grasa corporal', icon: Flame },
+  build_muscle: { description: 'Hipertrofia y volumen', icon: Dumbbell },
+  gain_strength: { description: 'Levantar más peso', icon: Zap },
+  stay_active: { description: 'Fitness general y salud', icon: HeartPulse },
+  improve_endurance: { description: 'Cardio y aguante', icon: Activity },
+} as const
 
-const LEVELS = [
-  { value: 'beginner', label: 'Principiante', description: 'Menos de 6 meses entrenando', icon: Sprout },
-  { value: 'intermediate', label: 'Intermedio', description: 'Entre 6 meses y 2 años', icon: ShieldCheck },
-  { value: 'advanced', label: 'Avanzado', description: 'Más de 2 años', icon: Medal },
-] as const
+const LEVEL_DETAILS = {
+  beginner: { description: 'Menos de 6 meses entrenando', icon: Sprout },
+  intermediate: { description: 'Entre 6 meses y 2 años', icon: ShieldCheck },
+  advanced: { description: 'Más de 2 años', icon: Medal },
+} as const
+
+const GOALS = TRAINING_GOALS
+  .filter(option => option.value !== 'other')
+  .map(option => ({ ...option, ...GOAL_DETAILS[option.value] }))
+
+const LEVELS = FITNESS_LEVELS.map(option => ({ ...option, ...LEVEL_DETAILS[option.value] }))
 
 export function ProfileStage({ answers, update, current, total, onNext }: OnboardingStageProps) {
   const [error, setError] = useState<string | null>(null)

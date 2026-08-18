@@ -5,6 +5,12 @@ import {
   regenerateEvidencePlan,
   validateGeneratedPlan,
 } from '..'
+import { getResistancePrescription } from '../evidence'
+import { TRAINING_GOALS } from '../types'
+import {
+  PRIMARY_GOAL_OPTIONS,
+  parseTrainingSettingsForm,
+} from '@/lib/profile/trainingPreferences'
 import type {
   CardioModality,
   EngineExercise,
@@ -101,6 +107,29 @@ function makeInput(
 }
 
 describe('evidence training engine', () => {
+  it('supports every goal accepted by settings without throwing during prescription or generation', () => {
+    for (const option of PRIMARY_GOAL_OPTIONS) {
+      const form = new FormData()
+      form.set('primaryGoal', option.value)
+      form.set('fitnessLevel', 'intermediate')
+      form.set('daysPerWeek', '3')
+      form.set('sessionDurationMinutes', '60')
+      form.set('gymType', 'home_basic')
+      form.append('preferredWorkoutDays', '1')
+      form.append('preferredWorkoutDays', '3')
+      form.append('preferredWorkoutDays', '5')
+      form.set('injuries', '')
+
+      const parsed = parseTrainingSettingsForm(form)
+      expect(parsed.ok).toBe(true)
+      if (!parsed.ok) continue
+
+      expect(TRAINING_GOALS).toContain(parsed.value.primaryGoal)
+      expect(() => getResistancePrescription(parsed.value.primaryGoal, 'intermediate')).not.toThrow()
+      expect(() => generateEvidencePlan(makeInput(parsed.value.primaryGoal, 'intermediate', 3, 60))).not.toThrow()
+    }
+  })
+
   it('is deterministic for the same seed and input', () => {
     const first = generateEvidencePlan(makeInput())
     const second = generateEvidencePlan(makeInput())

@@ -10,6 +10,7 @@ function profile(overrides: Partial<AppProfile> = {}): AppProfile {
     avatar_url: null,
     timezone: null,
     last_check_in_at: null,
+    weight_kg: null,
     username: null,
     is_private: false,
     subscription_tier: 'free',

@@ -1,6 +1,6 @@
-import { ArrowLeft } from 'lucide-react'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { PendingLinkIcon } from '@/components/navigation/PendingLinkIcon'
 
 interface PageTopBarProps {
   title: string
@@ -29,7 +29,7 @@ export function PageTopBar({
             aria-label={backLabel}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <PendingLinkIcon name="arrow-left" className="h-5 w-5" />
           </PendingLink>
         ) : null}
 

@@ -2,7 +2,10 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { payloadHasValue } from './measurements.logic'
+import {
+  parseMeasurementPayload,
+  type MeasurementFieldErrors,
+} from './measurements.logic'
 
 export interface MeasurementRow {
   id: string
@@ -30,10 +33,22 @@ export interface LogMeasurementPayload {
   notes?: string | null
 }
 
-export interface LogMeasurementResult {
-  success: boolean
-  id?: string
-  error?: string
+export type MeasurementActionResult =
+  | { success: true; id?: string }
+  | { success: false; error: string; fieldErrors?: MeasurementFieldErrors }
+
+export type LogMeasurementResult = MeasurementActionResult
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const AUTHENTICATION_ERROR = 'No autenticado'
+const INVALID_ID_ERROR = 'Identificador de medida inválido.'
+const CREATE_ERROR = 'No se pudo guardar la medida.'
+const UPDATE_ERROR = 'No se pudo actualizar la medida.'
+const DELETE_ERROR = 'No se pudo eliminar la medida.'
+const MEASUREMENT_PATHS = ['/medidas', '/settings/datos', '/dashboard', '/progress'] as const
+
+function revalidateMeasurementPaths() {
+  for (const path of MEASUREMENT_PATHS) revalidatePath(path)
 }
 
 export async function getMeasurements(): Promise<MeasurementRow[]> {
@@ -56,40 +71,48 @@ export async function logMeasurement(
 ): Promise<LogMeasurementResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { success: false, error: 'No autenticado' }
+  if (!user) return { success: false, error: AUTHENTICATION_ERROR }
 
-  if (!payloadHasValue(payload)) return { success: false, error: 'Introduce al menos un valor' }
+  const parsed = parseMeasurementPayload(payload)
+  if (!parsed.ok) {
+    return { success: false, error: parsed.error, fieldErrors: parsed.fieldErrors }
+  }
 
   const { data, error } = await (supabase
     .from('measurements') as any)
     .insert({
       user_id: user.id,
-      ...payload,
+      ...parsed.value,
       recorded_at: new Date().toISOString(),
     })
     .select('id')
     .single() as { data: { id: string } | null; error: { message: string } | null }
 
   if (error || !data) {
-    return { success: false, error: error?.message ?? 'No se pudo guardar' }
+    return { success: false, error: CREATE_ERROR }
   }
 
-  revalidatePath('/medidas')
+  revalidateMeasurementPaths()
   return { success: true, id: data.id }
 }
 
-export async function deleteMeasurement(id: string): Promise<{ success: boolean }> {
+export async function deleteMeasurement(id: string): Promise<MeasurementActionResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { success: false }
+  if (!user) return { success: false, error: AUTHENTICATION_ERROR }
+  if (!UUID.test(id)) return { success: false, error: INVALID_ID_ERROR }
 
-  await (supabase
+  const { data, error } = await (supabase
     .from('measurements') as any)
     .delete()
     .eq('id', id)
     .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle() as { data: { id: string } | null; error: { message: string } | null }
 
-  revalidatePath('/medidas')
+  if (error || !data) return { success: false, error: DELETE_ERROR }
+
+  revalidateMeasurementPaths()
   return { success: true }
 }
 
@@ -99,18 +122,24 @@ export async function updateMeasurement(
 ): Promise<LogMeasurementResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { success: false, error: 'No autenticado' }
+  if (!user) return { success: false, error: AUTHENTICATION_ERROR }
+  if (!UUID.test(id)) return { success: false, error: INVALID_ID_ERROR }
 
-  if (!payloadHasValue(payload)) return { success: false, error: 'Introduce al menos un valor' }
+  const parsed = parseMeasurementPayload(payload)
+  if (!parsed.ok) {
+    return { success: false, error: parsed.error, fieldErrors: parsed.fieldErrors }
+  }
 
-  const { error } = await (supabase
+  const { data, error } = await (supabase
     .from('measurements') as any)
-    .update(payload)
+    .update(parsed.value)
     .eq('id', id)
-    .eq('user_id', user.id) as { error: { message: string } | null }
+    .eq('user_id', user.id)
+    .select('id')
+    .maybeSingle() as { data: { id: string } | null; error: { message: string } | null }
 
-  if (error) return { success: false, error: error.message }
+  if (error || !data) return { success: false, error: UPDATE_ERROR }
 
-  revalidatePath('/medidas')
-  return { success: true, id }
+  revalidateMeasurementPaths()
+  return { success: true, id: data.id }
 }

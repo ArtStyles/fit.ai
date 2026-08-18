@@ -222,7 +222,7 @@ export function ExerciseCatalogDialogView({
                     aria-pressed={selected}
                     disabled={loading || (!selected && limitReached)}
                     onClick={() => onToggle(option.id)}
-                    className="flex min-h-[68px] w-full min-w-0 max-w-full items-center gap-3 overflow-hidden py-2 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-45"
+                    className="flex min-h-[68px] w-full min-w-0 max-w-full items-center gap-3 overflow-hidden py-2 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:bg-muted/20"
                   >
                     <ExerciseImage
                       src={option.imageUrl}
@@ -233,7 +233,7 @@ export function ExerciseCatalogDialogView({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-foreground">{option.name}</span>
-                      {meta ? <span className="mt-0.5 block truncate text-xs text-muted-foreground">{meta}</span> : null}
+                      {meta ? <span className="mt-0.5 block truncate text-xs text-foreground/70">{meta}</span> : null}
                     </span>
                     <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent'}`}>
                       <Check className="h-4 w-4" aria-hidden="true" />

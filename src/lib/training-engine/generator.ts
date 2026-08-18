@@ -25,6 +25,8 @@ import type {
 
 type SessionKind = 'strength' | 'cardio' | 'mixed'
 
+const GENERAL_FITNESS_GOALS: readonly TrainingGoal[] = ['stay_active', 'other']
+
 interface SessionTemplate {
   kind: SessionKind
   slots: ExerciseSlot[]
@@ -176,6 +178,17 @@ function sessionKinds(goal: TrainingGoal, days: number): SessionKind[] {
       4: ['cardio', 'strength', 'cardio', 'strength'],
       5: ['cardio', 'strength', 'cardio', 'strength', 'cardio'],
       6: ['cardio', 'strength', 'cardio', 'cardio', 'strength', 'cardio'],
+    }
+    return layouts[days]
+  }
+
+  // The legacy `other` goal intentionally follows the general-fitness template.
+  if (GENERAL_FITNESS_GOALS.includes(goal)) {
+    const layouts: Record<number, SessionKind[]> = {
+      3: ['strength', 'cardio', 'strength'],
+      4: ['strength', 'cardio', 'strength', 'cardio'],
+      5: ['strength', 'cardio', 'strength', 'cardio', 'cardio'],
+      6: ['strength', 'cardio', 'strength', 'cardio', 'strength', 'cardio'],
     }
     return layouts[days]
   }
@@ -382,6 +395,7 @@ function goalName(goal: TrainingGoal, language: 'es' | 'en'): string {
     lose_weight: ['Composición corporal', 'Body composition'],
     improve_endurance: ['Resistencia', 'Endurance'],
     stay_active: ['Actividad general', 'General fitness'],
+    other: ['Actividad general', 'General fitness'],
   }
   return language === 'en' ? labels[goal][1] : labels[goal][0]
 }
@@ -467,7 +481,7 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
   })
 
   if (
-    ['lose_weight', 'improve_endurance', 'stay_active'].includes(input.profile.primaryGoal) &&
+    ['lose_weight', 'improve_endurance', ...GENERAL_FITNESS_GOALS].includes(input.profile.primaryGoal) &&
     cardioMinutes < 150
   ) {
     warnings.push(input.profile.language === 'en'
@@ -502,14 +516,14 @@ export function generateEvidencePlan(input: TrainingPlanInput): EngineResult {
     RULE_IDS.avoidFailure,
     ...(input.profile.primaryGoal === 'gain_strength' ? [RULE_IDS.strengthLoad] : []),
     ...(input.profile.primaryGoal === 'build_muscle' ? [RULE_IDS.hypertrophyVolume] : []),
-    ...(['lose_weight', 'improve_endurance', 'stay_active'].includes(input.profile.primaryGoal) ? [RULE_IDS.weeklyActivity] : []),
+    ...(['lose_weight', 'improve_endurance', ...GENERAL_FITNESS_GOALS].includes(input.profile.primaryGoal) ? [RULE_IDS.weeklyActivity] : []),
     ...(input.profile.primaryGoal === 'lose_weight' ? [RULE_IDS.concurrentWeightLoss] : []),
     ...(input.history ? [RULE_IDS.adaptiveRegeneration] : []),
     ...(input.previousPlan ? [RULE_IDS.progressionContinuity] : []),
     RULE_IDS.sessionDensity,
     RULE_IDS.muscleFrequency,
     RULE_IDS.weeklyMuscleVolume,
-    ...(['lose_weight', 'improve_endurance', 'stay_active'].includes(input.profile.primaryGoal) ? [RULE_IDS.structuredCardio] : []),
+    ...(['lose_weight', 'improve_endurance', ...GENERAL_FITNESS_GOALS].includes(input.profile.primaryGoal) ? [RULE_IDS.structuredCardio] : []),
   ]
 
   return {

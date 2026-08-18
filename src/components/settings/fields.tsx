@@ -1,26 +1,10 @@
-// Shared field constants + presentational SelectField used across the
-// settings sub-pages (Datos personales, Entrenamiento).
+import { FITNESS_LEVELS, GYM_TYPES, TRAINING_GOALS, WEEK_DAYS } from '@/lib/profile/trainingPreferences'
 
-export const GOALS = [
-  ['build_muscle', 'Ganar músculo'],
-  ['gain_strength', 'Ganar fuerza'],
-  ['lose_weight', 'Perder peso'],
-  ['improve_endurance', 'Mejorar resistencia'],
-  ['stay_active', 'Mantenerse activo'],
-  ['other', 'Otro'],
-]
-
-export const LEVELS = [
-  ['beginner', 'Principiante'],
-  ['intermediate', 'Intermedio'],
-  ['advanced', 'Avanzado'],
-]
-
-export const GYMS = [
-  ['home_no_equipment', 'Casa sin equipo'],
-  ['home_basic', 'Casa con equipo básico'],
-  ['full_gym', 'Gimnasio completo'],
-]
+// Legacy exports retain the select-field tuple contract while their values
+// come from the canonical training-preference catalog.
+export const GOALS = TRAINING_GOALS.map(({ value, label }) => [value, label])
+export const LEVELS = FITNESS_LEVELS.map(({ value, label }) => [value, label])
+export const GYMS = GYM_TYPES.map(({ value, label }) => [value, label])
 
 export const GENDERS = [
   ['male', 'Masculino'],
@@ -29,15 +13,7 @@ export const GENDERS = [
   ['prefer_not_to_say', 'Prefiero no decir'],
 ]
 
-export const DAY_OPTIONS = [
-  { value: 1, label: 'L' },
-  { value: 2, label: 'M' },
-  { value: 3, label: 'X' },
-  { value: 4, label: 'J' },
-  { value: 5, label: 'V' },
-  { value: 6, label: 'S' },
-  { value: 7, label: 'D' },
-]
+export const DAY_OPTIONS = WEEK_DAYS.map(({ value, shortLabel }) => ({ value, label: shortLabel }))
 
 export function SelectField({
   label,
