@@ -1,7 +1,8 @@
-import { BellRing, ChevronRight, Dumbbell, Languages, Ruler, ShieldCheck, UserCog, UserRound } from 'lucide-react'
+import { BellRing, Briefcase, ChevronRight, Dumbbell, Languages, Ruler, ShieldCheck, UserCog, UserRound } from 'lucide-react'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { requireAppUserContext } from '@/lib/auth/server'
+import { getTrainerAccess } from '@/lib/coaching/access'
 import { cn } from '@/lib/utils'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 
@@ -18,11 +19,21 @@ const SECTIONS = [
 ]
 
 export default async function SettingsPage() {
-  const { user, profile } = await requireAppUserContext()
+  const { user, profile, supabase } = await requireAppUserContext()
   const t = createTranslator(normalizeLanguage(profile.language))
-  const sections = profile.is_admin
+  const trainerAccess = await getTrainerAccess(user.id, supabase)
+  const professionalSection = trainerAccess.granted
+    ? { href: '/coach', label: 'Espacio de entrenador', icon: Briefcase }
+    : { href: '/coach/apply?from=settings', label: 'Convertirme en entrenador', icon: Briefcase }
+  const baseSections = profile.is_admin
     ? [{ href: '/admin', label: 'Administración', icon: ShieldCheck }, ...SECTIONS]
     : SECTIONS
+  const professionalIndex = baseSections.findIndex(({ href }) => href === '/settings/entrenamiento') + 1
+  const sections = [
+    ...baseSections.slice(0, professionalIndex),
+    professionalSection,
+    ...baseSections.slice(professionalIndex),
+  ]
 
   return (
     <SettingsScreen
