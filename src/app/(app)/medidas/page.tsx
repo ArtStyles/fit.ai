@@ -9,6 +9,12 @@ export default async function MedidasPage({
   searchParams?: { from?: string | string[] }
 }) {
   const fromSettings = searchParams?.from === 'settings'
-  const measurements = await getMeasurements()
-  return <MeasurementsClient initialMeasurements={measurements} fromSettings={fromSettings} />
+  const result = await getMeasurements()
+  return (
+    <MeasurementsClient
+      initialMeasurements={result.measurements}
+      initialLoadError={result.success ? null : result.error}
+      fromSettings={fromSettings}
+    />
+  )
 }

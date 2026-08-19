@@ -827,7 +827,7 @@ BEGIN
   SELECT snapshot INTO before_snapshot FROM public.trainer_migration_rerun_snapshot;
   SELECT public.capture_trainer_migration_rerun_snapshot() INTO after_snapshot;
   IF before_snapshot IS DISTINCT FROM after_snapshot THEN
-    RAISE EXCEPTION 'migrations 040-050 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
+    RAISE EXCEPTION 'migrations 040-051 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
   END IF;
 END $$;
 DROP TABLE public.trainer_migration_rerun_snapshot;

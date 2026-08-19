@@ -29,6 +29,7 @@ const ENGLISH: Record<string, string> = {
   'Peso, composición y perímetros': 'Weight, composition, and circumferences',
   'Registrar': 'Log measurement',
   'Sin medidas registradas': 'No measurements logged',
+  'No se pudieron cargar las medidas.': 'Measurements could not be loaded.',
   'Registra tu peso y medidas para ver tu evolución': 'Log your weight and measurements to see your progress',
   'Primera medida': 'First measurement',
   'Última medida': 'Latest measurement',

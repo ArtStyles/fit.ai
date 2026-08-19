@@ -8,7 +8,7 @@ const { createClient, revalidatePath } = vi.hoisted(() => ({
 vi.mock('@/lib/supabase/server', () => ({ createClient }))
 vi.mock('next/cache', () => ({ revalidatePath }))
 
-import { deleteMeasurement, logMeasurement, updateMeasurement } from '../measurements'
+import { deleteMeasurement, getMeasurements, logMeasurement, updateMeasurement } from '../measurements'
 
 const userId = '10000000-0000-4000-8000-000000000001'
 const measurementId = '20000000-0000-4000-8000-000000000001'
@@ -31,6 +31,15 @@ function mutationChain(result: { data: { id: string } | null; error: { message: 
   return chain
 }
 
+function readChain(result: { data: unknown[] | null; error: { message: string } | null }) {
+  const chain: Record<string, ReturnType<typeof vi.fn>> = {}
+  chain.select = vi.fn(() => chain)
+  chain.eq = vi.fn(() => chain)
+  chain.order = vi.fn(() => chain)
+  chain.limit = vi.fn(async () => result)
+  return chain
+}
+
 function expectSuccessfulRevalidation() {
   expect(revalidatePath.mock.calls.map(([path]) => path)).toEqual(revalidatedPaths)
 }
@@ -38,6 +47,51 @@ function expectSuccessfulRevalidation() {
 describe('measurement actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('reports an authenticated load failure instead of presenting it as an empty history', async () => {
+    const chain = readChain({ data: null, error: { message: 'sensitive database detail' } })
+    const from = vi.fn(() => chain)
+    mockClient({ id: userId }, from)
+
+    await expect(getMeasurements()).resolves.toEqual({
+      success: false,
+      measurements: [],
+      error: 'No se pudieron cargar las medidas.',
+    })
+  })
+
+  it('reports an unexpected query exception as a load failure', async () => {
+    const chain = readChain({ data: [], error: null })
+    chain.limit.mockRejectedValue(new Error('offline'))
+    const from = vi.fn(() => chain)
+    mockClient({ id: userId }, from)
+
+    await expect(getMeasurements()).resolves.toEqual({
+      success: false,
+      measurements: [],
+      error: 'No se pudieron cargar las medidas.',
+    })
+  })
+
+  it('reports an anonymous load failure without opening the measurements query', async () => {
+    const from = vi.fn()
+    mockClient(null, from)
+
+    await expect(getMeasurements()).resolves.toEqual({
+      success: false,
+      measurements: [],
+      error: 'No autenticado',
+    })
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('keeps a successful empty history distinct from a load failure', async () => {
+    const chain = readChain({ data: [], error: null })
+    const from = vi.fn(() => chain)
+    mockClient({ id: userId }, from)
+
+    await expect(getMeasurements()).resolves.toEqual({ success: true, measurements: [] })
   })
 
   it('authenticates before validating and never opens a query for an anonymous caller', async () => {
