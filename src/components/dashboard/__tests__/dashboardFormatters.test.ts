@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   formatDashboardDuration,
+  getDashboardGreeting,
   formatDashboardLoad,
   formatDashboardRelativeDate,
   formatDashboardReps,
@@ -14,6 +15,13 @@ describe('dashboard secondary metric formatting', () => {
     timeZone: string,
     referenceInstant: string,
   ) => string
+
+  it('uses the profile timezone for the greeting period', () => {
+    const instant = '2026-08-20T03:30:00.000Z'
+
+    expect(getDashboardGreeting('es', new Date(instant), 'America/Havana')).toBe('Buenas noches')
+    expect(getDashboardGreeting('es', new Date(instant), 'UTC')).toBe('Buenos días')
+  })
 
   it('uses the profile timezone at UTC midnight boundaries', () => {
     const reference = '2026-07-06T00:30:00.000Z'

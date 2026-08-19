@@ -132,6 +132,10 @@ export function getLocalDateString(date = new Date(), timeZone = getAppTimeZone(
   return `${parts.year}-${month}-${day}`
 }
 
+export function getZonedHour(date = new Date(), timeZone = getAppTimeZone()): number {
+  return getZonedParts(date, timeZone).hour
+}
+
 export function getWeekMonday(date = new Date(), timeZone = getAppTimeZone()): Date {
   const parts = getZonedParts(date, timeZone)
   const monday = addCalendarDays(parts, -(getIsoWeekday(date, timeZone) - 1))

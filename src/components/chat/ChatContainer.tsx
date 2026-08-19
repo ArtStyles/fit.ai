@@ -51,7 +51,7 @@ interface Props {
 }
 
 export function ChatContainer({ initialConversations }: Props) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const [view, setView]                           = useState<View>('list')
   const [conversations, setConversations]         = useState<ConversationRow[]>(initialConversations)
   const [selected, setSelected]                   = useState<ConversationRow | null>(null)
@@ -78,7 +78,9 @@ export function ChatContainer({ initialConversations }: Props) {
   async function handleNewConversation(context: ConversationContext) {
     setCreating(true)
     const label = t(CONTEXT_LABELS[context])
-    const date  = new Date().toLocaleDateString(dateLocale(language), { day: 'numeric', month: 'short' })
+    const date  = new Date().toLocaleDateString(dateLocale(language), {
+      day: 'numeric', month: 'short', timeZone,
+    })
     const title = `${label} · ${date}`
 
     const result = await createConversation(context, title)
@@ -298,9 +300,11 @@ function ConversationItem({
   onSelect: () => void
   onDelete: () => void
 }) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const label = t(conversation.context ? CONTEXT_LABELS[conversation.context] : 'General')
-  const date  = new Date(conversation.updated_at).toLocaleDateString(dateLocale(language), { day: 'numeric', month: 'short' })
+  const date  = new Date(conversation.updated_at).toLocaleDateString(dateLocale(language), {
+    day: 'numeric', month: 'short', timeZone,
+  })
 
   const actions: LongPressAction[] = [
     { id: 'delete', label: t('Eliminar'), icon: Trash2, variant: 'danger', onSelect: onDelete },

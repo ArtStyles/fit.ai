@@ -10,6 +10,8 @@ import {
   type ProductNotificationView,
 } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { dateLocale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 export type { ProductNotificationView }
@@ -149,20 +151,20 @@ export async function markNotificationReadInteraction(
   }
 }
 
-const DATE_FORMAT = new Intl.DateTimeFormat('es-ES', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-})
-
-function formatCreatedAt(value: string): string {
+function formatCreatedAt(value: string, formatter: Intl.DateTimeFormat): string {
   const timestamp = Date.parse(value)
-  return Number.isFinite(timestamp) ? DATE_FORMAT.format(timestamp) : value
+  return Number.isFinite(timestamp) ? formatter.format(timestamp) : value
 }
 
 export function NotificationCenter({ initialPage }: { initialPage: ProductNotificationPage }) {
   const router = useRouter()
+  const { language, timeZone } = useI18n()
   const { showToast } = useToast()
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(dateLocale(language), {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone,
+  }), [language, timeZone])
   const [notifications, setNotifications] = useState(() => (
     mergeNotificationPageIntoCurrent([], initialPage.notifications)
   ))
@@ -299,7 +301,7 @@ export function NotificationCenter({ initialPage }: { initialPage: ProductNotifi
                   </div>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{notification.body}</p>
                   <time dateTime={notification.createdAt} className="mt-2 block text-xs text-muted-foreground/80">
-                    {formatCreatedAt(notification.createdAt)}
+                    {formatCreatedAt(notification.createdAt, dateFormat)}
                   </time>
                 </div>
               </div>

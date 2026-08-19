@@ -50,11 +50,10 @@ export function normalizeDashboardBannerHref(value: string): string | null {
 
 export function isDashboardBannerVisible(
   banner: DashboardBannerData | null,
-  today = new Date().toISOString().slice(0, 10),
+  today: string,
 ): banner is DashboardBannerData {
   if (!banner || banner.status !== 'active') return false
   if (banner.starts_on && banner.starts_on > today) return false
   if (banner.ends_on && banner.ends_on < today) return false
   return true
 }
-

@@ -9,12 +9,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getAdminDashboardBanner, listAdminUsers } from '@/lib/auth/admin'
+import { requireAppUserContext } from '@/lib/auth/server'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata: Metadata = { title: 'Administración' }
 
-function formatDate(value: string | null): string {
+function formatDate(value: string | null, timeZone: string): string {
   if (!value) return 'Nunca'
-  return new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium' }).format(new Date(value))
+  return new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeZone }).format(new Date(value))
 }
 
 function initials(name: string | null, email: string): string {
@@ -23,10 +25,12 @@ function initials(name: string | null, email: string): string {
 }
 
 export default async function AdminPage({ searchParams }: { searchParams?: { q?: string } }) {
-  const [userData, bannerData] = await Promise.all([
+  const [userData, bannerData, { profile }] = await Promise.all([
     listAdminUsers(),
     getAdminDashboardBanner(),
+    requireAppUserContext(),
   ])
+  const timeZone = resolveUserTimeZone(profile.timezone)
   const { users, suspensionEnabled } = userData
   const query = searchParams?.q?.trim().toLowerCase() ?? ''
   const visibleUsers = query
@@ -133,7 +137,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: { q?:
                       </div>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.email}{account.username ? ` · @${account.username}` : ''}</p>
                       <p className="mt-1 text-[11px] text-muted-foreground/70">
-                        Alta: {formatDate(account.createdAt)} · Último acceso: {formatDate(account.lastSignInAt)}
+                        Alta: {formatDate(account.createdAt, timeZone)} · Último acceso: {formatDate(account.lastSignInAt, timeZone)}
                       </p>
                     </div>
                   </div>
@@ -141,7 +145,7 @@ export default async function AdminPage({ searchParams }: { searchParams?: { q?:
                   {account.accountStatus === 'suspended' && account.suspensionReason && (
                     <div className="rounded-lg border border-red-500/15 bg-red-500/5 px-3 py-2 text-xs text-red-200/80 lg:max-w-xs">
                       <p className="font-semibold">Motivo: {account.suspensionReason}</p>
-                      <p className="mt-0.5 opacity-70">Hasta: {account.suspendedUntil ? formatDate(account.suspendedUntil) : 'sin fecha'}</p>
+                      <p className="mt-0.5 opacity-70">Hasta: {account.suspendedUntil ? formatDate(account.suspendedUntil, timeZone) : 'sin fecha'}</p>
                     </div>
                   )}
 

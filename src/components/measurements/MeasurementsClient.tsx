@@ -116,7 +116,7 @@ function SummaryCard({
 }
 
 export function MeasurementsClient({ initialMeasurements, fromSettings }: Props) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const locale = dateLocale(language)
   const [measurements, setMeasurements] = useState(initialMeasurements)
   const [formState, setFormState] = useState<{ open: boolean; editing?: MeasurementRow }>({ open: false })
@@ -168,7 +168,9 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
   }
 
   const latestDate = latest
-    ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(latest.recorded_at))
+    ? new Intl.DateTimeFormat(locale, {
+        day: 'numeric', month: 'short', year: 'numeric', timeZone,
+      }).format(new Date(latest.recorded_at))
     : ''
 
   return (

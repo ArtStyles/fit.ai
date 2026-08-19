@@ -29,8 +29,10 @@ function formatNumber(value: number, locale: string): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)
 }
 
-function formatDate(iso: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso))
+function formatDate(iso: string, locale: string, timeZone: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone,
+  }).format(new Date(iso))
 }
 
 function value(value: number | null, suffix: string, locale: string): string | null {
@@ -50,7 +52,7 @@ export function MeasurementHistory({
   disabled: boolean
   pendingDeleteId: string | null
 }) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const locale = dateLocale(language)
   const [showAll, setShowAll] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -60,7 +62,7 @@ export function MeasurementHistory({
     <>
       <ul className="space-y-3">
         {visibleRows.map((row, index) => {
-          const date = formatDate(row.recorded_at, locale)
+          const date = formatDate(row.recorded_at, locale, timeZone)
           const isExpanded = expanded === row.id
           const details = [
             row.chest_cm === null ? null : t('Pecho: {value}', { value: value(row.chest_cm, ' cm', locale)! }),

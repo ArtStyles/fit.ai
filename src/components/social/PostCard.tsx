@@ -1,4 +1,6 @@
 // src/components/social/PostCard.tsx
+'use client'
+
 import Link from 'next/link'
 import { MessageCircle } from 'lucide-react'
 import type { FeedPost } from '@/lib/social/types'
@@ -9,12 +11,16 @@ import { RoutineCard } from './RoutineCard'
 import { LikeButton } from './LikeButton'
 import { PostMenu } from './PostMenu'
 import { formatPostDate, formatPostDateTime } from '@/lib/social/date'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { dateLocale } from '@/lib/i18n'
 
 export function PostCard({ post }: { post: FeedPost }) {
+  const { language, timeZone } = useI18n()
   const name = post.author.full_name || post.author.username || 'Usuario'
   const handle = post.author.username
-  const postDate = formatPostDate(post.created_at)
-  const postDateTime = formatPostDateTime(post.created_at)
+  const locale = dateLocale(language)
+  const postDate = formatPostDate(post.created_at, locale, timeZone)
+  const postDateTime = formatPostDateTime(post.created_at, locale, timeZone)
 
   return (
     <article className="border-b border-border/40 px-4 py-4">

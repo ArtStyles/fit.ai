@@ -6,9 +6,11 @@ import {
   type AppLanguage,
   type TranslationValues,
 } from '@/lib/i18n'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 type I18nValue = {
   language: AppLanguage
+  timeZone: string
   t: (source: string, values?: TranslationValues) => string
 }
 
@@ -16,18 +18,24 @@ const I18nContext = createContext<I18nValue | null>(null)
 
 export function I18nProvider({
   language,
+  timeZone,
   children,
   syncDocumentLanguage = true,
 }: {
   language: AppLanguage
+  timeZone?: string | null
   children: React.ReactNode
   syncDocumentLanguage?: boolean
 }) {
+  const resolvedTimeZone = resolveUserTimeZone(timeZone)
   const t = useCallback(
     (source: string, values?: TranslationValues) => translate(language, source, values),
     [language],
   )
-  const value = useMemo(() => ({ language, t }), [language, t])
+  const value = useMemo(
+    () => ({ language, timeZone: resolvedTimeZone, t }),
+    [language, resolvedTimeZone, t],
+  )
 
   useEffect(() => {
     if (syncDocumentLanguage) document.documentElement.lang = language

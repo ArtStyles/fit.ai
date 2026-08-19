@@ -8,6 +8,15 @@ describe('social post dates', () => {
     expect(value).toContain('2')
   })
 
+  it('uses the profile timezone at a UTC day boundary', () => {
+    const instant = '2026-08-20T03:30:00.000Z'
+
+    expect(formatPostDate(instant, 'en-US', 'America/Havana')).toBe('Aug 19, 2026')
+    expect(formatPostDate(instant, 'en-US', 'UTC')).toBe('Aug 20, 2026')
+    expect(formatPostDateTime(instant, 'en-US', 'America/Havana'))
+      .not.toBe(formatPostDateTime(instant, 'en-US', 'UTC'))
+  })
+
   it('returns an empty label for invalid dates', () => {
     expect(formatPostDate('invalid')).toBe('')
     expect(formatPostDateTime('invalid')).toBe('')

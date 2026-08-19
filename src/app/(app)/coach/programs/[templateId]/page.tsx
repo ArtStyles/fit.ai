@@ -6,11 +6,13 @@ import { AssignProgramDialog } from '@/components/coaching/AssignProgramDialog'
 import { PublishProgramRevisionDialog } from '@/components/coaching/PublishProgramRevisionDialog'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata = { title: 'Editar rutina profesional · Vekira' }
 
 export default async function CoachProgramDetailPage({ params }: { params: { templateId: string } }) {
-  const { user, supabase } = await requireActiveTrainerContext()
+  const { user, profile, supabase } = await requireActiveTrainerContext()
+  const timeZone = resolveUserTimeZone(profile.timezone)
   const templates = supabase.from('trainer_program_templates') as any
   const { data: template, error } = await templates.select('id, name, goal, description, days_per_week, status').eq('id', params.templateId).eq('trainer_user_id', user.id).maybeSingle()
   if (error) throw new Error('No se pudo cargar la rutina.')
@@ -25,7 +27,7 @@ export default async function CoachProgramDetailPage({ params }: { params: { tem
   const workouts = (workoutResponse.data ?? []).map((workout: any) => ({ ...workout, exercises: (workout.trainer_template_exercises ?? []).sort((a: any, b: any) => a.order_index - b.order_index).map((item: any) => ({ ...item, exercise: Array.isArray(item.exercises) ? item.exercises[0] ?? null : item.exercises ?? null })) }))
   const relationshipChoices = (relationshipResponse.data ?? []).map((relationship: any) => {
     const service = Array.isArray(relationship.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship.trainer_service_offerings
-    const startedAt = new Intl.DateTimeFormat('es', { dateStyle: 'medium' }).format(new Date(relationship.started_at))
+    const startedAt = new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeZone }).format(new Date(relationship.started_at))
     return { id: relationship.id, label: `${service?.name ?? 'Acompañamiento'} · iniciado ${startedAt} · ref. ${relationship.id.slice(0, 8)}` }
   })
   const revisionChoices = (assignmentResponse.data ?? []).map((assignment: any) => {

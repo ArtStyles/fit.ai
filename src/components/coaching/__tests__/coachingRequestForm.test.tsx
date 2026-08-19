@@ -10,10 +10,19 @@ vi.mock('@/app/actions/coachingRequests', () => ({
 }))
 import { CoachingRequestForm, CoachingActionAnnouncement, performCoachingRequestSubmit } from '../CoachingRequestForm'
 import { ClientCoachingStatus, performCoachingRequestCancellation } from '../ClientCoachingStatus'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
+
+function renderStatus(element: React.ReactElement): string {
+  return renderToStaticMarkup(
+    <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
+      {element}
+    </I18nProvider>,
+  )
+}
 
 describe('coaching request UI', () => {
   it('renders an accessible versioned consent request form without contact or chat fields', () => {
-    const html = renderToStaticMarkup(
+    const html = renderStatus(
       <CoachingRequestForm service={{ id: 'service-1', name: 'Acompañamiento de fuerza' }} />,
     )
 
@@ -25,7 +34,7 @@ describe('coaching request UI', () => {
   })
 
   it('shows real request states and exposes cancellation only for pending requests', () => {
-    const html = renderToStaticMarkup(
+    const html = renderStatus(
       <ClientCoachingStatus requests={[
         { id: 'request-1', status: 'pending', createdAt: '2026-08-08T12:00:00.000Z' },
         { id: 'request-2', status: 'declined', createdAt: '2026-08-07T12:00:00.000Z' },
@@ -38,8 +47,8 @@ describe('coaching request UI', () => {
   })
 
   it('shows a client-controlled accessible confirmation before ending or resuming a relationship', () => {
-    const active = renderToStaticMarkup(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-1', status: 'active' }} />)
-    const paused = renderToStaticMarkup(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-2', status: 'paused_by_platform' }} />)
+    const active = renderStatus(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-1', status: 'active' }} />)
+    const paused = renderStatus(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-2', status: 'paused_by_platform' }} />)
 
     expect(active).toContain('Acompañamiento activo')
     expect(active).toContain('Finalizar acompañamiento')

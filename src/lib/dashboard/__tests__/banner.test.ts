@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   isDashboardBannerVisible,
@@ -27,6 +28,14 @@ describe('dashboard banner', () => {
     expect(isDashboardBannerVisible({ ...banner, status: 'draft' }, '2026-07-03')).toBe(false)
   })
 
+  it('requires the dashboard profile-local date instead of an implicit UTC date', () => {
+    const page = readFileSync(new URL('../../../app/(app)/dashboard/page.tsx', import.meta.url), 'utf8')
+    const source = readFileSync(new URL('../banner.ts', import.meta.url), 'utf8')
+
+    expect(page).toContain('isDashboardBannerVisible(bannerCandidate, todayStr)')
+    expect(source).not.toMatch(/today\s*=\s*new Date\(\)\.toISOString\(\)/)
+  })
+
   it('acepta rutas internas y URLs HTTPS', () => {
     expect(normalizeDashboardBannerHref('/plan')).toBe('/plan')
     expect(normalizeDashboardBannerHref('https://fit.ai/evento')).toBe('https://fit.ai/evento')
@@ -40,4 +49,3 @@ describe('dashboard banner', () => {
     expect(validateDashboardBannerImage('image/png', 9 * 1024 * 1024).ok).toBe(false)
   })
 })
-

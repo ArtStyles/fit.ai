@@ -5,6 +5,8 @@ import { TrendingUp, ChevronDown } from 'lucide-react'
 import { getExerciseProgressionData, type ProgressionPoint } from '@/app/actions/progression'
 import type { TrackedExercise } from '@/app/actions/progression'
 import { MetricTextSummary } from '@/components/progress/MetricTextSummary'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { dateLocale } from '@/lib/i18n'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -25,10 +27,14 @@ function filterByTimeframe(data: ProgressionPoint[], tf: Timeframe): Progression
   return data.filter(p => now - new Date(p.date).getTime() <= ms)
 }
 
-function formatDate(iso: string, all: boolean): string {
+function formatDate(iso: string, all: boolean, language: 'es' | 'en', timeZone: string): string {
   const d = new Date(iso)
-  if (all) return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: '2-digit' })
-  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+  return d.toLocaleDateString(dateLocale(language), {
+    day: 'numeric',
+    month: 'short',
+    ...(all ? { year: '2-digit' } : {}),
+    timeZone,
+  })
 }
 
 function formatWeight(kg: number): string {
@@ -39,7 +45,17 @@ function formatWeight(kg: number): string {
 
 const PAD = { top: 12, right: 12, bottom: 28, left: 38 }
 
-function ProgressionChart({ data, timeframe }: { data: ProgressionPoint[]; timeframe: Timeframe }) {
+function ProgressionChart({
+  data,
+  timeframe,
+  language,
+  timeZone,
+}: {
+  data: ProgressionPoint[]
+  timeframe: Timeframe
+  language: 'es' | 'en'
+  timeZone: string
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth]         = useState(320)
   const [tooltip, setTooltip]     = useState<{ x: number; y: number; point: ProgressionPoint } | null>(null)
@@ -168,7 +184,7 @@ function ProgressionChart({ data, timeframe }: { data: ProgressionPoint[]; timef
         {xIndices.map(i => (
           <text key={i} x={toX(i)} y={HEIGHT - 4} textAnchor="middle"
             fill="rgb(107,114,128)" fontSize={10}>
-            {formatDate(data[i]!.date, timeframe === '24w')}
+            {formatDate(data[i]!.date, timeframe === '24w', language, timeZone)}
           </text>
         ))}
 
@@ -195,7 +211,7 @@ function ProgressionChart({ data, timeframe }: { data: ProgressionPoint[]; timef
                   <rect x={bx} y={by} width={bw} height={bh} rx={6}
                     fill="rgb(24,24,27)" stroke="rgba(139,92,246,0.4)" strokeWidth={1} />
                   <text x={bx + 8} y={by + 16} fill="rgb(167,139,250)" fontSize={9} fontWeight="600">
-                    {formatDate(tooltip.point.date, true).toUpperCase()}
+                    {formatDate(tooltip.point.date, true, language, timeZone).toUpperCase()}
                   </text>
                   <text x={bx + 8} y={by + 31} fill="white" fontSize={13} fontWeight="700">
                     {formatWeight(tooltip.point.maxWeightKg)} kg
@@ -222,6 +238,7 @@ function timeframeFromWeeks(value?: RangeWeeks): Timeframe {
 }
 
 export function ExerciseProgressionSection({ exercises, rangeWeeks }: Props) {
+  const { language, timeZone } = useI18n()
   const [selectedId, setSelectedId]   = useState<string>(exercises[0]?.id ?? '')
   const [timeframe, setTimeframe]     = useState<Timeframe>(timeframeFromWeeks(rangeWeeks))
   const [allData, setAllData]         = useState<ProgressionPoint[]>([])
@@ -343,7 +360,12 @@ export function ExerciseProgressionSection({ exercises, rangeWeeks }: Props) {
           </div>
         ) : (
           <div>
-            <ProgressionChart data={displayed} timeframe={timeframe} />
+            <ProgressionChart
+              data={displayed}
+              timeframe={timeframe}
+              language={language}
+              timeZone={timeZone}
+            />
             {improvement !== 0 && (
               <p className={`mt-1 text-right text-xs font-medium ${improvement > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 {improvement > 0 ? '+' : ''}{formatWeight(improvement)} kg en este período

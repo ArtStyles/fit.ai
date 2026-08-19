@@ -1,15 +1,15 @@
-export function formatPostDate(isoDate: string, locale = 'es-CU'): string {
+export function formatPostDate(isoDate: string, locale = 'es-CU', timeZone = 'UTC'): string {
   const date = new Date(isoDate)
   if (Number.isNaN(date.getTime())) return ''
   return new Intl.DateTimeFormat(locale, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-    timeZone: 'UTC',
+    timeZone,
   }).format(date)
 }
 
-export function formatPostDateTime(isoDate: string, locale = 'es-CU'): string {
+export function formatPostDateTime(isoDate: string, locale = 'es-CU', timeZone = 'UTC'): string {
   const date = new Date(isoDate)
   if (Number.isNaN(date.getTime())) return ''
   return new Intl.DateTimeFormat(locale, {
@@ -18,7 +18,7 @@ export function formatPostDateTime(isoDate: string, locale = 'es-CU'): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'UTC',
+    timeZone,
     timeZoneName: 'short',
   }).format(date)
 }

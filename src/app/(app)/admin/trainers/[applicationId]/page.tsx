@@ -4,6 +4,8 @@ import { UserRoundSearch } from 'lucide-react'
 import { TrainerApplicationReview } from '@/components/admin/TrainerApplicationReview'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { getAdminTrainerApplication } from '@/lib/auth/adminTrainers'
+import { requireAppUserContext } from '@/lib/auth/server'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata: Metadata = { title: 'Expediente de entrenador' }
 
@@ -12,8 +14,12 @@ export default async function AdminTrainerApplicationPage({
 }: {
   params: { applicationId: string }
 }) {
-  const application = await getAdminTrainerApplication(params.applicationId)
+  const [application, { profile }] = await Promise.all([
+    getAdminTrainerApplication(params.applicationId),
+    requireAppUserContext(),
+  ])
   if (!application) notFound()
+  const timeZone = resolveUserTimeZone(profile.timezone)
 
   return (
     <div className="min-h-screen bg-background pb-28">
@@ -25,7 +31,7 @@ export default async function AdminTrainerApplicationPage({
         icon={<UserRoundSearch className="h-5 w-5" />}
       />
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <TrainerApplicationReview application={application} />
+        <TrainerApplicationReview application={application} timeZone={timeZone} />
       </main>
     </div>
   )

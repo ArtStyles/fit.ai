@@ -1,6 +1,8 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useI18n } from '@/components/i18n/I18nProvider'
+import { dateLocale } from '@/lib/i18n'
 
 export type CoachingConsentView = {
   scope: 'training_profile' | 'body_measurements'
@@ -18,8 +20,9 @@ function nextIdempotencyKey() {
 }
 
 function ConsentStatus({ consent }: { consent?: CoachingConsentView }) {
+  const { language, timeZone } = useI18n()
   if (!consent) return <p className="mt-2 text-sm text-muted-foreground">Aún no autorizaste este alcance.</p>
-  const date = new Intl.DateTimeFormat('es', { dateStyle: 'medium' }).format(new Date(consent.grantedAt))
+  const date = new Intl.DateTimeFormat(dateLocale(language), { dateStyle: 'medium', timeZone }).format(new Date(consent.grantedAt))
   return <p className="mt-2 text-sm text-muted-foreground">Versión {consent.textVersion}. Otorgado el {date}{consent.revokedAt ? '. Revocado.' : '.'}</p>
 }
 

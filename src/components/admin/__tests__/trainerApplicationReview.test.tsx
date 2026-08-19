@@ -203,7 +203,7 @@ describe('trainer administration privacy', () => {
 
     const applications = await listAdminTrainerApplications('submitted')
     const html = renderToStaticMarkup(
-      <TrainerApplicationQueue applications={applications} selectedStatus="submitted" />,
+      <TrainerApplicationQueue applications={applications} selectedStatus="submitted" timeZone="America/Havana" />,
     )
 
     expect(applications).toEqual([{
@@ -235,7 +235,7 @@ describe('trainer administration privacy', () => {
 
     expect(application?.applicationKind).toBe('profile_update')
     expect(credentialFilters).toContainEqual(['application_id', CREDENTIAL_SOURCE_APPLICATION_ID])
-    const html = renderToStaticMarkup(<TrainerApplicationReview application={application!} />)
+    const html = renderToStaticMarkup(<TrainerApplicationReview application={application!} timeZone="America/Havana" />)
     expect(html).toContain('Actualización de perfil')
     expect(html).toContain('Credenciales verificadas en la solicitud aprobada')
   })
@@ -252,7 +252,7 @@ describe('trainer administration privacy', () => {
     expect(Number(documentUrl.searchParams.get('expiresIn'))).toBeLessThanOrEqual(300)
     expect(application.credentials[0]).not.toHaveProperty('storagePath')
 
-    const html = renderToStaticMarkup(<TrainerApplicationReview application={application} />)
+    const html = renderToStaticMarkup(<TrainerApplicationReview application={application} timeZone="America/Havana" />)
     expect(html).toContain('ada.private@example.test')
     expect(html).toContain('Lunes y miércoles después de las 15:00.')
     expect(html).toContain('Revisar la vigencia del certificado.')
@@ -265,7 +265,7 @@ describe('trainer administration privacy', () => {
     const application = await getAdminTrainerApplication(APPLICATION_ID)
     if (!application) throw new Error('Expected the application expediente.')
 
-    const html = renderToStaticMarkup(<TrainerApplicationReview application={application} />)
+    const html = renderToStaticMarkup(<TrainerApplicationReview application={application} timeZone="America/Havana" />)
 
     expect(html).toContain('Iniciar revisi')
     expect(html).toContain('Solicitar cambios')
