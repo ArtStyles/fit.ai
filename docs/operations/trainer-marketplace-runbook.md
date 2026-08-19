@@ -80,7 +80,7 @@ Validar solo presencia y alcance; nunca imprimir valores:
 
 6. Eliminar `trainer-predeploy.catalog` al cerrar la verificación conforme a la política temporal aprobada. Si descifrado, catálogo, restauración o controles de acceso/cifrado fallan, detener el despliegue.
 
-## Orden de migración 040–045
+## Orden de migración 040–047
 
 Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 
@@ -90,6 +90,18 @@ Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 4. `043_trainer_programming.sql`
 5. `044_trainer_insights.sql`
 6. `045_trainer_hardening.sql`
+7. `046_release_session_authorization.sql`
+8. `047_trainer_iso_weekday_repair.sql`
+
+Antes de aplicar la 047, pausar nuevas propuestas y publicaciones de revisiones
+profesionales, y mantener suspendidas las invitaciones. Esperar a que concluyan
+las publicaciones que ya estaban en curso. La 047 ejecuta un preflight
+estructural agregado y, si detecta una relación o snapshot no reparable, aborta
+la transacción con `TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED`; sus
+postcondiciones usan `TRAINER_ISO_WEEKDAY_REPAIR_POSTCONDITION_FAILED`. Ambos
+errores exponen solo el tipo de anomalía y su conteo agregado. Investigar y
+corregir hacia delante antes de reintentar; no modificar las migraciones 043 o
+045 ya desplegadas.
 
 En local o CI, ejecutar antes del remoto:
 
@@ -112,7 +124,7 @@ supabase db push --linked
 supabase migration list --linked
 ```
 
-El `dry-run` y la lista final deben mostrar 040–045 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
+El `dry-run` y la lista final deben mostrar 040–047 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
 
 ## Preflight remoto de solo lectura
 
@@ -122,7 +134,30 @@ Después de migrar y antes de crear fixtures o invitar usuarios, ejecutar con un
 SELECT public.trainer_security_preflight() AS schema_marker;
 ```
 
-El único resultado válido es `45`. La función es de solo lectura y valida las rutinas críticas. Complementar con catálogo, sin leer datos privados:
+El único resultado válido es `47`. La función es de solo lectura y valida las rutinas críticas, incluida la capa ISO de la 047. A continuación, en una sesión operativa privilegiada con acceso de lectura, ejecutar esta auditoría exclusivamente de conteo:
+
+```sql
+SELECT count(*) AS iso_weekday_divergences
+FROM public.workout_plans plan
+JOIN public.trainer_assignment_versions version
+  ON version.id = plan.trainer_assignment_version_id
+ AND version.materialized_plan_id = plan.id
+CROSS JOIN LATERAL jsonb_array_elements(version.snapshot->'workouts') AS prescribed(value)
+JOIN public.workouts workout
+  ON workout.plan_id = plan.id
+ AND workout.order_in_plan = (prescribed.value->>'orderInPlan')::INTEGER
+WHERE plan.source_type = 'trainer_assigned'
+  AND workout.day_of_week IS DISTINCT FROM (prescribed.value->>'dayOfWeek')::INTEGER;
+```
+
+Resultados obligatorios:
+
+```text
+trainer_security_preflight = 47
+iso_weekday_divergences = 0
+```
+
+No continuar si cualquiera de los dos resultados difiere. Complementar con catálogo, sin leer datos privados:
 
 ```sql
 SELECT relrowsecurity, relforcerowsecurity
@@ -152,11 +187,14 @@ Este es el único comando autorizado para el journey destructivo del marketplace
 3. Solo un entrenador aprobado/activo aparece en `/trainers` y puede publicar servicios gratuitos.
 4. Un cliente envía solicitudes abiertas; una aceptación crea una sola relación activa y cancela las otras pendientes.
 5. El cliente concede/revoca consentimientos y el siguiente acceso del entrenador se actualiza inmediatamente.
-6. El entrenador crea una plantilla, propone una rutina y el cliente la acepta. El cliente puede ejecutarla, pero no editarla.
-7. Una revisión crea una versión nueva; no reescribe la versión ejecutada ni el historial.
+6. El entrenador crea una plantilla sintética con lunes (`1`) y domingo (`7`), propone la rutina y el cliente la acepta. Confirmar que ambos días se materializan con esos valores ISO y repetir la auditoría de divergencias con resultado `0`.
+7. El entrenador publica una revisión sintética que incluye lunes y domingo. Confirmar la misma materialización ISO, que la revisión no reescribe la versión ejecutada ni el historial, y que la auditoría sigue en `0`.
 8. Las vistas del entrenador muestran solo clientes con relación y alcance vigentes.
 9. Analíticas aceptan únicamente eventos allowlisted; los errores devuelven código de dominio y `correlationId`, nunca payloads internos.
 10. Navegación no muestra Comunidad, checkout, precios, chat, reseñas ni edición de la rutina profesional.
+
+Reanudar propuestas, publicaciones de revisiones e invitaciones solo cuando el
+preflight, la auditoría ISO y los dos smoke sintéticos estén en verde.
 
 Si se habilita E2E remoto, debe ser exclusivamente en un proyecto descartable con las banderas y el acuse `dedicated-project-reset`; ejecutar preflight antes de cualquier seed. La limpieza conserva `professional_audit_logs` por diseño.
 
@@ -236,18 +274,21 @@ La retención futura requiere diseño y migración independiente con revisión l
 
 ## Rollback
 
-Las migraciones 040–045 son aditivas y la 045 endurece permisos/invariantes. No ejecutar una down migration destructiva, no eliminar tablas/columnas y no borrar auditoría.
+Las migraciones 040–047 son aditivas. Tras un despliegue exitoso de la 047,
+el rollback es solo hacia delante: no ejecutar una down migration destructiva,
+no eliminar tablas/columnas, no borrar auditoría y nunca restaurar la
+sustracción defectuosa de días.
 
-Rollback normal:
+Procedimiento posterior a la 047:
 
-1. Detener invitaciones y escrituras del piloto.
-2. Volver al despliegue de aplicación anterior, compatible con el esquema nuevo.
-3. Mantener 040–045 aplicadas.
-4. Confirmar que Comunidad sigue apagada y que pagos, precios, chat, reseñas y planes comerciales permanecen ocultos.
-5. Repetir preflight y smoke de las funciones que siguen disponibles.
+1. Detener invitaciones, nuevas propuestas y publicaciones de revisiones.
+2. Mantener aplicadas la 047 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
+3. Confirmar que Comunidad sigue apagada y que pagos, precios, chat, reseñas y planes comerciales permanecen ocultos.
+4. Investigar con conteos agregados y ensayar cualquier restauración de respaldo en aislamiento; no restaurar producción sin la decisión explícita por la posible pérdida de cambios posteriores.
+5. Corregir hacia delante con una migración revisada y repetir preflight, auditoría ISO y smoke antes de reabrir publicaciones.
 
-Esta versión no define una bandera global del marketplace. No asumir que una variable inventada lo desactiva: si hace falta cierre inmediato, usar el despliegue anterior conocido o un despliegue de emergencia revisado que retire las entradas UI y deniegue las acciones. La restauración del respaldo es el último recurso para corrupción confirmada; se ensaya primero en aislamiento y requiere decisión explícita por la posible pérdida de cambios posteriores.
+Esta versión no define una bandera global del marketplace. No asumir que una variable inventada lo desactiva: si hace falta cierre inmediato, usar el despliegue anterior conocido o un despliegue de emergencia revisado que retire las entradas UI y deniegue las acciones.
 
 ## Cierre del despliegue
 
-El responsable firma la salida solo si respaldo/restauración, orden 040–045, preflight 45, pruebas técnicas, smoke por roles, privacidad, auditoría append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de plan, pérdida de evidencia o fallo de revocación detiene el piloto.
+El responsable firma la salida solo si respaldo/restauración, orden 040–047, preflight 47, divergencias ISO profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de plan, pérdida de evidencia o fallo de revocación detiene el piloto.

@@ -149,7 +149,20 @@ Aplica las migraciones SQL en este orden:
 037_atomic_plan_lifecycle.sql
 038_session_authorizations.sql
 039_dashboard_payload_continuity.sql
+040_trainer_foundations.sql
+041_trainer_verification.sql
+042_trainer_relationships.sql
+043_trainer_programming.sql
+044_trainer_insights.sql
+045_trainer_hardening.sql
+046_release_session_authorization.sql
+047_trainer_iso_weekday_repair.sql
 ```
+
+Para el marketplace de entrenadores, desplegar primero la base de datos y
+después una aplicación compatible. La `047_trainer_iso_weekday_repair.sql` debe
+permanecer como la última capa correctiva tras cualquier reaplicación de
+`043_trainer_programming.sql` o `045_trainer_hardening.sql`.
 
 Las migraciones de continuidad se despliegan en orden y **primero en base de
 datos**: `036_completed_session_context.sql` → `037_atomic_plan_lifecycle.sql`
