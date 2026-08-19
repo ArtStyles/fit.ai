@@ -91,10 +91,14 @@ describe('localized legal routes', () => {
 
     expect(page).toContain(localeMarker)
     expect(page).toContain(`document="${documentMarker}"`)
+    expect(page).toContain('searchParams')
+    expect(page).toContain('returnTo={searchParams?.from}')
   })
 
-  it('documents the required public support-email setting', () => {
-    expect(source('../../../../../.env.example')).toContain('NEXT_PUBLIC_SUPPORT_EMAIL=')
+  it('documents the public support-email fallback as the deployment default', () => {
+    expect(source('../../../../../.env.example')).toContain(
+      'NEXT_PUBLIC_SUPPORT_EMAIL=soporte@vekira.app',
+    )
   })
 
   it('redirects the obsolete unlocalized privacy route', () => {

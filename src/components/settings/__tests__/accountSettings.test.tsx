@@ -25,16 +25,16 @@ describe('AccountSettingsPage', () => {
     for (const heading of ['Cuenta de acceso', 'Sesión', 'Documentos', 'Zona peligrosa']) {
       expect(html).toContain(heading)
     }
-    expect(html).toContain('href="/es/privacidad"')
-    expect(html).toContain('href="/es/terminos"')
+    expect(html).toContain('href="/es/privacidad?from=settings-account"')
+    expect(html).toContain('href="/es/terminos?from=settings-account"')
   })
 
   it('uses English legal routes for English accounts', async () => {
     const html = await renderAccountSettings('en')
 
     expect(html).toContain('Access account')
-    expect(html).toContain('href="/en/privacy"')
-    expect(html).toContain('href="/en/terms"')
+    expect(html).toContain('href="/en/privacy?from=settings-account"')
+    expect(html).toContain('href="/en/terms?from=settings-account"')
   })
 })
 

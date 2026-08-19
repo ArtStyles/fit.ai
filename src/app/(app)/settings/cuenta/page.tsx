@@ -15,8 +15,8 @@ export default async function AccountSettingsPage() {
   const language = normalizeLanguage(profile.language)
   const t = createTranslator(language)
   const legal = language === 'en'
-    ? { privacy: '/en/privacy', terms: '/en/terms' }
-    : { privacy: '/es/privacidad', terms: '/es/terminos' }
+    ? { privacy: '/en/privacy?from=settings-account', terms: '/en/terms?from=settings-account' }
+    : { privacy: '/es/privacidad?from=settings-account', terms: '/es/terminos?from=settings-account' }
 
   return (
     <SettingsScreen
