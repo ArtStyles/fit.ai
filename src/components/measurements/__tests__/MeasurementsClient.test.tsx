@@ -1,11 +1,18 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }))
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/medidas',
+  useRouter: () => ({ refresh }),
+}))
 import type { MeasurementRow } from '@/app/actions/measurements'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import { MeasurementHistory } from '../MeasurementHistory'
 import { MeasurementForm } from '../MeasurementForm'
 import * as MeasurementFormModule from '../MeasurementForm'
-import { MeasurementsClient } from '../MeasurementsClient'
+import { MeasurementsClient, refreshMeasurementsRoute } from '../MeasurementsClient'
 import { WeightChart } from '../WeightChart'
 
 function renderWithProviders(
@@ -60,6 +67,29 @@ type FormInteractionContract = {
 const formContract = MeasurementFormModule as unknown as FormInteractionContract
 
 describe('MeasurementsClient', () => {
+  it('retries a failed load through an App Router refresh', () => {
+    refreshMeasurementsRoute({ refresh })
+
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
+  it('renders a retryable load error instead of the empty-history state', () => {
+    const html = renderWithProviders(
+      <MeasurementsClient
+        initialMeasurements={[]}
+        initialLoadError="No se pudieron cargar las medidas."
+        fromSettings
+      />,
+    )
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No se pudieron cargar las medidas.')
+    expect(html).toContain('Reintentar')
+    expect(html).not.toContain('Sin medidas registradas')
+    expect(html).not.toContain('aria-label="Registrar"')
+    expect(html).toContain('aria-label="Ajustes"')
+  })
+
   it('renders the empty state with a Settings-aware 44px navigation target', () => {
     const html = renderWithProviders(
       <MeasurementsClient initialMeasurements={[]} fromSettings />,

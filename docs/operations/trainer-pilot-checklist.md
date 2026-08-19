@@ -2,7 +2,7 @@
 
 ## Estado de salida
 
-**BLOQUEADO.** No invitar entrenadores ni clientes hasta que el proyecto remoto tenga las migraciones 040–050, `trainer_security_preflight()` devuelva exactamente `49`, las divergencias ISO profesionales sean `0`, el journey E2E real termine en verde y todas las firmas de la tabla **Aprobación previa al lanzamiento** estén completas. Las revisiones de los días 7 y 14 se firman después de iniciar el piloto y no forman parte de la puerta previa.
+**BLOQUEADO.** No invitar entrenadores ni clientes hasta que el proyecto remoto tenga las migraciones 040–051, `trainer_security_preflight()` devuelva exactamente `49`, las divergencias ISO profesionales sean `0`, el journey E2E real termine en verde y todas las firmas de la tabla **Aprobación previa al lanzamiento** estén completas. Las revisiones de los días 7 y 14 se firman después de iniciar el piloto y no forman parte de la puerta previa.
 
 El piloto mantiene `COMMUNITY_ENABLED=false`. El código y los datos de Comunidad se conservan detrás de su bandera, sin eliminarlos. Precios, planes comerciales, checkout, pagos, mensajería privada y reseñas permanecen ocultos; los servicios del piloto son gratuitos. El `/chat` actual de IA no se considera mensajería privada entrenador-cliente.
 
@@ -14,7 +14,7 @@ El piloto mantiene `COMMUNITY_ENABLED=false`. El código y los datos de Comunida
 - [ ] Confirmar que cada cliente recibió la explicación del piloto y otorgó consentimiento informado de perfil de entrenamiento antes de aceptar una solicitud.
 - [ ] Confirmar que el consentimiento de medidas es independiente, opcional y revocable con efecto en la siguiente lectura.
 - [ ] Asignar un canal de soporte operativo y un responsable titular de incidentes con suplente.
-- [ ] Verificar respaldo/restauración, migraciones 040–050, `trainer_security_preflight() = 49`, divergencias ISO profesionales `= 0`, matriz de autorización, seguridad x3, accesibilidad, build, auditoría y journey E2E conforme al [runbook](./trainer-marketplace-runbook.md).
+- [ ] Verificar respaldo/restauración, migraciones 040–051, `trainer_security_preflight() = 49`, divergencias ISO profesionales `= 0`, matriz de autorización, seguridad x3, accesibilidad, build, auditoría y journey E2E conforme al [runbook](./trainer-marketplace-runbook.md).
 - [ ] Ejecutar `pnpm test:db:trainers` en base Docker fresca y, solo después del preflight remoto 49 y de confirmar divergencias ISO profesionales `= 0`, `pnpm test:e2e:trainer-marketplace`; no usar el Playwright genérico ni reutilizar un servidor existente para este journey destructivo.
 - [ ] Antes de reanudar invitaciones, completar una propuesta y una revisión sintéticas que incluyan lunes (`1`) y domingo (`7`), y confirmar que la auditoría ISO sigue en `0`.
 - [ ] Obtener aprobación conjunta de operación, privacidad y seguridad.
@@ -51,13 +51,13 @@ Detener nuevas solicitudes y publicaciones, suspender al actor cuando correspond
 - consentimiento ausente o revocación que no surte efecto en la siguiente operación;
 - fuga de contacto, credenciales, notas, medidas o rutas de storage en analytics/logs.
 
-Rollback: conservar datos/migraciones 040–050 y corregir solo hacia delante; no restaurar la sustracción defectuosa de días, no borrar tablas ni auditoría. Seguir [Respuesta a incidentes y Rollback](./trainer-marketplace-runbook.md#respuesta-a-incidentes).
+Rollback: conservar datos/migraciones 040–051 y corregir solo hacia delante; no restaurar la sustracción defectuosa de días, no borrar tablas ni auditoría. Seguir [Respuesta a incidentes y Rollback](./trainer-marketplace-runbook.md#respuesta-a-incidentes).
 
 ## Aprobación previa al lanzamiento (completar manualmente)
 
 | Puerta | Responsable | Fecha UTC | Evidencia no sensible | Firma/aprobación |
 |---|---|---|---|---|
-| Migraciones 040–050, preflight 49 y divergencias ISO profesionales 0 |  |  |  |  |
+| Migraciones 040–051, preflight 49 y divergencias ISO profesionales 0 |  |  |  |  |
 | Journey E2E real |  |  |  |  |
 | Credenciales e entrevistas (3–5) |  |  |  |  |
 | Consentimiento y privacidad |  |  |  |  |

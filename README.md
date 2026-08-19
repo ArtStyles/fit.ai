@@ -160,13 +160,16 @@ Aplica las migraciones SQL en este orden:
 048_profile_weight_measurement_sync.sql
 049_trainer_iso_weekday_repair.sql
 050_product_events_conversion_funnel.sql
+051_workout_adjustment_atomic.sql
 ```
 
 Para el marketplace de entrenadores, desplegar primero la base de datos y
 después una aplicación compatible. La `049_trainer_iso_weekday_repair.sql` debe
 permanecer como la última capa correctiva tras cualquier reaplicación de
 `043_trainer_programming.sql` o `045_trainer_hardening.sql`; a continuación se
-aplica `050_product_events_conversion_funnel.sql`, la última migración global.
+aplican `050_product_events_conversion_funnel.sql` y
+`051_workout_adjustment_atomic.sql`. La 051 es la última migración global y debe
+estar aplicada antes de publicar el editor transaccional de entrenamientos.
 
 Las migraciones de continuidad se despliegan en orden y **primero en base de
 datos**: `036_completed_session_context.sql` → `037_atomic_plan_lifecycle.sql`
@@ -195,6 +198,16 @@ dedicada, las migraciones anteriores y `E2E_HISTORY_CONTINUITY_ENABLED=true`.
 Sin ese opt-in la spec de continuidad se omite de forma segura. El harness E2E
 mantiene además su validación global de cuenta dedicada antes de iniciar cualquier
 servidor o escritura.
+
+En una cuenta y proyecto Supabase E2E descartables, ejecuta únicamente el caso de
+continuidad con:
+
+```bash
+pnpm exec playwright test tests/e2e/training-evidence.spec.ts --grep "completed evidence survives"
+```
+
+No actives `E2E_HISTORY_CONTINUITY_ENABLED=true` contra desarrollo compartido,
+staging persistente ni producción: el caso crea y limpia evidencia de prueba.
 
 No apliques `004_rollback.sql` ni `005_rollback.sql` durante una instalacion
 normal. `009_reset_test_accounts.sql` es destructiva, contiene una cuenta de

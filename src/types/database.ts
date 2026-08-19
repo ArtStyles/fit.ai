@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 042_trainer_relationships
+ * Last updated: migration 051_workout_adjustment_atomic
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]

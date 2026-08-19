@@ -39,31 +39,41 @@ export type MeasurementActionResult =
 
 export type LogMeasurementResult = MeasurementActionResult
 
+export type MeasurementsLoadResult =
+  | { success: true; measurements: MeasurementRow[] }
+  | { success: false; measurements: []; error: string }
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const AUTHENTICATION_ERROR = 'No autenticado'
 const INVALID_ID_ERROR = 'Identificador de medida inválido.'
 const CREATE_ERROR = 'No se pudo guardar la medida.'
 const UPDATE_ERROR = 'No se pudo actualizar la medida.'
 const DELETE_ERROR = 'No se pudo eliminar la medida.'
+const LOAD_ERROR = 'No se pudieron cargar las medidas.'
 const MEASUREMENT_PATHS = ['/medidas', '/settings/datos', '/dashboard', '/progress'] as const
 
 function revalidateMeasurementPaths() {
   for (const path of MEASUREMENT_PATHS) revalidatePath(path)
 }
 
-export async function getMeasurements(): Promise<MeasurementRow[]> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return []
+export async function getMeasurements(): Promise<MeasurementsLoadResult> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false, measurements: [], error: AUTHENTICATION_ERROR }
 
-  const { data } = await (supabase
-    .from('measurements') as any)
-    .select('id, recorded_at, weight_kg, body_fat_percentage, muscle_mass_kg, chest_cm, waist_cm, hips_cm, arms_cm, legs_cm, notes')
-    .eq('user_id', user.id)
-    .order('recorded_at', { ascending: false })
-    .limit(100) as { data: MeasurementRow[] | null }
+    const { data, error } = await (supabase
+      .from('measurements') as any)
+      .select('id, recorded_at, weight_kg, body_fat_percentage, muscle_mass_kg, chest_cm, waist_cm, hips_cm, arms_cm, legs_cm, notes')
+      .eq('user_id', user.id)
+      .order('recorded_at', { ascending: false })
+      .limit(100) as { data: MeasurementRow[] | null; error: { message: string } | null }
 
-  return data ?? []
+    if (error) return { success: false, measurements: [], error: LOAD_ERROR }
+    return { success: true, measurements: data ?? [] }
+  } catch {
+    return { success: false, measurements: [], error: LOAD_ERROR }
+  }
 }
 
 export async function logMeasurement(

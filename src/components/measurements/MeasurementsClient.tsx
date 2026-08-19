@@ -1,9 +1,11 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { BarChart3, Minus, Plus, Scale, TrendingDown, TrendingUp } from 'lucide-react'
 import { deleteMeasurement, type MeasurementRow } from '@/app/actions/measurements'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { ScreenState } from '@/components/feedback/ScreenState'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,10 +16,15 @@ import { WeightChart } from './WeightChart'
 
 type Props = {
   initialMeasurements: MeasurementRow[]
+  initialLoadError?: string | null
   fromSettings: boolean
 }
 
 type RemovedMeasurement = { row: MeasurementRow; index: number }
+
+export function refreshMeasurementsRoute(router: { refresh: () => void }) {
+  router.refresh()
+}
 
 export function confirmMeasurementDeletion(
   confirm: (message: string) => boolean,
@@ -115,7 +122,8 @@ function SummaryCard({
   )
 }
 
-export function MeasurementsClient({ initialMeasurements, fromSettings }: Props) {
+export function MeasurementsClient({ initialMeasurements, initialLoadError = null, fromSettings }: Props) {
+  const router = useRouter()
   const { language, timeZone, t } = useI18n()
   const locale = dateLocale(language)
   const [measurements, setMeasurements] = useState(initialMeasurements)
@@ -181,7 +189,7 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
         backHref={fromSettings ? '/settings' : '/dashboard'}
         backLabel={t(fromSettings ? 'Ajustes' : 'Dashboard')}
         icon={<Scale className="h-5 w-5" aria-hidden="true" />}
-        right={(
+        right={initialLoadError ? undefined : (
           <div className="flex items-center gap-1 sm:gap-2">
             <PendingLink
               href="/progress"
@@ -206,7 +214,22 @@ export function MeasurementsClient({ initialMeasurements, fromSettings }: Props)
       />
 
       <main className="mx-auto max-w-lg space-y-8 px-4 py-8">
-        {measurements.length === 0 ? (
+        {initialLoadError ? (
+          <ScreenState
+            kind="error"
+            title={t(initialLoadError)}
+            description={t('Tus datos siguen guardados. Intenta nuevamente.')}
+            action={(
+              <button
+                type="button"
+                onClick={() => refreshMeasurementsRoute(router)}
+                className="inline-flex min-h-11 items-center rounded-xl border border-border/60 px-4 text-sm font-semibold text-foreground hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+              >
+                {t('Reintentar')}
+              </button>
+            )}
+          />
+        ) : measurements.length === 0 ? (
           <section className="flex flex-col items-center rounded-3xl border border-dashed border-border/70 bg-muted/[0.06] px-6 py-14 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300">
               <Scale className="h-8 w-8" aria-hidden="true" />
