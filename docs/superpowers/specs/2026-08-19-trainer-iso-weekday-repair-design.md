@@ -1,6 +1,6 @@
 # Reparación ISO de días en rutinas profesionales
 
-**Fecha:** 2026-08-19 · **Estado:** Propuesta para revisión · **Producto:** Vekira
+**Fecha:** 2026-08-19 · **Estado:** Diseño aprobado · **Producto:** Vekira
 **Migración prevista:** `047_trainer_iso_weekday_repair.sql`
 
 ## 1. Resumen
