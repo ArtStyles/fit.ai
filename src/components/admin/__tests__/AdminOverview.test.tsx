@@ -29,6 +29,9 @@ it('distinguishes unavailable metrics from zero and renders real task links', ()
   expect(html).toContain('>0<')
   expect(html).toContain('href="/admin/trainers"')
   expect(html).toContain('3 expedientes requieren atención')
+  const links = html.match(/<a\b[^>]*>/g) ?? []
+  expect(links.length).toBeGreaterThan(0)
+  expect(links.every(link => link.includes('min-h-11'))).toBe(true)
 })
 
 it('renders an explicit empty state when no activity exists', () => {

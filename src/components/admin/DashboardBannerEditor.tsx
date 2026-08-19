@@ -26,7 +26,7 @@ const EMPTY_BANNER: DashboardBannerData = {
   updated_at: '',
 }
 
-const fieldClass = 'h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:ring-2 focus:ring-violet-500'
+const fieldClass = 'min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:ring-2 focus:ring-violet-500'
 
 export function DashboardBannerEditor({
   initialBanner,
@@ -144,7 +144,7 @@ export function DashboardBannerEditor({
               <span className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
                 Descripción <span className="font-normal">{description.length}/280</span>
               </span>
-              <textarea name="description" maxLength={280} rows={3} value={description} onChange={event => setDescription(event.target.value)} className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
+              <textarea name="description" maxLength={280} rows={3} value={description} onChange={event => setDescription(event.target.value)} className="min-h-11 w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
             </label>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -171,13 +171,13 @@ export function DashboardBannerEditor({
 
             <div className="rounded-xl border border-dashed border-border/70 p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-muted px-3 text-xs font-semibold text-foreground hover:bg-muted/80">
+                <label className="inline-flex min-h-11 min-w-11 cursor-pointer items-center gap-2 rounded-lg bg-muted px-3 text-xs font-semibold text-foreground outline-none hover:bg-muted/80 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
                   <ImagePlus className="h-4 w-4" />
                   {imagePreview ? 'Cambiar imagen' : 'Añadir imagen'}
                   <input ref={imageInputRef} name="image" type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="sr-only" onChange={handleImage} />
                 </label>
                 {imagePreview && (
-                  <button type="button" onClick={clearImage} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-red-300 hover:bg-red-500/10">
+                  <button type="button" onClick={clearImage} className="inline-flex min-h-11 min-w-11 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-red-300 outline-none hover:bg-red-500/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                     <X className="h-4 w-4" /> Quitar
                   </button>
                 )}
@@ -185,7 +185,7 @@ export function DashboardBannerEditor({
               <p className="mt-2 text-[11px] text-muted-foreground">JPG, PNG, WebP o AVIF · máximo 8 MB · recomendado 1600 × 900.</p>
             </div>
 
-            <SubmitButton label="Guardar banner" pendingLabel="Guardando banner" className="h-11 w-full bg-violet-500 text-white hover:bg-violet-400" />
+            <SubmitButton label="Guardar banner" pendingLabel="Guardando banner" className="min-h-11 min-w-11 w-full bg-violet-500 text-white hover:bg-violet-400" />
           </form>
 
           <div className="lg:sticky lg:top-5 lg:self-start">

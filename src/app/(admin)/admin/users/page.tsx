@@ -1,16 +1,15 @@
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminUserDirectory } from '@/components/admin/AdminUserDirectory'
-import { normalizeAdminUserFilters } from '@/lib/admin/users'
+import {
+  normalizeAdminUserFilters,
+  type AdminUserFilterParams,
+} from '@/lib/admin/users'
 import { listAdminUsers } from '@/lib/auth/admin'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 type AdminUsersPageProps = {
-  searchParams?: {
-    q?: string
-    status?: string
-    tier?: string
-  }
+  searchParams?: AdminUserFilterParams
 }
 
 export default async function AdminUsersPage({ searchParams }: AdminUsersPageProps) {

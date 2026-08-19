@@ -41,7 +41,7 @@ export function AdminUserActions({
             label="Activar Pro"
             pendingLabel="Activando"
             size="sm"
-            className="bg-violet-500 text-white hover:bg-violet-400"
+            className="min-h-11 min-w-11 bg-violet-500 text-white hover:bg-violet-400"
           >
             <Crown className="h-3.5 w-3.5" />
             Activar Pro
@@ -50,7 +50,7 @@ export function AdminUserActions({
       ) : (
         <Dialog>
           <DialogTrigger asChild>
-            <Button type="button" size="sm" variant="outline" className="border-border/60">
+            <Button type="button" size="sm" variant="outline" className="min-h-11 min-w-11 border-border/60">
               Cancelar Pro
             </Button>
           </DialogTrigger>
@@ -66,12 +66,13 @@ export function AdminUserActions({
               <input type="hidden" name="tier" value="free" />
               <DialogFooter className="gap-2 sm:gap-0">
                 <DialogClose asChild>
-                  <Button type="button" variant="ghost">Volver</Button>
+                  <Button type="button" variant="ghost" className="min-h-11 min-w-11">Volver</Button>
                 </DialogClose>
                 <SubmitButton
                   label="Confirmar cancelación"
                   pendingLabel="Cancelando"
                   variant="destructive"
+                  className="min-h-11 min-w-11"
                 />
               </DialogFooter>
             </form>
@@ -87,7 +88,7 @@ export function AdminUserActions({
             pendingLabel="Reactivando"
             size="sm"
             variant="outline"
-            className="border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+            className="min-h-11 min-w-11 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Reactivar
@@ -100,7 +101,7 @@ export function AdminUserActions({
               type="button"
               size="sm"
               variant="outline"
-              className="border-red-500/25 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+              className="min-h-11 min-w-11 border-red-500/25 text-red-300 hover:bg-red-500/10 hover:text-red-200"
             >
               <Ban className="mr-1.5 h-3.5 w-3.5" />
               Suspender
@@ -132,7 +133,7 @@ export function AdminUserActions({
                 <select
                   name="duration"
                   defaultValue="7"
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
+                  className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
                 >
                   <option value="7">7 días</option>
                   <option value="30">30 días</option>
@@ -141,12 +142,13 @@ export function AdminUserActions({
               </label>
               <DialogFooter className="gap-2 sm:gap-0">
                 <DialogClose asChild>
-                  <Button type="button" variant="ghost">Cancelar</Button>
+                  <Button type="button" variant="ghost" className="min-h-11 min-w-11">Cancelar</Button>
                 </DialogClose>
                 <SubmitButton
                   label="Suspender cuenta"
                   pendingLabel="Suspendiendo"
                   variant="destructive"
+                  className="min-h-11 min-w-11"
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   Suspender cuenta

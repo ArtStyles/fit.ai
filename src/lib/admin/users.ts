@@ -1,9 +1,9 @@
 import type { AdminUserRecord } from '@/lib/auth/admin'
 
 export type AdminUserFilterParams = {
-  q?: string
-  status?: string
-  tier?: string
+  q?: string | string[]
+  status?: string | string[]
+  tier?: string | string[]
 }
 
 export type AdminUserFilters = {
@@ -12,11 +12,24 @@ export type AdminUserFilters = {
   tier: 'all' | 'free' | 'pro'
 }
 
-export function normalizeAdminUserFilters(params: AdminUserFilterParams): AdminUserFilters {
-  const status = params.status === 'active' || params.status === 'suspended' ? params.status : 'all'
-  const tier = params.tier === 'free' || params.tier === 'pro' ? params.tier : 'all'
+const ADMIN_USER_QUERY_MAX_LENGTH = 100
 
-  return { query: params.q?.trim() ?? '', status, tier }
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+export function normalizeAdminUserFilters(params: AdminUserFilterParams): AdminUserFilters {
+  const statusValue = firstParam(params.status)
+  const tierValue = firstParam(params.tier)
+  const queryValue = firstParam(params.q)
+  const status = statusValue === 'active' || statusValue === 'suspended' ? statusValue : 'all'
+  const tier = tierValue === 'free' || tierValue === 'pro' ? tierValue : 'all'
+
+  return {
+    query: queryValue?.trim().slice(0, ADMIN_USER_QUERY_MAX_LENGTH) ?? '',
+    status,
+    tier,
+  }
 }
 
 export function filterAdminUsers(

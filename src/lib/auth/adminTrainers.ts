@@ -7,6 +7,7 @@ import type { Database } from '@/types/database'
 
 const TRAINER_CREDENTIAL_BUCKET = 'trainer-credentials'
 const SIGNED_CREDENTIAL_TTL_SECONDS = 300
+const ADMIN_TRAINER_APPLICATION_PAGE_SIZE = 1000
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const APPLICATION_DETAIL_COLUMNS = 'id, application_kind, source_profile_id, credential_source_application_id, status, professional_name, professional_photo_url, bio, specialties, modalities, experience_summary, general_location, languages, contact_email, contact_phone, preferred_contact, timezone, interview_availability, submitted_at, decided_at, created_at, updated_at' as const
 
@@ -129,19 +130,27 @@ export async function loadAdminTrainerApplications(
   status?: string,
 ): Promise<AdminTrainerQueueItem[]> {
   const selectedStatus = normalizeAdminTrainerStatus(status)
-  let query = service
-    .from('trainer_applications')
-    .select('id, professional_name, submitted_at, created_at, status, specialties, application_kind')
+  const rows = []
 
-  if (selectedStatus) query = query.eq('status', selectedStatus)
+  for (let from = 0; ; from += ADMIN_TRAINER_APPLICATION_PAGE_SIZE) {
+    let query = service
+      .from('trainer_applications')
+      .select('id, professional_name, submitted_at, created_at, status, specialties, application_kind')
 
-  const { data, error } = await query
-    .order('submitted_at', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
+    if (selectedStatus) query = query.eq('status', selectedStatus)
 
-  if (error) throw new Error(error.message || 'No se pudo cargar la cola de entrenadores.')
+    const { data, error } = await query
+      .order('submitted_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .range(from, from + ADMIN_TRAINER_APPLICATION_PAGE_SIZE - 1)
 
-  return (data ?? []).map(row => ({
+    if (error) throw new Error(error.message || 'No se pudo cargar la cola de entrenadores.')
+    const pageRows = data ?? []
+    rows.push(...pageRows)
+    if (pageRows.length < ADMIN_TRAINER_APPLICATION_PAGE_SIZE) break
+  }
+
+  return rows.map(row => ({
     id: row.id,
     professionalName: row.professional_name,
     applicationDate: row.submitted_at ?? row.created_at,

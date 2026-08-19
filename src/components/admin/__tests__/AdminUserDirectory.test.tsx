@@ -38,12 +38,16 @@ const directoryUsers: AdminUserRecord[] = [
     subscriptionTier: 'free',
     accountStatus: 'suspended',
     suspensionReason: 'Revisión manual',
-    suspendedUntil: null,
+    suspendedUntil: '2026-09-01T12:00:00.000Z',
     createdAt: '2026-07-01T12:00:00.000Z',
     lastSignInAt: null,
     isOwner: false,
   },
 ]
+
+function interactiveButtons(html: string): string[] {
+  return html.match(/<button\b[^>]*>/g) ?? []
+}
 
 it('shows account summary, filter values, rows, statuses, dates, and real action controls', () => {
   const html = renderToStaticMarkup(
@@ -62,11 +66,15 @@ it('shows account summary, filter values, rows, statuses, dates, and real action
   expect(html).toContain('<option value="active" selected="">Activas</option>')
   expect(html).toContain('<option value="pro" selected="">Pro</option>')
   expect(html).toContain('Ana Pérez')
+  expect(html).toContain('@ana')
   expect(html).not.toContain('Beatriz Ruiz')
   expect(html).toContain('Activa')
+  expect(html).toContain('Creada: 1 ago 2026')
   expect(html).toContain('18 ago 2026')
   expect(html).toContain('Cancelar Pro')
   expect(html).toContain('Suspender')
+  expect(interactiveButtons(html).length).toBeGreaterThan(0)
+  expect(interactiveButtons(html).every(button => button.includes('min-h-11'))).toBe(true)
 })
 
 it('shows every matching account and keeps each real action set available', () => {
@@ -82,11 +90,15 @@ it('shows every matching account and keeps each real action set available', () =
   expect(html).toContain('Ana Pérez')
   expect(html).toContain('Beatriz Ruiz')
   expect(html).toContain('Suspendida')
+  expect(html).toContain('Motivo: Revisión manual')
+  expect(html).toContain('Hasta: 1 sept 2026')
+  expect(html).toContain('Creada: 1 jul 2026')
   expect(html).toContain('Sin actividad')
   expect(html).toContain('Cancelar Pro')
   expect(html).toContain('Suspender')
   expect(html).toContain('Activar Pro')
   expect(html).toContain('Reactivar')
+  expect(interactiveButtons(html).every(button => button.includes('min-h-11'))).toBe(true)
 })
 
 it('shows the empty state separately', () => {
@@ -107,15 +119,22 @@ it('never presents suspension as active or zero when suspension data is unavaila
     <AdminUserDirectory
       users={directoryUsers}
       suspensionEnabled={false}
-      filters={{ query: '', status: 'all', tier: 'all' }}
+      filters={{ query: '', status: 'suspended', tier: 'all' }}
       timeZone="America/Havana"
     />,
   )
 
   expect(html).toContain('El estado de suspensión no está disponible en este momento.')
   expect(html).toContain('No disponible')
+  expect(html).toContain('Ana Pérez')
+  expect(html).toContain('Beatriz Ruiz')
+  expect(html).toMatch(/<select[^>]*name="status"[^>]*disabled=""/)
+  expect(html).toMatch(/<select[^>]*name="status"[^>]*aria-describedby="suspension-status-unavailable"/)
+  expect(html).toContain('<option value="all" selected="">Todos los estados</option>')
   expect(html).not.toContain('>Suspendida<')
   expect(html).not.toContain('>Activa<')
+  expect(html).not.toContain('Motivo: Revisión manual')
+  expect(html).not.toContain('Hasta: 1 sept 2026')
   expect(html).not.toContain('Reactivar')
   expect(html).not.toContain('Suspender')
 })

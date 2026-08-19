@@ -24,6 +24,7 @@ type AdminUserRowProps = {
 function SuspensionUnavailableNotice() {
   return (
     <p
+      id="suspension-status-unavailable"
       role="status"
       className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-100"
     >
@@ -62,6 +63,9 @@ function AdminUserRow({ account, suspensionEnabled, timeZone }: AdminUserRowProp
         </Avatar>
         <div className="min-w-0">
           <h2 className="truncate font-semibold">{displayName}</h2>
+          {account.username ? (
+            <p className="truncate text-xs text-muted-foreground">@{account.username}</p>
+          ) : null}
           <p className="truncate text-sm text-muted-foreground">{account.email}</p>
         </div>
       </div>
@@ -69,8 +73,21 @@ function AdminUserRow({ account, suspensionEnabled, timeZone }: AdminUserRowProp
       <div>
         <Badge variant="outline">{statusLabel}</Badge>
         <p className="mt-1 text-xs text-muted-foreground">
+          Creada: {formatAdminUserDate(account.createdAt, timeZone)}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
           Último acceso: {formatAdminUserDate(account.lastSignInAt, timeZone)}
         </p>
+        {suspensionEnabled && account.accountStatus === 'suspended' ? (
+          <div className="mt-2 space-y-1 text-xs text-amber-100/80">
+            <p>Motivo: {account.suspensionReason ?? 'Sin motivo registrado'}</p>
+            <p>
+              {account.suspendedUntil
+                ? `Hasta: ${formatAdminUserDate(account.suspendedUntil, timeZone)}`
+                : 'Sin fecha de expiración'}
+            </p>
+          </div>
+        ) : null}
       </div>
       <AdminUserActions account={account} suspensionEnabled={suspensionEnabled} />
     </article>
@@ -83,7 +100,10 @@ export function AdminUserDirectory({
   filters,
   timeZone,
 }: AdminUserDirectoryProps) {
-  const visibleUsers = filterAdminUsers(users, filters)
+  const effectiveFilters = suspensionEnabled
+    ? filters
+    : { ...filters, status: 'all' as const }
+  const visibleUsers = filterAdminUsers(users, effectiveFilters)
   const summary = {
     total: users.length,
     pro: users.filter(account => account.subscriptionTier === 'pro').length,
@@ -121,8 +141,10 @@ export function AdminUserDirectory({
         />
         <select
           name="status"
-          defaultValue={filters.status}
+          defaultValue={effectiveFilters.status}
           aria-label="Estado de cuenta"
+          aria-describedby={!suspensionEnabled ? 'suspension-status-unavailable' : undefined}
+          disabled={!suspensionEnabled}
           className="min-h-11 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500"
         >
           <option value="all">Todos los estados</option>
@@ -139,7 +161,7 @@ export function AdminUserDirectory({
           <option value="free">Free</option>
           <option value="pro">Pro</option>
         </select>
-        <Button type="submit" className="min-h-11">Filtrar</Button>
+        <Button type="submit" className="min-h-11 min-w-11">Filtrar</Button>
       </form>
 
       {!suspensionEnabled ? <SuspensionUnavailableNotice /> : null}

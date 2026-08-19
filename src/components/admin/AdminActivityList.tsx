@@ -28,7 +28,7 @@ export function AdminActivityList({ items, timeZone }: AdminActivityListProps) {
             <li key={item.id}>
               <PendingLink
                 href={item.href}
-                className="block rounded-2xl border border-border/60 bg-card/60 p-4 transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className="block min-h-11 min-w-11 rounded-2xl border border-border/60 bg-card/60 p-4 transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-violet-500"
               >
                 <p className="text-sm font-semibold text-foreground">{item.label}</p>
                 <time className="mt-1 block text-xs text-muted-foreground" dateTime={item.occurredAt}>

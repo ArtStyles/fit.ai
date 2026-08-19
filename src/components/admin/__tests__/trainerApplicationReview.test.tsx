@@ -20,6 +20,7 @@ vi.mock('@/lib/auth/admin', () => ({
 import {
   countAdminTrainerApplicationsRequiringAttention,
   getAdminTrainerApplication,
+  loadAdminTrainerApplications,
   listAdminTrainerApplications,
 } from '@/lib/auth/adminTrainers'
 import {
@@ -107,10 +108,62 @@ function queueService(
             error: null,
             eq() { return query },
             order() { return query },
+            range() { return query },
           }
           return query
         },
       }
+    },
+  }
+}
+
+function paginatedQueueService(rowCount: number) {
+  const rows = Array.from({ length: rowCount }, (_, index) => ({
+    ...projectedRow('id, professional_name, submitted_at, created_at, status, specialties, application_kind'),
+    id: `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111`,
+  }))
+  const ranges: Array<[number, number]> = []
+  const statusFilters: Array<[string, string]> = []
+  const orders: Array<[string, { ascending: boolean; nullsFirst?: boolean }]> = []
+  const projections: string[] = []
+
+  return {
+    ranges,
+    statusFilters,
+    orders,
+    projections,
+    service: {
+      from(table: string) {
+        if (table !== 'trainer_applications') throw new Error(`Unexpected queue table: ${table}`)
+        return {
+          select(columns: string) {
+            projectedRow(columns)
+            projections.push(columns)
+            const query = {
+              eq(column: string, value: string) {
+                statusFilters.push([column, value])
+                return query
+              },
+              order(column: string, options: { ascending: boolean; nullsFirst?: boolean }) {
+                orders.push([column, options])
+                return query
+              },
+              range(from: number, to: number) {
+                ranges.push([from, to])
+                return Promise.resolve({ data: rows.slice(from, to + 1), error: null })
+              },
+              then<TResult1 = unknown, TResult2 = never>(
+                onfulfilled?: ((value: { data: typeof rows; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+                onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+              ) {
+                return Promise.resolve({ data: rows.slice(0, 1000), error: null })
+                  .then(onfulfilled, onrejected)
+              },
+            }
+            return query
+          },
+        }
+      },
     },
   }
 }
@@ -240,6 +293,32 @@ describe('trainer administration privacy', () => {
     expect(html).not.toContain('storage.example.test')
   })
 
+  it('paginates the ordered private queue without losing the selected status', async () => {
+    const fixture = paginatedQueueService(1001)
+
+    const applications = await loadAdminTrainerApplications(
+      fixture.service as never,
+      'submitted',
+    )
+
+    expect(applications).toHaveLength(1001)
+    expect(fixture.ranges).toEqual([[0, 999], [1000, 1999]])
+    expect(fixture.statusFilters).toEqual([
+      ['status', 'submitted'],
+      ['status', 'submitted'],
+    ])
+    expect(fixture.orders).toEqual([
+      ['submitted_at', { ascending: false, nullsFirst: false }],
+      ['created_at', { ascending: false }],
+      ['submitted_at', { ascending: false, nullsFirst: false }],
+      ['created_at', { ascending: false }],
+    ])
+    expect(fixture.projections).toEqual([
+      'id, professional_name, submitted_at, created_at, status, specialties, application_kind',
+      'id, professional_name, submitted_at, created_at, status, specialties, application_kind',
+    ])
+  })
+
   it('counts only attention statuses for the admin navigation badge', async () => {
     const attentionFilters: string[][] = []
     const service = queueService(3, attentionFilters)
@@ -296,6 +375,15 @@ describe('trainer administration privacy', () => {
     expect(html).toContain('Lunes y miércoles después de las 15:00.')
     expect(html).toContain('Revisar la vigencia del certificado.')
     expect(html).toContain(`href="${application.credentials[0].url?.replaceAll('&', '&amp;')}"`)
+    const links = html.match(/<a\b[^>]*>/g) ?? []
+    const contactLink = links.find(link => link.includes('mailto:')) ?? ''
+    const credentialLink = links.find(link => link.includes('storage.example.test')) ?? ''
+    const interviewLink = links.find(link => link.includes('meet.example.test')) ?? ''
+    for (const link of [contactLink, credentialLink, interviewLink]) {
+      expect(link).toContain('min-h-11')
+      expect(link).toContain('min-w-11')
+      expect(link).toContain('focus-visible:ring-2')
+    }
     expect(html).not.toMatch(/peso|medidas corporales|plan de entrenamiento|progreso|precio|clientes/i)
   })
 
@@ -316,6 +404,9 @@ describe('trainer administration privacy', () => {
     expect(html).toContain('name="internalNote"')
     expect(html).toContain('name="proposedAt"')
     expect(html).toContain('name="externalUrl"')
+    const actionTargets = html.match(/<(?:button|summary)\b[^>]*>/g) ?? []
+    expect(actionTargets.length).toBeGreaterThan(0)
+    expect(actionTargets.every(target => target.includes('min-h-11'))).toBe(true)
     expect(html).not.toMatch(/enviar correo|chat privado|crear videollamada/i)
   })
 

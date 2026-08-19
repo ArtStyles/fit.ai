@@ -41,3 +41,23 @@ it('normalizes unknown query parameters and combines all approved filters', () =
   expect(filterAdminUsers(users, { query: 'ana', status: 'active', tier: 'pro' }).map(user => user.id))
     .toEqual(['ana-pro'])
 })
+
+it('uses the first repeated parameter and bounds the normalized search query', () => {
+  expect(normalizeAdminUserFilters({
+    q: ['  primera  ', 'segunda'],
+    status: ['suspended', 'active'],
+    tier: ['pro', 'free'],
+  })).toEqual({
+    query: 'primera',
+    status: 'suspended',
+    tier: 'pro',
+  })
+
+  expect(normalizeAdminUserFilters({
+    q: '1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890EXTRA',
+  })).toEqual({
+    query: '1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890',
+    status: 'all',
+    tier: 'all',
+  })
+})

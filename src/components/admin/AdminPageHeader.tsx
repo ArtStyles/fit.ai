@@ -14,7 +14,14 @@ export function AdminPageHeader({ eyebrow = 'Operaciones', title, description, b
   return (
     <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        {backHref && backLabel ? <PendingLink href={backHref}>{backLabel}</PendingLink> : null}
+        {backHref && backLabel ? (
+          <PendingLink
+            href={backHref}
+            className="inline-flex min-h-11 min-w-11 items-center rounded-md px-2 text-sm font-medium text-violet-300 outline-none hover:text-violet-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            {backLabel}
+          </PendingLink>
+        ) : null}
         <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-violet-300">{eyebrow}</p>
         <h1 className="mt-1 font-display text-3xl font-bold text-foreground">{title}</h1>
         {description ? <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p> : null}

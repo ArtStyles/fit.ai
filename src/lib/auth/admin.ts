@@ -36,6 +36,17 @@ export type AdminDashboardBannerData = {
   enabled: boolean
 }
 
+const ADMIN_AUTH_USERS_PAGE_SIZE = 200
+const ADMIN_PROFILE_ID_CHUNK_SIZE = 100
+
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = []
+  for (let index = 0; index < ids.length; index += ADMIN_PROFILE_ID_CHUNK_SIZE) {
+    chunks.push(ids.slice(index, index + ADMIN_PROFILE_ID_CHUNK_SIZE))
+  }
+  return chunks
+}
+
 function isExactTrainerMarketplaceE2EAdmin(user: User): boolean {
   const metadata = user.user_metadata as Record<string, unknown> | undefined
   return isTrainerMarketplacePilotGateEnabled(process.env)
@@ -89,28 +100,40 @@ export async function listAdminUsers(): Promise<AdminUsersData> {
 }
 
 export async function loadAdminUsers(service: AdminServiceClient): Promise<AdminUsersData> {
-  const [
-    { data: authData, error: authError },
-    { data: profiles, error: profileError },
-    { data: accessProfiles, error: accessError },
-  ] = await Promise.all([
-    service.auth.admin.listUsers({ page: 1, perPage: 200 }),
-    service
-      .from('profiles')
-      .select('id, full_name, username, avatar_url, subscription_tier'),
-    service
-      .from('profiles')
-      .select('id, account_status, suspension_reason, suspended_until'),
-  ])
-
-  if (authError || profileError) {
-    throw new Error(authError?.message ?? profileError?.message ?? 'No se pudieron cargar los usuarios.')
+  const authUsers: User[] = []
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await service.auth.admin.listUsers({
+      page,
+      perPage: ADMIN_AUTH_USERS_PAGE_SIZE,
+    })
+    if (error) throw new Error(error.message || 'No se pudieron cargar los usuarios.')
+    authUsers.push(...data.users)
+    if (data.users.length < ADMIN_AUTH_USERS_PAGE_SIZE) break
   }
 
+  const idChunks = chunkIds(authUsers.map(user => user.id))
+  const [profileResults, accessResults] = await Promise.all([
+    Promise.all(idChunks.map(ids => service
+      .from('profiles')
+      .select('id, full_name, username, avatar_url, subscription_tier')
+      .in('id', ids))),
+    Promise.all(idChunks.map(ids => service
+      .from('profiles')
+      .select('id, account_status, suspension_reason, suspended_until')
+      .in('id', ids))),
+  ])
+  const profileError = profileResults.find(result => result.error)?.error
+  if (profileError) throw new Error(profileError.message || 'No se pudieron cargar los usuarios.')
+
+  const accessError = accessResults.find(result => result.error)?.error
+  const profiles = profileResults.flatMap(result => result.data ?? [])
+  const accessProfiles = accessError
+    ? []
+    : accessResults.flatMap(result => result.data ?? [])
   const profileById = new Map((profiles ?? []).map(profile => [profile.id, profile]))
   const accessById = new Map((accessProfiles ?? []).map(profile => [profile.id, profile]))
 
-  const users = authData.users.map((user: User) => {
+  const users = authUsers.map((user: User) => {
     const profile = profileById.get(user.id)
     const access = accessById.get(user.id)
     const isOwner = isOwnerAdminEmail(user.email)

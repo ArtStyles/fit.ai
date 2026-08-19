@@ -9,6 +9,7 @@ vi.mock('@/components/navigation/PendingLink', () => ({
 }))
 
 import { AdminShell } from '../AdminShell'
+import { AdminPageHeader } from '../AdminPageHeader'
 
 describe('AdminShell', () => {
   it('renders admin-only desktop and mobile navigation with a real exit', () => {
@@ -26,5 +27,18 @@ describe('AdminShell', () => {
     expect(html).toContain('>3<')
     expect(html).toContain('id="app-main-content"')
     expect(html).not.toContain('WorkspaceSwitcher')
+  })
+
+  it('gives the shared page-header back link a focused 44px target', () => {
+    const html = renderToStaticMarkup(
+      <AdminPageHeader
+        title="Expediente privado"
+        backHref="/admin/trainers"
+        backLabel="Volver a entrenadores"
+      />,
+    )
+
+    expect(html).toMatch(/<a[^>]*href="\/admin\/trainers"[^>]*class="[^"]*min-h-11[^"]*min-w-11/)
+    expect(html).toContain('focus-visible:ring-2')
   })
 })

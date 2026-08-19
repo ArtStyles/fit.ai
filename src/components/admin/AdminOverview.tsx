@@ -46,7 +46,7 @@ export function AdminOverview({ data, timeZone }: AdminOverviewProps) {
       {typeof pendingApplications === 'number' && pendingApplications > 0 ? (
         <PendingLink
           href="/admin/trainers"
-          className="mt-4 block rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 transition-colors hover:bg-amber-500/10 focus:outline-none focus:ring-2 focus:ring-violet-500"
+          className="mt-4 block min-h-11 min-w-11 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 transition-colors hover:bg-amber-500/10 focus:outline-none focus:ring-2 focus:ring-violet-500"
         >
           <p className="text-sm font-semibold text-amber-100">Atención requerida</p>
           <p className="mt-1 text-sm text-amber-100/80">
@@ -64,7 +64,7 @@ export function AdminOverview({ data, timeZone }: AdminOverviewProps) {
             <PendingLink
               key={shortcut.href}
               href={shortcut.href}
-              className="rounded-2xl border border-border/60 bg-card/60 p-4 transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-violet-500"
+              className="min-h-11 min-w-11 rounded-2xl border border-border/60 bg-card/60 p-4 transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-violet-500"
             >
               <p className="font-semibold text-foreground">{shortcut.title}</p>
               <p className="mt-1 text-sm text-muted-foreground">{shortcut.description}</p>

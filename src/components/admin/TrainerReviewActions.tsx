@@ -30,8 +30,8 @@ type InterviewSummary = {
   status: 'proposed' | 'scheduled' | 'completed' | 'cancelled'
 }
 
-const fieldClass = 'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-violet-500'
-const noteClass = 'w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500'
+const fieldClass = 'min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-violet-500'
+const noteClass = 'min-h-11 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500'
 
 function feedbackId(action: ActionKey, field: string): string {
   return `trainer-${action}-${field}-error`
@@ -123,7 +123,7 @@ export function TrainerReviewActions({
 
   return (
     <details open={hasError || undefined} className="w-full max-w-3xl sm:w-auto">
-      <summary className="ml-auto flex h-10 w-fit cursor-pointer list-none items-center rounded-md border border-violet-500/30 bg-background px-4 text-sm font-medium hover:bg-accent">
+      <summary className="ml-auto flex min-h-11 min-w-11 w-fit cursor-pointer list-none items-center rounded-md border border-violet-500/30 bg-background px-4 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
         Gestionar revisión
       </summary>
       <div className="mt-4 max-h-[75vh] overflow-y-auto rounded-2xl border border-border/60 bg-background p-5 sm:w-[min(48rem,calc(100vw-2.5rem))]">
@@ -139,7 +139,7 @@ export function TrainerReviewActions({
             <input type="hidden" name="applicationId" value={applicationId} />
             <h3 className="font-semibold">Iniciar revisión</h3>
             <p className="mt-1 text-xs text-muted-foreground">Marca la solicitud enviada como revisión activa.</p>
-            <Button type="submit" disabled={!canStartReview || pendingAction === 'startReview'} className="mt-3 w-full">Iniciar revisión</Button>
+            <Button type="submit" disabled={!canStartReview || pendingAction === 'startReview'} className="mt-3 min-h-11 min-w-11 w-full">Iniciar revisión</Button>
             <ActionFeedback state={states.startReview} success="Revision iniciada." />
           </form>
 
@@ -164,7 +164,7 @@ export function TrainerReviewActions({
               <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
               <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
             </label>
-            <Button type="submit" disabled={!canDecide || pendingAction === 'requestChanges'} className="w-full">Solicitar cambios</Button>
+            <Button type="submit" disabled={!canDecide || pendingAction === 'requestChanges'} className="min-h-11 min-w-11 w-full">Solicitar cambios</Button>
             <ActionFeedback state={states.requestChanges} success="Cambios solicitados." />
           </form>
 
@@ -233,7 +233,7 @@ export function TrainerReviewActions({
                 <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
               </label>
             </div>
-            <Button type="submit" disabled={!canScheduleInterview || pendingAction === 'scheduleInterview'} className="w-full">Programar entrevista</Button>
+            <Button type="submit" disabled={!canScheduleInterview || pendingAction === 'scheduleInterview'} className="min-h-11 min-w-11 w-full">Programar entrevista</Button>
             <ActionFeedback state={scheduleState} success="Entrevista programada." />
           </form>
 
@@ -273,7 +273,7 @@ export function TrainerReviewActions({
                 <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
               </label>
             </div>
-            <Button type="submit" disabled={!pendingInterview || status !== 'interview_required' || pendingAction === 'recordOutcome'} className="w-full">Registrar resultado</Button>
+            <Button type="submit" disabled={!pendingInterview || status !== 'interview_required' || pendingAction === 'recordOutcome'} className="min-h-11 min-w-11 w-full">Registrar resultado</Button>
             <ActionFeedback state={outcomeState} success="Resultado registrado." />
           </form>
 
@@ -288,7 +288,7 @@ export function TrainerReviewActions({
               <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
               <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
             </label>
-            <Button type="submit" disabled={!canDecide || pendingAction === 'approve'} className="w-full bg-emerald-600 text-white hover:bg-emerald-500">Aprobar solicitud</Button>
+            <Button type="submit" disabled={!canDecide || pendingAction === 'approve'} className="min-h-11 min-w-11 w-full bg-emerald-600 text-white hover:bg-emerald-500">Aprobar solicitud</Button>
             <ActionFeedback state={states.approve} success="Aprobacion guardada." />
           </form>
 
@@ -299,7 +299,7 @@ export function TrainerReviewActions({
               <p className="text-xs text-muted-foreground">
                 Restablece solo el perfil profesional suspendido tras reactivar la cuenta global. No reanuda acompañamientos: cada cliente debe confirmarlo.
               </p>
-              <Button type="submit" disabled={pendingAction === 'reinstateProfile'} className="w-full" variant="outline">Restablecer perfil profesional</Button>
+              <Button type="submit" disabled={pendingAction === 'reinstateProfile'} className="min-h-11 min-w-11 w-full" variant="outline">Restablecer perfil profesional</Button>
               <ActionFeedback state={states.reinstateProfile} success="Perfil profesional restablecido." />
             </form>
           ) : null}
@@ -325,7 +325,7 @@ export function TrainerReviewActions({
               <span className="text-xs font-semibold text-muted-foreground">Nota interna</span>
               <textarea name="internalNote" maxLength={2000} rows={2} className={noteClass} />
             </label>
-            <Button type="submit" disabled={!canDecide || pendingAction === 'reject'} className="w-full">Rechazar solicitud</Button>
+            <Button type="submit" disabled={!canDecide || pendingAction === 'reject'} className="min-h-11 min-w-11 w-full">Rechazar solicitud</Button>
             <ActionFeedback state={states.reject} success="Rechazo guardado." />
           </form>
         </div>

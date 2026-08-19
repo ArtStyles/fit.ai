@@ -64,7 +64,7 @@ export function TrainerApplicationQueue({
           <select
             name="status"
             defaultValue={selectedStatus ?? ''}
-            className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-violet-500"
+            className="min-h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-violet-500"
           >
             <option value="">Todos los estados</option>
             {ADMIN_TRAINER_STATUSES.map(status => (
@@ -75,7 +75,7 @@ export function TrainerApplicationQueue({
         <SubmitButton
           label="Filtrar"
           pendingLabel="Filtrando"
-          className="h-11 bg-violet-500 text-white hover:bg-violet-400"
+          className="min-h-11 min-w-11 bg-violet-500 text-white hover:bg-violet-400"
         />
       </form>
 
@@ -110,7 +110,7 @@ export function TrainerApplicationQueue({
                 </div>
                 <PendingLink
                   href={`/admin/trainers/${application.id}`}
-                  className="inline-flex min-h-11 items-center justify-center rounded-md border border-border/60 px-4 text-sm font-medium transition-colors hover:bg-muted/30"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border/60 px-4 text-sm font-medium outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <UserRoundSearch className="mr-2 h-4 w-4" />
                   Abrir expediente
@@ -174,7 +174,7 @@ export function TrainerApplicationReview({
         <Card className="border-border/60 bg-card/50">
           <CardHeader><CardTitle className="text-lg">Contacto y disponibilidad</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="flex items-center gap-2"><Mail className="h-4 w-4 text-muted-foreground" /><a className="text-violet-300 hover:underline" href={`mailto:${application.contactEmail}`}>{application.contactEmail}</a></p>
+            <p className="flex items-center gap-2"><Mail className="h-4 w-4 text-muted-foreground" /><a className="inline-flex min-h-11 min-w-11 items-center rounded-md text-violet-300 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" href={`mailto:${application.contactEmail}`}>{application.contactEmail}</a></p>
             {application.contactPhone && <p className="flex items-center gap-2"><Phone className="h-4 w-4 text-muted-foreground" />{application.contactPhone}</p>}
             <p className="text-muted-foreground">Contacto preferido: {application.preferredContact}</p>
             <p className="text-muted-foreground">Zona horaria: {application.timezone}</p>
@@ -200,7 +200,7 @@ export function TrainerApplicationReview({
                 {credential.signedUrlExpiresInSeconds && <p className="mt-1 text-xs text-amber-200/80">El acceso temporal expira en 5 minutos.</p>}
               </div>
               {credential.url ? (
-                <a href={credential.url} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center rounded-md border border-border/60 px-4 text-sm font-medium hover:bg-muted/30">
+                <a href={credential.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border/60 px-4 text-sm font-medium outline-none hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                   Abrir credencial <ExternalLink className="ml-2 h-4 w-4" />
                 </a>
               ) : <span className="text-xs text-muted-foreground">Archivo no disponible</span>}
@@ -224,7 +224,7 @@ export function TrainerApplicationReview({
             <article key={interview.id} className="rounded-xl border border-border/60 p-4 text-sm">
               <p className="font-semibold">Entrevista · {INTERVIEW_MEDIUM_LABELS[interview.medium]}</p>
               <p className="mt-1 text-muted-foreground">{formatDate(interview.proposedAt, timeZone)} · {interview.timezone} · {interview.status}</p>
-              {interview.externalUrl && <a href={interview.externalUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center text-violet-300 hover:underline">Abrir enlace <ExternalLink className="ml-1.5 h-3.5 w-3.5" /></a>}
+              {interview.externalUrl && <a href={interview.externalUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-11 min-w-11 items-center rounded-md text-violet-300 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">Abrir enlace <ExternalLink className="ml-1.5 h-3.5 w-3.5" /></a>}
               {interview.publicNote && <p className="mt-2 text-muted-foreground">Nota pública: {interview.publicNote}</p>}
               {interview.internalNote && <p className="mt-2 rounded-lg bg-amber-500/5 px-3 py-2 text-amber-100/80">Nota interna: {interview.internalNote}</p>}
             </article>
