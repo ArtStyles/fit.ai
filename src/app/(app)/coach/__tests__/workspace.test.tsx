@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
 
 const { requireActiveTrainerContext, summaryRpc } = vi.hoisted(() => {
   const summaryRpc = vi.fn().mockResolvedValue({
@@ -42,6 +43,14 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }))
 
+function renderAuthenticatedPage(page: React.ReactNode): string {
+  return renderToStaticMarkup(
+    <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
+      {page}
+    </I18nProvider>,
+  )
+}
+
 describe('professional workspace routes', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -53,7 +62,7 @@ describe('professional workspace routes', () => {
   ] as const)('guards %s and renders its real empty state', async (modulePath, expectedText) => {
     const Page = (await import(modulePath)).default
 
-    const html = renderToStaticMarkup(await Page())
+    const html = renderAuthenticatedPage(await Page())
 
     expect(requireActiveTrainerContext).toHaveBeenCalledTimes(1)
     expect(html).toContain(expectedText)
@@ -106,7 +115,7 @@ describe('professional workspace routes', () => {
     })
     const Page = (await import('../profile/page')).default
 
-    const html = renderToStaticMarkup(await Page())
+    const html = renderAuthenticatedPage(await Page())
 
     expect(order[0]).toBe('guard')
     expect(order.slice(1)).toEqual(['query', 'query', 'query'])
@@ -182,7 +191,7 @@ describe('professional workspace routes', () => {
     })
     const Page = (await import('../profile/page')).default
 
-    const html = renderToStaticMarkup(await Page())
+    const html = renderAuthenticatedPage(await Page())
 
     expect(from).toHaveBeenCalledWith('trainer_application_events_public')
     expect(from).toHaveBeenCalledWith('trainer_interviews_applicant_public')
@@ -199,7 +208,7 @@ describe('professional workspace routes', () => {
   it('keeps the professional summary within the coach workspace', async () => {
     const Page = (await import('../page')).default
 
-    const html = renderToStaticMarkup(await Page())
+    const html = renderAuthenticatedPage(await Page())
 
     expect(html).not.toContain('href="/dashboard"')
   })
