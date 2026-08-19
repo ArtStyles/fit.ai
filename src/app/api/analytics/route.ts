@@ -8,12 +8,19 @@ const ANONYMOUS_COOKIE = 'fitai-anonymous-id'
 const ANONYMOUS_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const AGGREGATE_ANONYMOUS_ID = '00000000-0000-4000-8000-000000000000'
+const DATABASE_OWNED_SESSION_MILESTONES = new Set([
+  'first_session_completed',
+  'second_session_completed',
+])
 
 function invalidRequest() {
   return analyticsError('ANALYTICS_INVALID_EVENT', 400)
 }
 
-function analyticsError(code: 'ANALYTICS_INVALID_EVENT' | 'ANALYTICS_STORAGE_UNAVAILABLE', status: 400 | 500) {
+function analyticsError(
+  code: 'ANALYTICS_INVALID_EVENT' | 'ANALYTICS_AUTH_REQUIRED' | 'ANALYTICS_STORAGE_UNAVAILABLE',
+  status: 400 | 401 | 500,
+) {
   return NextResponse.json({
     error: { code, correlationId: crypto.randomUUID() },
   }, { status })
@@ -49,13 +56,20 @@ async function readBody(request: NextRequest): Promise<string | null> {
   return new TextDecoder('utf-8', { fatal: true }).decode(body)
 }
 
-async function serverUserId(): Promise<string | null> {
+type ServerAuth =
+  | { status: 'verified'; userId: string }
+  | { status: 'anonymous' | 'unavailable'; userId: null }
+
+async function serverAuth(): Promise<ServerAuth> {
   try {
     const supabase = await createClient()
     const { data, error } = await supabase.auth.getUser()
-    return error ? null : data.user?.id ?? null
+    if (error) return { status: 'unavailable', userId: null }
+    return data.user?.id
+      ? { status: 'verified', userId: data.user.id }
+      : { status: 'anonymous', userId: null }
   } catch {
-    return null
+    return { status: 'unavailable', userId: null }
   }
 }
 
@@ -83,6 +97,7 @@ export async function POST(request: NextRequest) {
 
   const event = sanitizeEvent(input)
   if (!event) return invalidRequest()
+  if (DATABASE_OWNED_SESSION_MILESTONES.has(event.name)) return invalidRequest()
 
   const aggregateEvent = isCoachAggregateEvent(event.name)
   const existingAnonymousId = aggregateEvent ? null : request.cookies.get(ANONYMOUS_COOKIE)?.value
@@ -91,9 +106,20 @@ export async function POST(request: NextRequest) {
     : existingAnonymousId && UUID_PATTERN.test(existingAnonymousId)
       ? existingAnonymousId
       : crypto.randomUUID()
-  const userId = aggregateEvent ? null : await serverUserId()
-  const localeValue = 'locale' in event.properties ? event.properties.locale : null
-  const pathValue = 'path' in event.properties ? event.properties.path : null
+  const auth = aggregateEvent
+    ? { status: 'anonymous', userId: null } as const
+    : await serverAuth()
+  if (
+    event.name === 'pro_interest_submitted'
+    && event.properties.authenticated === true
+    && auth.status !== 'verified'
+  ) return analyticsError('ANALYTICS_AUTH_REQUIRED', 401)
+
+  const properties = 'authenticated' in event.properties
+    ? { ...event.properties, authenticated: auth.status === 'verified' }
+    : event.properties
+  const localeValue = 'locale' in properties ? properties.locale : null
+  const pathValue = 'path' in properties ? properties.path : null
   const locale = localeValue === 'es' || localeValue === 'en'
     ? localeValue
     : null
@@ -104,10 +130,10 @@ export async function POST(request: NextRequest) {
     const { error } = await service.from('product_events').insert({
       event_name: event.name,
       anonymous_id: anonymousId,
-      user_id: userId,
+      user_id: auth.userId,
       locale,
       path,
-      properties: event.properties,
+      properties,
     })
     if (error) return analyticsError('ANALYTICS_STORAGE_UNAVAILABLE', 500)
   } catch {

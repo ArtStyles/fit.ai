@@ -88,6 +88,12 @@ describe('active session wiring contracts', () => {
     expect(completion).not.toMatch(/error instanceof Error \? error\.message/)
   })
 
+  it('leaves authoritative completion milestones to the committed database insert', () => {
+    expect(completion).toContain('const sessionFinishedAt = finishedAt || Date.now()')
+    expect(completion).toContain('finishedAt: sessionFinishedAt')
+    expect(completion).not.toMatch(/completionAnalyticsForSavedSession|recordSessionCompletionMilestone|trackEvent/)
+  })
+
   it('renders previous performance immediately before set controls', () => {
     const previous = exerciseHeader.indexOf('<PreviousPerformance')
     const header = exerciseCard.indexOf('<ActiveSetFocus')

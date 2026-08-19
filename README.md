@@ -159,12 +159,14 @@ Aplica las migraciones SQL en este orden:
 047_product_notification_preferences_insert.sql
 048_profile_weight_measurement_sync.sql
 049_trainer_iso_weekday_repair.sql
+050_product_events_conversion_funnel.sql
 ```
 
 Para el marketplace de entrenadores, desplegar primero la base de datos y
 después una aplicación compatible. La `049_trainer_iso_weekday_repair.sql` debe
 permanecer como la última capa correctiva tras cualquier reaplicación de
-`043_trainer_programming.sql` o `045_trainer_hardening.sql`.
+`043_trainer_programming.sql` o `045_trainer_hardening.sql`; a continuación se
+aplica `050_product_events_conversion_funnel.sql`, la última migración global.
 
 Las migraciones de continuidad se despliegan en orden y **primero en base de
 datos**: `036_completed_session_context.sql` → `037_atomic_plan_lifecycle.sql`

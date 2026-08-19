@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   sanitizeEvent,
+  normalizeAnalyticsPath,
   trackEvent,
+  trackEventConfirmed,
   type AnalyticsEventName,
   type AnalyticsEventProperties,
 } from '../events'
@@ -17,8 +19,12 @@ const EVENT_NAMES: AnalyticsEventName[] = [
   'plan_generated',
   'first_session_started',
   'first_session_completed',
+  'second_session_completed',
   'plan_adjustment_used',
   'organic_page_cta_clicked',
+  'paywall_viewed',
+  'checkout_started',
+  'pro_interest_submitted',
   'coach_overview_viewed',
   'coach_client_insights_viewed',
   'coach_alert_filter_used',
@@ -52,8 +58,36 @@ afterEach(() => {
 })
 
 describe('sanitizeEvent', () => {
-  it.each(EVENT_NAMES)('accepts the exact event union member %s', name => {
+  const clientOptionalEventNames = EVENT_NAMES.filter(name => ![
+    'second_session_completed',
+    'paywall_viewed',
+    'checkout_started',
+    'pro_interest_submitted',
+  ].includes(name))
+
+  it.each(clientOptionalEventNames)('accepts the exact event union member %s', name => {
     expect(sanitizeEvent({ name, properties: {} })).toEqual({ name, properties: {} })
+  })
+
+  it.each([
+    ['second_session_completed', { path: '/session', authenticated: true, duration_bucket: 'medium' }],
+    ['paywall_viewed', { path: '/pricing', source: 'pricing', screen: 'pricing', authenticated: false }],
+    ['checkout_started', { path: '/pricing', source: 'pricing', screen: 'pricing', authenticated: true }],
+    ['pro_interest_submitted', { path: '/pricing', source: 'pricing', screen: 'pricing', authenticated: true }],
+  ] as const)('accepts the canonical required contract for %s', (name, properties) => {
+    expect(sanitizeEvent({ name, properties })).toEqual({ name, properties })
+  })
+
+  it.each([
+    ['second_session_completed', {}],
+    ['second_session_completed', { path: '/pricing', authenticated: true, duration_bucket: 'medium' }],
+    ['second_session_completed', { path: '/session', authenticated: false, duration_bucket: 'medium' }],
+    ['paywall_viewed', {}],
+    ['paywall_viewed', { path: '/session', source: 'pricing', screen: 'pricing', authenticated: false }],
+    ['checkout_started', { path: '/pricing', source: 'landing', screen: 'pricing', authenticated: true }],
+    ['pro_interest_submitted', { path: '/pricing', source: 'pricing', screen: 'onboarding', authenticated: true }],
+  ] as const)('rejects incomplete or cross-attributed %s properties', (name, properties) => {
+    expect(sanitizeEvent({ name, properties })).toBeNull()
   })
 
   it.each([
@@ -123,6 +157,10 @@ describe('sanitizeEvent', () => {
     ['signup_completed', { source: 'landing' }],
     ['onboarding_step_completed', { locale: 'es' }],
     ['first_session_completed', { stage: 'confirmation' }],
+    ['second_session_completed', { source: 'pricing' }],
+    ['paywall_viewed', { duration_bucket: 'short' }],
+    ['checkout_started', { stage: 'profile' }],
+    ['pro_interest_submitted', { period_weeks: 4 }],
     ['coach_overview_viewed', { measurements_shared: false }],
     ['coach_client_insights_viewed', { measurements_shared: false }],
   ] as const)('rejects properties outside the exact schema for %s', (name, properties) => {
@@ -238,7 +276,18 @@ describe('AnalyticsEventProperties typing', () => {
     const unsafeOverview: AnalyticsEventProperties['coach_overview_viewed'] = { client_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
     // @ts-expect-error a landing view cannot carry onboarding stage data.
     const unsafeLanding: AnalyticsEventProperties['landing_view'] = { stage: 'profile' }
-    expect([unsafeOverview, unsafeLanding]).toHaveLength(2)
+    // @ts-expect-error pricing interest requires source, screen and authentication state.
+    const incompleteProInterest: AnalyticsEventProperties['pro_interest_submitted'] = {}
+    expect([unsafeOverview, unsafeLanding, incompleteProInterest]).toHaveLength(3)
+  })
+
+  it('requires properties when calling strict event contracts', () => {
+    const assertStrictCall = () => {
+      // @ts-expect-error Pro interest cannot be called without its required properties.
+      void trackEvent('pro_interest_submitted')
+    }
+
+    expect(assertStrictCall).toBeTypeOf('function')
   })
 })
 
@@ -296,10 +345,14 @@ describe('trackEvent', () => {
     const fetchMock = vi.fn()
     globalThis.fetch = fetchMock
 
-    await trackEvent('landing_view')
+    await trackEvent('landing_view', {})
 
     expect(sendBeacon).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('normalizes a session detail path without retaining its workout identifier', () => {
+    expect(normalizeAnalyticsPath('/session/workout-123')).toBe('/session')
   })
 
   it('does not append a dynamic pathname to a coach insight aggregate event', async () => {
@@ -329,7 +382,7 @@ describe('trackEvent', () => {
     const sendBeacon = vi.fn(() => true)
     setNavigator({ sendBeacon })
 
-    await trackEvent('landing_view')
+    await trackEvent('landing_view', {})
 
     expect(sendBeacon).not.toHaveBeenCalled()
   })
@@ -340,5 +393,45 @@ describe('trackEvent', () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('offline'))
 
     await expect(trackEvent('onboarding_abandoned', { stage: 'profile' })).resolves.toBeUndefined()
+  })
+})
+
+describe('trackEventConfirmed', () => {
+  it('waits for an accepted same-origin response without using sendBeacon', async () => {
+    setBrowser('/pricing')
+    const sendBeacon = vi.fn(() => true)
+    setNavigator({ sendBeacon })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
+    globalThis.fetch = fetchMock
+
+    await expect(trackEventConfirmed('pro_interest_submitted', {
+      source: 'pricing',
+      screen: 'pricing',
+      authenticated: true,
+    })).resolves.toBe(true)
+
+    expect(sendBeacon).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledWith('/api/analytics', expect.objectContaining({
+      method: 'POST',
+      credentials: 'same-origin',
+    }))
+  })
+
+  it.each([
+    { fetchResult: new Response(null, { status: 200 }), label: 'storage returns a non-contract 2xx response' },
+    { fetchResult: new Response(null, { status: 500 }), label: 'storage rejects the event' },
+    { fetchResult: new Error('offline'), label: 'the network fails' },
+  ])('returns false when $label', async ({ fetchResult }) => {
+    setBrowser('/pricing')
+    setNavigator({ sendBeacon: vi.fn(() => true) })
+    globalThis.fetch = fetchResult instanceof Error
+      ? vi.fn().mockRejectedValue(fetchResult)
+      : vi.fn().mockResolvedValue(fetchResult)
+
+    await expect(trackEventConfirmed('pro_interest_submitted', {
+      source: 'pricing',
+      screen: 'pricing',
+      authenticated: true,
+    })).resolves.toBe(false)
   })
 })

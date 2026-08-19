@@ -21,6 +21,7 @@ const trainerMigrationFiles = [
   '047_product_notification_preferences_insert.sql',
   '048_profile_weight_measurement_sync.sql',
   '049_trainer_iso_weekday_repair.sql',
+  '050_product_events_conversion_funnel.sql',
 ]
 const migrationPath = file => path.join(repoRoot, 'supabase', 'migrations', file)
 const readMigration = file => readFileSync(migrationPath(file), 'utf8')
@@ -28,6 +29,7 @@ const isoWeekdayMigrationFile = '049_trainer_iso_weekday_repair.sql'
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
 const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '049_trainer_iso_weekday_repair_test.sql')
+const conversionFunnelTestPath = path.join(repoRoot, 'supabase', 'tests', '050_product_events_conversion_funnel_test.sql')
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
@@ -61,6 +63,61 @@ INSERT INTO public.professional_audit_logs (
     'https://storage.example.test/private/path',
     jsonb_build_object('notes', 'legacy private note')
   );
+`
+
+const legacyConversionHistorySql = `
+BEGIN;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('f5000000-0000-4000-8000-000000000001', 'conversion-existing@example.test', '{}'::JSONB);
+INSERT INTO public.profiles (id, full_name, onboarding_done, account_status) VALUES
+  ('f5000000-0000-4000-8000-000000000001', 'Conversion existing user', TRUE, 'active');
+INSERT INTO public.progress_logs (id, user_id, completed_at, duration_minutes) VALUES
+  ('f5000000-0000-4000-8000-000000000101', 'f5000000-0000-4000-8000-000000000001', NOW() - INTERVAL '1 day', 20);
+COMMIT;
+`
+
+const conversionFunnelRerunFixtureSql = `
+BEGIN;
+INSERT INTO public.progress_logs (id, user_id, completed_at, duration_minutes) VALUES
+  ('f5000000-0000-4000-8000-000000000102', 'f5000000-0000-4000-8000-000000000001', NOW() - INTERVAL '1 minute', 42),
+  ('f5000000-0000-4000-8000-000000000103', 'f5000000-0000-4000-8000-000000000001', NOW(), 80);
+COMMIT;
+`
+
+const conversionFunnelRerunVerifySql = `
+DO $$
+BEGIN
+  IF (SELECT COUNT(*) FROM public.progress_logs WHERE user_id = 'f5000000-0000-4000-8000-000000000001') <> 3 THEN
+    RAISE EXCEPTION 'migration 050 rerun changed committed session history';
+  END IF;
+  IF (SELECT completed_count FROM private.session_completion_analytics_state WHERE user_id = 'f5000000-0000-4000-8000-000000000001') <> 3 THEN
+    RAISE EXCEPTION 'migration 050 rerun changed the authoritative completion ordinal';
+  END IF;
+  IF (SELECT COUNT(*) FROM public.product_events WHERE user_id = 'f5000000-0000-4000-8000-000000000001') <> 1
+     OR (SELECT event_name FROM public.product_events WHERE user_id = 'f5000000-0000-4000-8000-000000000001') <> 'second_session_completed' THEN
+    RAISE EXCEPTION 'migration 050 rerun duplicated or removed the committed milestone';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.product_events
+    WHERE user_id = 'f5000000-0000-4000-8000-000000000001'
+      AND (
+        path <> '/session'
+        OR properties - ARRAY['path', 'authenticated', 'duration_bucket'] <> '{}'::JSONB
+        OR properties::TEXT LIKE '%f5000000-%'
+      )
+  ) THEN
+    RAISE EXCEPTION 'migration 050 persisted a non-canonical or identifying milestone payload';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.product_events'::regclass
+      AND conname IN ('product_events_event_name_check', 'product_events_path_check')
+      AND NOT convalidated
+  ) THEN
+    RAISE EXCEPTION 'migration 050 rerun left an unvalidated product event constraint';
+  END IF;
+END;
+$$;
 `
 
 const legacyIsoWeekdayFixturesSql = `
@@ -768,7 +825,7 @@ BEGIN
   SELECT snapshot INTO before_snapshot FROM public.trainer_migration_rerun_snapshot;
   SELECT public.capture_trainer_migration_rerun_snapshot() INTO after_snapshot;
   IF before_snapshot IS DISTINCT FROM after_snapshot THEN
-    RAISE EXCEPTION 'migrations 040-049 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
+    RAISE EXCEPTION 'migrations 040-050 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
   END IF;
 END $$;
 DROP TABLE public.trainer_migration_rerun_snapshot;
@@ -878,16 +935,20 @@ try {
   runPsql(assertIsoWeekdayRepairRollbackSql, 'verifying string workout scalar failure rolled back atomically')
   runPsql(removeMalformedIsoWorkoutScalarFixtureSql, 'removing only the malformed workout scalar fixture')
   runPsql(readMigration(isoWeekdayMigrationFile), 'applying migration 049 ISO weekday repair')
-  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 049')
+  runPsql(legacyConversionHistorySql, 'seeding pre-050 conversion history')
+  runPsql(readMigration('050_product_events_conversion_funnel.sql'), 'applying migration 050 conversion funnel events')
+  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 050')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
-  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against migration 049')
+  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against migration 050')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
   const isoTapOutput = runPsql(readFileSync(isoWeekdayTestPath, 'utf8'), 'running 049 ISO weekday repair pgTAP suite')
   if (/^\s*not ok\b/m.test(isoTapOutput) || /# Looks like you (?:failed|planned)\b/.test(isoTapOutput)) throw new Error('049 pgTAP reported one or more failed assertions')
+  const conversionTapOutput = runPsql(readFileSync(conversionFunnelTestPath, 'utf8'), 'running 050 conversion funnel pgTAP suite')
+  if (/^\s*not ok\b/m.test(conversionTapOutput) || /# Looks like you (?:failed|planned)\b/.test(conversionTapOutput)) throw new Error('050 pgTAP reported one or more failed assertions')
   const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
   if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-049')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-050')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
@@ -898,13 +959,16 @@ try {
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
     trainerMigrationFiles.map(readMigration).join('\n'),
-    'reapplying migrations 040-049 after locked professional data',
+    'reapplying migrations 040-050 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
+  runPsql(conversionFunnelRerunFixtureSql, 'seeding committed conversion rerun fixture')
+  runPsql(readMigration('050_product_events_conversion_funnel.sql'), 'reapplying migration 050 against committed conversion rows')
+  runPsql(conversionFunnelRerunVerifySql, 'verifying conversion rows after migration 050 rerun')
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-049 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-050 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

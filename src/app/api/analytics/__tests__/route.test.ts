@@ -108,6 +108,24 @@ describe('POST /api/analytics', () => {
     expect(createServiceClientMock).not.toHaveBeenCalled()
   })
 
+  it.each(['first_session_completed', 'second_session_completed'])(
+    'rejects client-authored %s because session milestones are database-owned',
+    async name => {
+      const response = await POST(request({
+        name,
+        properties: {
+          path: '/session',
+          authenticated: true,
+          duration_bucket: 'medium',
+        },
+      }))
+
+      expect(response.status).toBe(400)
+      expect(createClientMock).not.toHaveBeenCalled()
+      expect(createServiceClientMock).not.toHaveBeenCalled()
+    },
+  )
+
   it('derives the user id server-side and inserts only the sanitized event', async () => {
     const { getUser, from, insert } = installSupabaseMocks()
     const event = {
@@ -136,6 +154,47 @@ describe('POST /api/analytics', () => {
       properties: event.properties,
     })
     expect(response.headers.get('set-cookie')).toBeNull()
+  })
+
+  it('derives authenticated Pro interest from the verified server user', async () => {
+    const { insert } = installSupabaseMocks()
+
+    const response = await POST(request({
+      name: 'pro_interest_submitted',
+      properties: {
+        path: '/pricing',
+        source: 'pricing',
+        screen: 'pricing',
+        authenticated: false,
+      },
+    }))
+
+    expect(response.status).toBe(202)
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      user_id: 'server-user-id',
+      properties: expect.objectContaining({ authenticated: true }),
+    }))
+  })
+
+  it.each([
+    { userId: '', authError: null, label: 'the session is absent' },
+    { userId: '', authError: new Error('auth unavailable'), label: 'authentication cannot be verified' },
+  ])('rejects authenticated Pro interest when $label', async ({ userId, authError }) => {
+    const { insert } = installSupabaseMocks({ userId, authError })
+
+    const response = await POST(request({
+      name: 'pro_interest_submitted',
+      properties: {
+        path: '/pricing',
+        source: 'pricing',
+        screen: 'pricing',
+        authenticated: true,
+      },
+    }))
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toMatchObject({ error: { code: 'ANALYTICS_AUTH_REQUIRED' } })
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it('stores an anonymous event when auth lookup fails', async () => {

@@ -43,7 +43,7 @@ const duplicateMigrationPrefixes = (files: string[]) => {
     prefixes.filter((prefix, index) => prefixes.indexOf(prefix) !== index),
   ))
 }
-const releaseMigrationFiles = migrationFiles.filter((file) => /^0(?:4\d)_/.test(file))
+const releaseMigrationFiles = migrationFiles.filter((file) => /^(?:04\d|050)_/.test(file))
 
 describe('trainer migration rerun contract', () => {
   it('assigns every production migration a unique numeric prefix', () => {
@@ -64,7 +64,7 @@ describe('trainer migration rerun contract', () => {
     ])).toEqual(['039', '050'])
   })
 
-  it('keeps the production migrations in the exact 040-049 order', () => {
+  it('keeps the production migrations in the exact 040-050 order', () => {
     expect(releaseMigrationFiles).toEqual([
       '040_trainer_foundations.sql',
       '041_trainer_verification.sql',
@@ -76,6 +76,7 @@ describe('trainer migration rerun contract', () => {
       '047_product_notification_preferences_insert.sql',
       '048_profile_weight_measurement_sync.sql',
       '049_trainer_iso_weekday_repair.sql',
+      '050_product_events_conversion_funnel.sql',
     ])
   })
 
@@ -103,8 +104,8 @@ describe('trainer migration rerun contract', () => {
 
   it('reapplies the ISO repair after every historical trainer routine', () => {
     expect(isoRepair).toMatch(/RETURN 49/i)
-    expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_product_notification_preferences_insert\.sql[\s\S]+048_profile_weight_measurement_sync\.sql[\s\S]+049_trainer_iso_weekday_repair\.sql/i)
-    expect(trainerRunner).toMatch(/trainerMigrationFiles\.map\(readMigration\)[\s\S]+reapplying migrations 040-049/i)
+    expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_product_notification_preferences_insert\.sql[\s\S]+048_profile_weight_measurement_sync\.sql[\s\S]+049_trainer_iso_weekday_repair\.sql[\s\S]+050_product_events_conversion_funnel\.sql/i)
+    expect(trainerRunner).toMatch(/trainerMigrationFiles\.map\(readMigration\)[\s\S]+reapplying migrations 040-050/i)
   })
 
   it('compares proposal and revision materializations to canonical snapshot order/day pairs', () => {

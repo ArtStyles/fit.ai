@@ -80,7 +80,7 @@ Validar solo presencia y alcance; nunca imprimir valores:
 
 6. Eliminar `trainer-predeploy.catalog` al cerrar la verificación conforme a la política temporal aprobada. Si descifrado, catálogo, restauración o controles de acceso/cifrado fallan, detener el despliegue.
 
-## Orden de migración 040–049
+## Orden de migración 040–050
 
 Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 
@@ -94,6 +94,17 @@ Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 8. `047_product_notification_preferences_insert.sql`
 9. `048_profile_weight_measurement_sync.sql`
 10. `049_trainer_iso_weekday_repair.sql`
+11. `050_product_events_conversion_funnel.sql`
+
+Programar la 050 en una ventana de bajo tráfico o mantenimiento. La migración
+toma un bloqueo `SHARE ROW EXCLUSIVE` sobre `public.progress_logs` antes del
+backfill y la instalación del trigger, por lo que las escrituras de sesiones
+activas pueden quedar en espera o agotar su timeout hasta que termine la
+transacción. Durante la ejecución, vigilar sesiones en espera y bloqueos de
+`progress_logs` mediante `pg_stat_activity` y `pg_locks`; si la migración falla,
+dejar que la transacción revierta por completo antes de reintentar. Los guardados
+de sesión y la propia 050 son idempotentes, así que una operación interrumpida
+puede reintentarse con seguridad una vez liberado el bloqueo.
 
 Antes de aplicar la 049, pausar nuevas propuestas y publicaciones de revisiones
 profesionales, y mantener suspendidas las invitaciones. Esperar a que concluyan
@@ -116,7 +127,7 @@ pnpm lint
 
 Usar `pnpm test:db:trainers` como puerta funcional y de autorización, y
 `pnpm test:db:trainer-security` como puerta de seguridad repetida tres veces.
-Ambos ejercitan el runner que aplica y verifica el estado 040–049 completo.
+Ambos ejercitan el runner que aplica y verifica el estado 040–050 completo.
 
 En el proyecto enlazado de staging:
 
@@ -127,7 +138,7 @@ supabase db push --linked
 supabase migration list --linked
 ```
 
-El `dry-run` y la lista final deben mostrar 040–049 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
+El `dry-run` y la lista final deben mostrar 040–050 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
 
 ## Preflight remoto de solo lectura
 
@@ -277,15 +288,15 @@ La retención futura requiere diseño y migración independiente con revisión l
 
 ## Rollback
 
-Las migraciones 040–049 son aditivas. Tras un despliegue exitoso de la 049,
+Las migraciones 040–050 son aditivas. Tras un despliegue exitoso de la 050,
 el rollback es solo hacia delante: no ejecutar una down migration destructiva,
 no eliminar tablas/columnas, no borrar auditoría y nunca restaurar la
 sustracción defectuosa de días.
 
-Procedimiento posterior a la 049:
+Procedimiento posterior a la 050:
 
 1. Detener invitaciones, nuevas propuestas y publicaciones de revisiones.
-2. Mantener aplicadas las migraciones hasta la 049 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
+2. Mantener aplicadas las migraciones hasta la 050 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
 3. Confirmar que Comunidad sigue apagada y que pagos, precios, chat, reseñas y planes comerciales permanecen ocultos.
 4. Investigar con conteos agregados y ensayar cualquier restauración de respaldo en aislamiento; no restaurar producción sin la decisión explícita por la posible pérdida de cambios posteriores.
 5. Corregir hacia delante con una migración revisada y repetir preflight, auditoría ISO y smoke antes de reabrir publicaciones.
@@ -294,4 +305,4 @@ Esta versión no define una bandera global del marketplace. No asumir que una va
 
 ## Cierre del despliegue
 
-El responsable firma la salida solo si respaldo/restauración, orden 040–049, preflight 49, divergencias ISO profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de plan, pérdida de evidencia o fallo de revocación detiene el piloto.
+El responsable firma la salida solo si respaldo/restauración, orden 040–050, preflight 49, divergencias ISO profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de plan, pérdida de evidencia o fallo de revocación detiene el piloto.

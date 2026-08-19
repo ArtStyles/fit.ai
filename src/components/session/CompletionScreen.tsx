@@ -128,11 +128,12 @@ export function CompletionScreen({
     setSaveError(null)
 
     try {
+      const sessionFinishedAt = finishedAt || Date.now()
       const result = await saveSession({
         clientSessionId,
         workoutId,
         startedAt,
-        finishedAt: finishedAt || Date.now(),
+        finishedAt: sessionFinishedAt,
         moodRating,
         prescriptionLocked,
         exercises: exercises.map(exercise => ({
@@ -163,11 +164,12 @@ export function CompletionScreen({
         return
       }
 
+      const savedProgressLogId = result.progressLogId
       requestGateRef.current.commit(requestToken, () => {
-        serverSavedRef.current = result.progressLogId
+        serverSavedRef.current = savedProgressLogId
         setPrs(result.prs)
         setProgressions(result.progressions)
-        setProgressLogId(result.progressLogId)
+        setProgressLogId(savedProgressLogId)
 
         const cleanupResult = onClearBackup()
         const cleanupEvent = syncEventForStorageResult('delete', cleanupResult)

@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 }
 
-const EARLY_ACCESS_PLANS = new Set(['pro-monthly', 'pro-annual'])
+const EARLY_ACCESS_PLANS = new Set(['pro-early-access', 'pro-monthly', 'pro-annual'])
 
 const PAGE_COPY: Record<AppLanguage, {
   signIn: string

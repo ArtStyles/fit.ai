@@ -37,7 +37,7 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
     ],
     safety: {
       title: 'Un plan debe respetar tu contexto.',
-      body: 'Vekira considera equipo, duración y restricciones declaradas. No sustituye orientación médica.',
+      body: 'Vekira combina progresión, historial, carga registrada y restricciones declaradas. Pro está en beta, sin cobros todavía. No sustituye orientación médica.',
     },
     faqTitle: 'Preguntas frecuentes',
     faq: [
@@ -78,7 +78,7 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
     ],
     safety: {
       title: 'A plan should respect your context.',
-      body: 'Vekira considers equipment, duration, and declared restrictions. It does not replace medical guidance.',
+      body: 'Vekira combines progression, history, logged load, and declared restrictions. Pro is in beta, with no charges yet. It does not replace medical guidance.',
     },
     faqTitle: 'Frequently asked questions',
     faq: [
