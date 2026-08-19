@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState } from 'react'
 import { Heart, MessageCircle, UserCheck, UserPlus } from 'lucide-react'
 import {
   updateSocialNotificationPreferences,
@@ -9,6 +9,12 @@ import {
 import { useToast } from '@/components/feedback/ToastProvider'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { SettingsSection } from '@/components/settings/SettingsSection'
+import { SettingsSwitchRow } from '@/components/settings/SettingsSwitchRow'
+import {
+  createSingleFlight,
+  persistOptimisticPreference,
+} from '@/components/settings/notificationPreferenceFeedback'
 
 type PreferenceKey = keyof SocialNotificationPreferencesInput
 
@@ -30,68 +36,82 @@ export function SocialNotificationPreferences({
   initialPreferences: SocialNotificationPreferencesInput
 }) {
   const [preferences, setPreferences] = useState(initialPreferences)
-  const [pending, startTransition] = useTransition()
+  const [saving, setSaving] = useState(false)
+  const persistence = useRef(createSingleFlight()).current
+  const [statusMessage, setStatusMessage] = useState('')
   const { showToast } = useToast()
   const { t } = useI18n()
 
   function toggle(key: PreferenceKey) {
-    const next = { ...preferences, [key]: !preferences[key] }
+    if (persistence.isPending) return
+    const previous = { ...preferences }
+    const next = { ...previous, [key]: !previous[key] }
     setPreferences(next)
-    startTransition(async () => {
-      const result = await updateSocialNotificationPreferences(next)
-      if (!result.ok) {
-        setPreferences(preferences)
-        showToast({ title: result.error, variant: 'error' })
-      }
-    })
+    setSaving(true)
+    void persistence.run(() => persistOptimisticPreference({
+        previous,
+        next,
+        save: updateSocialNotificationPreferences,
+        fallbackError: t('No se pudieron guardar las preferencias.'),
+        onRollback: (restored, error) => {
+          const message = t(error)
+          setPreferences(restored)
+          setStatusMessage(message)
+          showToast({ title: message, variant: 'error' })
+        },
+        onSuccess: () => {
+          const message = t('Preferencias guardadas')
+          setStatusMessage(message)
+          showToast({ title: message, variant: 'success' })
+        },
+      })).finally(() => setSaving(false))
   }
 
   return (
-    <section className="rounded-2xl border border-border/60 bg-muted/10 p-5">
-      <div>
-        <p className="text-sm font-semibold text-foreground">{t('Actividad social')}</p>
-        <p className="text-xs text-muted-foreground">{t('Push en la app instalada')}</p>
-      </div>
-
-      <div className="mt-4 divide-y divide-border/50">
+    <SettingsSection title={t('Actividad social')} description={t('Push en la app instalada')}>
+      <p className="sr-only" role="status" aria-live="polite">{statusMessage}</p>
+      <div className="space-y-3">
         {OPTIONS.map(option => {
           const Icon = option.icon
           const enabled = preferences[option.key]
           return (
-            <div key={option.key} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-              <div className="flex min-w-0 items-start gap-3">
-                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background/70 text-muted-foreground">
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{t(option.label)}</p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">{t(option.description)}</p>
-                </div>
-              </div>
-              <button
+            <SettingsSwitchRow
+              key={option.key}
+              title={t(option.label)}
+              description={t(option.description)}
+              icon={<Icon className="h-4 w-4" />}
+              control={(
+                <button
                 type="button"
                 role="switch"
                 aria-checked={enabled}
                 aria-label={`${t(enabled ? 'Desactivar' : 'Activar')} ${t(option.label)}`}
                 onClick={() => toggle(option.key)}
-                disabled={pending}
+                disabled={saving}
                 className={cn(
-                  'relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
-                  enabled ? 'bg-violet-500' : 'bg-muted/50',
-                  pending && 'opacity-60',
+                  'flex h-11 w-12 min-h-11 min-w-11 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500',
+                  saving && 'opacity-60',
                 )}
               >
                 <span
                   className={cn(
-                    'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
-                    enabled ? 'translate-x-5' : 'translate-x-0',
+                    'relative block h-7 w-12 rounded-full transition-colors',
+                    enabled ? 'bg-violet-500' : 'bg-muted/50',
                   )}
-                />
-              </button>
-            </div>
+                >
+                  <span
+                    className={cn(
+                      'absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                      enabled ? 'translate-x-5' : 'translate-x-0',
+                    )}
+                  />
+                </span>
+                </button>
+              )}
+            />
           )
         })}
       </div>
-    </section>
+    </SettingsSection>
   )
 }

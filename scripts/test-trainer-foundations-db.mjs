@@ -10,6 +10,12 @@ const image = process.env.TRAINER_FOUNDATIONS_DB_IMAGE
 const container = `fitai-trainer-foundations-db-${process.pid}-${Date.now().toString(36)}`
 const migrationPath = path.join(repoRoot, 'supabase', 'migrations', '040_trainer_foundations.sql')
 const testPath = path.join(repoRoot, 'supabase', 'tests', '040_trainer_foundations_test.sql')
+const preferenceInsertMigrationPath = path.join(
+  repoRoot, 'supabase', 'migrations', '047_product_notification_preferences_insert.sql',
+)
+const preferenceInsertTestPath = path.join(
+  repoRoot, 'supabase', 'tests', '047_product_notification_preferences_insert_test.sql',
+)
 
 const bootstrapSql = `
 GRANT anon, authenticated, service_role TO postgres;
@@ -131,6 +137,15 @@ try {
 
   if (/^not ok\b/m.test(tapOutput) || /# Looks like you failed\b/.test(tapOutput)) {
     throw new Error('pgTAP reported one or more failed assertions')
+  }
+
+  runPsql(readFileSync(preferenceInsertMigrationPath, 'utf8'), 'applying migration 047')
+  const preferenceInsertTap = runPsql(
+    readFileSync(preferenceInsertTestPath, 'utf8'),
+    'running 047 preference-insert pgTAP suite',
+  )
+  if (/^not ok\b/m.test(preferenceInsertTap) || /# Looks like you failed\b/.test(preferenceInsertTap)) {
+    throw new Error('migration 047 pgTAP reported one or more failed assertions')
   }
 
   process.stdout.write('\n[trainer-db] PASS: all pgTAP assertions passed\n')

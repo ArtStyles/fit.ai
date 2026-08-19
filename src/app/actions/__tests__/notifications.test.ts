@@ -60,16 +60,29 @@ function createActionClient(userId: string | null = 'user-1') {
         return builder
       },
       async upsert(value: Record<string, unknown>) {
-        if (table !== 'product_push_tokens') throw new Error(`Unexpected upsert on ${table}`)
-        tokens.set(String(value.device_id), {
-          user_id: String(value.user_id),
-          token: String(value.token),
-          platform: String(value.platform),
-          device_id: String(value.device_id),
-          enabled: Boolean(value.enabled),
-          last_seen_at: String(value.last_seen_at),
-        })
-        return { error: null }
+        if (table === 'product_push_tokens') {
+          tokens.set(String(value.device_id), {
+            user_id: String(value.user_id),
+            token: String(value.token),
+            platform: String(value.platform),
+            device_id: String(value.device_id),
+            enabled: Boolean(value.enabled),
+            last_seen_at: String(value.last_seen_at),
+          })
+          return { error: null }
+        }
+        if (table === 'product_notification_preferences') {
+          const owner = value.user_id === undefined ? userId : String(value.user_id)
+          if (!owner || owner !== userId) {
+            return { error: new Error('notification preference owner rejected by RLS') }
+          }
+          preferences.set(owner, {
+            professional_enabled: Boolean(value.professional_enabled),
+            push_enabled: Boolean(value.push_enabled),
+          })
+          return { error: null }
+        }
+        throw new Error(`Unexpected upsert on ${table}`)
       },
       update(value: Record<string, unknown>) {
         updateValue = value

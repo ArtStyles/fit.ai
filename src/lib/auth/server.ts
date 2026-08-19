@@ -17,6 +17,7 @@ export type AppProfile = {
   avatar_url: string | null
   timezone: string | null
   last_check_in_at: string | null
+  weight_kg: number | null
   username: string | null
   is_private: boolean
   subscription_tier: 'free' | 'pro'
@@ -56,7 +57,7 @@ export const getAppUserContext = cache(async (): Promise<AppUserContext> => {
   const [{ data: baseProfile }, { data: accessProfile }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('onboarding_done, full_name, avatar_url, timezone, last_check_in_at, username, is_private, subscription_tier, language')
+      .select('onboarding_done, full_name, avatar_url, timezone, last_check_in_at, weight_kg, username, is_private, subscription_tier, language')
       .eq('id', user.id)
       .single(),
     supabase

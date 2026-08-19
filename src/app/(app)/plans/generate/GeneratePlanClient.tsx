@@ -48,6 +48,7 @@ const GOAL_LABELS: Record<string, string> = {
   lose_weight:       'Perder peso',
   improve_endurance: 'Mejorar resistencia',
   stay_active:       'Mantenerse activo',
+  other:             'Actividad general',
 }
 
 const LEVEL_LABELS: Record<string, string> = {

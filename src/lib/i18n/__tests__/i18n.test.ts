@@ -23,6 +23,91 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Objetivo y experiencia', 'Goal and experience'],
+    ['Disponibilidad', 'Availability'],
+    ['Espacio y equipo', 'Space and equipment'],
+    ['Seguridad', 'Safety'],
+    ['{count} días por semana', '{count} days per week'],
+    ['Mancuernas', 'Dumbbells'],
+    ['Barra', 'Barbell'],
+    ['Banco', 'Bench'],
+    ['Bandas', 'Resistance bands'],
+    ['Polea o cable', 'Cable machine'],
+    ['Barra de dominadas', 'Pull-up bar'],
+    ['Lunes', 'Monday'],
+    ['Domingo', 'Sunday'],
+    ['Estado de preparación', 'Readiness status'],
+    ['Listo para entrenar.', 'Ready to train.'],
+    ['Entrena con las adaptaciones indicadas.', 'Train with the indicated adaptations.'],
+    ['Consulta a un profesional antes de entrenar.', 'Consult a professional before training.'],
+    ['Completa tu información de preparación para recibir orientación.', 'Complete your readiness information to receive guidance.'],
+    ['Quita {count} día para continuar.', 'Remove {count} day to continue.'],
+    ['Quita {count} días para continuar.', 'Remove {count} days to continue.'],
+    ['Elige {count} día más para continuar.', 'Choose {count} more day to continue.'],
+    ['Elige {count} días más para continuar.', 'Choose {count} more days to continue.'],
+    ['Guardar preferencias', 'Save preferences'],
+    ['Guardando preferencias', 'Saving preferences'],
+    ['No se pudieron guardar las preferencias de entrenamiento.', 'Could not save training preferences.'],
+    ['Reintentar carga de entrenamiento', 'Retry loading training settings'],
+  ])('translates structured training settings copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
+    ['Información personal', 'Personal information'],
+    ['Datos opcionales para adaptar tus recomendaciones.', 'Optional information used to tailor your recommendations.'],
+    ['Altura', 'Height'],
+    ['En centímetros, entre 100 y 250.', 'In centimeters, between 100 and 250.'],
+    ['Fecha de nacimiento', 'Date of birth'],
+    ['Debes tener entre 18 y 100 años.', 'You must be between 18 and 100 years old.'],
+    ['Este dato es opcional.', 'This information is optional.'],
+    ['Peso actual', 'Current weight'],
+    ['El peso se actualiza desde tu historial de medidas.', 'Weight is updated from your measurement history.'],
+    ['Sin peso registrado', 'No weight recorded'],
+    ['Registrar o actualizar peso', 'Log or update weight'],
+    ['Guardar datos', 'Save personal information'],
+    ['Guardando datos', 'Saving personal information'],
+    ['Datos personales guardados.', 'Personal information saved.'],
+    ['La altura debe estar entre 100 y 250 cm.', 'Height must be between 100 and 250 cm.'],
+    ['La fecha debe ser válida y corresponder a una edad entre 18 y 100 años.', 'Enter a valid date for an age between 18 and 100.'],
+    ['Selecciona un género válido.', 'Select a valid gender.'],
+    ['No se pudieron guardar los datos personales.', 'Could not save personal information.'],
+  ])('translates personal-data copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
+    ['Medidas corporales', 'Body measurements'],
+    ['Peso, composición y perímetros', 'Weight, composition, and circumferences'],
+    ['Registrar', 'Log measurement'],
+    ['Sin medidas registradas', 'No measurements logged'],
+    ['Registra tu peso y medidas para ver tu evolución', 'Log your weight and measurements to see your progress'],
+    ['Primera medida', 'First measurement'],
+    ['Última medida · {date}', 'Latest measurement · {date}'],
+    ['Grasa corporal', 'Body fat'],
+    ['Masa muscular', 'Muscle mass'],
+    ['Cintura', 'Waist'],
+    ['vs. anterior', 'vs. previous'],
+    ['Sin cambio', 'No change'],
+    ['Evolución del peso', 'Weight progress'],
+    ['Registra al menos 2 medidas para ver la gráfica', 'Log at least 2 measurements to see the chart'],
+    ['Registrar medidas', 'Log measurements'],
+    ['Editar medida', 'Edit measurement'],
+    ['Más perímetros', 'More circumferences'],
+    ['Menos campos', 'Fewer fields'],
+    ['Notas opcionales…', 'Optional notes…'],
+    ['¿Eliminar esta medida?', 'Delete this measurement?'],
+    ['Medida eliminada.', 'Measurement deleted.'],
+    ['No se pudo eliminar la medida.', 'Could not delete the measurement.'],
+    ['Identificador de medida inválido.', 'Invalid measurement identifier.'],
+    ['Medida guardada.', 'Measurement saved.'],
+    ['Medida actualizada.', 'Measurement updated.'],
+    ['{value} kg masa muscular', '{value} kg muscle mass'],
+  ])('translates measurements copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['Archivar', 'Archive'],
     ['El plan se archivará, pero tu historial permanecerá intacto.', 'The plan will be archived, but your history will remain intact.'],
     ['No se puede cambiar a Free', 'Cannot switch to Free'],
@@ -67,6 +152,71 @@ describe('UI translations', () => {
     ['Mostrar instrucciones', 'Show instructions'],
     ['Reintentar', 'Try again'],
   ])('translates training evidence copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
+    ['Tu perfil', 'Your profile'],
+    ['Foto, nombre e identidad', 'Photo, name, and identity'],
+    ['Edad, género y altura', 'Age, gender, and height'],
+    ['Peso, perímetros y evolución', 'Weight, measurements, and progress'],
+    ['Tu entrenamiento', 'Your training'],
+    ['Objetivo, agenda y equipo', 'Goal, schedule, and equipment'],
+    ['Aplicación', 'Application'],
+    ['Recordatorios y avisos', 'Reminders and alerts'],
+    ['Idioma de la interfaz', 'Interface language'],
+    ['Acceso y seguridad', 'Access and security'],
+    ['Sesión, documentos y eliminación', 'Session, documents, and deletion'],
+    ['Gestión de la aplicación', 'Application management'],
+  ])('translates grouped settings overview copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
+    ['Recordatorios de entrenamiento', 'Workout reminders'],
+    ['Notificación local en tus días preferidos', 'Local notifications on your preferred days'],
+    ['Avisos de Vekira', 'Vekira alerts'],
+    ['Notificaciones profesionales', 'Professional notifications'],
+    ['Lunes', 'Monday'],
+    ['Lun', 'Mon'],
+  ])('translates notification preference copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
+    ['Identidad', 'Identity'],
+    ['Así te reconoce Vekira en tu cuenta.', 'This is how Vekira recognizes you in your account.'],
+    ['Sin nombre', 'No name'],
+    ['Perfil en Comunidad', 'Community profile'],
+    ['Cambiar foto', 'Change photo'],
+    ['Quitar foto', 'Remove photo'],
+  ])('translates profile settings identity copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
+    ['Cuenta de acceso', 'Access account'],
+    ['Sesión', 'Session'],
+    ['Documentos', 'Documents'],
+    ['Zona peligrosa', 'Danger zone'],
+    ['Interfaz en español', 'Interface in Spanish'],
+    ['Interfaz en inglés', 'Interface in English'],
+  ])('translates language and account settings copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
+    ['El nombre no puede superar 100 caracteres.', 'Name cannot exceed 100 characters.'],
+    ['Sesión no válida.', 'Invalid session.'],
+    ['No se pudo guardar el nombre.', 'Could not save the name.'],
+    ['Nombre actualizado.', 'Name updated.'],
+    ['No se recibió ninguna imagen.', 'No image was received.'],
+    ['El archivo debe ser una imagen.', 'The file must be an image.'],
+    ['El archivo está vacío.', 'The file is empty.'],
+    ['La imagen supera el tamaño máximo (5 MB).', 'The image exceeds the maximum size (5 MB).'],
+    ['No se pudo subir la imagen.', 'Could not upload the image.'],
+    ['No se pudo guardar el avatar.', 'Could not save the avatar.'],
+  ])('translates profile name and avatar action results: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })
 

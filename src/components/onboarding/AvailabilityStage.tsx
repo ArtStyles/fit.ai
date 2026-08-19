@@ -13,11 +13,10 @@ import {
   Waves,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SESSION_DURATIONS, TRAINING_FREQUENCIES } from '@/lib/profile/trainingPreferences'
 import type { OnboardingAnswers } from '@/app/onboarding/types'
 import { canContinueStage } from './onboardingStages'
 import { OptionButton, StageShell, type OnboardingStageProps } from './StageShell'
-
-const DURATIONS = [30, 45, 60, 90] as const
 
 const CARDIO_OPTIONS = [
   { value: 'walking', label: 'Caminar', icon: Footprints },
@@ -63,7 +62,7 @@ export function AvailabilityStage({ answers, update, current, total, onBack, onN
             Días por semana
           </legend>
           <div className="grid grid-cols-5 gap-2">
-            {[2, 3, 4, 5, 6].map(day => (
+            {TRAINING_FREQUENCIES.map(day => (
               <button
                 key={day}
                 type="button"
@@ -88,7 +87,7 @@ export function AvailabilityStage({ answers, update, current, total, onBack, onN
             Duración por sesión
           </legend>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {DURATIONS.map(duration => (
+            {SESSION_DURATIONS.map(duration => (
               <button
                 key={duration}
                 type="button"

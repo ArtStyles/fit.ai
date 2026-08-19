@@ -158,6 +158,7 @@ const GOAL_PREFERRED_TYPES: Record<string, string[]> = {
   lose_weight:       ['strength', 'cardio', 'hiit'],
   improve_endurance: ['cardio', 'hiit', 'strength'],
   stay_active:       ['strength', 'cardio', 'flexibility', 'balance', 'hiit'],
+  other:             ['strength', 'cardio', 'flexibility', 'balance', 'hiit'],
 }
 
 // ─── Tipo de fila de ejercicio desde la DB ────────────────────────────────────

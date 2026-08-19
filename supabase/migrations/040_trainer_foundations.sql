@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS product_push_tokens_user_enabled_idx
   ON public.product_push_tokens (user_id, enabled, last_seen_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.product_notification_preferences (
-  user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id UUID PRIMARY KEY DEFAULT auth.uid() REFERENCES public.profiles(id) ON DELETE CASCADE,
   professional_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   push_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
