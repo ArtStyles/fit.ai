@@ -84,7 +84,8 @@ INSERT INTO public.coaching_consents (relationship_id, scope, text_version, gran
 SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
   ('f4700000-0000-4000-8000-000000000061', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed'),
-  ('f4700000-0000-4000-8000-000000000062', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed');
+  ('f4700000-0000-4000-8000-000000000062', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed'),
+  ('f4700000-0000-4000-8000-000000000064', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed');
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
   (
     'f4700000-0000-4000-8000-000000000071',
@@ -101,13 +102,22 @@ INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_numbe
     '{"schemaVersion":1,"workouts":[{"dayOfWeek":6,"orderInPlan":1},{"dayOfWeek":7,"orderInPlan":1}]}'::jsonb,
     'proposed',
     'f4700000-0000-4000-8000-000000000093'
+  ),
+  (
+    'f4700000-0000-4000-8000-000000000074',
+    'f4700000-0000-4000-8000-000000000064',
+    1,
+    '{"schemaVersion":1,"workouts":[{"dayOfWeek":7,"orderInPlan":1}]}'::jsonb,
+    'proposed',
+    'f4700000-0000-4000-8000-000000000095'
   );
 INSERT INTO public.workout_plans (
   id, user_id, name, family_id, source_type, library_slot, prescription_locked,
   trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id
 ) VALUES
   ('f4700000-0000-4000-8000-000000000091', 'f4700000-0000-4000-8000-000000000002', 'Recoverable ISO plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000061', 'f4700000-0000-4000-8000-000000000071'),
-  ('f4700000-0000-4000-8000-000000000093', 'f4700000-0000-4000-8000-000000000002', 'Malformed ISO plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000062', 'f4700000-0000-4000-8000-000000000072');
+  ('f4700000-0000-4000-8000-000000000093', 'f4700000-0000-4000-8000-000000000002', 'Malformed ISO plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000062', 'f4700000-0000-4000-8000-000000000072'),
+  ('f4700000-0000-4000-8000-000000000095', 'f4700000-0000-4000-8000-000000000002', 'Non-adjacent ISO plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000064', 'f4700000-0000-4000-8000-000000000074');
 INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, is_active) VALUES
   ('f4700000-0000-4000-8000-000000000092', 'f4700000-0000-4000-8000-000000000002', 'Personal ISO control', gen_random_uuid(), 'manual', FALSE);
 
@@ -116,7 +126,8 @@ SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
 INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
   ('f4700000-0000-4000-8000-000000000101', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000091', 'Recoverable Sunday', 6, 1),
   ('f4700000-0000-4000-8000-000000000103', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000093', 'Malformed Sunday', 6, 1),
-  ('f4700000-0000-4000-8000-000000000102', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000092', 'Personal control', 6, 1);
+  ('f4700000-0000-4000-8000-000000000102', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000092', 'Personal control', 6, 1),
+  ('f4700000-0000-4000-8000-000000000105', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000095', 'Non-adjacent Sunday', 2, 1);
 RESET ROLE;
 COMMIT;
 `
@@ -129,6 +140,9 @@ BEGIN
   END IF;
   IF (SELECT day_of_week FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000102') <> 6 THEN
     RAISE EXCEPTION 'failed ISO migration changed personal data before rollback';
+  END IF;
+  IF (SELECT day_of_week FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000105') <> 2 THEN
+    RAISE EXCEPTION 'failed ISO migration changed non-adjacent recoverable data before rollback';
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_trigger
@@ -154,6 +168,77 @@ WHERE id = 'f4700000-0000-4000-8000-000000000072';
 DELETE FROM public.workout_plans WHERE id = 'f4700000-0000-4000-8000-000000000093';
 DELETE FROM public.trainer_assignment_versions WHERE id = 'f4700000-0000-4000-8000-000000000072';
 DELETE FROM public.trainer_plan_assignments WHERE id = 'f4700000-0000-4000-8000-000000000062';
+RESET ROLE;
+COMMIT;
+`
+
+const malformedIsoStringFixturesSql = `
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
+  ('f4700000-0000-4000-8000-000000000063', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed'),
+  ('f4700000-0000-4000-8000-000000000065', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  (
+    'f4700000-0000-4000-8000-000000000073',
+    'f4700000-0000-4000-8000-000000000063',
+    1,
+    '{"schemaVersion":"1","workouts":[{"dayOfWeek":7,"orderInPlan":1}]}'::jsonb,
+    'proposed',
+    'f4700000-0000-4000-8000-000000000094'
+  ),
+  (
+    'f4700000-0000-4000-8000-000000000075',
+    'f4700000-0000-4000-8000-000000000065',
+    1,
+    '{"schemaVersion":1,"workouts":[{"dayOfWeek":"7","orderInPlan":"1"}]}'::jsonb,
+    'proposed',
+    'f4700000-0000-4000-8000-000000000096'
+  );
+INSERT INTO public.workout_plans (
+  id, user_id, name, family_id, source_type, library_slot, prescription_locked,
+  trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id
+) VALUES
+  ('f4700000-0000-4000-8000-000000000094', 'f4700000-0000-4000-8000-000000000002', 'Malformed schema scalar plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000063', 'f4700000-0000-4000-8000-000000000073'),
+  ('f4700000-0000-4000-8000-000000000096', 'f4700000-0000-4000-8000-000000000002', 'Malformed workout scalar plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000065', 'f4700000-0000-4000-8000-000000000075');
+
+SET LOCAL ROLE postgres;
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
+  ('f4700000-0000-4000-8000-000000000104', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000094', 'Malformed schema scalar workout', 6, 1),
+  ('f4700000-0000-4000-8000-000000000106', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000096', 'Malformed workout scalar workout', 6, 1);
+RESET ROLE;
+COMMIT;
+`
+
+const removeMalformedIsoSchemaFixtureSql = `
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL ROLE postgres;
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+DELETE FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000104';
+UPDATE public.trainer_assignment_versions
+SET materialized_plan_id = NULL
+WHERE id = 'f4700000-0000-4000-8000-000000000073';
+DELETE FROM public.workout_plans WHERE id = 'f4700000-0000-4000-8000-000000000094';
+DELETE FROM public.trainer_assignment_versions WHERE id = 'f4700000-0000-4000-8000-000000000073';
+DELETE FROM public.trainer_plan_assignments WHERE id = 'f4700000-0000-4000-8000-000000000063';
+RESET ROLE;
+COMMIT;
+`
+
+const removeMalformedIsoWorkoutScalarFixtureSql = `
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL ROLE postgres;
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+DELETE FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000106';
+UPDATE public.trainer_assignment_versions
+SET materialized_plan_id = NULL
+WHERE id = 'f4700000-0000-4000-8000-000000000075';
+DELETE FROM public.workout_plans WHERE id = 'f4700000-0000-4000-8000-000000000096';
+DELETE FROM public.trainer_assignment_versions WHERE id = 'f4700000-0000-4000-8000-000000000075';
+DELETE FROM public.trainer_plan_assignments WHERE id = 'f4700000-0000-4000-8000-000000000065';
 RESET ROLE;
 COMMIT;
 `
@@ -719,6 +804,10 @@ function runPsqlExpectFailure(sql, label, expectedMessage) {
   return output
 }
 
+function assertFailureHidesFixtureIds(output, label) {
+  if (output.includes('f4700000-')) throw new Error(`${label} exposed a fixture identifier`)
+}
+
 function waitForDatabase() {
   return waitForFinalDatabase({
     inspectHealth: () => {
@@ -768,6 +857,23 @@ try {
   )
   runPsql(assertIsoWeekdayRepairRollbackSql, 'verifying failed ISO repair rolled back atomically')
   runPsql(removeMalformedIsoWeekdayFixtureSql, 'removing only the malformed ISO weekday fixture')
+  runPsql(malformedIsoStringFixturesSql, 'seeding malformed ISO string-scalar fixtures')
+  const schemaScalarFailure = runPsqlExpectFailure(
+    readFileSync(migrationPaths[10], 'utf8'),
+    'rejecting string schemaVersion scalar',
+    'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED: snapshot_shape=1',
+  )
+  assertFailureHidesFixtureIds(schemaScalarFailure, 'schemaVersion scalar preflight')
+  runPsql(assertIsoWeekdayRepairRollbackSql, 'verifying string schemaVersion failure rolled back atomically')
+  runPsql(removeMalformedIsoSchemaFixtureSql, 'removing only the malformed schemaVersion fixture')
+  const workoutScalarFailure = runPsqlExpectFailure(
+    readFileSync(migrationPaths[10], 'utf8'),
+    'rejecting string workout schedule scalars',
+    'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED: snapshot_value=1',
+  )
+  assertFailureHidesFixtureIds(workoutScalarFailure, 'workout scalar preflight')
+  runPsql(assertIsoWeekdayRepairRollbackSql, 'verifying string workout scalar failure rolled back atomically')
+  runPsql(removeMalformedIsoWorkoutScalarFixtureSql, 'removing only the malformed workout scalar fixture')
   runPsql(readFileSync(migrationPaths[10], 'utf8'), 'applying migration 047 ISO weekday repair')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 047')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')

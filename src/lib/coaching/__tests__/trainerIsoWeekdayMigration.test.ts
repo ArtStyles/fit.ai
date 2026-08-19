@@ -21,8 +21,22 @@ describe('trainer ISO weekday repair migration', () => {
     expect(migration).toMatch(/source_type = 'trainer_assigned'/i)
     expect(migration).toMatch(/order_in_plan[\s\S]+orderInPlan/i)
     expect(migration).toMatch(/IS DISTINCT FROM[\s\S]+expected_day_of_week/i)
+    expect(migration).toMatch(/SET day_of_week = expected\.expected_day_of_week/i)
     expect(migration).toContain('TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED')
     expect(migration).toMatch(/COMMIT;\s*$/)
+  })
+
+  it('fails closed unless snapshot schema and schedule scalars are JSON numbers', () => {
+    expect(migration).toContain("jsonb_typeof(version.snapshot->'schemaVersion') IS DISTINCT FROM 'number'")
+    expect(migration).toContain("version.snapshot->'schemaVersion' IS DISTINCT FROM '1'::JSONB")
+    expect(migration).toContain("jsonb_typeof(snapshot_workout->'dayOfWeek') IS DISTINCT FROM 'number'")
+    expect(migration).toContain("jsonb_typeof(snapshot_workout->'orderInPlan') IS DISTINCT FROM 'number'")
+
+    const guard = routine('enforce_trainer_workout_iso_schedule')
+    expect(guard).toContain("jsonb_typeof(v_snapshot->'schemaVersion') IS DISTINCT FROM 'number'")
+    expect(guard).toContain("v_snapshot->'schemaVersion' IS DISTINCT FROM '1'::JSONB")
+    expect(guard).toMatch(/jsonb_typeof\(item\.value->'dayOfWeek'\)[^\n]*'number'/i)
+    expect(guard).toMatch(/jsonb_typeof\(item\.value->'orderInPlan'\)[^\n]*'number'/i)
   })
 
   it('removes the shift from both materializers and both final insight projections', () => {

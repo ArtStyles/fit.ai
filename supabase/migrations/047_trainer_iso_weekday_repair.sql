@@ -50,7 +50,8 @@ BEGIN
    AND version.materialized_plan_id = plan.id
   WHERE plan.source_type = 'trainer_assigned'
     AND (
-      version.snapshot->>'schemaVersion' IS DISTINCT FROM '1'
+      jsonb_typeof(version.snapshot->'schemaVersion') IS DISTINCT FROM 'number'
+      OR version.snapshot->'schemaVersion' IS DISTINCT FROM '1'::JSONB
       OR CASE
         WHEN jsonb_typeof(version.snapshot->'workouts') = 'array'
           THEN jsonb_array_length(version.snapshot->'workouts') = 0
@@ -81,9 +82,14 @@ DECLARE
 BEGIN
   SELECT count(*) INTO v_invalid_count
   FROM trainer_iso_weekday_snapshot_rows
-  WHERE jsonb_typeof(snapshot_workout) IS DISTINCT FROM 'object'
-    OR COALESCE(snapshot_workout->>'dayOfWeek', '') !~ '^[1-7]$'
-    OR COALESCE(snapshot_workout->>'orderInPlan', '') !~ '^[1-7]$';
+  WHERE CASE
+    WHEN jsonb_typeof(snapshot_workout) IS DISTINCT FROM 'object' THEN TRUE
+    WHEN jsonb_typeof(snapshot_workout->'dayOfWeek') IS DISTINCT FROM 'number' THEN TRUE
+    WHEN jsonb_typeof(snapshot_workout->'orderInPlan') IS DISTINCT FROM 'number' THEN TRUE
+    WHEN COALESCE(snapshot_workout->>'dayOfWeek', '') !~ '^[1-7]$' THEN TRUE
+    WHEN COALESCE(snapshot_workout->>'orderInPlan', '') !~ '^[1-7]$' THEN TRUE
+    ELSE FALSE
+  END;
 
   IF v_invalid_count > 0 THEN
     RAISE EXCEPTION 'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED: snapshot_value=%', v_invalid_count;
@@ -1222,23 +1228,29 @@ BEGIN
     RAISE EXCEPTION 'TRAINER_PRESCRIPTION_LOCKED';
   END IF;
 
-  IF jsonb_typeof(v_snapshot->'workouts') IS DISTINCT FROM 'array' THEN
+  IF jsonb_typeof(v_snapshot->'schemaVersion') IS DISTINCT FROM 'number'
+    OR v_snapshot->'schemaVersion' IS DISTINCT FROM '1'::JSONB
+    OR jsonb_typeof(v_snapshot->'workouts') IS DISTINCT FROM 'array' THEN
     RAISE EXCEPTION 'TRAINER_PRESCRIPTION_SCHEDULE_MISMATCH';
   END IF;
 
   SELECT
     count(*),
     min(
-      CASE WHEN item.value->>'dayOfWeek' ~ '^[1-7]$'
-        THEN (item.value->>'dayOfWeek')::INTEGER
+      CASE
+        WHEN jsonb_typeof(item.value) IS DISTINCT FROM 'object' THEN NULL
+        WHEN jsonb_typeof(item.value->'dayOfWeek') IS DISTINCT FROM 'number' THEN NULL
+        WHEN COALESCE(item.value->>'dayOfWeek', '') !~ '^[1-7]$' THEN NULL
+        ELSE (item.value->>'dayOfWeek')::INTEGER
       END
     )
   INTO v_match_count, v_expected_day
   FROM jsonb_array_elements(v_snapshot->'workouts') AS item(value)
   WHERE CASE
-    WHEN item.value->>'orderInPlan' ~ '^[1-7]$'
-      THEN (item.value->>'orderInPlan')::INTEGER = NEW.order_in_plan
-    ELSE FALSE
+    WHEN jsonb_typeof(item.value) IS DISTINCT FROM 'object' THEN FALSE
+    WHEN jsonb_typeof(item.value->'orderInPlan') IS DISTINCT FROM 'number' THEN FALSE
+    WHEN COALESCE(item.value->>'orderInPlan', '') !~ '^[1-7]$' THEN FALSE
+    ELSE (item.value->>'orderInPlan')::INTEGER = NEW.order_in_plan
   END;
 
   IF v_match_count <> 1

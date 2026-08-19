@@ -15,7 +15,7 @@ El piloto mantiene `COMMUNITY_ENABLED=false`. El código y los datos de Comunida
 - [ ] Confirmar que el consentimiento de medidas es independiente, opcional y revocable con efecto en la siguiente lectura.
 - [ ] Asignar un canal de soporte operativo y un responsable titular de incidentes con suplente.
 - [ ] Verificar respaldo/restauración, migraciones 040–047, `trainer_security_preflight() = 47`, divergencias ISO profesionales `= 0`, matriz de autorización, seguridad x3, accesibilidad, build, auditoría y journey E2E conforme al [runbook](./trainer-marketplace-runbook.md).
-- [ ] Ejecutar `pnpm test:db:marketplace` en base Docker fresca y, solo después del preflight remoto 47 y de confirmar divergencias ISO profesionales `= 0`, `pnpm test:e2e:trainer-marketplace`; no usar el Playwright genérico ni reutilizar un servidor existente para este journey destructivo.
+- [ ] Ejecutar `pnpm test:db:trainers` en base Docker fresca y, solo después del preflight remoto 47 y de confirmar divergencias ISO profesionales `= 0`, `pnpm test:e2e:trainer-marketplace`; no usar el Playwright genérico ni reutilizar un servidor existente para este journey destructivo.
 - [ ] Antes de reanudar invitaciones, completar una propuesta y una revisión sintéticas que incluyan lunes (`1`) y domingo (`7`), y confirmar que la auditoría ISO sigue en `0`.
 - [ ] Obtener aprobación conjunta de operación, privacidad y seguridad.
 

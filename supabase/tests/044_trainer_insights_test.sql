@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(45);
+SELECT plan(46);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('f4000000-0000-4000-8000-000000000001', 'insights-trainer@example.test', '{}'::JSONB),
@@ -133,6 +133,17 @@ SELECT ok(
 SELECT ok(
   (SELECT jsonb_array_length(public.get_coach_clients_summary()->'clients'->0->'adherenceInput'->'alertSessions') >= 1),
   'summary supplies a separate minimal activity-alert window'
+);
+SELECT ok(
+  EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(
+      public.get_coach_clients_summary()->'clients'->0->'adherenceInput'->'versions'
+    ) AS version(value)
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(version.value->'workouts', '[]'::JSONB)) AS workout(value)
+    WHERE workout.value->>'id' = 'f4000000-0000-4000-8000-000000000101'
+  ),
+  'summary maps the canonical ISO snapshot workout to its materialized workout id'
 );
 SELECT lives_ok(
   $$SELECT public.get_coach_client_insights('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)$$,
