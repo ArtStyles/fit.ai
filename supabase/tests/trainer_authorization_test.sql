@@ -114,7 +114,7 @@ SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  '2f753d604695cad584608aed13d6570c',
+  '700fe788fa3b54df830c550a3a8ab485',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -133,7 +133,10 @@ SELECT ok(
   AND NOT has_function_privilege('authenticated', 'public.require_active_coaching_admin(uuid)', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND NOT has_function_privilege('service_role', 'public.get_coach_clients_summary()', 'EXECUTE')
-  AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE'),
+  AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.release_session_authorization(uuid,uuid)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.release_session_authorization(uuid,uuid)', 'EXECUTE')
+  AND NOT has_function_privilege('service_role', 'public.release_session_authorization(uuid,uuid)', 'EXECUTE'),
   'effective function ACLs expose only the reviewed authenticated/service entry points'
 );
 SELECT is(
@@ -144,7 +147,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  'e34e6aa10a2f6acf2043e12cde2079f3',
+  'c394b62e5d51386d4977dc7ad0eda8f1',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
 );
 
@@ -242,8 +245,34 @@ INSERT INTO public.trainer_plan_assignments (
 INSERT INTO public.trainer_assignment_versions (
   id, assignment_id, version_number, snapshot, status, materialized_plan_id
 ) VALUES
-  ('52100000-0000-4000-8000-000000000001', '51100000-0000-4000-8000-000000000001', 1, '{"schemaVersion":1,"workouts":[]}'::JSONB, 'active', '53100000-0000-4000-8000-000000000001'),
-  ('52200000-0000-4000-8000-000000000002', '51200000-0000-4000-8000-000000000002', 1, '{"schemaVersion":1,"workouts":[]}'::JSONB, 'active', '53200000-0000-4000-8000-000000000002');
+  (
+    '52100000-0000-4000-8000-000000000001',
+    '51100000-0000-4000-8000-000000000001',
+    1,
+    jsonb_build_object(
+      'schemaVersion', 1,
+      'workouts', jsonb_build_array(jsonb_build_object(
+        'dayOfWeek', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'UTC')::INTEGER,
+        'orderInPlan', 1
+      ))
+    ),
+    'active',
+    '53100000-0000-4000-8000-000000000001'
+  ),
+  (
+    '52200000-0000-4000-8000-000000000002',
+    '51200000-0000-4000-8000-000000000002',
+    1,
+    jsonb_build_object(
+      'schemaVersion', 1,
+      'workouts', jsonb_build_array(jsonb_build_object(
+        'dayOfWeek', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'UTC')::INTEGER,
+        'orderInPlan', 1
+      ))
+    ),
+    'active',
+    '53200000-0000-4000-8000-000000000002'
+  );
 INSERT INTO public.workout_plans (
   id, user_id, name, family_id, is_active, source_type, library_slot,
   prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id

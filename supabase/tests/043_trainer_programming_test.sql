@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(128);
+SELECT plan(130);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('11111111-0000-4000-8000-000000000001', 'program-owner@example.test', '{}'::jsonb),
@@ -60,7 +60,7 @@ SET LOCAL ROLE service_role;
 SELECT set_config('request.jwt.claim.role', 'service_role', true);
 INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES
   ('11111111-0000-4000-8000-000000000054', '11111111-0000-4000-8000-000000000051', 'Order one', 1, 1),
-  ('11111111-0000-4000-8000-000000000055', '11111111-0000-4000-8000-000000000051', 'Order two', 2, 2);
+  ('11111111-0000-4000-8000-000000000055', '11111111-0000-4000-8000-000000000051', 'Order two', 7, 2);
 INSERT INTO public.trainer_template_exercises (id, template_workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES
   ('11111111-0000-4000-8000-000000000056', '11111111-0000-4000-8000-000000000055', '11111111-0000-4000-8000-000000000041', 1, 3, 10, 60),
   ('11111111-0000-4000-8000-000000000057', '11111111-0000-4000-8000-000000000055', '11111111-0000-4000-8000-000000000041', 2, 3, 8, 60);
@@ -148,11 +148,29 @@ SELECT lives_ok(
 );
 SELECT is((SELECT snapshot->>'schemaVersion' FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), '1', 'proposal stores SnapshotV1');
 SELECT is((SELECT jsonb_array_length(snapshot->'workouts') FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 2, 'snapshot contains every ordered template workout');
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 SELECT is((SELECT user_id FROM public.workout_plans plan JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), '33333333-0000-4000-8000-000000000003'::uuid, 'materialized plan belongs to the client');
 SELECT is((SELECT is_active FROM public.workout_plans plan JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), FALSE, 'proposal leaves professional plan inactive');
 SELECT is((SELECT is_active FROM public.workout_plans WHERE id = '11111111-0000-4000-8000-000000000110'), TRUE, 'proposal does not change the current personal plan');
 SELECT is((SELECT count(*) FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 2::bigint, 'proposal materializes every workout');
 SELECT is((SELECT count(*) FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id JOIN public.workout_plans plan ON plan.id = workout.plan_id JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 3::bigint, 'proposal materializes every exercise prescription');
+SELECT is(
+  (
+    SELECT array_agg(workout.day_of_week ORDER BY workout.day_of_week)
+    FROM public.workouts workout
+    JOIN public.workout_plans plan ON plan.id = workout.plan_id
+    JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id
+    WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'
+  ),
+  ARRAY[1, 7],
+  'proposal materializes Monday and Sunday with exact ISO days'
+);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
 SELECT is(
   (SELECT workout_plan_id FROM public.propose_trainer_assignment('11111111-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000051', 'ignored retry text', 'proposal-idempotency-1')),
   (SELECT materialized_plan_id FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'),
@@ -265,6 +283,10 @@ INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, clie
   ('55555555-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '55555555-0000-4000-8000-000000000005', 'active'),
   ('66666666-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '66666666-0000-4000-8000-000000000006', 'active'),
   ('77777777-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000031', '11111111-0000-4000-8000-000000000001', '77777777-0000-4000-8000-000000000007', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('55555555-0000-4000-8000-000000000061', 'training_profile', 'training-profile-v1', '55555555-0000-4000-8000-000000000005'),
+  ('66666666-0000-4000-8000-000000000061', 'training_profile', 'training-profile-v1', '66666666-0000-4000-8000-000000000006'),
+  ('77777777-0000-4000-8000-000000000061', 'training_profile', 'training-profile-v1', '77777777-0000-4000-8000-000000000007');
 SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, source_template_id) VALUES
   ('55555555-0000-4000-8000-000000000071', '55555555-0000-4000-8000-000000000061', '11111111-0000-4000-8000-000000000001', '55555555-0000-4000-8000-000000000005', '11111111-0000-4000-8000-000000000051'),
@@ -412,7 +434,7 @@ RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
-SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 5::bigint, 'trainer participant can read every assigned client');
+SELECT is((SELECT count(*) FROM public.trainer_plan_assignments), 3::bigint, 'trainer participant can read every consent-bound assigned client');
 RESET ROLE;
 
 SELECT set_config('request.jwt.claim.sub', '33333333-0000-4000-8000-000000000003', true);
@@ -710,11 +732,29 @@ SELECT lives_ok(
 SELECT is((SELECT count(*) FROM public.trainer_assignment_versions WHERE assignment_id = 'dddddddd-0000-4000-8000-000000000021'), 2::bigint, 'revision creates exactly version N plus one');
 SELECT is((SELECT version.status FROM public.trainer_assignment_versions version WHERE version.id = 'dddddddd-0000-4000-8000-000000000031'), 'superseded', 'previous immutable version is superseded');
 SELECT ok((SELECT effective_to IS NOT NULL FROM public.trainer_assignment_versions WHERE id = 'dddddddd-0000-4000-8000-000000000031'), 'previous version receives an effective end');
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
 SELECT ok((SELECT NOT is_active AND superseded_at IS NOT NULL FROM public.workout_plans WHERE id = 'dddddddd-0000-4000-8000-000000000041'), 'revision marks the previous professional materialization superseded without deleting its history');
 SELECT is((SELECT version_number FROM public.trainer_assignment_versions version JOIN public.trainer_plan_assignments assignment ON assignment.active_version_id = version.id WHERE assignment.id = 'dddddddd-0000-4000-8000-000000000021'), 2, 'assignment atomically points at the new active version');
 SELECT is((SELECT count(*) FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND plan.is_active), 2::bigint, 'revision fully materializes every template workout before activation');
 SELECT is((SELECT count(*) FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND plan.is_active), 3::bigint, 'revision fully materializes every template exercise before activation');
 SELECT is((SELECT count(*) FROM public.workout_plans WHERE trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND is_active), 1::bigint, 'revision leaves one current professional materialization');
+SELECT is(
+  (
+    SELECT array_agg(workout.day_of_week ORDER BY workout.day_of_week)
+    FROM public.workouts workout
+    JOIN public.trainer_assignment_versions version
+      ON version.materialized_plan_id = workout.plan_id
+    WHERE version.revision_idempotency_key = 'revision-publish-key'
+  ),
+  ARRAY[1, 7],
+  'revision materializes Monday and Sunday with exact ISO days'
+);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
 SELECT is((SELECT workout_plan_id FROM public.publish_trainer_assignment_revision('dddddddd-0000-4000-8000-000000000021', '11111111-0000-4000-8000-000000000051', 'Ignored retry summary', 'revision-publish-key')),
   (SELECT materialized_plan_id FROM public.trainer_assignment_versions WHERE revision_idempotency_key = 'revision-publish-key'), 'revision retry returns its original materialization');
 SELECT is((SELECT count(*) FROM public.trainer_assignment_versions WHERE revision_idempotency_key = 'revision-publish-key'), 1::bigint, 'revision retry creates no duplicate version');
@@ -766,8 +806,8 @@ INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_i
   ('f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000051', '11111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000001', 'active', NOW(), 'f1111111-0000-4000-8000-000000000071'),
   ('f1111111-0000-4000-8000-000000000062', 'f1111111-0000-4000-8000-000000000052', '11111111-0000-4000-8000-000000000001', 'f1111111-0000-4000-8000-000000000002', 'active', NOW(), 'f1111111-0000-4000-8000-000000000072');
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
-  ('f1111111-0000-4000-8000-000000000071', 'f1111111-0000-4000-8000-000000000061', 1, '{"schemaVersion":1}'::jsonb, 'active', 'f1111111-0000-4000-8000-000000000021'),
-  ('f1111111-0000-4000-8000-000000000072', 'f1111111-0000-4000-8000-000000000062', 1, '{"schemaVersion":1}'::jsonb, 'active', 'f1111111-0000-4000-8000-000000000022');
+  ('f1111111-0000-4000-8000-000000000071', 'f1111111-0000-4000-8000-000000000061', 1, '{"schemaVersion":1,"workouts":[{"dayOfWeek":1,"orderInPlan":1}]}'::jsonb, 'active', 'f1111111-0000-4000-8000-000000000021'),
+  ('f1111111-0000-4000-8000-000000000072', 'f1111111-0000-4000-8000-000000000062', 1, '{"schemaVersion":1,"workouts":[{"dayOfWeek":1,"orderInPlan":1}]}'::jsonb, 'active', 'f1111111-0000-4000-8000-000000000022');
 INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
   ('f1111111-0000-4000-8000-000000000021', 'f1111111-0000-4000-8000-000000000001', 'Authorization fixture', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'f1111111-0000-4000-8000-000000000051', 'f1111111-0000-4000-8000-000000000061', 'f1111111-0000-4000-8000-000000000071'),
   ('f1111111-0000-4000-8000-000000000022', 'f1111111-0000-4000-8000-000000000002', 'Skip fixture', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'f1111111-0000-4000-8000-000000000052', 'f1111111-0000-4000-8000-000000000062', 'f1111111-0000-4000-8000-000000000072');

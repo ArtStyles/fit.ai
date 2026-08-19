@@ -15,6 +15,15 @@ const migration = (number: number) => readFileSync(
   'utf8',
 )
 
+const isoRepair = readFileSync(
+  new URL('../../../../supabase/migrations/047_trainer_iso_weekday_repair.sql', import.meta.url),
+  'utf8',
+)
+const trainerRunner = readFileSync(
+  new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url),
+  'utf8',
+)
+
 describe('trainer migration rerun contract', () => {
   it('guards every named index in migrations 040-045', () => {
     for (const number of [40, 41, 42, 43, 44, 45]) {
@@ -36,5 +45,11 @@ describe('trainer migration rerun contract', () => {
     expect(backfill).toMatch(/trainer_relationship_id IS NULL/i)
     expect(backfill).toMatch(/trainer_assignment_id IS NULL/i)
     expect(backfill).toMatch(/trainer_assignment_version_id IS NULL/i)
+  })
+
+  it('reapplies the ISO repair after every historical trainer routine', () => {
+    expect(isoRepair).toMatch(/RETURN 47/i)
+    expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_trainer_iso_weekday_repair\.sql/i)
+    expect(trainerRunner).toMatch(/migrationPaths\.slice\(3\)[\s\S]+reapplying migrations 040-047/i)
   })
 })

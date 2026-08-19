@@ -10,10 +10,23 @@ const authorizationMode = process.argv.includes('--authorization')
 const securityMode = process.argv.includes('--security')
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
-const migrationPaths = ['035_session_save_idempotency.sql', '037_atomic_plan_lifecycle.sql', '038_session_authorizations.sql', '040_trainer_foundations.sql', '041_trainer_verification.sql', '042_trainer_relationships.sql', '043_trainer_programming.sql', '044_trainer_insights.sql', '045_trainer_hardening.sql']
+const migrationPaths = [
+  '035_session_save_idempotency.sql',
+  '037_atomic_plan_lifecycle.sql',
+  '038_session_authorizations.sql',
+  '040_trainer_foundations.sql',
+  '041_trainer_verification.sql',
+  '042_trainer_relationships.sql',
+  '043_trainer_programming.sql',
+  '044_trainer_insights.sql',
+  '045_trainer_hardening.sql',
+  '046_release_session_authorization.sql',
+  '047_trainer_iso_weekday_repair.sql',
+]
   .map(file => path.join(repoRoot, 'supabase', 'migrations', file))
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
+const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '047_trainer_iso_weekday_repair_test.sql')
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
@@ -47,6 +60,102 @@ INSERT INTO public.professional_audit_logs (
     'https://storage.example.test/private/path',
     jsonb_build_object('notes', 'legacy private note')
   );
+`
+
+const legacyIsoWeekdayFixturesSql = `
+BEGIN;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('f4700000-0000-4000-8000-000000000001', 'iso-repair-trainer@example.test', '{}'::jsonb),
+  ('f4700000-0000-4000-8000-000000000002', 'iso-repair-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, account_status) VALUES
+  ('f4700000-0000-4000-8000-000000000001', 'ISO repair trainer', 'https://example.test/iso-repair-trainer.webp', TRUE, 'active'),
+  ('f4700000-0000-4000-8000-000000000002', 'ISO repair client', 'https://example.test/iso-repair-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id, status, decided_at) VALUES
+  ('f4700000-0000-4000-8000-000000000011', 'f4700000-0000-4000-8000-000000000001', 'approved', NOW());
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('f4700000-0000-4000-8000-000000000021', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000011', 'iso-repair-trainer', 'active', 'ISO repair trainer', 'Bio', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('f4700000-0000-4000-8000-000000000031', 'f4700000-0000-4000-8000-000000000021', 'ISO repair service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000031', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('f4700000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', 'f4700000-0000-4000-8000-000000000002');
+
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
+  ('f4700000-0000-4000-8000-000000000061', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed'),
+  ('f4700000-0000-4000-8000-000000000062', 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000001', 'f4700000-0000-4000-8000-000000000002', 'proposed');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  (
+    'f4700000-0000-4000-8000-000000000071',
+    'f4700000-0000-4000-8000-000000000061',
+    1,
+    '{"schemaVersion":1,"workouts":[{"dayOfWeek":7,"orderInPlan":1}]}'::jsonb,
+    'proposed',
+    'f4700000-0000-4000-8000-000000000091'
+  ),
+  (
+    'f4700000-0000-4000-8000-000000000072',
+    'f4700000-0000-4000-8000-000000000062',
+    1,
+    '{"schemaVersion":1,"workouts":[{"dayOfWeek":6,"orderInPlan":1},{"dayOfWeek":7,"orderInPlan":1}]}'::jsonb,
+    'proposed',
+    'f4700000-0000-4000-8000-000000000093'
+  );
+INSERT INTO public.workout_plans (
+  id, user_id, name, family_id, source_type, library_slot, prescription_locked,
+  trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id
+) VALUES
+  ('f4700000-0000-4000-8000-000000000091', 'f4700000-0000-4000-8000-000000000002', 'Recoverable ISO plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000061', 'f4700000-0000-4000-8000-000000000071'),
+  ('f4700000-0000-4000-8000-000000000093', 'f4700000-0000-4000-8000-000000000002', 'Malformed ISO plan', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'f4700000-0000-4000-8000-000000000041', 'f4700000-0000-4000-8000-000000000062', 'f4700000-0000-4000-8000-000000000072');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, is_active) VALUES
+  ('f4700000-0000-4000-8000-000000000092', 'f4700000-0000-4000-8000-000000000002', 'Personal ISO control', gen_random_uuid(), 'manual', FALSE);
+
+SET LOCAL ROLE postgres;
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
+  ('f4700000-0000-4000-8000-000000000101', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000091', 'Recoverable Sunday', 6, 1),
+  ('f4700000-0000-4000-8000-000000000103', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000093', 'Malformed Sunday', 6, 1),
+  ('f4700000-0000-4000-8000-000000000102', 'f4700000-0000-4000-8000-000000000002', 'f4700000-0000-4000-8000-000000000092', 'Personal control', 6, 1);
+RESET ROLE;
+COMMIT;
+`
+
+const assertIsoWeekdayRepairRollbackSql = `
+DO $$
+BEGIN
+  IF (SELECT day_of_week FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000101') <> 6 THEN
+    RAISE EXCEPTION 'failed ISO migration changed recoverable data before rollback';
+  END IF;
+  IF (SELECT day_of_week FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000102') <> 6 THEN
+    RAISE EXCEPTION 'failed ISO migration changed personal data before rollback';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.workouts'::regclass
+      AND tgname = 'trg_enforce_trainer_workout_iso_schedule'
+      AND NOT tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'failed ISO migration left its defensive trigger installed';
+  END IF;
+END;
+$$;
+`
+
+const removeMalformedIsoWeekdayFixtureSql = `
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+SET LOCAL ROLE postgres;
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+DELETE FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000103';
+UPDATE public.trainer_assignment_versions
+SET materialized_plan_id = NULL
+WHERE id = 'f4700000-0000-4000-8000-000000000072';
+DELETE FROM public.workout_plans WHERE id = 'f4700000-0000-4000-8000-000000000093';
+DELETE FROM public.trainer_assignment_versions WHERE id = 'f4700000-0000-4000-8000-000000000072';
+DELETE FROM public.trainer_plan_assignments WHERE id = 'f4700000-0000-4000-8000-000000000062';
+RESET ROLE;
+COMMIT;
 `
 
 // This is the smallest faithful pre-041 surface: the auth/API roles come from
@@ -101,7 +210,7 @@ CREATE TABLE public.workout_plans (
   generation_request_id UUID, retired_at TIMESTAMPTZ, superseded_at TIMESTAMPTZ, manually_updated_at TIMESTAMPTZ,
   source_post_id UUID, source_user_id UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE TABLE public.workouts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), plan_id UUID REFERENCES public.workout_plans(id), name TEXT NOT NULL, focus TEXT, day_of_week INTEGER, order_in_plan INTEGER, estimated_duration_minutes INTEGER);
+CREATE TABLE public.workouts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), plan_id UUID REFERENCES public.workout_plans(id), name TEXT NOT NULL, focus TEXT, day_of_week INTEGER CHECK (day_of_week BETWEEN 1 AND 7), order_in_plan INTEGER, estimated_duration_minutes INTEGER);
 CREATE TABLE public.workout_exercises (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), workout_id UUID NOT NULL REFERENCES public.workouts(id), exercise_id UUID REFERENCES public.exercises(id), order_index INTEGER, sets INTEGER, reps INTEGER, duration_seconds INTEGER, rest_seconds INTEGER, target_rpe INTEGER, weight_kg NUMERIC, notes TEXT, weight_suggestion_basis TEXT);
 CREATE TABLE public.plan_generation_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), mode TEXT NOT NULL, generator TEXT NOT NULL, success BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE public.posts (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id), routine_snapshot JSONB);
@@ -137,9 +246,14 @@ SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
   ('cccccccc-0000-4000-8000-000000000061', 'cccccccc-0000-4000-8000-000000000041', 'cccccccc-0000-4000-8000-000000000001', 'cccccccc-0000-4000-8000-000000000002', 'proposed');
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
-  ('cccccccc-0000-4000-8000-000000000071', 'cccccccc-0000-4000-8000-000000000061', 1, '{"schemaVersion":1}'::jsonb, 'proposed', 'cccccccc-0000-4000-8000-000000000081');
+  ('cccccccc-0000-4000-8000-000000000071', 'cccccccc-0000-4000-8000-000000000061', 1, '{"schemaVersion":1,"workouts":[{"dayOfWeek":1,"orderInPlan":1}]}'::jsonb, 'proposed', 'cccccccc-0000-4000-8000-000000000081');
 INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
   ('cccccccc-0000-4000-8000-000000000081', 'cccccccc-0000-4000-8000-000000000002', 'Race professional', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, 'cccccccc-0000-4000-8000-000000000041', 'cccccccc-0000-4000-8000-000000000061', 'cccccccc-0000-4000-8000-000000000071');
+SET LOCAL ROLE postgres;
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
+  ('cccccccc-0000-4000-8000-000000000091', 'cccccccc-0000-4000-8000-000000000002', 'cccccccc-0000-4000-8000-000000000081', 'Race day', 1, 1);
+RESET ROLE;
 COMMIT;
 SELECT pg_advisory_lock(hashtextextended('cccccccc-0000-4000-8000-000000000002', 0));
 SELECT dblink_connect('accept_a', 'dbname=postgres user=supabase_admin');
@@ -384,9 +498,22 @@ INSERT INTO public.trainer_template_exercises (id, template_workout_id, exercise
 BEGIN;
 SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, source_template_id, status, accepted_at, active_version_id) VALUES ('eeeeeeee-0000-4000-8000-000000000091', 'eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000061', 'active', NOW(), 'eeeeeeee-0000-4000-8000-000000000101');
-INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES ('eeeeeeee-0000-4000-8000-000000000101', 'eeeeeeee-0000-4000-8000-000000000091', 1, '{"schemaVersion":1}'::jsonb, 'active', 'eeeeeeee-0000-4000-8000-000000000111');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES (
+  'eeeeeeee-0000-4000-8000-000000000101',
+  'eeeeeeee-0000-4000-8000-000000000091',
+  1,
+  jsonb_build_object(
+    'schemaVersion', 1,
+    'workouts', jsonb_build_array(jsonb_build_object(
+      'dayOfWeek', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER,
+      'orderInPlan', 1
+    ))
+  ),
+  'active',
+  'eeeeeeee-0000-4000-8000-000000000111'
+);
 INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES ('eeeeeeee-0000-4000-8000-000000000111', 'eeeeeeee-0000-4000-8000-000000000002', 'Continuity A', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'eeeeeeee-0000-4000-8000-000000000041', 'eeeeeeee-0000-4000-8000-000000000091', 'eeeeeeee-0000-4000-8000-000000000101');
-INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000111', 'Version A day', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER - 1, 1);
+INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000002', 'eeeeeeee-0000-4000-8000-000000000111', 'Version A day', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1);
 INSERT INTO public.workout_exercises (workout_id, exercise_id, order_index, sets, reps, rest_seconds) VALUES ('eeeeeeee-0000-4000-8000-000000000121', 'eeeeeeee-0000-4000-8000-000000000051', 1, 3, 8, 60);
 COMMIT;
 SET request.jwt.claim.sub = 'eeeeeeee-0000-4000-8000-000000000002'; SET request.jwt.claim.role = 'authenticated'; SET ROLE authenticated;
@@ -555,7 +682,7 @@ BEGIN
   SELECT snapshot INTO before_snapshot FROM public.trainer_migration_rerun_snapshot;
   SELECT public.capture_trainer_migration_rerun_snapshot() INTO after_snapshot;
   IF before_snapshot IS DISTINCT FROM after_snapshot THEN
-    RAISE EXCEPTION 'migrations 040-045 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
+    RAISE EXCEPTION 'migrations 040-047 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
   END IF;
 END $$;
 DROP TABLE public.trainer_migration_rerun_snapshot;
@@ -577,6 +704,19 @@ function runPsql(sql, label) {
   const result = docker(['exec', '-i', container, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'supabase_admin', '-d', 'postgres'], { input: sql })
   if (result.status !== 0) throw new Error(`${label} failed with exit code ${result.status}`)
   return `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+}
+
+function runPsqlExpectFailure(sql, label, expectedMessage) {
+  process.stdout.write(`\n[trainer-programming-db] ${label}\n`)
+  const result = docker(
+    ['exec', '-i', container, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'supabase_admin', '-d', 'postgres'],
+    { input: sql, print: false },
+  )
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+  if (result.status === 0 || !output.includes(expectedMessage)) {
+    throw new Error(`${label} did not fail with ${expectedMessage}: ${output}`)
+  }
+  return output
 }
 
 function waitForDatabase() {
@@ -615,18 +755,30 @@ try {
   runPsql(readFileSync(migrationPaths[6], 'utf8'), 'reapplying migration 043 for rerunnability')
   runPsql(readFileSync(migrationPaths[7], 'utf8'), 'reapplying migration 044 for rerunnability')
   runPsql(legacyProfessionalAuditSql, 'seeding pre-045 professional audit evidence')
-  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite')
-  if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   const productionBoundary = loadLegacyOwnerBoundary(repoRoot)
   runPsql(productionBoundary.sql, `applying migration 001 owner boundary (${productionBoundary.sha256})`)
   runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening')
   runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
-  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against 045')
+  runPsql(readFileSync(migrationPaths[9], 'utf8'), 'applying migration 046 release session authorization')
+  runPsql(legacyIsoWeekdayFixturesSql, 'seeding malformed and recoverable ISO weekday fixtures')
+  runPsqlExpectFailure(
+    readFileSync(migrationPaths[10], 'utf8'),
+    'rejecting ambiguous ISO weekday repair',
+    'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED',
+  )
+  runPsql(assertIsoWeekdayRepairRollbackSql, 'verifying failed ISO repair rolled back atomically')
+  runPsql(removeMalformedIsoWeekdayFixtureSql, 'removing only the malformed ISO weekday fixture')
+  runPsql(readFileSync(migrationPaths[10], 'utf8'), 'applying migration 047 ISO weekday repair')
+  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 047')
+  if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
+  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against migration 047')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
+  const isoTapOutput = runPsql(readFileSync(isoWeekdayTestPath, 'utf8'), 'running 047 ISO weekday repair pgTAP suite')
+  if (/^\s*not ok\b/m.test(isoTapOutput) || /# Looks like you (?:failed|planned)\b/.test(isoTapOutput)) throw new Error('047 pgTAP reported one or more failed assertions')
   const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
   if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-045')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-047')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
@@ -637,13 +789,13 @@ try {
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
     migrationPaths.slice(3).map(migrationPath => readFileSync(migrationPath, 'utf8')).join('\n'),
-    'reapplying migrations 040-045 after locked professional data',
+    'reapplying migrations 040-047 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-045 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-047 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

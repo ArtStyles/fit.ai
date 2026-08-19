@@ -53,7 +53,7 @@ INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active, sourc
   ('f4000000-0000-4000-8000-000000000091', 'f4000000-0000-4000-8000-000000000003', 'Live workout name', gen_random_uuid(), TRUE, 'trainer_assigned', 'professional', TRUE, 'f4000000-0000-4000-8000-000000000041', 'f4000000-0000-4000-8000-000000000061', 'f4000000-0000-4000-8000-000000000071');
 SET CONSTRAINTS ALL IMMEDIATE;
 INSERT INTO public.workouts (id, user_id, plan_id, name, day_of_week, order_in_plan) VALUES
-  ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000091', 'Live workout name', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER - 1, 1),
+  ('f4000000-0000-4000-8000-000000000101', 'f4000000-0000-4000-8000-000000000003', 'f4000000-0000-4000-8000-000000000091', 'Live workout name', EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'America/Havana')::INTEGER, 1),
   ('f4000000-0000-4000-8000-000000000102', 'f4000000-0000-4000-8000-000000000003', NULL, 'Personal workout', NULL, NULL);
 INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, effective_from, effective_to) VALUES
   ('f4000000-0000-4000-8000-000000000072', 'f4000000-0000-4000-8000-000000000061', 2, '{"schemaVersion":1,"workouts":[]}'::JSONB, 'superseded', NOW() - INTERVAL '21 days', NOW() - INTERVAL '15 days'),
