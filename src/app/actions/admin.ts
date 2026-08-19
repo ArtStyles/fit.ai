@@ -6,12 +6,16 @@ import type { Json } from '@/types/database'
 import { requireAdminUserContext } from '@/lib/auth/admin'
 import { isOwnerAdminEmail } from '@/lib/auth/identity'
 
+const ADMIN_USERS_PATH = '/admin/users'
+const adminUsersFeedback = (key: 'notice' | 'error', value: string) => (
+  `${ADMIN_USERS_PATH}?${key}=${value}`
+)
 const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ALLOWED_DURATIONS = new Set(['7', '30', 'indefinite'])
 
 function readTargetId(formData: FormData): string {
   const targetUserId = String(formData.get('targetUserId') ?? '')
-  if (!USER_ID_PATTERN.test(targetUserId)) redirect('/admin?error=admin_invalid_user')
+  if (!USER_ID_PATTERN.test(targetUserId)) redirect(adminUsersFeedback('error', 'admin_invalid_user'))
   return targetUserId
 }
 
@@ -19,8 +23,8 @@ async function getMutableTarget(targetUserId: string) {
   const context = await requireAdminUserContext()
   const { data, error } = await context.service.auth.admin.getUserById(targetUserId)
 
-  if (error || !data.user) redirect('/admin?error=admin_invalid_user')
-  if (isOwnerAdminEmail(data.user.email)) redirect('/admin?error=admin_owner_protected')
+  if (error || !data.user) redirect(adminUsersFeedback('error', 'admin_invalid_user'))
+  if (isOwnerAdminEmail(data.user.email)) redirect(adminUsersFeedback('error', 'admin_owner_protected'))
 
   return { ...context, target: data.user }
 }
@@ -52,7 +56,9 @@ async function writeAudit({
 export async function setUserSubscription(formData: FormData) {
   const targetUserId = readTargetId(formData)
   const tier = String(formData.get('tier') ?? '')
-  if (tier !== 'free' && tier !== 'pro') redirect('/admin?error=admin_invalid_action')
+  if (tier !== 'free' && tier !== 'pro') {
+    redirect(adminUsersFeedback('error', 'admin_invalid_action'))
+  }
 
   const { user, service } = await getMutableTarget(targetUserId)
   const { error } = await (service.rpc as any)('set_subscription_tier_atomic', {
@@ -60,12 +66,12 @@ export async function setUserSubscription(formData: FormData) {
     p_subscription_tier: tier,
   })
   if (error?.message?.includes('PLAN_DOWNGRADE_FAMILY_LIMIT')) {
-    redirect('/admin?error=admin_plan_downgrade_family_limit')
+    redirect(adminUsersFeedback('error', 'admin_plan_downgrade_family_limit'))
   }
   if (error?.message?.includes('PLAN_TIER_LOCK_BUSY_RETRY')) {
-    redirect('/admin?error=admin_plan_tier_busy')
+    redirect(adminUsersFeedback('error', 'admin_plan_tier_busy'))
   }
-  if (error) redirect('/admin?error=admin_update_failed')
+  if (error) redirect(adminUsersFeedback('error', 'admin_update_failed'))
 
   await writeAudit({
     service,
@@ -75,8 +81,12 @@ export async function setUserSubscription(formData: FormData) {
     metadata: { tier },
   })
 
+  revalidatePath(ADMIN_USERS_PATH)
   revalidatePath('/admin')
-  redirect(`/admin?notice=${tier === 'pro' ? 'admin_pro_granted' : 'admin_subscription_cancelled'}`)
+  redirect(adminUsersFeedback(
+    'notice',
+    tier === 'pro' ? 'admin_pro_granted' : 'admin_subscription_cancelled',
+  ))
 }
 
 export async function suspendUser(formData: FormData) {
@@ -85,7 +95,7 @@ export async function suspendUser(formData: FormData) {
   const duration = String(formData.get('duration') ?? '')
 
   if (reason.length < 4 || !ALLOWED_DURATIONS.has(duration)) {
-    redirect('/admin?error=admin_suspension_fields')
+    redirect(adminUsersFeedback('error', 'admin_suspension_fields'))
   }
 
   const { user, service } = await getMutableTarget(targetUserId)
@@ -100,10 +110,11 @@ export async function suspendUser(formData: FormData) {
     p_until: suspendedUntil,
   })
 
-  if (error) redirect('/admin?error=admin_update_failed')
+  if (error) redirect(adminUsersFeedback('error', 'admin_update_failed'))
 
+  revalidatePath(ADMIN_USERS_PATH)
   revalidatePath('/admin')
-  redirect('/admin?notice=admin_user_suspended')
+  redirect(adminUsersFeedback('notice', 'admin_user_suspended'))
 }
 
 export async function reactivateUser(formData: FormData) {
@@ -118,7 +129,7 @@ export async function reactivateUser(formData: FormData) {
     suspended_by: null,
   }).eq('id', targetUserId)
 
-  if (error) redirect('/admin?error=admin_update_failed')
+  if (error) redirect(adminUsersFeedback('error', 'admin_update_failed'))
 
   await writeAudit({
     service,
@@ -127,6 +138,7 @@ export async function reactivateUser(formData: FormData) {
     action: 'account_reactivated',
   })
 
+  revalidatePath(ADMIN_USERS_PATH)
   revalidatePath('/admin')
-  redirect('/admin?notice=admin_user_reactivated')
+  redirect(adminUsersFeedback('notice', 'admin_user_reactivated'))
 }
