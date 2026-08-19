@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(178);
+SELECT plan(179);
 
 CREATE TEMP TABLE expected_trainer_sensitive_tables (table_name TEXT PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO expected_trainer_sensitive_tables (table_name) VALUES
@@ -121,12 +121,30 @@ SELECT is(
 SELECT ok(NOT EXISTS (
   SELECT 1 FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace
   WHERE namespace.nspname = 'public' AND function.prosecdef
+    AND function.oid NOT IN (
+      'public.guard_profile_weight_derived()'::regprocedure,
+      'public.sync_profile_weight_from_measurements()'::regprocedure
+    )
     AND (function.proconfig IS NULL OR NOT EXISTS (
       SELECT 1 FROM unnest(function.proconfig) setting
       WHERE setting ~ '^search_path=(public|storage|auth)(, (public|storage|auth))*, pg_temp$'
-         OR setting = 'search_path=pg_catalog, public'
     ))
-), 'every effective public SECURITY DEFINER function pins a trusted search_path');
+), 'every effective public SECURITY DEFINER function pins a trusted search_path except the two reviewed 048 trigger functions');
+SELECT set_eq(
+  $$SELECT function.oid::regprocedure::TEXT || '|' || pg_get_function_result(function.oid)
+      FROM pg_proc function
+      JOIN pg_namespace namespace ON namespace.oid = function.pronamespace
+     WHERE namespace.nspname = 'public'
+       AND function.prosecdef
+       AND EXISTS (
+         SELECT 1 FROM unnest(function.proconfig) setting
+         WHERE setting = 'search_path=pg_catalog, public'
+       )$$,
+  $$VALUES
+    ('guard_profile_weight_derived()|trigger'),
+    ('sync_profile_weight_from_measurements()|trigger')$$,
+  'only the two reviewed 048 trigger functions use the inherited pg_catalog public search_path'
+);
 SELECT ok(
   has_function_privilege('service_role', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
@@ -145,7 +163,7 @@ SELECT ok(
   AND has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND NOT has_function_privilege('service_role', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE'),
-  'effective function ACLs expose only the reviewed authenticated/service entry points'
+  'effective function ACLs expose only the reviewed API-role entry points, including inherited anonymous trigger grants'
 );
 SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || COALESCE(role.rolname, 'PUBLIC') || '|' || privilege.privilege_type, E'\x1e' ORDER BY function.oid::regprocedure::TEXT, COALESCE(role.rolname, 'PUBLIC'), privilege.privilege_type))

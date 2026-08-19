@@ -274,7 +274,7 @@ Se añadirá una prueba de la migración 049 que verifique:
 - presencia de preflight, backfill, postcondición y trigger;
 - reemplazo de las cuatro funciones y conservación de ACL;
 - ausencia de `dayOfWeek - 1` en las definiciones finales;
-- marcador operativo `47`;
+- marcador operativo `49`;
 - inclusión de la 049 al final del runner y del contrato de reejecución.
 
 Las pruebas no exigirán editar 043/045: esos archivos son historia desplegada.

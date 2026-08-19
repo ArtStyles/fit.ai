@@ -425,7 +425,7 @@ OR NOT EXISTS (
 )
 ```
 
-Return `47`, retain `STABLE`, reapply the 045 grants, and end the file with `COMMIT;`.
+Return `49`, retain `STABLE`, reapply the 045 grants, and end the file with `COMMIT;`.
 
 - [ ] **Step 7: Run the static test green and inspect the migration diff**
 
@@ -848,8 +848,16 @@ Add a checklist item requiring a synthetic Monday/Sunday proposal and revision b
 - [ ] **Step 4: Verify documentation consistency**
 
 ```powershell
-rg -n "040.?045|preflight 45|resultado válido es `45`|conservar datos/migraciones 040.?045" README.md docs/operations/trainer-marketplace-runbook.md docs/operations/trainer-pilot-checklist.md
-git diff --check -- README.md docs/operations/trainer-marketplace-runbook.md docs/operations/trainer-pilot-checklist.md
+$staleMarker = '4' + '7'
+$stalePatterns = @(
+  ([regex]::Escape('0' + $staleMarker + '_trainer_iso_weekday_repair')),
+  ('040.?' + $staleMarker),
+  ('preflight[^\r\n]*' + $staleMarker),
+  ('Return `' + $staleMarker + '`'),
+  ('marcador operativo `' + $staleMarker + '`')
+) -join '|'
+rg -n $stalePatterns README.md docs scripts src supabase
+git diff --check -- README.md docs
 ```
 
 Expected: no stale current-state references; historical statements may remain only when explicitly labeled historical. Diff check exits `0`.

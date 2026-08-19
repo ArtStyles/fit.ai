@@ -30,16 +30,38 @@ const trainerProgrammingTest = readFileSync(
 const migrationFiles = readdirSync(
   new URL('../../../../supabase/migrations/', import.meta.url),
 ).filter((file) => /^\d{3}_.*\.sql$/.test(file)).sort()
+const nonInstallableMigrationFiles = new Set([
+  '004_rollback.sql',
+  '005_rollback.sql',
+])
+const installableMigrationFilesFor = (files: string[]) => files.filter(
+  (file) => /^\d{3}_.*\.sql$/.test(file) && !nonInstallableMigrationFiles.has(file),
+)
+const duplicateMigrationPrefixes = (files: string[]) => {
+  const prefixes = installableMigrationFilesFor(files).map((file) => file.slice(0, 3))
+  return Array.from(new Set(
+    prefixes.filter((prefix, index) => prefixes.indexOf(prefix) !== index),
+  ))
+}
 const releaseMigrationFiles = migrationFiles.filter((file) => /^0(?:4\d)_/.test(file))
 
 describe('trainer migration rerun contract', () => {
   it('assigns every production migration a unique numeric prefix', () => {
-    const prefixes = releaseMigrationFiles.map((file) => file.slice(0, 3))
-    const duplicatePrefixes = Array.from(new Set(
-      prefixes.filter((prefix, index) => prefixes.indexOf(prefix) !== index),
-    ))
+    expect(duplicateMigrationPrefixes(migrationFiles)).toEqual([])
+  })
 
-    expect(duplicatePrefixes).toEqual([])
+  it('checks every installable SQL prefix while excluding only the two rollback utilities', () => {
+    expect(duplicateMigrationPrefixes([
+      '004_ai_plan_fields.sql',
+      '004_rollback.sql',
+      '005_ai_usage_logs.sql',
+      '005_rollback.sql',
+      '039_first_installable.sql',
+      '039_second_installable.sql',
+      '040_trainer_foundations.sql',
+      '050_first_installable.sql',
+      '050_second_installable.sql',
+    ])).toEqual(['039', '050'])
   })
 
   it('keeps the production migrations in the exact 040-049 order', () => {
