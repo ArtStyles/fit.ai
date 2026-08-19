@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 SELECT plan(8);
 
-SELECT is(public.trainer_security_preflight(), 47, 'trainer preflight marks the ISO repair');
+SELECT is(public.trainer_security_preflight(), 49, 'trainer preflight marks the ISO repair');
 SELECT is(
   (SELECT day_of_week FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000101'),
   7,

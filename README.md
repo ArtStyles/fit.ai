@@ -156,11 +156,13 @@ Aplica las migraciones SQL en este orden:
 044_trainer_insights.sql
 045_trainer_hardening.sql
 046_release_session_authorization.sql
-047_trainer_iso_weekday_repair.sql
+047_product_notification_preferences_insert.sql
+048_profile_weight_measurement_sync.sql
+049_trainer_iso_weekday_repair.sql
 ```
 
 Para el marketplace de entrenadores, desplegar primero la base de datos y
-después una aplicación compatible. La `047_trainer_iso_weekday_repair.sql` debe
+después una aplicación compatible. La `049_trainer_iso_weekday_repair.sql` debe
 permanecer como la última capa correctiva tras cualquier reaplicación de
 `043_trainer_programming.sql` o `045_trainer_hardening.sql`.
 

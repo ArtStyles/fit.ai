@@ -4,7 +4,7 @@
 
 **Goal:** Repair professional workout weekday materialization so snapshots, live workouts, coach insights, and future writes use ISO 8601 values `1..7` without shifting.
 
-**Architecture:** Add an immutable-history-safe migration `047` that validates and repairs only professional materializations from their version snapshots, then replaces the four faulty final routines and installs a defensive workout trigger. Make the Docker harness reproduce the production `CHECK`, exercise failed preflight, backfill, Monday/Sunday materialization, revision, insights, rerunnability, and session continuity before updating deployment documentation.
+**Architecture:** Add an immutable-history-safe migration `049` that validates and repairs only professional materializations from their version snapshots, then replaces the four faulty final routines and installs a defensive workout trigger. Make the Docker harness reproduce the production `CHECK`, apply the exact 040–049 sequence including the unrelated 047/048 migrations, and exercise failed preflight, backfill, Monday/Sunday materialization, revision, insights, rerunnability, and session continuity before updating deployment documentation.
 
 **Tech Stack:** PostgreSQL 17 / PL/pgSQL, Supabase migrations and RLS, pgTAP, Node.js ESM Docker harness, TypeScript, Vitest, pnpm, Markdown.
 
@@ -13,10 +13,10 @@
 ## Global Constraints
 
 - ISO 8601 `1=lunes` through `7=domingo` is the only weekday convention.
-- Do not edit deployed migrations `043_trainer_programming.sql` or `045_trainer_hardening.sql`; `047` must override their final routines.
+- Do not edit deployed migrations `043_trainer_programming.sql`, `045_trainer_hardening.sql`, `046_release_session_authorization.sql`, `047_product_notification_preferences_insert.sql`, or `048_profile_weight_measurement_sync.sql`; `049` must override their final trainer routines.
 - Backfill only `workout_plans.source_type = 'trainer_assigned'` and derive the exact value from the immutable assignment-version snapshot by `orderInPlan`.
 - Never infer recovery with `day_of_week + 1` and never rewrite templates, snapshots, audit logs, authorization snapshots, progress logs, or personal plans.
-- Migration 047 must not issue `UPDATE`/`DELETE` against `session_authorizations`,
+- Migration 049 must not issue `UPDATE`/`DELETE` against `session_authorizations`,
   `progress_logs`, `exercise_logs`, `professional_audit_logs`, or any snapshot
   column; completed and in-flight evidence remains immutable.
 - Any ambiguous link, malformed snapshot, duplicate day/order, or cardinality mismatch aborts the full migration with `TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED` and aggregated diagnostics only.
@@ -31,14 +31,14 @@
 
 **Files:**
 - Create: `src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts`
-- Create: `supabase/migrations/047_trainer_iso_weekday_repair.sql`
+- Create: `supabase/migrations/049_trainer_iso_weekday_repair.sql`
 - Read source bodies from: `supabase/migrations/043_trainer_programming.sql:832`, `supabase/migrations/043_trainer_programming.sql:1249`, `supabase/migrations/045_trainer_hardening.sql:83`, `supabase/migrations/045_trainer_hardening.sql:386`
 
 **Interfaces:**
-- Produces: migration `047_trainer_iso_weekday_repair.sql`.
+- Produces: migration `049_trainer_iso_weekday_repair.sql`.
 - Produces: `public.enforce_trainer_workout_iso_schedule()` trigger function.
 - Produces: `trg_enforce_trainer_workout_iso_schedule` on `public.workouts`.
-- Produces: final `public.trainer_security_preflight()` returning integer `47`.
+- Produces: final `public.trainer_security_preflight()` returning integer `49`.
 - Preserves: the four existing public RPC signatures and ACL contracts.
 
 - [ ] **Step 1: Write the failing static contract test**
@@ -50,7 +50,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync(
-  new URL('../../../../supabase/migrations/047_trainer_iso_weekday_repair.sql', import.meta.url),
+  new URL('../../../../supabase/migrations/049_trainer_iso_weekday_repair.sql', import.meta.url),
   'utf8',
 ).replace(/\r\n?/g, '\n')
 
@@ -58,7 +58,7 @@ function routine(name: string) {
   const body = migration.match(
     new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\([\\s\\S]+?\\n\\$\\$;`, 'i'),
   )?.[0]
-  expect(body, `${name} must be replaced by migration 047`).toBeDefined()
+  expect(body, `${name} must be replaced by migration 049`).toBeDefined()
   return body!
 }
 
@@ -99,7 +99,7 @@ describe('trainer ISO weekday repair migration', () => {
     expect(preflight).toContain("to_regprocedure('public.release_session_authorization(uuid,uuid)')")
     expect(preflight).toContain("to_regprocedure('public.enforce_trainer_workout_iso_schedule()')")
     expect(preflight).toContain('trg_enforce_trainer_workout_iso_schedule')
-    expect(preflight).toMatch(/RETURN 47/)
+    expect(preflight).toMatch(/RETURN 49/)
   })
 })
 ```
@@ -112,11 +112,11 @@ Run:
 pnpm vitest run src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts
 ```
 
-Expected: FAIL because `047_trainer_iso_weekday_repair.sql` does not exist.
+Expected: FAIL because `049_trainer_iso_weekday_repair.sql` does not exist.
 
 - [ ] **Step 3: Create the transaction, locks, structural preflight, and exact backfill**
 
-Start `supabase/migrations/047_trainer_iso_weekday_repair.sql` with an explicit transaction and a bounded lock wait:
+Start `supabase/migrations/049_trainer_iso_weekday_repair.sql` with an explicit transaction and a bounded lock wait:
 
 ```sql
 BEGIN;
@@ -433,7 +433,7 @@ Run:
 
 ```powershell
 pnpm vitest run src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts
-git diff --check -- supabase/migrations/047_trainer_iso_weekday_repair.sql src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts
+git diff --check -- supabase/migrations/049_trainer_iso_weekday_repair.sql src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts
 ```
 
 Expected: the focal Vitest file passes and diff check exits `0`.
@@ -441,7 +441,7 @@ Expected: the focal Vitest file passes and diff check exits `0`.
 - [ ] **Step 8: Commit the migration contract and implementation**
 
 ```powershell
-git add -- supabase/migrations/047_trainer_iso_weekday_repair.sql src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts
+git add -- supabase/migrations/049_trainer_iso_weekday_repair.sql src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts
 git commit -m "fix(trainer): repair ISO workout weekdays"
 ```
 
@@ -461,21 +461,38 @@ git commit -m "fix(trainer): repair ISO workout weekdays"
 - Modify: `supabase/tests/044_trainer_insights_test.sql:56`
 - Modify: `src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts`
 - Read: `src/lib/coaching/__tests__/trainerSecurityMigration.test.ts`
-- Create: `supabase/tests/047_trainer_iso_weekday_repair_test.sql`
+- Create: `supabase/tests/049_trainer_iso_weekday_repair_test.sql`
 
 **Interfaces:**
-- Consumes: migration 047 and `trg_enforce_trainer_workout_iso_schedule` from Task 1.
+- Consumes: migration 049 and `trg_enforce_trainer_workout_iso_schedule` from Task 1.
 - Produces: Docker schema with `workouts_day_of_week_check` matching production.
 - Produces: `runPsqlExpectFailure(sql, label, expectedMessage)` for intentional migration-preflight failures.
 - Produces: committed legacy fixture IDs under prefix `f4700000-...` for post-migration assertions.
 
-- [ ] **Step 1: Write the failing final-order contract before changing the runner**
+- [ ] **Step 1: Write the failing prefix and final-order contracts before renaming the migration**
 
-Add to `trainerMigrationRerunContract.test.ts`:
+Read the real migration directory and add two separate tests: one that rejects
+duplicate numeric prefixes in the 040–049 release segment, and another that
+requires this exact ordered list:
+
+```text
+040_trainer_foundations.sql
+041_trainer_verification.sql
+042_trainer_relationships.sql
+043_trainer_programming.sql
+044_trainer_insights.sql
+045_trainer_hardening.sql
+046_release_session_authorization.sql
+047_product_notification_preferences_insert.sql
+048_profile_weight_measurement_sync.sql
+049_trainer_iso_weekday_repair.sql
+```
+
+Keep the ISO rerun assertions in `trainerMigrationRerunContract.test.ts`:
 
 ```ts
 const isoRepair = readFileSync(
-  new URL('../../../../supabase/migrations/047_trainer_iso_weekday_repair.sql', import.meta.url),
+  new URL('../../../../supabase/migrations/049_trainer_iso_weekday_repair.sql', import.meta.url),
   'utf8',
 )
 const trainerRunner = readFileSync(
@@ -484,9 +501,9 @@ const trainerRunner = readFileSync(
 )
 
 it('reapplies the ISO repair after every historical trainer routine', () => {
-  expect(isoRepair).toMatch(/RETURN 47/i)
-  expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_trainer_iso_weekday_repair\.sql/i)
-  expect(trainerRunner).toMatch(/migrationPaths\.slice\(3\)[\s\S]+reapplying migrations 040-047/i)
+  expect(isoRepair).toMatch(/RETURN 49/i)
+  expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_product_notification_preferences_insert\.sql[\s\S]+048_profile_weight_measurement_sync\.sql[\s\S]+049_trainer_iso_weekday_repair\.sql/i)
+  expect(trainerRunner).toMatch(/trainerMigrationFiles\.map\(readMigration\)[\s\S]+reapplying migrations 040-049/i)
 })
 ```
 
@@ -496,16 +513,20 @@ Run:
 pnpm vitest run src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts
 ```
 
-Expected: FAIL because the runner ends at migration 045 and its rerun banner is stale.
+Run each new test separately. Expected RED evidence: the prefix test receives
+exactly `['047']`; the order test shows the ISO file as an extra 047 entry and
+the 049 file as missing. Neither failure may be caused by an unreadable path.
 
-- [ ] **Step 2: Make the harness load 046/047 and reproduce the real constraint**
+- [ ] **Step 2: Make the harness load 046–049 and reproduce the real constraint**
 
 Append these migration files in exact order:
 
 ```js
 '045_trainer_hardening.sql',
 '046_release_session_authorization.sql',
-'047_trainer_iso_weekday_repair.sql',
+'047_product_notification_preferences_insert.sql',
+'048_profile_weight_measurement_sync.sql',
+'049_trainer_iso_weekday_repair.sql',
 ```
 
 Change the bootstrap column to:
@@ -517,7 +538,7 @@ day_of_week INTEGER CHECK (day_of_week BETWEEN 1 AND 7)
 Add:
 
 ```js
-const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '047_trainer_iso_weekday_repair_test.sql')
+const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '049_trainer_iso_weekday_repair_test.sql')
 ```
 
 - [ ] **Step 3: Add an expected-failure runner for atomic preflight testing**
@@ -539,9 +560,9 @@ function runPsqlExpectFailure(sql, label, expectedMessage) {
 }
 ```
 
-- [ ] **Step 4: Add committed malformed and recoverable fixtures before 047**
+- [ ] **Step 4: Add committed malformed and recoverable fixtures before 049**
 
-After applying 045 and 046, seed two isolated graphs under IDs beginning
+After applying 045, 046, 047-product, and 048, seed two isolated graphs under IDs beginning
 `f4700000`:
 
 - malformed graph: snapshot has two entries with `orderInPlan=1`, one materialized workout at day `6`;
@@ -574,11 +595,11 @@ SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
 
 `COMMIT` restores the runner role. Do not disable FK, identity, or locked-plan triggers while creating either fixture.
 
-Run 047 once with the malformed graph present:
+Run 049 once with the malformed graph present:
 
 ```js
 runPsqlExpectFailure(
-  readFileSync(migrationPaths[10], 'utf8'),
+  readMigration('049_trainer_iso_weekday_repair.sql'),
   'rejecting ambiguous ISO weekday repair',
   'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED',
 )
@@ -588,12 +609,12 @@ Immediately assert in SQL that recoverable day remains `6`, the personal day
 remains `6`, and the migration trigger does not exist. Delete workout `0103`,
 then delete version `0072`, plan `0093`, and assignment `0062` in one
 transaction with constraints deferred; the shared relationship remains. Then
-apply 047 normally. This demonstrates full rollback rather than only matching
+apply 049 normally. This demonstrates full rollback rather than only matching
 an error string.
 
 - [ ] **Step 5: Reorder the runner so behavior executes against the final schema**
 
-Before adding the 047 application call, run:
+Before adding the 049 application call, run:
 
 ```powershell
 pnpm test:db:trainers
@@ -612,19 +633,19 @@ reapply 043, reapply 044
 seed legacy professional audit
 apply production owner boundary
 apply 045, reapply 045
-apply 046
+apply 046, 047 product preferences, 048 profile-weight sync
 seed malformed + recoverable ISO fixtures
-expect 047 preflight failure and verify rollback
+expect 049 preflight failure and verify rollback
 remove malformed fixture only
-apply 047
-run 043, 044, 047, audit, and optional authorization pgTAP suites
+apply 049
+run 043, 044, 049, audit, and optional authorization pgTAP suites
 run concurrency/continuity checks
 capture rerun snapshot
-reapply 040–047 with 047 last
+reapply 040–049 with 049 last
 verify rerun snapshot
 ```
 
-Update the final PASS banner to `migrations 040-047`.
+Update the final PASS banner to `migrations 040-049`.
 
 - [ ] **Step 6: Add Monday/Sunday proposal and revision assertions**
 
@@ -678,7 +699,7 @@ Do not change the pgTAP count: the existing prescribed-workout-ID assertion is t
 
 - [ ] **Step 8: Add focused backfill, trigger, preflight, and personal-control pgTAP**
 
-Create `supabase/tests/047_trainer_iso_weekday_repair_test.sql`:
+Create `supabase/tests/049_trainer_iso_weekday_repair_test.sql`:
 
 ```sql
 BEGIN;
@@ -686,7 +707,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 SELECT plan(6);
 
-SELECT is(public.trainer_security_preflight(), 47, 'trainer preflight marks the ISO repair');
+SELECT is(public.trainer_security_preflight(), 49, 'trainer preflight marks the ISO repair');
 SELECT is(
   (SELECT day_of_week FROM public.workouts WHERE id = 'f4700000-0000-4000-8000-000000000101'),
   7,
@@ -725,13 +746,13 @@ ROLLBACK;
 
 - [ ] **Step 9: Run the database suite green**
 
-After completing the ordering and applying 047, run:
+After completing the ordering and applying 049, run:
 
 ```powershell
 pnpm test:db:trainers
 ```
 
-Expected: all 043, 044, 047, audit, authorization, race, continuity, and rerun checks pass; the banner reports `040-047`.
+Expected: all 043, 044, 049, audit, authorization, race, continuity, and rerun checks pass; the banner reports `040-049`.
 
 - [ ] **Step 10: Run final-order/static contracts green**
 
@@ -740,12 +761,12 @@ pnpm vitest run src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts
 ```
 
 Expected: all three files pass. Keep the existing 045 migration test unchanged:
-it proves the historical 045 marker, while 047 owns the final marker.
+it proves the historical 045 marker, while 049 owns the final marker.
 
 - [ ] **Step 11: Commit the production-faithful regression suite**
 
 ```powershell
-git add -- scripts/test-trainer-programming-db.mjs supabase/tests/043_trainer_programming_test.sql supabase/tests/044_trainer_insights_test.sql supabase/tests/047_trainer_iso_weekday_repair_test.sql src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts
+git add -- scripts/test-trainer-programming-db.mjs supabase/tests/043_trainer_programming_test.sql supabase/tests/044_trainer_insights_test.sql supabase/tests/049_trainer_iso_weekday_repair_test.sql src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts
 git commit -m "test(trainer): cover ISO weekday repair"
 ```
 
@@ -761,8 +782,8 @@ git commit -m "test(trainer): cover ISO weekday repair"
 - Modify: `docs/operations/trainer-pilot-checklist.md:5`
 
 **Interfaces:**
-- Consumes: marker `47`, migration order, error codes, and postcondition query from Tasks 1–3.
-- Produces: operator-visible deploy gate `040–047`, preflight `47`, divergence count `0`, and forward-only rollback.
+- Consumes: marker `49`, migration order, error codes, and postcondition query from Tasks 1–3.
+- Produces: operator-visible deploy gate `040–049`, preflight `49`, divergence count `0`, and forward-only rollback.
 
 - [ ] **Step 1: Update the root migration inventory**
 
@@ -776,14 +797,16 @@ Extend the `README.md` ordered migration list from 039 through:
 044_trainer_insights.sql
 045_trainer_hardening.sql
 046_release_session_authorization.sql
-047_trainer_iso_weekday_repair.sql
+047_product_notification_preferences_insert.sql
+048_profile_weight_measurement_sync.sql
+049_trainer_iso_weekday_repair.sql
 ```
 
-State that database deploy precedes the compatible app deploy and that 047 must remain after any reapplication of 043/045.
+State that database deploy precedes the compatible app deploy and that 049 must remain after any reapplication of 043/045.
 
 - [ ] **Step 2: Update the runbook order and preflight**
 
-Rename the section to `Orden de migración 040–047`, add 046/047, and change every final list/marker reference from 045 to 047 where it means current deployed state.
+Rename the section to `Orden de migración 040–049`, list 046/047/048/049, and change every final list/marker reference to 049 where it means current deployed state.
 
 Add this privileged, count-only audit after `trainer_security_preflight()`:
 
@@ -804,19 +827,19 @@ WHERE plan.source_type = 'trainer_assigned'
 Document exact expected results:
 
 ```text
-trainer_security_preflight = 47
+trainer_security_preflight = 49
 iso_weekday_divergences = 0
 ```
 
-Add Monday/Sunday proposal smoke steps, the pause-publication procedure, and the rule that rollback keeps 047/data and fixes forward. Never restore the defective subtraction.
+Add Monday/Sunday proposal smoke steps, the pause-publication procedure, and the rule that rollback keeps migrations through 049/data and fixes forward. Never restore the defective subtraction.
 
 - [ ] **Step 3: Update the pilot gate**
 
 Replace all current-state references with:
 
 ```text
-migraciones 040–047
-trainer_security_preflight() = 47
+migraciones 040–049
+trainer_security_preflight() = 49
 divergencias ISO profesionales = 0
 ```
 
@@ -857,7 +880,7 @@ pnpm vitest run src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts sr
 pnpm test:db:trainers
 ```
 
-Expected: zero failed Vitest assertions; Docker banner confirms migrations 040–047 behavior/rerunnability.
+Expected: zero failed Vitest assertions; Docker banner confirms migrations 040–049 behavior/rerunnability.
 
 - [ ] **Step 2: Run repository-wide verification serially**
 
@@ -873,17 +896,17 @@ Expected: all commands exit `0`. Record exact test file/test counts and database
 - [ ] **Step 3: Audit the final diff against the spec**
 
 ```powershell
-git diff 1d7b049..HEAD -- supabase/migrations/047_trainer_iso_weekday_repair.sql scripts/test-trainer-programming-db.mjs supabase/tests/043_trainer_programming_test.sql supabase/tests/044_trainer_insights_test.sql supabase/tests/047_trainer_iso_weekday_repair_test.sql src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts README.md docs/operations/trainer-marketplace-runbook.md docs/operations/trainer-pilot-checklist.md
+git diff 1d7b049..HEAD -- supabase/migrations/049_trainer_iso_weekday_repair.sql scripts/test-trainer-programming-db.mjs supabase/tests/043_trainer_programming_test.sql supabase/tests/044_trainer_insights_test.sql supabase/tests/049_trainer_iso_weekday_repair_test.sql src/lib/coaching/__tests__/trainerIsoWeekdayMigration.test.ts src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts README.md docs/operations/trainer-marketplace-runbook.md docs/operations/trainer-pilot-checklist.md
 git status --short
 ```
 
 Confirm manually:
 
 - only four legacy expressions changed in copied routine bodies;
-- no `- 1` remains in the final 047 weekday mappings;
+- no `- 1` remains in the final 049 weekday mappings;
 - backfill predicate cannot reach personal plans;
 - failed preflight proves rollback, not just error text;
-- 047 is last after every historical rerun;
+- 049 is last after every historical rerun;
 - no snapshots/audits/history are updated;
 - only the pre-existing unrelated documents remain untracked.
 

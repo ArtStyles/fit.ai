@@ -1,7 +1,7 @@
 # Reparación ISO de días en rutinas profesionales
 
 **Fecha:** 2026-08-19 · **Estado:** Diseño aprobado · **Producto:** Vekira
-**Migración prevista:** `047_trainer_iso_weekday_repair.sql`
+**Migración final:** `049_trainer_iso_weekday_repair.sql`
 
 ## 1. Resumen
 
@@ -27,7 +27,7 @@ La solución será una migración aditiva y transaccional que:
 4. añade una defensa de base de datos para impedir nuevas divergencias;
 5. actualiza el preflight operativo, el harness PostgreSQL y la documentación.
 
-No se editarán las migraciones 043 ni 045 ya desplegadas. La 047 será la capa
+No se editarán las migraciones 043, 045, 046, 047-product ni 048 ya desplegadas. La 049 será la capa
 correctiva para instalaciones existentes y nuevas.
 
 ## 2. Evidencia y causa raíz
@@ -122,7 +122,7 @@ posterior. También conserva el punto ciego del harness.
 Es la opción elegida. Conserva interfaces, corrige los datos recuperables y
 hace que una futura desviación falle en la base de datos antes de persistirse.
 
-## 7. Diseño de la migración 047
+## 7. Diseño de la migración 049
 
 ### 7.1 Transacción y concurrencia
 
@@ -210,7 +210,7 @@ deje permisos dependientes del estado previo.
 
 ### 7.6 Defensa de integridad
 
-La 047 añadirá un trigger `BEFORE INSERT OR UPDATE OF plan_id, day_of_week,
+La 049 añadirá un trigger `BEFORE INSERT OR UPDATE OF plan_id, day_of_week,
 order_in_plan` sobre `workouts`.
 
 Para planes personales será un no-op. Para un plan profesional, el trigger:
@@ -243,11 +243,11 @@ La secuencia dentro de la transacción será:
 
 ### 7.8 Preflight operativo
 
-`trainer_security_preflight()` se redefinirá para devolver `47` y comprobar,
+`trainer_security_preflight()` se redefinirá para devolver `49` y comprobar,
 además del catálogo actual:
 
 - `release_session_authorization(UUID, UUID)` de la migración 046;
-- la función y el trigger de integridad ISO de la 047;
+- la función y el trigger de integridad ISO de la 049;
 - las cuatro RPC/proyecciones reemplazadas.
 
 El preflight seguirá siendo de solo lectura y no expondrá datos. El runbook
@@ -269,13 +269,13 @@ versiones. Esto preserva la garantía existente de continuidad de sesión.
 
 ### 9.1 Contratos estáticos
 
-Se añadirá una prueba de la migración 047 que verifique:
+Se añadirá una prueba de la migración 049 que verifique:
 
 - presencia de preflight, backfill, postcondición y trigger;
 - reemplazo de las cuatro funciones y conservación de ACL;
 - ausencia de `dayOfWeek - 1` en las definiciones finales;
 - marcador operativo `47`;
-- inclusión de la 047 al final del runner y del contrato de reejecución.
+- inclusión de la 049 al final del runner y del contrato de reejecución.
 
 Las pruebas no exigirán editar 043/045: esos archivos son historia desplegada.
 
@@ -287,12 +287,14 @@ Las pruebas no exigirán editar 043/045: esos archivos son historia desplegada.
 CHECK (day_of_week BETWEEN 1 AND 7)
 ```
 
-El runner aplicará 040–047 en orden y ejecutará las pruebas de comportamiento
-solo después de que la 047 haya sustituido las funciones antiguas. Para probar
-la recuperación, sembrará antes de la 047 una versión no-lunes válida para el
+El runner aplicará 040–049 en orden, incluidas
+`047_product_notification_preferences_insert.sql` y
+`048_profile_weight_measurement_sync.sql`, y ejecutará las pruebas de comportamiento
+solo después de que la 049 haya sustituido las funciones antiguas. Para probar
+la recuperación, sembrará antes de la 049 una versión no-lunes válida para el
 `CHECK`, por ejemplo snapshot `dayOfWeek=7` y materialización `day_of_week=6`.
 
-En la prueba de reejecución, 043–047 se volverán a aplicar en orden y la 047 será
+En la prueba de reejecución, 040–049 se volverán a aplicar en orden y la 049 será
 siempre la última capa. El snapshot de preservación antes/después deberá ser
 idéntico.
 
@@ -335,8 +337,8 @@ constraints, triggers, locks ni reparación transaccional.
 2. Pausar propuestas y publicaciones de revisiones si el piloto está activo.
 3. Ejecutar la auditoría de solo lectura; si hay ambigüedades, detener y
    resolverlas antes del despliegue.
-4. Aplicar 046 y 047 en orden mediante el migrador normal; no editar 043/045.
-5. Confirmar `trainer_security_preflight() = 47` y divergencias `= 0`.
+4. Aplicar 046, 047, 048 y 049 en orden mediante el migrador normal; no editar 043/045/046/047/048.
+5. Confirmar `trainer_security_preflight() = 49` y divergencias `= 0`.
 6. Ejecutar smoke con una plantilla sintética que incluya lunes y domingo.
 7. Reanudar publicaciones y observar códigos de error agregados, sin PII.
 
@@ -354,7 +356,7 @@ down migration de datos. Eso reintroduciría el defecto y podría corromper día
 ya correctos. El rollback operativo será:
 
 1. detener nuevas propuestas y revisiones;
-2. mantener la 047 y los datos reparados;
+2. mantener aplicadas las migraciones hasta la 049 y los datos reparados;
 3. volver a una versión de aplicación compatible si fuera necesario;
 4. investigar con conteos agregados y restauración aislada;
 5. corregir hacia delante con otra migración revisada.
@@ -363,11 +365,11 @@ No se borrarán snapshots, planes, sesiones ni auditoría.
 
 ## 12. Documentación que debe actualizar la implementación
 
-- `README.md`: lista completa y ordenada de migraciones hasta la 047;
-- `docs/operations/trainer-marketplace-runbook.md`: orden 040–047, preflight
-  `47`, auditoría ISO, smoke lunes/domingo y rollback hacia delante;
-- `docs/operations/trainer-pilot-checklist.md`: puerta de salida con 040–047,
-  preflight `47` e integridad ISO igual a cero.
+- `README.md`: lista completa y ordenada de migraciones hasta la 049;
+- `docs/operations/trainer-marketplace-runbook.md`: orden 040–049, preflight
+  `49`, auditoría ISO, smoke lunes/domingo y rollback hacia delante;
+- `docs/operations/trainer-pilot-checklist.md`: puerta de salida con 040–049,
+  preflight `49` e integridad ISO igual a cero.
 
 ## 13. Criterios de aceptación
 
@@ -379,7 +381,7 @@ La reparación estará lista cuando:
 - planes personales, snapshots y sesiones históricas permanezcan intactos;
 - una escritura profesional desplazada sea rechazada por la base de datos;
 - la migración falle limpiamente ante datos ambiguos y sea no-op al reejecutar;
-- el preflight remoto devuelva `47` y la auditoría de divergencias devuelva
+- el preflight remoto devuelva `49` y la auditoría de divergencias devuelva
   cero;
 - las suites PostgreSQL, unitarias, tipos y lint terminen en verde;
 - runbook, checklist y README describan el estado real del esquema.
@@ -394,5 +396,5 @@ La reparación estará lista cuando:
   autorizadas. Se conservan como evidencia histórica; solo la programación viva
   queda corregida.
 - Las migraciones antiguas siguen conteniendo la resta. La ejecución ordenada y
-  el trigger de la 047 aseguran que la capa final sea correcta y que una
+  el trigger de la 049 aseguran que la capa final sea correcta y que una
   reejecución incompleta no pueda persistir datos desplazados.

@@ -80,7 +80,7 @@ Validar solo presencia y alcance; nunca imprimir valores:
 
 6. Eliminar `trainer-predeploy.catalog` al cerrar la verificación conforme a la política temporal aprobada. Si descifrado, catálogo, restauración o controles de acceso/cifrado fallan, detener el despliegue.
 
-## Orden de migración 040–047
+## Orden de migración 040–049
 
 Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 
@@ -91,11 +91,13 @@ Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 5. `044_trainer_insights.sql`
 6. `045_trainer_hardening.sql`
 7. `046_release_session_authorization.sql`
-8. `047_trainer_iso_weekday_repair.sql`
+8. `047_product_notification_preferences_insert.sql`
+9. `048_profile_weight_measurement_sync.sql`
+10. `049_trainer_iso_weekday_repair.sql`
 
-Antes de aplicar la 047, pausar nuevas propuestas y publicaciones de revisiones
+Antes de aplicar la 049, pausar nuevas propuestas y publicaciones de revisiones
 profesionales, y mantener suspendidas las invitaciones. Esperar a que concluyan
-las publicaciones que ya estaban en curso. La 047 ejecuta un preflight
+las publicaciones que ya estaban en curso. La 049 ejecuta un preflight
 estructural agregado y, si detecta una relación o snapshot no reparable, aborta
 la transacción con `TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED`; sus
 postcondiciones usan `TRAINER_ISO_WEEKDAY_REPAIR_POSTCONDITION_FAILED`. Ambos
@@ -112,11 +114,9 @@ pnpm type-check
 pnpm lint
 ```
 
-No usar `pnpm test:db:trainer-security`, `pnpm audit:trainers` ni el wrapper
-`pnpm test:db:marketplace` como puerta de la 047: actualmente encadenan
-harnesses cuyo contrato termina en la 045. El runner `pnpm test:db:trainers`
-es el que aplica y verifica 040–047; los otros comandos se reincorporarán solo
-cuando sus harnesses se actualicen para ese estado.
+Usar `pnpm test:db:trainers` como puerta funcional y de autorización, y
+`pnpm test:db:trainer-security` como puerta de seguridad repetida tres veces.
+Ambos ejercitan el runner que aplica y verifica el estado 040–049 completo.
 
 En el proyecto enlazado de staging:
 
@@ -127,7 +127,7 @@ supabase db push --linked
 supabase migration list --linked
 ```
 
-El `dry-run` y la lista final deben mostrar 040–047 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
+El `dry-run` y la lista final deben mostrar 040–049 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
 
 ## Preflight remoto de solo lectura
 
@@ -137,7 +137,7 @@ Después de migrar y antes de crear fixtures o invitar usuarios, ejecutar con un
 SELECT public.trainer_security_preflight() AS schema_marker;
 ```
 
-El único resultado válido es `47`. La función es de solo lectura y valida las rutinas críticas, incluida la capa ISO de la 047. A continuación, en una sesión operativa privilegiada con acceso de lectura, ejecutar esta auditoría exclusivamente de conteo:
+El único resultado válido es `49`. La función es de solo lectura y valida las rutinas críticas, incluida la capa ISO de la 049. A continuación, en una sesión operativa privilegiada con acceso de lectura, ejecutar esta auditoría exclusivamente de conteo:
 
 ```sql
 SELECT count(*) AS iso_weekday_divergences
@@ -156,7 +156,7 @@ WHERE plan.source_type = 'trainer_assigned'
 Resultados obligatorios:
 
 ```text
-trainer_security_preflight = 47
+trainer_security_preflight = 49
 iso_weekday_divergences = 0
 ```
 
@@ -277,15 +277,15 @@ La retención futura requiere diseño y migración independiente con revisión l
 
 ## Rollback
 
-Las migraciones 040–047 son aditivas. Tras un despliegue exitoso de la 047,
+Las migraciones 040–049 son aditivas. Tras un despliegue exitoso de la 049,
 el rollback es solo hacia delante: no ejecutar una down migration destructiva,
 no eliminar tablas/columnas, no borrar auditoría y nunca restaurar la
 sustracción defectuosa de días.
 
-Procedimiento posterior a la 047:
+Procedimiento posterior a la 049:
 
 1. Detener invitaciones, nuevas propuestas y publicaciones de revisiones.
-2. Mantener aplicadas la 047 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
+2. Mantener aplicadas las migraciones hasta la 049 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
 3. Confirmar que Comunidad sigue apagada y que pagos, precios, chat, reseñas y planes comerciales permanecen ocultos.
 4. Investigar con conteos agregados y ensayar cualquier restauración de respaldo en aislamiento; no restaurar producción sin la decisión explícita por la posible pérdida de cambios posteriores.
 5. Corregir hacia delante con una migración revisada y repetir preflight, auditoría ISO y smoke antes de reabrir publicaciones.
@@ -294,4 +294,4 @@ Esta versión no define una bandera global del marketplace. No asumir que una va
 
 ## Cierre del despliegue
 
-El responsable firma la salida solo si respaldo/restauración, orden 040–047, preflight 47, divergencias ISO profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de plan, pérdida de evidencia o fallo de revocación detiene el piloto.
+El responsable firma la salida solo si respaldo/restauración, orden 040–049, preflight 49, divergencias ISO profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de plan, pérdida de evidencia o fallo de revocación detiene el piloto.

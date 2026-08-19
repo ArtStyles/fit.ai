@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync(
-  new URL('../../../../supabase/migrations/047_trainer_iso_weekday_repair.sql', import.meta.url),
+  new URL('../../../../supabase/migrations/049_trainer_iso_weekday_repair.sql', import.meta.url),
   'utf8',
 ).replace(/\r\n?/g, '\n')
 
@@ -10,7 +10,7 @@ function routine(name: string) {
   const body = migration.match(
     new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\([\\s\\S]+?\\n\\$\\$;`, 'i'),
   )?.[0]
-  expect(body, `${name} must be replaced by migration 047`).toBeDefined()
+  expect(body, `${name} must be replaced by migration 049`).toBeDefined()
   return body!
 }
 
@@ -65,6 +65,6 @@ describe('trainer ISO weekday repair migration', () => {
     expect(preflight).toContain("to_regprocedure('public.release_session_authorization(uuid,uuid)')")
     expect(preflight).toContain("to_regprocedure('public.enforce_trainer_workout_iso_schedule()')")
     expect(preflight).toContain('trg_enforce_trainer_workout_iso_schedule')
-    expect(preflight).toMatch(/RETURN 47/)
+    expect(preflight).toMatch(/RETURN 49/)
   })
 })

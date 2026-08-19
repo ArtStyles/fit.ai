@@ -74,7 +74,7 @@ describe('trainer security database harness', () => {
   it('reapplies every trainer migration after a locked professional fixture and compares an immutable snapshot', async () => {
     const source = await readFile(new URL('../test-trainer-programming-db.mjs', import.meta.url), 'utf8')
     const seeded = source.indexOf('seeding rerun preservation fixture')
-    const rerun = source.indexOf('reapplying migrations 040-047 after locked professional data')
+    const rerun = source.indexOf('reapplying migrations 040-049 after locked professional data')
     const verified = source.indexOf('verifying rerun preservation snapshot')
 
     expect(source).toContain('trainer_migration_rerun_snapshot')

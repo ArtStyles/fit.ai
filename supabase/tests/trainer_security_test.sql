@@ -27,7 +27,7 @@ $$;
 
 DO $$
 BEGIN
-  IF public.trainer_security_preflight() <> 45 THEN
+  IF public.trainer_security_preflight() <> 49 THEN
     RAISE EXCEPTION 'trainer security preflight returned the wrong migration';
   END IF;
 END;

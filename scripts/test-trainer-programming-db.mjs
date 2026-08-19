@@ -10,10 +10,7 @@ const authorizationMode = process.argv.includes('--authorization')
 const securityMode = process.argv.includes('--security')
 const image = process.env.TRAINER_PROGRAMMING_DB_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-programming-db-${process.pid}-${Date.now().toString(36)}`
-const migrationPaths = [
-  '035_session_save_idempotency.sql',
-  '037_atomic_plan_lifecycle.sql',
-  '038_session_authorizations.sql',
+const trainerMigrationFiles = [
   '040_trainer_foundations.sql',
   '041_trainer_verification.sql',
   '042_trainer_relationships.sql',
@@ -21,12 +18,16 @@ const migrationPaths = [
   '044_trainer_insights.sql',
   '045_trainer_hardening.sql',
   '046_release_session_authorization.sql',
-  '047_trainer_iso_weekday_repair.sql',
+  '047_product_notification_preferences_insert.sql',
+  '048_profile_weight_measurement_sync.sql',
+  '049_trainer_iso_weekday_repair.sql',
 ]
-  .map(file => path.join(repoRoot, 'supabase', 'migrations', file))
+const migrationPath = file => path.join(repoRoot, 'supabase', 'migrations', file)
+const readMigration = file => readFileSync(migrationPath(file), 'utf8')
+const isoWeekdayMigrationFile = '049_trainer_iso_weekday_repair.sql'
 const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programming_test.sql')
 const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
-const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '047_trainer_iso_weekday_repair_test.sql')
+const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '049_trainer_iso_weekday_repair_test.sql')
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
@@ -253,7 +254,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE SCHEMA IF NOT EXISTS storage;
 CREATE TABLE storage.buckets (id TEXT PRIMARY KEY, name TEXT NOT NULL, owner UUID, public BOOLEAN NOT NULL DEFAULT FALSE, file_size_limit BIGINT, allowed_mime_types TEXT[]);
 CREATE TABLE storage.objects (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id TEXT NOT NULL REFERENCES storage.buckets(id) ON DELETE CASCADE, name TEXT NOT NULL, owner UUID, metadata JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (bucket_id, name));
-CREATE TABLE public.profiles (id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, avatar_url TEXT, onboarding_done BOOLEAN NOT NULL DEFAULT FALSE, is_admin BOOLEAN NOT NULL DEFAULT FALSE, account_status TEXT NOT NULL DEFAULT 'active', suspension_reason TEXT, suspended_at TIMESTAMPTZ, suspended_until TIMESTAMPTZ, suspended_by UUID REFERENCES auth.users(id) ON DELETE SET NULL);
+CREATE TABLE public.profiles (id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, avatar_url TEXT, weight_kg NUMERIC, onboarding_done BOOLEAN NOT NULL DEFAULT FALSE, is_admin BOOLEAN NOT NULL DEFAULT FALSE, account_status TEXT NOT NULL DEFAULT 'active', suspension_reason TEXT, suspended_at TIMESTAMPTZ, suspended_until TIMESTAMPTZ, suspended_by UUID REFERENCES auth.users(id) ON DELETE SET NULL);
 CREATE TABLE public.admin_audit_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), admin_user_id UUID, target_user_id UUID, action TEXT NOT NULL, reason TEXT, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE public.product_notifications (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE, type TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT, payload JSONB NOT NULL DEFAULT '{}'::jsonb, dedupe_key TEXT NOT NULL, read_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (user_id, dedupe_key));
 CREATE TABLE public.professional_audit_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), actor_user_id UUID, subject_user_id UUID, entity_type TEXT NOT NULL, entity_id UUID, action TEXT NOT NULL, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
@@ -767,7 +768,7 @@ BEGIN
   SELECT snapshot INTO before_snapshot FROM public.trainer_migration_rerun_snapshot;
   SELECT public.capture_trainer_migration_rerun_snapshot() INTO after_snapshot;
   IF before_snapshot IS DISTINCT FROM after_snapshot THEN
-    RAISE EXCEPTION 'migrations 040-047 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
+    RAISE EXCEPTION 'migrations 040-049 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
   END IF;
 END $$;
 DROP TABLE public.trainer_migration_rerun_snapshot;
@@ -833,25 +834,27 @@ try {
   process.stdout.write(`[trainer-programming-db] database ready (${readiness.health}; ${readiness.diagnostic})\n`)
   runPsql(bootstrapSql, 'applying minimal pre-041 history')
   runPsql(planBootstrapSql, 'applying required plan and exercise history')
-  runPsql(readFileSync(migrationPaths[0], 'utf8'), 'applying migration 035 session save idempotency')
-  runPsql(`BEGIN;\n${readFileSync(migrationPaths[1], 'utf8')}\nCOMMIT;`, 'applying migration 037 lifecycle')
-  runPsql(readFileSync(migrationPaths[2], 'utf8'), 'applying migration 038 session authorization')
-  runPsql(readFileSync(migrationPaths[3], 'utf8'), 'applying migration 040')
-  runPsql(readFileSync(migrationPaths[4], 'utf8'), 'applying migration 041')
-  runPsql(readFileSync(migrationPaths[5], 'utf8'), 'applying migration 042')
-  runPsql(readFileSync(migrationPaths[6], 'utf8'), 'applying migration 043')
-  runPsql(readFileSync(migrationPaths[7], 'utf8'), 'applying migration 044')
-  runPsql(readFileSync(migrationPaths[6], 'utf8'), 'reapplying migration 043 for rerunnability')
-  runPsql(readFileSync(migrationPaths[7], 'utf8'), 'reapplying migration 044 for rerunnability')
+  runPsql(readMigration('035_session_save_idempotency.sql'), 'applying migration 035 session save idempotency')
+  runPsql(`BEGIN;\n${readMigration('037_atomic_plan_lifecycle.sql')}\nCOMMIT;`, 'applying migration 037 lifecycle')
+  runPsql(readMigration('038_session_authorizations.sql'), 'applying migration 038 session authorization')
+  runPsql(readMigration('040_trainer_foundations.sql'), 'applying migration 040')
+  runPsql(readMigration('041_trainer_verification.sql'), 'applying migration 041')
+  runPsql(readMigration('042_trainer_relationships.sql'), 'applying migration 042')
+  runPsql(readMigration('043_trainer_programming.sql'), 'applying migration 043')
+  runPsql(readMigration('044_trainer_insights.sql'), 'applying migration 044')
+  runPsql(readMigration('043_trainer_programming.sql'), 'reapplying migration 043 for rerunnability')
+  runPsql(readMigration('044_trainer_insights.sql'), 'reapplying migration 044 for rerunnability')
   runPsql(legacyProfessionalAuditSql, 'seeding pre-045 professional audit evidence')
   const productionBoundary = loadLegacyOwnerBoundary(repoRoot)
   runPsql(productionBoundary.sql, `applying migration 001 owner boundary (${productionBoundary.sha256})`)
-  runPsql(readFileSync(migrationPaths[8], 'utf8'), 'applying migration 045 trainer hardening')
-  runPsql(readFileSync(migrationPaths[8], 'utf8'), 'reapplying migration 045 for rerunnability')
-  runPsql(readFileSync(migrationPaths[9], 'utf8'), 'applying migration 046 release session authorization')
+  runPsql(readMigration('045_trainer_hardening.sql'), 'applying migration 045 trainer hardening')
+  runPsql(readMigration('045_trainer_hardening.sql'), 'reapplying migration 045 for rerunnability')
+  runPsql(readMigration('046_release_session_authorization.sql'), 'applying migration 046 release session authorization')
+  runPsql(readMigration('047_product_notification_preferences_insert.sql'), 'applying migration 047 product notification preferences insert')
+  runPsql(readMigration('048_profile_weight_measurement_sync.sql'), 'applying migration 048 profile weight measurement sync')
   runPsql(legacyIsoWeekdayFixturesSql, 'seeding malformed and recoverable ISO weekday fixtures')
   runPsqlExpectFailure(
-    readFileSync(migrationPaths[10], 'utf8'),
+    readMigration(isoWeekdayMigrationFile),
     'rejecting ambiguous ISO weekday repair',
     'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED',
   )
@@ -859,7 +862,7 @@ try {
   runPsql(removeMalformedIsoWeekdayFixtureSql, 'removing only the malformed ISO weekday fixture')
   runPsql(malformedIsoStringFixturesSql, 'seeding malformed ISO string-scalar fixtures')
   const schemaScalarFailure = runPsqlExpectFailure(
-    readFileSync(migrationPaths[10], 'utf8'),
+    readMigration(isoWeekdayMigrationFile),
     'rejecting string schemaVersion scalar',
     'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED: snapshot_shape=1',
   )
@@ -867,24 +870,24 @@ try {
   runPsql(assertIsoWeekdayRepairRollbackSql, 'verifying string schemaVersion failure rolled back atomically')
   runPsql(removeMalformedIsoSchemaFixtureSql, 'removing only the malformed schemaVersion fixture')
   const workoutScalarFailure = runPsqlExpectFailure(
-    readFileSync(migrationPaths[10], 'utf8'),
+    readMigration(isoWeekdayMigrationFile),
     'rejecting string workout schedule scalars',
     'TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED: snapshot_value=1',
   )
   assertFailureHidesFixtureIds(workoutScalarFailure, 'workout scalar preflight')
   runPsql(assertIsoWeekdayRepairRollbackSql, 'verifying string workout scalar failure rolled back atomically')
   runPsql(removeMalformedIsoWorkoutScalarFixtureSql, 'removing only the malformed workout scalar fixture')
-  runPsql(readFileSync(migrationPaths[10], 'utf8'), 'applying migration 047 ISO weekday repair')
-  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 047')
+  runPsql(readMigration(isoWeekdayMigrationFile), 'applying migration 049 ISO weekday repair')
+  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 049')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
-  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against migration 047')
+  const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against migration 049')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
-  const isoTapOutput = runPsql(readFileSync(isoWeekdayTestPath, 'utf8'), 'running 047 ISO weekday repair pgTAP suite')
-  if (/^\s*not ok\b/m.test(isoTapOutput) || /# Looks like you (?:failed|planned)\b/.test(isoTapOutput)) throw new Error('047 pgTAP reported one or more failed assertions')
+  const isoTapOutput = runPsql(readFileSync(isoWeekdayTestPath, 'utf8'), 'running 049 ISO weekday repair pgTAP suite')
+  if (/^\s*not ok\b/m.test(isoTapOutput) || /# Looks like you (?:failed|planned)\b/.test(isoTapOutput)) throw new Error('049 pgTAP reported one or more failed assertions')
   const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
   if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-047')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-049')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
@@ -894,14 +897,14 @@ try {
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
-    migrationPaths.slice(3).map(migrationPath => readFileSync(migrationPath, 'utf8')).join('\n'),
-    'reapplying migrations 040-047 after locked professional data',
+    trainerMigrationFiles.map(readMigration).join('\n'),
+    'reapplying migrations 040-049 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-047 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-049 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

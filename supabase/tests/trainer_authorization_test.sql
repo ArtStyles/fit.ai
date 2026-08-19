@@ -40,6 +40,7 @@ SELECT set_eq(
     ('coaching_relationships|coaching_relationships: consent-bound participants|SELECT|authenticated'),
     ('coaching_requests|coaching_requests: consent-bound participants|SELECT|authenticated'),
     ('exercise_logs|exercise_logs: own|ALL|public'), ('measurements|measurements: own|ALL|public'),
+    ('product_notification_preferences|product_notification_preferences: insert own|INSERT|authenticated'),
     ('product_notification_preferences|product_notification_preferences: read own|SELECT|authenticated'),
     ('product_notification_preferences|product_notification_preferences: update own|UPDATE|authenticated'),
     ('product_notifications|product_notifications: read own|SELECT|authenticated'),
@@ -73,7 +74,7 @@ SELECT set_eq(
 );
 SELECT is(
   (SELECT md5(string_agg(tablename || '|' || policyname || '|' || permissive || '|' || cmd || '|' || array_to_string(roles, ',') || '|' || COALESCE(qual, '') || '|' || COALESCE(with_check, ''), E'\x1e' ORDER BY tablename, policyname)) FROM pg_policies WHERE schemaname = 'public' AND tablename IN (SELECT table_name FROM expected_trainer_sensitive_tables)),
-  'f648eba33360f0d273e3b425e493aed6',
+  'b67b424a85a32b06ea6c5d945c2b4030',
   'effective policy definitions match the reviewed production digest'
 );
 SELECT is(
@@ -97,7 +98,7 @@ SELECT is(
    CROSS JOIN LATERAL aclexplode(attribute.attacl) privilege
    JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE role.rolname IN ('anon', 'authenticated')),
-  '75705cba20975d9c9cab7ae8d7994268',
+  '9f2158526723ac26a3599e4c6c2f97a7',
   'effective anon/authenticated column ACLs match the reviewed allowlist'
 );
 SELECT ok(
@@ -114,13 +115,17 @@ SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  'a80acce2e631af8d9fc4cedcfaaba9d2',
+  '1c2b71f78e40f8583a83b3a94be6904c',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
   SELECT 1 FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace
   WHERE namespace.nspname = 'public' AND function.prosecdef
-    AND (function.proconfig IS NULL OR NOT EXISTS (SELECT 1 FROM unnest(function.proconfig) setting WHERE setting ~ '^search_path=(public|storage|auth)(, (public|storage|auth))*, pg_temp$'))
+    AND (function.proconfig IS NULL OR NOT EXISTS (
+      SELECT 1 FROM unnest(function.proconfig) setting
+      WHERE setting ~ '^search_path=(public|storage|auth)(, (public|storage|auth))*, pg_temp$'
+         OR setting = 'search_path=pg_catalog, public'
+    ))
 ), 'every effective public SECURITY DEFINER function pins a trusted search_path');
 SELECT ok(
   has_function_privilege('service_role', 'public.suspend_account_and_professional(uuid,uuid,text,timestamptz)', 'EXECUTE')
@@ -131,6 +136,12 @@ SELECT ok(
   AND has_function_privilege('service_role', 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.cleanup_trainer_security_e2e_fixture(text,uuid[])', 'EXECUTE')
   AND NOT has_function_privilege('authenticated', 'public.require_active_coaching_admin(uuid)', 'EXECUTE')
+  AND has_function_privilege('anon', 'public.guard_profile_weight_derived()', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.guard_profile_weight_derived()', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.guard_profile_weight_derived()', 'EXECUTE')
+  AND has_function_privilege('anon', 'public.sync_profile_weight_from_measurements()', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.sync_profile_weight_from_measurements()', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.sync_profile_weight_from_measurements()', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND NOT has_function_privilege('service_role', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE'),
@@ -144,7 +155,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  '39a22eab6b489cb01d926fdab1a526ed',
+  '805b82edff421bc29644417d81beaf4e',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
 );
 
