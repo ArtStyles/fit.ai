@@ -34,11 +34,13 @@ const INTERVIEW_MEDIUM_LABELS = {
   in_person: 'Presencial',
 } as const
 
-function formatDate(value: string | null): string {
+function formatDate(value: string | null, timeZone: string): string {
   if (!value) return 'Sin fecha'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Sin fecha'
-  return new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+  return new Intl.DateTimeFormat('es-ES', {
+    dateStyle: 'medium', timeStyle: 'short', timeZone,
+  }).format(date)
 }
 
 function statusBadge(status: AdminTrainerApplicationStatus) {
@@ -48,9 +50,11 @@ function statusBadge(status: AdminTrainerApplicationStatus) {
 export function TrainerApplicationQueue({
   applications,
   selectedStatus,
+  timeZone,
 }: {
   applications: AdminTrainerQueueItem[]
   selectedStatus?: AdminTrainerApplicationStatus
+  timeZone: string
 }) {
   return (
     <div className="space-y-5">
@@ -93,7 +97,7 @@ export function TrainerApplicationQueue({
                     {statusBadge(application.status)}
                     <Badge variant="outline">{application.applicationKind === 'profile_update' ? 'Actualización de perfil' : 'Solicitud inicial'}</Badge>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{formatDate(application.applicationDate)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatDate(application.applicationDate, timeZone)}</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {application.specialties.length > 0
                       ? application.specialties.map(specialty => <Badge key={specialty} variant="secondary">{specialty}</Badge>)
@@ -119,9 +123,11 @@ export function TrainerApplicationQueue({
 export function TrainerApplicationReview({
   application,
   initialActionStates,
+  timeZone,
 }: {
   application: AdminTrainerApplicationDetail
   initialActionStates?: TrainerReviewActionStates
+  timeZone: string
 }) {
   const interviewId = crypto.randomUUID()
 
@@ -135,7 +141,7 @@ export function TrainerApplicationReview({
               {statusBadge(application.status)}
               <Badge variant="outline">{application.applicationKind === 'profile_update' ? 'Actualización de perfil' : 'Solicitud inicial'}</Badge>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">Enviada: {formatDate(application.submittedAt)}</p>
+            <p className="mt-2 text-sm text-muted-foreground">Enviada: {formatDate(application.submittedAt, timeZone)}</p>
           </div>
           <TrainerReviewActions
             applicationId={application.id}
@@ -205,7 +211,7 @@ export function TrainerApplicationReview({
           {application.events.length === 0 && application.interviews.length === 0 && <p className="text-sm text-muted-foreground">Sin actividad registrada.</p>}
           {application.events.map(event => (
             <article key={event.id} className="border-l-2 border-violet-500/30 pl-4 text-sm">
-              <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{STATUS_LABELS[event.toStatus]}</span><span className="text-xs text-muted-foreground">{formatDate(event.createdAt)}</span></div>
+              <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{STATUS_LABELS[event.toStatus]}</span><span className="text-xs text-muted-foreground">{formatDate(event.createdAt, timeZone)}</span></div>
               {event.publicNote && <p className="mt-1 text-muted-foreground">Nota pública: {event.publicNote}</p>}
               {event.internalNote && <p className="mt-1 rounded-lg bg-amber-500/5 px-3 py-2 text-amber-100/80">Nota interna: {event.internalNote}</p>}
             </article>
@@ -213,7 +219,7 @@ export function TrainerApplicationReview({
           {application.interviews.map(interview => (
             <article key={interview.id} className="rounded-xl border border-border/60 p-4 text-sm">
               <p className="font-semibold">Entrevista · {INTERVIEW_MEDIUM_LABELS[interview.medium]}</p>
-              <p className="mt-1 text-muted-foreground">{formatDate(interview.proposedAt)} · {interview.timezone} · {interview.status}</p>
+              <p className="mt-1 text-muted-foreground">{formatDate(interview.proposedAt, timeZone)} · {interview.timezone} · {interview.status}</p>
               {interview.externalUrl && <a href={interview.externalUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center text-violet-300 hover:underline">Abrir enlace <ExternalLink className="ml-1.5 h-3.5 w-3.5" /></a>}
               {interview.publicNote && <p className="mt-2 text-muted-foreground">Nota pública: {interview.publicNote}</p>}
               {interview.internalNote && <p className="mt-2 rounded-lg bg-amber-500/5 px-3 py-2 text-amber-100/80">Nota interna: {interview.internalNote}</p>}

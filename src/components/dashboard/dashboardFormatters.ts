@@ -1,9 +1,20 @@
 import { dateLocale, translate, type AppLanguage } from '@/lib/i18n'
-import { getLocalDateString } from '@/lib/workouts/schedule'
+import { getLocalDateString, getZonedHour } from '@/lib/workouts/schedule'
 
 function calendarDayNumber(date: Date, timeZone: string): number {
   const [year, month, day] = getLocalDateString(date, timeZone).split('-').map(Number)
   return Date.UTC(year, month - 1, day) / (24 * 60 * 60 * 1000)
+}
+
+export function getDashboardGreeting(
+  language: AppLanguage,
+  referenceInstant: Date,
+  timeZone: string,
+): string {
+  const hour = getZonedHour(referenceInstant, timeZone)
+  if (hour < 12) return translate(language, 'Buenos días')
+  if (hour < 19) return translate(language, 'Buenas tardes')
+  return translate(language, 'Buenas noches')
 }
 
 export function formatDashboardRelativeDate(

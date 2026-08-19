@@ -11,13 +11,18 @@ vi.mock('@/app/actions/coachingRelationships', () => ({
 }))
 
 import { ConsentManager } from '../ConsentManager'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
 
 describe('ConsentManager', () => {
   it('separates training data from body measurements with scope, version, date, and revocation effects', () => {
-    const html = renderToStaticMarkup(<ConsentManager relationshipId="relationship-1" consents={[
-      { scope: 'training_profile', textVersion: 'training-profile-v1', grantedAt: '2026-08-08T12:00:00.000Z', revokedAt: null },
-      { scope: 'body_measurements', textVersion: 'body-measurements-v1', grantedAt: '2026-08-08T12:00:00.000Z', revokedAt: null },
-    ]} />)
+    const html = renderToStaticMarkup(
+      <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
+        <ConsentManager relationshipId="relationship-1" consents={[
+          { scope: 'training_profile', textVersion: 'training-profile-v1', grantedAt: '2026-08-08T12:00:00.000Z', revokedAt: null },
+          { scope: 'body_measurements', textVersion: 'body-measurements-v1', grantedAt: '2026-08-08T12:00:00.000Z', revokedAt: null },
+        ]} />
+      </I18nProvider>,
+    )
 
     expect(html).toContain('Datos de entrenamiento')
     expect(html).toContain('Medidas corporales')

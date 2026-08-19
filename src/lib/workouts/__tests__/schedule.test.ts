@@ -5,6 +5,7 @@ import {
   getIsoWeekday,
   getLocalDateString,
   getLocalDayBounds,
+  getZonedHour,
   getWeekMonday,
   getWorkoutStartWindow,
   resolveUserTimeZone,
@@ -37,6 +38,13 @@ describe('workout schedule helpers', () => {
     expect(getLocalDateString(lateNightInHavana, TZ)).toBe('2026-05-26')
     expect(getIsoWeekday(lateNightInHavana, TZ)).toBe(2)
     expect(getIsoWeekday(lateNightInHavana, 'UTC')).toBe(3)
+  })
+
+  it('resolves the local hour at a UTC day boundary', () => {
+    const instant = new Date('2026-08-20T03:30:00.000Z')
+
+    expect(getZonedHour(instant, 'America/Havana')).toBe(23)
+    expect(getZonedHour(instant, 'UTC')).toBe(3)
   })
 
   it('finds the monday for the current app-timezone week', () => {

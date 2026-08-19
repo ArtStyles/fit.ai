@@ -4,6 +4,7 @@ import { Activity, ChevronRight, Medal, TrendingUp } from 'lucide-react'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { dateLocale, type AppLanguage } from '@/lib/i18n'
+import { addDays, getLocalDateString } from '@/lib/workouts/schedule'
 
 type LatestSession = {
   id: string
@@ -26,18 +27,23 @@ type ProgressHighlightsProps = {
   activeAdjustments: number
 }
 
-function formatRelativeDate(value: string, language: AppLanguage, t: (source: string) => string): string {
+function formatRelativeDate(
+  value: string,
+  language: AppLanguage,
+  timeZone: string,
+  t: (source: string) => string,
+): string {
   const date = new Date(value)
   const today = new Date()
-  const yesterday = new Date()
-  yesterday.setDate(today.getDate() - 1)
+  const yesterday = addDays(today, -1, timeZone)
 
-  if (date.toDateString() === today.toDateString()) return t('Hoy')
-  if (date.toDateString() === yesterday.toDateString()) return t('Ayer')
+  if (getLocalDateString(date, timeZone) === getLocalDateString(today, timeZone)) return t('Hoy')
+  if (getLocalDateString(date, timeZone) === getLocalDateString(yesterday, timeZone)) return t('Ayer')
 
   return new Intl.DateTimeFormat(dateLocale(language), {
     day: 'numeric',
     month: 'short',
+    timeZone,
   }).format(date)
 }
 
@@ -51,7 +57,7 @@ export function ProgressHighlights({
   topRecord,
   activeAdjustments,
 }: ProgressHighlightsProps) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   if (!latestSession && !topRecord && activeAdjustments === 0) return null
 
   return (
@@ -74,7 +80,7 @@ export function ProgressHighlights({
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">{t('Última sesión')}</p>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {latestSession.workoutName} · {formatRelativeDate(latestSession.completedAt, language, t)}
+                {latestSession.workoutName} · {formatRelativeDate(latestSession.completedAt, language, timeZone, t)}
                 {latestSession.durationMinutes ? ` · ${latestSession.durationMinutes} min` : ''}
               </p>
             </div>

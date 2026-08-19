@@ -20,7 +20,7 @@ function formatVolume(value: number, language: 'es' | 'en'): string {
 }
 
 export function CalendarDayPanel({ date, sessions }: { date: string; sessions: CalendarSessionSummary[] }) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const dateLabel = formatDate(date, language)
 
   return (
@@ -43,6 +43,7 @@ export function CalendarDayPanel({ date, sessions }: { date: string; sessions: C
               dateLabel={new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
                 hour: 'numeric',
                 minute: '2-digit',
+                timeZone,
               }).format(new Date(session.completedAt))}
               title={session.workoutName}
               context={session.focus}

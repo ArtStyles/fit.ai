@@ -14,7 +14,7 @@ const detail = {
   ],
   alerts: [{ code: 'low_adherence', message: 'La adherencia reciente está por debajo del 50%.' }],
   sessions: [{
-    id: 'session-1', completedAt: '2026-08-03T15:00:00.000Z', workoutName: 'Fuerza A', durationMinutes: 45,
+    id: 'session-1', completedAt: '2026-08-03T02:00:00.000Z', workoutName: 'Fuerza A', durationMinutes: 45,
     notes: '<script>alert("no ejecutar")</script>', status: 'incomplete', classification: 'prescribed',
     exerciseResults: [{ id: 'result-1', name: 'Sentadilla', setsCompleted: 3, repsCompleted: [8, 8, 7], weightsKg: [60, 60, 60], rpeValues: [8, 8, 9], durationSeconds: 180, notes: '<b>Última serie difícil</b>' }],
   }, {
@@ -25,7 +25,7 @@ const detail = {
 
 describe('ClientInsightsDashboard', () => {
   it('renders prescribed adherence and evidence as escaped read-only content', () => {
-    const html = renderToStaticMarkup(<ClientInsightsDashboard detail={detail} weeks={4} />)
+    const html = renderToStaticMarkup(<ClientInsightsDashboard detail={detail} weeks={4} viewerTimeZone="Asia/Tokyo" />)
 
     expect(html).toContain('Ada Cliente')
     expect(html).toContain('completed')
@@ -36,6 +36,8 @@ describe('ClientInsightsDashboard', () => {
     expect(html).toContain('&lt;script&gt;alert(&quot;no ejecutar&quot;)&lt;/script&gt;')
     expect(html).toContain('&lt;b&gt;Última serie difícil&lt;/b&gt;')
     expect(html).not.toContain('<script>')
+    expect(html).toContain('3 ago 2026')
+    expect(html).not.toContain('2 ago 2026')
     expect(html).toContain('Sesión profesional adicional')
     expect(html).toContain('Fuera del cálculo de adherencia')
     expect(html).not.toContain('sesión personal')
@@ -43,7 +45,7 @@ describe('ClientInsightsDashboard', () => {
   })
 
   it('offers only accessible four- and twelve-week detail filters', () => {
-    const html = renderToStaticMarkup(<ClientInsightsDashboard detail={detail} weeks={4} />)
+    const html = renderToStaticMarkup(<ClientInsightsDashboard detail={detail} weeks={4} viewerTimeZone="Asia/Tokyo" />)
 
     expect(html).toContain('aria-label="Periodo de evidencia"')
     expect(html).toContain('href="?weeks=4"')

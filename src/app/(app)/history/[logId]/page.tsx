@@ -20,6 +20,7 @@ import { createTranslator, dateLocale } from '@/lib/i18n'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata = { title: 'Detalle de sesión · Vekira' }
 
@@ -79,13 +80,14 @@ function previousCompletedAt(row: PreviousExerciseLogRow): string {
     : row.progress_logs?.completed_at ?? ''
 }
 
-function formatDateTime(value: string, language: 'es' | 'en'): string {
+function formatDateTime(value: string, language: 'es' | 'en', timeZone: string): string {
   return new Intl.DateTimeFormat(dateLocale(language), {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone,
   }).format(new Date(value))
 }
 
@@ -104,6 +106,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
   const { supabase, user, profile } = await requireAppUserContext()
   const communityEnabled = isCommunityEnabled()
   const language = exerciseLanguage(profile.language)
+  const timeZone = resolveUserTimeZone(profile.timezone)
   const t = createTranslator(language)
 
   const { data: log, error: logError } = await supabase
@@ -213,7 +216,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
     <div className="min-h-screen bg-background pb-20">
       <PageTopBar
         title={workoutName}
-        subtitle={formatDateTime(log.completed_at, language)}
+        subtitle={formatDateTime(log.completed_at, language, timeZone)}
         backHref="/history"
         backLabel={t('Historial')}
         icon={<Dumbbell className="h-5 w-5" />}
@@ -223,7 +226,7 @@ export default async function HistoryDetailPage({ params }: PageProps) {
         <EvidenceHero
           eyebrow={t('Debrief de entrenamiento')}
           title={workoutName}
-          description={[formatDateTime(log.completed_at, language), presentation.focus].filter(Boolean).join(' · ')}
+          description={[formatDateTime(log.completed_at, language, timeZone), presentation.focus].filter(Boolean).join(' · ')}
         >
           <MetricStrip
             items={[

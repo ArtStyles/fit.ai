@@ -4,7 +4,11 @@ import { ClientSessionEvidence } from './ClientSessionEvidence'
 import type { CoachClientInsights } from '@/lib/coaching/insights'
 import { CoachInsightsAnalytics } from './CoachInsightsAnalytics'
 
-export function ClientInsightsDashboard({ detail, weeks }: { detail: CoachClientInsights; weeks: 4 | 12 }) {
+export function ClientInsightsDashboard({ detail, weeks, viewerTimeZone }: {
+  detail: CoachClientInsights
+  weeks: 4 | 12
+  viewerTimeZone: string
+}) {
   return <div className="space-y-6">
     <CoachInsightsAnalytics
       kind="client-insights"
@@ -35,7 +39,7 @@ export function ClientInsightsDashboard({ detail, weeks }: { detail: CoachClient
     <section aria-labelledby="session-evidence-title">
       <div className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-violet-300" aria-hidden="true" /><h2 id="session-evidence-title" className="text-lg font-bold text-foreground">Evidencia de sesiones</h2></div>
       <p className="mt-2 text-sm text-muted-foreground">Sets, carga, repeticiones, RPE, duración y notas se muestran sin edición histórica.</p>
-      {detail.sessions.length === 0 ? <p className="mt-4 rounded-2xl border border-dashed border-border/70 p-5 text-sm text-muted-foreground">No hay evidencia profesional en este periodo.</p> : <div className="mt-4 space-y-3">{detail.sessions.map(session => <ClientSessionEvidence key={session.id} session={session} timeZone={detail.client.timeZone} />)}</div>}
+      {detail.sessions.length === 0 ? <p className="mt-4 rounded-2xl border border-dashed border-border/70 p-5 text-sm text-muted-foreground">No hay evidencia profesional en este periodo.</p> : <div className="mt-4 space-y-3">{detail.sessions.map(session => <ClientSessionEvidence key={session.id} session={session} timeZone={viewerTimeZone} />)}</div>}
     </section>
   </div>
 }

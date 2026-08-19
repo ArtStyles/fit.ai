@@ -7,11 +7,12 @@ import { dateLocale } from '@/lib/i18n'
 
 const PAD = { top: 10, right: 8, bottom: 24, left: 34 }
 
-function formatDate(iso: string, locale: string, full = true): string {
+function formatDate(iso: string, locale: string, timeZone: string, full = true): string {
   return new Intl.DateTimeFormat(locale, {
     day: 'numeric',
     month: 'short',
     ...(full ? { year: 'numeric' } : {}),
+    timeZone,
   }).format(new Date(iso))
 }
 
@@ -20,7 +21,7 @@ function formatNumber(value: number, locale: string): string {
 }
 
 export function WeightChart({ data }: { data: MeasurementRow[] }) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const locale = dateLocale(language)
   const gradientId = useId().replaceAll(':', '')
   const ref = useRef<HTMLDivElement>(null)
@@ -120,7 +121,7 @@ export function WeightChart({ data }: { data: MeasurementRow[] }) {
 
         {xIndexes.map(index => (
           <text key={points[index]!.id} x={toX(index)} y={height - 4} textAnchor="middle" className="fill-muted-foreground" fontSize={10}>
-            {formatDate(points[index]!.recorded_at, locale, false)}
+            {formatDate(points[index]!.recorded_at, locale, timeZone, false)}
           </text>
         ))}
 

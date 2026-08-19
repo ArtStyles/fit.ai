@@ -48,9 +48,9 @@ const THIRD: ProductNotificationView = {
   createdAt: '2026-08-07T13:00:00.000Z',
 }
 
-function renderWithProviders(element: ReactElement): string {
+function renderWithProviders(element: ReactElement, timeZone = 'America/Havana'): string {
   return renderToStaticMarkup(
-    <I18nProvider language="es" syncDocumentLanguage={false}>
+    <I18nProvider language="es" timeZone={timeZone} syncDocumentLanguage={false}>
       <ToastProvider>{element}</ToastProvider>
     </I18nProvider>,
   )
@@ -104,6 +104,29 @@ describe('NotificationCenter', () => {
     expect(html).toContain('Abrir: Solicitud aceptada')
     expect(html).toContain('Cargar más')
     expect(html).toContain('min-h-11')
+  })
+
+  it('formats notification timestamps in the profile timezone at a UTC day boundary', () => {
+    const createdAt = '2026-08-20T03:30:00.000Z'
+    const boundaryNotification = { ...FIRST, createdAt }
+    const havana = renderWithProviders(
+      <NotificationCenter initialPage={{ notifications: [boundaryNotification], nextCursor: null }} />,
+      'America/Havana',
+    )
+    const utc = renderWithProviders(
+      <NotificationCenter initialPage={{ notifications: [boundaryNotification], nextCursor: null }} />,
+      'UTC',
+    )
+    const expectedHavana = new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Havana',
+    }).format(new Date(createdAt))
+    const expectedUtc = new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC',
+    }).format(new Date(createdAt))
+
+    expect(havana).toContain(expectedHavana)
+    expect(utc).toContain(expectedUtc)
+    expect(expectedHavana).not.toBe(expectedUtc)
   })
 
   it('does not expose an unsafe destination as navigation', () => {

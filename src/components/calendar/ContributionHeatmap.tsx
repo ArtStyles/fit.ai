@@ -14,7 +14,8 @@ interface Props {
 
 function monthShort(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
-  return new Intl.DateTimeFormat('es', { month: 'short' }).format(new Date(Date.UTC(y, m - 1, d)))
+  return new Intl.DateTimeFormat('es', { month: 'short', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(y, m - 1, d)))
 }
 
 export function ContributionHeatmap({ fromDate, toDate, byDate, thresholds }: Props) {

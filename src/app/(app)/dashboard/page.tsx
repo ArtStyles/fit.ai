@@ -29,16 +29,9 @@ import {
   isDashboardBannerVisible,
   type DashboardBannerData,
 } from '@/lib/dashboard/banner'
+import { getDashboardGreeting } from '@/components/dashboard/dashboardFormatters'
 
 export const metadata = { title: 'Dashboard · Vekira' }
-
-function getGreeting(language: ExerciseLanguage): string {
-  const t = createTranslator(language)
-  const h = new Date().getHours()
-  if (h < 12) return t('Buenos días')
-  if (h < 19) return t('Buenas tardes')
-  return t('Buenas noches')
-}
 
 function getBannerContext(
   plan: PlanRow | null,
@@ -420,7 +413,7 @@ export default async function DashboardPage() {
       .maybeSingle(),
   ])
   const bannerCandidate = bannerRaw as DashboardBannerData | null
-  const dashboardBanner = isDashboardBannerVisible(bannerCandidate)
+  const dashboardBanner = isDashboardBannerVisible(bannerCandidate, todayStr)
     ? bannerCandidate
     : null
   const {
@@ -588,7 +581,7 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen bg-background pb-28">
       <DashboardHeader
-        greeting={getGreeting(language)}
+        greeting={getDashboardGreeting(language, referenceNow, tz)}
         firstName={firstName}
         dateLabel={dateLabel}
         avatarUrl={profile?.avatar_url ?? null}

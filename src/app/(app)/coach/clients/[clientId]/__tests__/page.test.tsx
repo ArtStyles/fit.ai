@@ -17,7 +17,7 @@ vi.mock('@/components/coaching/ClientMeasurementsPanel', () => ({ ClientMeasurem
 describe('CoachClientDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    requireActiveTrainerContext.mockResolvedValue({ supabase: {} })
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, supabase: {} })
     getCoachClientInsights.mockResolvedValue({ activeScopes: [] })
     getCoachClientMeasurements.mockResolvedValue([])
   })
@@ -31,7 +31,7 @@ describe('CoachClientDetailPage', () => {
   })
 
   it('converges a consent-bound RPC failure into notFound without revealing its cause', async () => {
-    requireActiveTrainerContext.mockResolvedValue({ supabase: {} })
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, supabase: {} })
     getCoachClientInsights.mockRejectedValue(new Error('COACH_CLIENT_INSIGHTS_UNAVAILABLE'))
     const { default: CoachClientDetailPage } = await import('../page')
 

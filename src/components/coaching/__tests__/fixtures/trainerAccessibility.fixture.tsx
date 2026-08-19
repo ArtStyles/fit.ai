@@ -13,6 +13,7 @@ import { WorkspaceSwitcher } from '../../../navigation/WorkspaceSwitcher'
 import { ActiveWorkoutDockView } from '../../../navigation/BottomNav'
 import { ExerciseCatalogDialog } from '../../../plan/ExercisePicker'
 import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
 
 const surface = new URLSearchParams(window.location.search).get('surface')
 
@@ -200,9 +201,11 @@ function Surface() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <main id="main-content" aria-label="Superficie profesional" className="mx-auto max-w-5xl px-4 py-6">
-    <Surface />
-  </main>,
+  <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
+    <main id="main-content" aria-label="Superficie profesional" className="mx-auto max-w-5xl px-4 py-6">
+      <Surface />
+    </main>
+  </I18nProvider>,
 )
 
 requestAnimationFrame(() => {

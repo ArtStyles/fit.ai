@@ -3,11 +3,13 @@ import { CoachClientList } from '@/components/coaching/CoachClientList'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { getCoachClientsSummary } from '@/lib/coaching/insights'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata = { title: 'Clientes · Vekira' }
 
 export default async function CoachClientsPage() {
-  const { supabase } = await requireActiveTrainerContext()
+  const { profile, supabase } = await requireActiveTrainerContext()
+  const viewerTimeZone = resolveUserTimeZone(profile.timezone)
   let summary = null
   try {
     summary = await getCoachClientsSummary(supabase as any)
@@ -20,7 +22,7 @@ export default async function CoachClientsPage() {
       <PageTopBar title="Clientes" subtitle="Relaciones profesionales" backHref="/coach" backLabel="Resumen" icon={<UsersRound className="h-5 w-5" />} />
       <main className="mx-auto max-w-4xl px-4 py-8">
         {summary
-          ? <CoachClientList clients={summary.clients} />
+          ? <CoachClientList clients={summary.clients} viewerTimeZone={viewerTimeZone} />
           : <p role="alert" className="rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudo cargar la lista de clientes. Inténtalo de nuevo más tarde.</p>}
       </main>
     </div>

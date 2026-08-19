@@ -12,13 +12,14 @@ import type { HistoryEvidenceRow, HistorySignal } from './historyViewModel'
 
 type HistoryMode = 'all' | 'week' | 'volume'
 
-function formatDate(value: string, language: 'es' | 'en'): string {
+function formatDate(value: string, language: 'es' | 'en', timeZone: string): string {
   return new Intl.DateTimeFormat(dateLocale(language), {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone,
   }).format(new Date(value))
 }
 
@@ -50,7 +51,7 @@ function currentWeekStart(todayStr: string): string {
 }
 
 export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRow[]; todayStr: string }) {
-  const { language, t } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<HistoryMode>('all')
 
@@ -158,7 +159,7 @@ export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRo
                   <SessionSummaryRow
                     key={row.id}
                     href={`/history/${row.id}`}
-                    dateLabel={formatDate(row.completedAt, language)}
+                    dateLabel={formatDate(row.completedAt, language, timeZone)}
                     title={row.workoutName}
                     context={row.focus}
                     signal={signalPresentation(row.signal, language)}

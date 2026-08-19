@@ -8,9 +8,13 @@ import * as MeasurementFormModule from '../MeasurementForm'
 import { MeasurementsClient } from '../MeasurementsClient'
 import { WeightChart } from '../WeightChart'
 
-function renderWithProviders(element: React.ReactElement, language: 'es' | 'en' = 'es') {
+function renderWithProviders(
+  element: React.ReactElement,
+  language: 'es' | 'en' = 'es',
+  timeZone = 'America/Havana',
+) {
   return renderToStaticMarkup(
-    <I18nProvider language={language} syncDocumentLanguage={false}>
+    <I18nProvider language={language} timeZone={timeZone} syncDocumentLanguage={false}>
       {element}
     </I18nProvider>,
   )
@@ -88,6 +92,23 @@ describe('MeasurementsClient', () => {
     ]) expect(html).toContain(copy)
     expect(html).toContain('aria-label="Dashboard"')
     expect(html).not.toContain('Última medida')
+  })
+
+  it('formats measurement timestamps with the profile timezone', () => {
+    const boundary = measurement({ recorded_at: '2026-08-20T03:30:00.000Z' })
+    const havana = renderWithProviders(
+      <MeasurementsClient initialMeasurements={[boundary]} fromSettings={false} />,
+      'en',
+      'America/Havana',
+    )
+    const utc = renderWithProviders(
+      <MeasurementsClient initialMeasurements={[boundary]} fromSettings={false} />,
+      'en',
+      'UTC',
+    )
+
+    expect(havana).toContain('Aug 19, 2026')
+    expect(utc).toContain('Aug 20, 2026')
   })
 
   it('uses shared measurement ranges and accessible 44px form controls', () => {

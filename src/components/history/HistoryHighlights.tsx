@@ -20,6 +20,13 @@ function formatWeight(value: number, language: 'es' | 'en'): string {
   return `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 1 }).format(value)} kg`
 }
 
+function formatDateOnly(value: string, language: 'es' | 'en'): string {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Intl.DateTimeFormat(dateLocale(language), {
+    day: 'numeric', month: 'short', timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)))
+}
+
 export function HistoryHighlights({ records }: { records: HistoryHighlight[] }) {
   const { language, t } = useI18n()
 
@@ -55,7 +62,7 @@ export function HistoryHighlights({ records }: { records: HistoryHighlight[] }) 
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-foreground group-hover:text-amber-100">{record.exerciseName}</p>
                   <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                    {record.muscleGroups.slice(0, 2).join(' · ') || new Intl.DateTimeFormat(dateLocale(language), { day: 'numeric', month: 'short' }).format(new Date(`${record.bestDate}T00:00:00`))}
+                    {record.muscleGroups.slice(0, 2).join(' · ') || formatDateOnly(record.bestDate, language)}
                   </p>
                 </div>
               </div>
