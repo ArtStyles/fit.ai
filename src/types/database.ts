@@ -1587,6 +1587,13 @@ export interface Database {
         Args: Record<string, unknown>
         Returns: unknown
       }
+      apply_workout_adjustment_atomic: {
+        Args: {
+          p_workout_id: string
+          p_changes: Json
+        }
+        Returns: number
+      }
       has_active_coaching_scope: {
         Args: {
           p_trainer_id: string

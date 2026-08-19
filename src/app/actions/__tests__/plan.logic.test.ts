@@ -156,6 +156,70 @@ function editablePlanClient() {
   }
 }
 
+function atomicAdjustmentClient(rpcResult: { data: number | null; error: { message: string } | null } = { data: 2, error: null }) {
+  let mutationCalls = 0
+  const from = vi.fn((table: string) => {
+    const rows = table === 'workout_exercises'
+      ? [{ id: 'row-1' }, { id: 'row-2' }, { id: 'row-3' }]
+      : []
+    const builder: any = {
+      select: vi.fn(() => builder),
+      eq: vi.fn(() => builder),
+      order: vi.fn(() => builder),
+      update: vi.fn(() => { mutationCalls += 1; return builder }),
+      delete: vi.fn(() => { mutationCalls += 1; return builder }),
+      maybeSingle: vi.fn(async () => ({
+        data: table === 'workouts'
+          ? { id: 'workout-1', name: 'Día A', focus: null, plan_id: 'plan-1' }
+          : table === 'workout_plans'
+            ? { id: 'plan-1' }
+            : null,
+        error: null,
+      })),
+      then: (resolve: (value: { data: unknown[]; error: null }) => unknown, reject: (reason: unknown) => unknown) => (
+        Promise.resolve({ data: rows, error: null }).then(resolve, reject)
+      ),
+    }
+    return builder
+  })
+  const rpc = vi.fn(async () => rpcResult)
+
+  return {
+    supabase: {
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } } })) },
+      rpc,
+      from,
+    },
+    rpc,
+    mutationCalls: () => mutationCalls,
+  }
+}
+
+function mismatchedWorkoutSummaryClient() {
+  let planMutationCalls = 0
+  const from = vi.fn((table: string) => {
+    const builder: any = {
+      update: vi.fn(() => { if (table === 'workout_plans') planMutationCalls += 1; return builder }),
+      eq: vi.fn(() => builder),
+      select: vi.fn(() => builder),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+      then: (resolve: (value: { data: null; error: null }) => unknown, reject: (reason: unknown) => unknown) => (
+        Promise.resolve({ data: null, error: null }).then(resolve, reject)
+      ),
+    }
+    return builder
+  })
+
+  return {
+    supabase: {
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } } })) },
+      rpc: vi.fn(),
+      from,
+    },
+    planMutationCalls: () => planMutationCalls,
+  }
+}
+
 describe('orderedIdsToUpdates', () => {
   it('asigna order_index 1-based en el orden dado', () => {
     expect(orderedIdsToUpdates(['c', 'a', 'b'])).toEqual([
@@ -274,5 +338,51 @@ describe('inline workout editor actions', () => {
 
     expect(redirect).not.toHaveBeenCalled()
     expect(revalidatePath).toHaveBeenCalledWith('/plan')
+  })
+
+  it('applies normalized workout changes through one atomic RPC without mutation-table loops', async () => {
+    const client = atomicAdjustmentClient()
+    createClient.mockResolvedValue(client.supabase)
+    const { applyWorkoutAdjustment } = await import('../adjustPlan')
+    const changes = [
+      { type: 'update_exercise' as const, workoutExerciseId: 'row-1', sets: 4 },
+      { type: 'remove_exercise' as const, workoutExerciseId: 'row-2' },
+    ]
+
+    await expect(applyWorkoutAdjustment('workout-1', changes)).resolves.toEqual({
+      success: true,
+      appliedCount: 2,
+    })
+    expect(client.rpc).toHaveBeenCalledOnce()
+    expect(client.rpc).toHaveBeenCalledWith('apply_workout_adjustment_atomic', {
+      p_workout_id: 'workout-1',
+      p_changes: changes,
+    })
+    expect(client.mutationCalls()).toBe(0)
+  })
+
+  it('reports an atomic adjustment failure without attempting fallback writes', async () => {
+    const client = atomicAdjustmentClient({ data: null, error: { message: 'forced failure' } })
+    createClient.mockResolvedValue(client.supabase)
+    const { applyWorkoutAdjustment } = await import('../adjustPlan')
+
+    await expect(applyWorkoutAdjustment('workout-1', [
+      { type: 'update_exercise', workoutExerciseId: 'row-1', reps: 12 },
+    ])).resolves.toEqual({ success: false, error: 'No se pudieron aplicar todos los cambios' })
+    expect(client.rpc).toHaveBeenCalledOnce()
+    expect(client.mutationCalls()).toBe(0)
+  })
+
+  it('rejects a workout summary whose workout does not belong to the submitted plan', async () => {
+    const client = mismatchedWorkoutSummaryClient()
+    createClient.mockResolvedValue(client.supabase)
+    const actions = await import('../plan')
+
+    await expect(actions.updateWorkoutSummary(data({
+      planId: 'plan-1',
+      workoutId: 'workout-from-another-plan',
+      name: 'Día ajeno',
+    }))).rejects.toThrow('REDIRECT:/plan?error=save_failed')
+    expect(client.planMutationCalls()).toBe(0)
   })
 })

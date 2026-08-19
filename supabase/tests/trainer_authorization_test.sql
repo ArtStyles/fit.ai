@@ -115,7 +115,7 @@ SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  '1c2b71f78e40f8583a83b3a94be6904c',
+  '65281f1de5190b82865b0b5813545830',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -127,7 +127,8 @@ SELECT ok(NOT EXISTS (
     )
     AND (function.proconfig IS NULL OR NOT EXISTS (
       SELECT 1 FROM unnest(function.proconfig) setting
-      WHERE setting ~ '^search_path=(public|storage|auth)(, (public|storage|auth))*, pg_temp$'
+      WHERE setting = 'search_path=""'
+        OR setting ~ '^search_path=(public|storage|auth)(, (public|storage|auth))*, pg_temp$'
     ))
 ), 'every effective public SECURITY DEFINER function pins a trusted search_path except the two reviewed 048 trigger functions');
 SELECT set_eq(
@@ -162,6 +163,9 @@ SELECT ok(
   AND has_function_privilege('service_role', 'public.sync_profile_weight_from_measurements()', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND NOT has_function_privilege('service_role', 'public.get_coach_clients_summary()', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE'),
   'effective function ACLs expose only the reviewed API-role entry points, including inherited anonymous trigger grants'
 );
@@ -173,7 +177,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  '805b82edff421bc29644417d81beaf4e',
+  'a26130a18fefc8fd85940d92d8d6eaf8',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
 );
 
