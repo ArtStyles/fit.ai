@@ -33,6 +33,9 @@ describe('profile timezone presentation audit', () => {
     ['../../../app/(app)/admin/trainers/page.tsx', 'timeZone={timeZone}'],
     ['../../../app/(app)/admin/trainers/[applicationId]/page.tsx', 'timeZone={timeZone}'],
     ['../../../app/(app)/coach/programs/[templateId]/page.tsx', 'resolveUserTimeZone(profile.timezone)'],
+    ['../../../app/(app)/coach/clients/page.tsx', 'viewerTimeZone={viewerTimeZone}'],
+    ['../../../app/(app)/coach/clients/[clientId]/page.tsx', 'viewerTimeZone={viewerTimeZone}'],
+    ['../../../app/suspended/page.tsx', 'resolveUserTimeZone(profile?.timezone)'],
   ])('passes the authenticated profile timezone through server presentation: %s', (path, contract) => {
     expect(source(path)).toContain(contract)
   })

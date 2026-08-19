@@ -7,21 +7,16 @@ import { Card, CardContent } from '@/components/ui/card'
 import { getAppUserContext } from '@/lib/auth/server'
 import { isSuspensionActive } from '@/lib/auth/access'
 import { BrandTopBar } from '@/components/navigation/BrandTopBar'
+import { formatSuspensionDeadline } from '@/lib/time/suspension'
+import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 export const metadata: Metadata = { title: 'Cuenta suspendida' }
-
-function formatUntil(value: string | null): string {
-  if (!value) return 'Hasta nueva revisión'
-  return new Intl.DateTimeFormat('es-ES', {
-    dateStyle: 'long',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
 
 export default async function SuspendedPage() {
   const { user, profile } = await getAppUserContext()
   if (!user) redirect('/login')
   if (!isSuspensionActive(profile)) redirect('/dashboard')
+  const timeZone = resolveUserTimeZone(profile?.timezone)
 
   return (
     <div className="min-h-screen bg-background">
@@ -44,7 +39,7 @@ export default async function SuspendedPage() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Duración</p>
-              <p className="mt-1 text-sm text-foreground">{formatUntil(profile?.suspended_until ?? null)}</p>
+              <p className="mt-1 text-sm text-foreground">{formatSuspensionDeadline(profile?.suspended_until ?? null, timeZone)}</p>
             </div>
           </div>
 
