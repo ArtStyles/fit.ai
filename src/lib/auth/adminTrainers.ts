@@ -1,6 +1,8 @@
 import 'server-only'
 
+import { ADMIN_TRAINER_ATTENTION_STATUSES } from '@/lib/admin/overview'
 import { requireAdminUserContext } from '@/lib/auth/admin'
+import type { AdminServiceClient } from '@/lib/auth/admin'
 import type { Database } from '@/types/database'
 
 const TRAINER_CREDENTIAL_BUCKET = 'trainer-credentials'
@@ -119,6 +121,13 @@ export async function listAdminTrainerApplications(
   status?: string,
 ): Promise<AdminTrainerQueueItem[]> {
   const { service } = await requireAdminUserContext()
+  return loadAdminTrainerApplications(service, status)
+}
+
+export async function loadAdminTrainerApplications(
+  service: AdminServiceClient,
+  status?: string,
+): Promise<AdminTrainerQueueItem[]> {
   const selectedStatus = normalizeAdminTrainerStatus(status)
   let query = service
     .from('trainer_applications')
@@ -140,6 +149,21 @@ export async function listAdminTrainerApplications(
     specialties: [...row.specialties],
     applicationKind: row.application_kind,
   }))
+}
+
+export async function countAdminTrainerApplicationsRequiringAttention(
+  service: AdminServiceClient,
+): Promise<number> {
+  const { count, error } = await service
+    .from('trainer_applications')
+    .select('id', { count: 'exact', head: true })
+    .in('status', [...ADMIN_TRAINER_ATTENTION_STATUSES])
+
+  if (error || count === null) {
+    throw new Error(error?.message || 'No se pudo cargar el contador de solicitudes.')
+  }
+
+  return count
 }
 
 async function signCredential(

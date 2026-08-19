@@ -18,6 +18,7 @@ vi.mock('@/lib/auth/admin', () => ({
 }))
 
 import {
+  countAdminTrainerApplicationsRequiringAttention,
   getAdminTrainerApplication,
   listAdminTrainerApplications,
 } from '@/lib/auth/adminTrainers'
@@ -81,12 +82,26 @@ function projectedRow(columns: string) {
   ]))
 }
 
-function queueService() {
+function queueService(
+  attentionCount: number | null = 3,
+  attentionFilters: string[][] = [],
+) {
   return {
     from(table: string) {
       if (table !== 'trainer_applications') throw new Error(`Unexpected queue table: ${table}`)
       return {
-        select(columns: string) {
+        select(columns: string, options?: { count?: string; head?: boolean }) {
+          if (options?.head) {
+            const countQuery = {
+              count: attentionCount,
+              error: null,
+              in(_column: string, statuses: string[]) {
+                attentionFilters.push(statuses)
+                return countQuery
+              },
+            }
+            return countQuery
+          }
           const query = {
             data: [projectedRow(columns)],
             error: null,
@@ -221,6 +236,28 @@ describe('trainer administration privacy', () => {
     expect(html).not.toContain('ada.private@example.test')
     expect(html).not.toContain('Revisar la vigencia')
     expect(html).not.toContain('storage.example.test')
+  })
+
+  it('counts only attention statuses for the admin navigation badge', async () => {
+    const attentionFilters: string[][] = []
+    const service = queueService(3, attentionFilters)
+
+    await expect(
+      countAdminTrainerApplicationsRequiringAttention(service as never),
+    ).resolves.toBe(3)
+    expect(attentionFilters).toEqual([[
+      'submitted',
+      'under_review',
+      'interview_required',
+    ]])
+  })
+
+  it('rejects an unavailable attention count instead of fabricating zero', async () => {
+    const service = queueService(null)
+
+    await expect(
+      countAdminTrainerApplicationsRequiringAttention(service as never),
+    ).rejects.toThrow('No se pudo cargar el contador de solicitudes.')
   })
 
   it('identifies profile updates and resolves credentials from their approved source application', async () => {

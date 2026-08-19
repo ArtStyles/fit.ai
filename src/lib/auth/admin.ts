@@ -9,6 +9,8 @@ import type { DashboardBannerData } from '@/lib/dashboard/banner'
 import { DASHBOARD_BANNER_SLOT } from '@/lib/dashboard/banner'
 import { isTrainerMarketplacePilotGateEnabled } from '@/lib/features/trainerMarketplacePilot'
 
+export type AdminServiceClient = ReturnType<typeof createServiceClient>
+
 export type AdminUserRecord = {
   id: string
   email: string
@@ -83,7 +85,10 @@ export async function requireAdminUserContext() {
 
 export async function listAdminUsers(): Promise<AdminUsersData> {
   const { service } = await requireAdminUserContext()
+  return loadAdminUsers(service)
+}
 
+export async function loadAdminUsers(service: AdminServiceClient): Promise<AdminUsersData> {
   const [
     { data: authData, error: authError },
     { data: profiles, error: profileError },
@@ -136,6 +141,12 @@ export async function listAdminUsers(): Promise<AdminUsersData> {
 
 export async function getAdminDashboardBanner(): Promise<AdminDashboardBannerData> {
   const { service } = await requireAdminUserContext()
+  return loadAdminDashboardBanner(service)
+}
+
+export async function loadAdminDashboardBanner(
+  service: AdminServiceClient,
+): Promise<AdminDashboardBannerData> {
   const { data, error } = await service
     .from('dashboard_banners')
     .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
