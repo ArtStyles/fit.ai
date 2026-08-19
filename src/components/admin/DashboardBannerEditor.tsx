@@ -78,9 +78,10 @@ export function DashboardBannerEditor({
 
   if (!enabled) {
     return (
-      <Card className="border-amber-500/25 bg-amber-500/5">
-        <CardContent className="p-4 text-sm text-amber-100/80">
-          El banner estará disponible cuando se aplique la migración 030 en Supabase.
+      <Card role="status" className="border-amber-500/25 bg-amber-500/5">
+        <CardContent className="p-4 text-amber-100/80">
+          <h2 className="font-display text-base font-bold">Contenido no disponible</h2>
+          <p className="mt-1 text-sm">La edición del banner no está disponible en este momento.</p>
         </CardContent>
       </Card>
     )
@@ -102,6 +103,13 @@ export function DashboardBannerEditor({
             </div>
           </div>
         </div>
+
+        {!initialBanner && (
+          <div role="status" className="border-b border-border/60 bg-violet-500/5 px-4 py-3 text-sm text-muted-foreground sm:px-5">
+            <span className="font-semibold text-foreground">Banner sin configurar</span>
+            <span> · Completa los campos para guardar el primer banner.</span>
+          </div>
+        )}
 
         <div className="grid gap-6 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)]">
           <form action={saveDashboardBanner} className="space-y-4">

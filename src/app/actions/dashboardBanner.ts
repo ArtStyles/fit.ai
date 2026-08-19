@@ -16,6 +16,11 @@ import {
 } from '@/lib/dashboard/banner'
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const ADMIN_CONTENT_PATH = '/admin/content'
+
+const adminContentFeedback = (key: 'notice' | 'error', value: string) => (
+  `${ADMIN_CONTENT_PATH}?${key}=${value}`
+)
 
 function optionalText(formData: FormData, key: string, maxLength: number): string | null {
   const value = String(formData.get(key) ?? '').trim()
@@ -46,7 +51,7 @@ export async function saveDashboardBanner(formData: FormData) {
     || invalidDates
     || invalidCta
   ) {
-    redirect('/admin?error=admin_banner_invalid')
+    redirect(adminContentFeedback('error', 'admin_banner_invalid'))
   }
 
   const { user, service } = await requireAdminUserContext()
@@ -62,7 +67,7 @@ export async function saveDashboardBanner(formData: FormData) {
 
   if (image instanceof File && image.size > 0) {
     const validation = validateDashboardBannerImage(image.type, image.size)
-    if (!validation.ok) redirect('/admin?error=admin_banner_image')
+    if (!validation.ok) redirect(adminContentFeedback('error', 'admin_banner_image'))
 
     const { error: uploadError } = await service.storage
       .from(DASHBOARD_BANNER_BUCKET)
@@ -71,7 +76,7 @@ export async function saveDashboardBanner(formData: FormData) {
         cacheControl: '3600',
         upsert: true,
       })
-    if (uploadError) redirect('/admin?error=admin_banner_update_failed')
+    if (uploadError) redirect(adminContentFeedback('error', 'admin_banner_update_failed'))
 
     const publicUrl = service.storage
       .from(DASHBOARD_BANNER_BUCKET)
@@ -97,7 +102,7 @@ export async function saveDashboardBanner(formData: FormData) {
     updated_at: now,
   }, { onConflict: 'slot' })
 
-  if (error) redirect('/admin?error=admin_banner_update_failed')
+  if (error) redirect(adminContentFeedback('error', 'admin_banner_update_failed'))
 
   if (removeImage && !(image instanceof File && image.size > 0)) {
     await service.storage.from(DASHBOARD_BANNER_BUCKET).remove([DASHBOARD_BANNER_IMAGE_PATH])
@@ -110,7 +115,8 @@ export async function saveDashboardBanner(formData: FormData) {
     metadata: { kind, status, starts_on: startsOn, ends_on: endsOn },
   })
 
+  revalidatePath(ADMIN_CONTENT_PATH)
   revalidatePath('/admin')
   revalidatePath('/dashboard')
-  redirect('/admin?notice=admin_banner_saved')
+  redirect(adminContentFeedback('notice', 'admin_banner_saved'))
 }
