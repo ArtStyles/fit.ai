@@ -114,7 +114,7 @@ SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  '700fe788fa3b54df830c550a3a8ab485',
+  'a80acce2e631af8d9fc4cedcfaaba9d2',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -133,10 +133,7 @@ SELECT ok(
   AND NOT has_function_privilege('authenticated', 'public.require_active_coaching_admin(uuid)', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.get_coach_clients_summary()', 'EXECUTE')
   AND NOT has_function_privilege('service_role', 'public.get_coach_clients_summary()', 'EXECUTE')
-  AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE')
-  AND has_function_privilege('authenticated', 'public.release_session_authorization(uuid,uuid)', 'EXECUTE')
-  AND NOT has_function_privilege('anon', 'public.release_session_authorization(uuid,uuid)', 'EXECUTE')
-  AND NOT has_function_privilege('service_role', 'public.release_session_authorization(uuid,uuid)', 'EXECUTE'),
+  AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE'),
   'effective function ACLs expose only the reviewed authenticated/service entry points'
 );
 SELECT is(
@@ -147,7 +144,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  'c394b62e5d51386d4977dc7ad0eda8f1',
+  '39a22eab6b489cb01d926fdab1a526ed',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
 );
 

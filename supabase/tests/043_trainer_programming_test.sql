@@ -156,16 +156,32 @@ SELECT is((SELECT is_active FROM public.workout_plans plan JOIN public.trainer_p
 SELECT is((SELECT is_active FROM public.workout_plans WHERE id = '11111111-0000-4000-8000-000000000110'), TRUE, 'proposal does not change the current personal plan');
 SELECT is((SELECT count(*) FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 2::bigint, 'proposal materializes every workout');
 SELECT is((SELECT count(*) FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id JOIN public.workout_plans plan ON plan.id = workout.plan_id JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'), 3::bigint, 'proposal materializes every exercise prescription');
+-- ISO_IDENTITY_ASSERTION: proposal
 SELECT is(
   (
-    SELECT array_agg(workout.day_of_week ORDER BY workout.day_of_week)
+    SELECT jsonb_agg(
+      jsonb_build_array(workout.order_in_plan, workout.day_of_week)
+      ORDER BY workout.order_in_plan
+    )
     FROM public.workouts workout
     JOIN public.workout_plans plan ON plan.id = workout.plan_id
     JOIN public.trainer_plan_assignments assignment ON assignment.id = plan.trainer_assignment_id
     WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'
   ),
-  ARRAY[1, 7],
-  'proposal materializes Monday and Sunday with exact ISO days'
+  (
+    SELECT jsonb_agg(
+      jsonb_build_array(
+        (snapshot_workout.value->>'orderInPlan')::INTEGER,
+        (snapshot_workout.value->>'dayOfWeek')::INTEGER
+      )
+      ORDER BY (snapshot_workout.value->>'orderInPlan')::INTEGER
+    )
+    FROM public.trainer_assignment_versions version
+    JOIN public.trainer_plan_assignments assignment ON assignment.id = version.assignment_id
+    CROSS JOIN LATERAL jsonb_array_elements(version.snapshot->'workouts') AS snapshot_workout(value)
+    WHERE assignment.proposal_idempotency_key = 'proposal-idempotency-1'
+  ),
+  'proposal materializes canonical snapshot order/day pairs'
 );
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);
@@ -740,16 +756,31 @@ SELECT is((SELECT version_number FROM public.trainer_assignment_versions version
 SELECT is((SELECT count(*) FROM public.workouts workout JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND plan.is_active), 2::bigint, 'revision fully materializes every template workout before activation');
 SELECT is((SELECT count(*) FROM public.workout_exercises exercise JOIN public.workouts workout ON workout.id = exercise.workout_id JOIN public.workout_plans plan ON plan.id = workout.plan_id WHERE plan.trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND plan.is_active), 3::bigint, 'revision fully materializes every template exercise before activation');
 SELECT is((SELECT count(*) FROM public.workout_plans WHERE trainer_assignment_id = 'dddddddd-0000-4000-8000-000000000021' AND is_active), 1::bigint, 'revision leaves one current professional materialization');
+-- ISO_IDENTITY_ASSERTION: revision
 SELECT is(
   (
-    SELECT array_agg(workout.day_of_week ORDER BY workout.day_of_week)
+    SELECT jsonb_agg(
+      jsonb_build_array(workout.order_in_plan, workout.day_of_week)
+      ORDER BY workout.order_in_plan
+    )
     FROM public.workouts workout
     JOIN public.trainer_assignment_versions version
       ON version.materialized_plan_id = workout.plan_id
     WHERE version.revision_idempotency_key = 'revision-publish-key'
   ),
-  ARRAY[1, 7],
-  'revision materializes Monday and Sunday with exact ISO days'
+  (
+    SELECT jsonb_agg(
+      jsonb_build_array(
+        (snapshot_workout.value->>'orderInPlan')::INTEGER,
+        (snapshot_workout.value->>'dayOfWeek')::INTEGER
+      )
+      ORDER BY (snapshot_workout.value->>'orderInPlan')::INTEGER
+    )
+    FROM public.trainer_assignment_versions version
+    CROSS JOIN LATERAL jsonb_array_elements(version.snapshot->'workouts') AS snapshot_workout(value)
+    WHERE version.revision_idempotency_key = 'revision-publish-key'
+  ),
+  'revision materializes canonical snapshot order/day pairs'
 );
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '11111111-0000-4000-8000-000000000001', true);

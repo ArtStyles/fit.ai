@@ -23,6 +23,10 @@ const trainerRunner = readFileSync(
   new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url),
   'utf8',
 )
+const trainerProgrammingTest = readFileSync(
+  new URL('../../../../supabase/tests/043_trainer_programming_test.sql', import.meta.url),
+  'utf8',
+)
 
 describe('trainer migration rerun contract', () => {
   it('guards every named index in migrations 040-045', () => {
@@ -51,5 +55,20 @@ describe('trainer migration rerun contract', () => {
     expect(isoRepair).toMatch(/RETURN 47/i)
     expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_trainer_iso_weekday_repair\.sql/i)
     expect(trainerRunner).toMatch(/migrationPaths\.slice\(3\)[\s\S]+reapplying migrations 040-047/i)
+  })
+
+  it('compares proposal and revision materializations to canonical snapshot order/day pairs', () => {
+    for (const rpcPath of ['proposal', 'revision']) {
+      const assertion = trainerProgrammingTest.match(
+        new RegExp(`-- ISO_IDENTITY_ASSERTION: ${rpcPath}[\\s\\S]+?'${rpcPath} materializes canonical snapshot order/day pairs'\\s*\\);`, 'i'),
+      )?.[0]
+
+      expect(assertion, `${rpcPath} must preserve snapshot workout identity`).toBeDefined()
+      expect(assertion).toMatch(/jsonb_build_array\(workout\.order_in_plan, workout\.day_of_week\)/i)
+      expect(assertion).toMatch(/jsonb_array_elements\(version\.snapshot->'workouts'\)/i)
+      expect(assertion).toMatch(/snapshot_workout\.value->>'orderInPlan'/i)
+      expect(assertion).toMatch(/snapshot_workout\.value->>'dayOfWeek'/i)
+      expect(assertion).not.toMatch(/ORDER BY workout\.day_of_week/i)
+    }
   })
 })

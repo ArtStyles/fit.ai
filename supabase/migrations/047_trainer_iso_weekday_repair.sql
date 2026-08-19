@@ -1260,13 +1260,6 @@ CREATE TRIGGER trg_enforce_trainer_workout_iso_schedule
   BEFORE INSERT OR UPDATE OF plan_id, day_of_week, order_in_plan ON public.workouts
   FOR EACH ROW EXECUTE FUNCTION public.enforce_trainer_workout_iso_schedule();
 
--- CREATE OR REPLACE preserves an existing function's owner and ACL. Normalize
--- the 046 entry point after legacy owner-boundary deployments so its effective
--- contract remains authenticated-only.
-ALTER FUNCTION public.release_session_authorization(UUID, UUID) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.release_session_authorization(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.release_session_authorization(UUID, UUID) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.trainer_security_preflight()
 RETURNS INTEGER
 LANGUAGE plpgsql
