@@ -141,6 +141,47 @@ test('all trainer role routes pass Axe and responsive geometry in the active vie
   await auditRoute(page, `/admin/trainers/${fixture.trainerA.applicationId}`)
 })
 
+test('workspace administrativo replaces product navigation and keeps feature routes accessible', async ({ page }) => {
+  test.setTimeout(300_000)
+  if (!fixture) throw new Error('Trainer accessibility fixture was not created')
+
+  await signIn(page, fixture.admin.email)
+  await page.goto('/settings')
+  await page.getByRole('link', { name: 'Administración', exact: true }).click()
+  await expect(page).toHaveURL(/\/admin$/)
+
+  const adminNav = page.locator('nav[aria-label="Navegación administrativa"]:visible')
+  await expect(adminNav).toBeVisible()
+  await expect(page.locator('nav[aria-label="Navegación principal"]:visible')).toHaveCount(0)
+  await expect(page.getByText('Estado general de la plataforma', { exact: true })).toBeVisible()
+  await auditCriticalAndSeriousAccessibility(page)
+  await expectResponsiveGeometry(page)
+  await expectActionTargetsAtLeast44(page)
+
+  for (const destination of [
+    { label: 'Usuarios', path: '/admin/users' },
+    { label: 'Entrenadores', path: '/admin/trainers' },
+    { label: 'Contenido', path: '/admin/content' },
+  ]) {
+    await page.locator('nav[aria-label="Navegación administrativa"]:visible')
+      .getByRole('link', { name: destination.label, exact: true })
+      .click()
+    expect(new URL(page.url()).pathname).toBe(destination.path)
+    await expect(page.locator('main')).toBeVisible()
+    await expect(page.locator('nav[aria-label="Navegación principal"]:visible')).toHaveCount(0)
+    await expect(page.locator(`a[aria-current="page"][href="${destination.path}"]:visible`)).toBeVisible()
+    await auditCriticalAndSeriousAccessibility(page)
+    await expectResponsiveGeometry(page)
+    await expectActionTargetsAtLeast44(page)
+  }
+
+  await auditRoute(page, `/admin/trainers/${fixture.trainerA.applicationId}`)
+  await expect(page.locator('nav[aria-label="Navegación principal"]:visible')).toHaveCount(0)
+  await expect(page.locator('a[aria-current="page"][href="/admin/trainers"]:visible')).toBeVisible()
+  await page.getByRole('link', { name: /Volver a Vekira|Salir a Vekira/ }).filter({ visible: true }).click()
+  await expect(page).toHaveURL(/\/dashboard$/)
+})
+
 test('trainer journeys expose keyboard focus, associated errors, dialogs, and reduced motion', async ({ page }) => {
   test.setTimeout(180_000)
   if (!fixture || !templateId) throw new Error('Trainer accessibility fixture was not prepared')

@@ -25,7 +25,7 @@ export function AdminDesktopSidebar({ pendingTrainerCount }: AdminDesktopSidebar
         <VekiraLogo markClassName="h-10 w-10" wordmarkClassName="text-base" />
       </PendingLink>
 
-      <nav aria-label="NavegaciÃ³n administrativa" className="mt-10 flex flex-1 flex-col gap-2 px-4">
+      <nav aria-label="Navegación administrativa" className="mt-10 flex flex-1 flex-col gap-2 px-4">
         {ADMIN_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const isActive = isAdminNavItemActive(pathname, href)
           const shouldShowBadge = href === '/admin/trainers' && pendingTrainerCount && pendingTrainerCount > 0

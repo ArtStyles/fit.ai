@@ -18,7 +18,7 @@ describe('AdminShell', () => {
       </AdminShell>,
     )
 
-    expect(html).toContain('aria-label="NavegaciÃ³n administrativa"')
+    expect(html).toContain('aria-label="Navegación administrativa"')
     expect(html).toContain('href="/admin/users"')
     expect(html).toContain('href="/admin/content"')
     expect(html).toContain('href="/dashboard"')

@@ -29,9 +29,9 @@ describe('profile timezone presentation audit', () => {
 
   it.each([
     ['../../../app/(app)/history/[logId]/page.tsx', 'resolveUserTimeZone(profile.timezone)'],
-    ['../../../app/(app)/admin/page.tsx', 'resolveUserTimeZone(profile.timezone)'],
-    ['../../../app/(app)/admin/trainers/page.tsx', 'timeZone={timeZone}'],
-    ['../../../app/(app)/admin/trainers/[applicationId]/page.tsx', 'timeZone={timeZone}'],
+    ['../../../app/(admin)/admin/page.tsx', 'resolveUserTimeZone(profile.timezone)'],
+    ['../../../app/(admin)/admin/trainers/page.tsx', 'timeZone={timeZone}'],
+    ['../../../app/(admin)/admin/trainers/[applicationId]/page.tsx', 'timeZone={timeZone}'],
     ['../../../app/(app)/coach/programs/[templateId]/page.tsx', 'resolveUserTimeZone(profile.timezone)'],
     ['../../../app/(app)/coach/clients/page.tsx', 'viewerTimeZone={viewerTimeZone}'],
     ['../../../app/(app)/coach/clients/[clientId]/page.tsx', 'viewerTimeZone={viewerTimeZone}'],

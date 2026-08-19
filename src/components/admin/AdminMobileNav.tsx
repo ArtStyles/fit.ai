@@ -31,7 +31,7 @@ export function AdminMobileNav({ pendingTrainerCount }: AdminMobileNavProps) {
   const pathname = usePathname()
 
   return (
-    <nav aria-label="NavegaciÃ³n administrativa" className="flex border-t border-border/60 bg-[hsl(var(--surface-1))] px-1 pb-[var(--app-safe-area-bottom)] lg:hidden">
+    <nav aria-label="Navegación administrativa" className="flex border-t border-border/60 bg-[hsl(var(--surface-1))] px-1 pb-[var(--app-safe-area-bottom)] lg:hidden">
       {ADMIN_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
         const isActive = isAdminNavItemActive(pathname, href)
         const shouldShowBadge = href === '/admin/trainers' && pendingTrainerCount && pendingTrainerCount > 0
