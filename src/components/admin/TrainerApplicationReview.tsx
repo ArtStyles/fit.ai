@@ -79,6 +79,10 @@ export function TrainerApplicationQueue({
         />
       </form>
 
+      <p className="text-sm text-muted-foreground">
+        {applications.length} {applications.length === 1 ? 'solicitud' : 'solicitudes'} en la cola
+      </p>
+
       <section className="space-y-3" aria-label="Solicitudes de entrenador">
         {applications.length === 0 ? (
           <Card className="border-border/60 bg-muted/10">
@@ -106,7 +110,7 @@ export function TrainerApplicationQueue({
                 </div>
                 <PendingLink
                   href={`/admin/trainers/${application.id}`}
-                  className="inline-flex h-10 items-center justify-center rounded-md border border-border/60 px-4 text-sm font-medium transition-colors hover:bg-muted/30"
+                  className="inline-flex min-h-11 items-center justify-center rounded-md border border-border/60 px-4 text-sm font-medium transition-colors hover:bg-muted/30"
                 >
                   <UserRoundSearch className="mr-2 h-4 w-4" />
                   Abrir expediente

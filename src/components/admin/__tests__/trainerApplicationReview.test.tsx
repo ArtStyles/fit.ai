@@ -233,6 +233,8 @@ describe('trainer administration privacy', () => {
     expect(html).toContain('Fuerza')
     expect(html).toContain('Enviada')
     expect(html).toContain('Solicitud inicial')
+    expect(html).toContain('1 solicitud en la cola')
+    expect(html).toContain('min-h-11')
     expect(html).not.toContain('ada.private@example.test')
     expect(html).not.toContain('Revisar la vigencia')
     expect(html).not.toContain('storage.example.test')

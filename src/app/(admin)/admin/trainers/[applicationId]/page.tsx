@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { UserRoundSearch } from 'lucide-react'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { TrainerApplicationReview } from '@/components/admin/TrainerApplicationReview'
-import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { getAdminTrainerApplication } from '@/lib/auth/adminTrainers'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
@@ -22,17 +21,17 @@ export default async function AdminTrainerApplicationPage({
   const timeZone = resolveUserTimeZone(profile.timezone)
 
   return (
-    <div className="min-h-screen bg-background pb-28">
-      <PageTopBar
+    <main className="mx-auto w-full max-w-7xl px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-8">
+      <AdminPageHeader
+        eyebrow="Entrenadores"
         title="Expediente privado"
-        subtitle={application.professionalName}
+        description={application.professionalName}
         backHref="/admin/trainers"
-        backLabel="Entrenadores"
-        icon={<UserRoundSearch className="h-5 w-5" />}
+        backLabel="Volver a entrenadores"
       />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <div className="mt-8">
         <TrainerApplicationReview application={application} timeZone={timeZone} />
-      </main>
-    </div>
+      </div>
+    </main>
   )
 }

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { revalidatePath } from 'next/cache'
 import { requireAdminUserContext } from '@/lib/auth/admin'
 
 vi.mock('@/lib/auth/admin', () => ({ requireAdminUserContext: vi.fn() }))
@@ -59,6 +60,19 @@ describe('trainer administrative actions', () => {
     requireAdminUserContextMock.mockRejectedValue(new Error('admin required'))
 
     await expect(startTrainerReview(validApplicationForm())).rejects.toThrow('admin required')
+  })
+
+  it('revalidates the overview, queue, and detail after starting review', async () => {
+    const { service } = serviceFor('submitted', { status: 'under_review' })
+    requireAdminUserContextMock.mockResolvedValue({ user: { id: ADMIN_ID }, service })
+
+    await expect(startTrainerReview(validApplicationForm())).resolves.toMatchObject({
+      ok: true,
+      status: 'under_review',
+    })
+    expect(revalidatePath).toHaveBeenCalledWith('/admin')
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/trainers')
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/trainers/${APPLICATION_ID}`)
   })
 
   it('rejects malformed application UUIDs without calling the RPC', async () => {
@@ -222,6 +236,9 @@ describe('trainer administrative actions', () => {
       p_actor_user_id: ADMIN_ID,
       p_action: 'approve',
     }))
+    expect(revalidatePath).toHaveBeenCalledWith('/admin')
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/trainers')
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/trainers/${APPLICATION_ID}`)
   })
 
   it('derives the trainer account from the reviewed application before reinstating its profile', async () => {

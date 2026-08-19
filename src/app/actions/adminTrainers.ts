@@ -245,6 +245,7 @@ async function executeTransitionWithContext(
   if (error || !isTransitionResult(data) || data.application_id !== applicationId) {
     return actionError('No se pudo actualizar la solicitud.')
   }
+  revalidatePath('/admin')
   revalidatePath('/admin/trainers')
   revalidatePath(`/admin/trainers/${applicationId}`)
   return {
