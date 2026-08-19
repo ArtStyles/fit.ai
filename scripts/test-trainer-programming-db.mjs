@@ -22,6 +22,7 @@ const trainerMigrationFiles = [
   '048_profile_weight_measurement_sync.sql',
   '049_trainer_iso_weekday_repair.sql',
   '050_product_events_conversion_funnel.sql',
+  '051_workout_adjustment_atomic.sql',
 ]
 const migrationPath = file => path.join(repoRoot, 'supabase', 'migrations', file)
 const readMigration = file => readFileSync(migrationPath(file), 'utf8')
@@ -30,6 +31,7 @@ const testPath = path.join(repoRoot, 'supabase', 'tests', '043_trainer_programmi
 const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_insights_test.sql')
 const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '049_trainer_iso_weekday_repair_test.sql')
 const conversionFunnelTestPath = path.join(repoRoot, 'supabase', 'tests', '050_product_events_conversion_funnel_test.sql')
+const workoutAdjustmentTestPath = path.join(repoRoot, 'supabase', 'tests', '051_workout_adjustment_atomic_test.sql')
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
@@ -937,7 +939,8 @@ try {
   runPsql(readMigration(isoWeekdayMigrationFile), 'applying migration 049 ISO weekday repair')
   runPsql(legacyConversionHistorySql, 'seeding pre-050 conversion history')
   runPsql(readMigration('050_product_events_conversion_funnel.sql'), 'applying migration 050 conversion funnel events')
-  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 050')
+  runPsql(readMigration('051_workout_adjustment_atomic.sql'), 'applying migration 051 atomic workout adjustment')
+  const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 051')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against migration 050')
   if (/^\s*not ok\b/m.test(insightsTapOutput) || /# Looks like you (?:failed|planned)\b/.test(insightsTapOutput)) throw new Error('044 pgTAP reported one or more failed assertions')
@@ -945,10 +948,12 @@ try {
   if (/^\s*not ok\b/m.test(isoTapOutput) || /# Looks like you (?:failed|planned)\b/.test(isoTapOutput)) throw new Error('049 pgTAP reported one or more failed assertions')
   const conversionTapOutput = runPsql(readFileSync(conversionFunnelTestPath, 'utf8'), 'running 050 conversion funnel pgTAP suite')
   if (/^\s*not ok\b/m.test(conversionTapOutput) || /# Looks like you (?:failed|planned)\b/.test(conversionTapOutput)) throw new Error('050 pgTAP reported one or more failed assertions')
+  const workoutAdjustmentTapOutput = runPsql(readFileSync(workoutAdjustmentTestPath, 'utf8'), 'running 051 atomic workout adjustment pgTAP suite')
+  if (/^\s*not ok\b/m.test(workoutAdjustmentTapOutput) || /# Looks like you (?:failed|planned)\b/.test(workoutAdjustmentTapOutput)) throw new Error('051 pgTAP reported one or more failed assertions')
   const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
   if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-050')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-051')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
@@ -959,7 +964,7 @@ try {
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
     trainerMigrationFiles.map(readMigration).join('\n'),
-    'reapplying migrations 040-050 after locked professional data',
+    'reapplying migrations 040-051 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   runPsql(conversionFunnelRerunFixtureSql, 'seeding committed conversion rerun fixture')
@@ -968,7 +973,7 @@ try {
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-050 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: migrations 040-051 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

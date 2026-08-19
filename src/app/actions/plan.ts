@@ -252,7 +252,7 @@ export async function updateWorkoutSummary(formData: FormData) {
   if (!planId) redirect('/plan?error=missing_fields')
   try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
 
-  const { error } = await (supabase.from('workouts') as any)
+  const { data: updatedWorkout, error } = await (supabase.from('workouts') as any)
     .update({
       name,
       focus: asNullableString(formData.get('focus')),
@@ -260,18 +260,19 @@ export async function updateWorkoutSummary(formData: FormData) {
     })
     .eq('id', workoutId)
     .eq('user_id', user.id)
+    .eq('plan_id', planId)
+    .select('id')
+    .maybeSingle() as { data: { id: string } | null; error: { message: string } | null }
 
-  if (error) redirect('/plan?error=save_failed')
+  if (error || !updatedWorkout) redirect('/plan?error=save_failed')
 
-  if (planId) {
-    await (supabase.from('workout_plans') as any)
-      .update({
-        plan_context: 'manual_update',
-        manually_updated_at: new Date().toISOString(),
-      })
-      .eq('id', planId)
-      .eq('user_id', user.id)
-  }
+  await (supabase.from('workout_plans') as any)
+    .update({
+      plan_context: 'manual_update',
+      manually_updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId)
+    .eq('user_id', user.id)
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')

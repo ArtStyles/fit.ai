@@ -16,6 +16,7 @@ import {
   type PlanAdjustmentPreviewSummary,
 } from '@/lib/plans/adjustmentIntent'
 import { requireEditableOwnedPlan } from '@/lib/plans/editability'
+import type { Json } from '@/types/database'
 
 export interface SuggestAdjustmentResult {
   success: boolean
@@ -358,68 +359,27 @@ export async function applyWorkoutAdjustment(
     return { success: false, error: 'No se puede dejar el entrenamiento sin ejercicios' }
   }
 
-  for (const change of changes) {
-    if (change.type === 'remove_exercise') {
-      const { error } = await (supabase
-        .from('workout_exercises') as any)
-        .delete()
-        .eq('id', change.workoutExerciseId)
-        .eq('workout_id', workoutId) as { error: { message: string } | null }
+  const rpcChanges: Json = changes.map(change => ({ ...change }))
+  const callAtomicAdjustment = supabase.rpc as unknown as (
+    name: 'apply_workout_adjustment_atomic',
+    args: { p_workout_id: string; p_changes: Json },
+  ) => PromiseLike<{ data: number | null; error: { message: string } | null }>
+  const { data: appliedCount, error } = await callAtomicAdjustment(
+    'apply_workout_adjustment_atomic',
+    {
+      p_workout_id: workoutId,
+      p_changes: rpcChanges,
+    },
+  )
 
-      if (error) {
-        console.error('[adjustPlan] remove falló:', error)
-        return { success: false, error: 'No se pudieron aplicar todos los cambios' }
-      }
-      continue
-    }
-
-    const update: Record<string, number> = {}
-    if (change.sets !== undefined) update.sets = change.sets
-    if (change.reps !== undefined) update.reps = change.reps
-    if (change.targetRpe !== undefined) update.target_rpe = change.targetRpe
-    if (change.restSeconds !== undefined) update.rest_seconds = change.restSeconds
-
-    const { error } = await (supabase
-      .from('workout_exercises') as any)
-      .update(update)
-      .eq('id', change.workoutExerciseId)
-      .eq('workout_id', workoutId) as { error: { message: string } | null }
-
-    if (error) {
-      console.error('[adjustPlan] update falló:', error)
-      return { success: false, error: 'No se pudieron aplicar todos los cambios' }
-    }
+  if (error || appliedCount !== changes.length) {
+    if (error) console.error('[adjustPlan] atomic adjustment falló:', error)
+    return { success: false, error: 'No se pudieron aplicar todos los cambios' }
   }
-
-  // Reordenar tras eliminaciones para no dejar huecos en order_index.
-  if (removals.length > 0) {
-    const { data: remaining } = await (supabase
-      .from('workout_exercises') as any)
-      .select('id, order_index')
-      .eq('workout_id', workoutId)
-      .order('order_index', { ascending: true })
-      .order('id', { ascending: true }) as { data: { id: string; order_index: number }[] | null }
-
-    await Promise.all(
-      (remaining ?? []).map((row, index) =>
-        (supabase.from('workout_exercises') as any)
-          .update({ order_index: index + 1 })
-          .eq('id', row.id),
-      ),
-    )
-  }
-
-  await (supabase.from('workout_plans') as any)
-    .update({
-      plan_context: 'manual_update',
-      manually_updated_at: new Date().toISOString(),
-    })
-    .eq('id', workout.plan_id)
-    .eq('user_id', user.id)
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')
   revalidatePath(`/session/${workoutId}`)
 
-  return { success: true, appliedCount: changes.length }
+  return { success: true, appliedCount }
 }
