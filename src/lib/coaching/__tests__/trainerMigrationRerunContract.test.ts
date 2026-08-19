@@ -88,6 +88,7 @@ describe('trainer migration rerun contract', () => {
   it('documents migration 051 and the explicit history-continuity E2E gate', () => {
     expect(readme).toContain('051_workout_adjustment_atomic.sql')
     expect(readme).toContain('pnpm exec playwright test tests/e2e/training-evidence.spec.ts --grep "completed evidence survives"')
+    expect(readme).not.toContain('No hay pruebas end-to-end')
     expect(envExample).toContain('E2E_HISTORY_CONTINUITY_ENABLED=true')
     expect(runbook).toContain('040–051')
     expect(pilotChecklist).toContain('040–051')

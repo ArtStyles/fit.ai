@@ -61,8 +61,9 @@ conectado de extremo a extremo:
 - `.env.example` incluye `NEXT_PUBLIC_APP_URL`, pero el codigo actual no consume
   esa variable. `NEXT_PUBLIC_APP_TIME_ZONE` actua como zona de fallback cuando el
   perfil no tiene zona horaria propia.
-- No hay pruebas end-to-end; la cobertura actual se concentra en el motor de
-  planes, scheduling, acceso a sesiones, guardado y progresion.
+- Las pruebas end-to-end con Playwright que escriben fixtures requieren una
+  cuenta y un proyecto Supabase E2E dedicados; sus gates permanecen desactivados
+  salvo opt-in explícito.
 
 ## Stack
 
@@ -71,7 +72,7 @@ conectado de extremo a extremo:
 - Supabase Auth, Postgres, RLS y Server Actions.
 - Anthropic SDK para chat e interpretacion de ajustes.
 - Zustand para el estado de la sesion activa.
-- Vitest para pruebas.
+- Vitest para pruebas unitarias y Playwright para recorridos end-to-end.
 - `@ducanh2912/next-pwa` para PWA.
 - Capacitor 8 para Android y capacidades nativas.
 
@@ -105,6 +106,7 @@ Configura `.env.local` antes de iniciar la app.
 | `MAX_DAILY_API_SPEND_USD` | Limite global opcional de gasto diario de Anthropic. |
 | `ANTHROPIC_MODEL_COACH` | Modelo opcional del coach (chat y ajustes). Default: `claude-haiku-4-5`. |
 | `ADMIN_EMAILS` | Emails separados por coma con acceso a `/exercises` en produccion. |
+| `E2E_HISTORY_CONTINUITY_ENABLED` | Opt-in exclusivo para la prueba destructiva de continuidad en un proyecto E2E descartable. |
 
 ### Base de datos
 
@@ -290,6 +292,7 @@ pnpm cap:android
 | `pnpm lint` | Ejecuta ESLint. |
 | `pnpm type-check` | Ejecuta TypeScript sin emitir archivos. |
 | `pnpm test` | Ejecuta Vitest una vez. |
+| `pnpm test:e2e` | Ejecuta la suite Playwright; los casos destructivos requieren sus gates y un proyecto E2E dedicado. |
 | `pnpm test:watch` | Ejecuta Vitest en modo watch. |
 | `pnpm test:ui` | Abre la interfaz de Vitest. |
 | `pnpm seed:exercises` | Reemplaza el catálogo de ejercicios con free-exercise-db (resetea datos de entrenamiento de prueba). |
