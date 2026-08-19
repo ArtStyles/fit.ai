@@ -197,12 +197,22 @@ function atomicAdjustmentClient(rpcResult: { data: number | null; error: { messa
 
 function mismatchedWorkoutSummaryClient() {
   let planMutationCalls = 0
+  const workoutFilters: Array<[string, unknown]> = []
   const from = vi.fn((table: string) => {
     const builder: any = {
       update: vi.fn(() => { if (table === 'workout_plans') planMutationCalls += 1; return builder }),
-      eq: vi.fn(() => builder),
+      eq: vi.fn((column: string, value: unknown) => {
+        if (table === 'workouts') workoutFilters.push([column, value])
+        return builder
+      }),
       select: vi.fn(() => builder),
-      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+      maybeSingle: vi.fn(async () => ({
+        data: table === 'workouts'
+          && !workoutFilters.some(([column, value]) => column === 'plan_id' && value === 'plan-1')
+          ? { id: 'workout-from-another-plan' }
+          : null,
+        error: null,
+      })),
       then: (resolve: (value: { data: null; error: null }) => unknown, reject: (reason: unknown) => unknown) => (
         Promise.resolve({ data: null, error: null }).then(resolve, reject)
       ),
@@ -217,6 +227,7 @@ function mismatchedWorkoutSummaryClient() {
       from,
     },
     planMutationCalls: () => planMutationCalls,
+    workoutFilters,
   }
 }
 
@@ -383,6 +394,7 @@ describe('inline workout editor actions', () => {
       workoutId: 'workout-from-another-plan',
       name: 'Día ajeno',
     }))).rejects.toThrow('REDIRECT:/plan?error=save_failed')
+    expect(client.workoutFilters).toContainEqual(['plan_id', 'plan-1'])
     expect(client.planMutationCalls()).toBe(0)
   })
 })

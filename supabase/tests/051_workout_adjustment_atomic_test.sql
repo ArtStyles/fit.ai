@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(24);
+SELECT plan(25);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('51000000-0000-4000-8000-000000000001', 'adjustment-owner@example.test', '{}'::jsonb),
@@ -104,7 +104,17 @@ SELECT throws_ok(
 SELECT is((SELECT count(*) FROM public.workout_exercises WHERE workout_id = '51000000-0000-4000-8000-000000000031'), 0::bigint, 'RLS still hides owner rows from the outsider');
 
 RESET ROLE;
+SELECT set_config('request.jwt.claim.role', 'service_role', TRUE);
+SELECT set_config('app.trainer_prescription_mutation', 'authorized', TRUE);
+UPDATE public.workout_plans
+SET is_active = TRUE
+WHERE id = 'f4700000-0000-4000-8000-000000000091';
+SELECT ok(
+  (SELECT is_active AND prescription_locked FROM public.workout_plans WHERE id = 'f4700000-0000-4000-8000-000000000091'),
+  'locked-plan fixture is active so only the prescription lock rejects editing'
+);
 SELECT set_config('request.jwt.claim.sub', 'f4700000-0000-4000-8000-000000000002', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', TRUE);
 SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.apply_workout_adjustment_atomic(
