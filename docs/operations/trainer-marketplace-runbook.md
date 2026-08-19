@@ -107,13 +107,16 @@ En local o CI, ejecutar antes del remoto:
 
 ```bash
 pnpm test:db:trainers
-pnpm test:db:trainer-security
-pnpm test:db:marketplace
-pnpm audit:trainers
 pnpm test
 pnpm type-check
 pnpm lint
 ```
+
+No usar `pnpm test:db:trainer-security`, `pnpm audit:trainers` ni el wrapper
+`pnpm test:db:marketplace` como puerta de la 047: actualmente encadenan
+harnesses cuyo contrato termina en la 045. El runner `pnpm test:db:trainers`
+es el que aplica y verifica 040–047; los otros comandos se reincorporarán solo
+cuando sus harnesses se actualicen para ese estado.
 
 En el proyecto enlazado de staging:
 
