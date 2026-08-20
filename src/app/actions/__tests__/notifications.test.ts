@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 import {
   disableProductPushToken,
   listProductNotifications,
@@ -8,6 +9,8 @@ import {
   registerProductPushToken,
   updateProductNotificationPreferences,
 } from '../notifications'
+
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 type NotificationRow = {
   id: string
@@ -21,6 +24,7 @@ type NotificationRow = {
 }
 
 const createClientMock = createClient as unknown as Mock
+const revalidatePathMock = revalidatePath as unknown as Mock
 
 function createActionClient(userId: string | null = 'user-1') {
   const tokens = new Map<string, {
@@ -201,17 +205,27 @@ function notificationRow(index: number, userId = 'authenticated-user'): Notifica
   }
 }
 
-function createAttentionClient() {
+const ATTENTION_PLAN_ID = '77777777-7777-4777-8777-777777777777'
+const ATTENTION_PLAN_UPDATED_AT = '2026-08-20T07:00:00.000Z'
+
+function createAttentionClient({
+  dismissedKeys = [],
+  planUpdatedAt = ATTENTION_PLAN_UPDATED_AT,
+}: {
+  dismissedKeys?: string[]
+  planUpdatedAt?: string
+} = {}) {
   const rows: Record<string, unknown> = {
     profiles: {
       last_check_in_at: '2026-08-20T08:00:00.000Z',
       timezone: 'UTC',
     },
     workout_plans: {
-      id: 'plan-1',
+      id: ATTENTION_PLAN_ID,
       name: 'Fuerza base',
       ai_notes: 'Sube el peso de forma gradual.',
       created_at: '2026-08-20T07:00:00.000Z',
+      updated_at: planUpdatedAt,
       week_number: 2,
       plan_context: 'weekly_regeneration',
     },
@@ -236,11 +250,24 @@ function createAttentionClient() {
       getUser: vi.fn(async () => ({ data: { user: { id: 'authenticated-user' } } })),
     },
     from: vi.fn((table: string) => {
+      const filters: Record<string, unknown> = {}
       const builder: any = {
         select: () => builder,
-        eq: () => builder,
+        eq: (column: string, value: unknown) => {
+          filters[column] = value
+          return builder
+        },
         limit: () => builder,
-        maybeSingle: async () => ({ data: rows[table] ?? null, error: null }),
+        maybeSingle: async () => {
+          if (table === 'notification_attention_dismissals') {
+            const noticeKey = String(filters.notice_key ?? '')
+            return {
+              data: dismissedKeys.includes(noticeKey) ? { notice_key: noticeKey } : null,
+              error: null,
+            }
+          }
+          return { data: rows[table] ?? null, error: null }
+        },
         then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => (
           Promise.resolve({ data: rows[table] ?? null, error: null }).then(resolve, reject)
         ),
@@ -250,9 +277,59 @@ function createAttentionClient() {
   }
 }
 
+function createPlanDismissalClient({
+  userId = 'authenticated-user',
+  planUpdatedAt = ATTENTION_PLAN_UPDATED_AT,
+  insertError = null,
+}: {
+  userId?: string | null
+  planUpdatedAt?: string
+  insertError?: { code?: string } | null
+} = {}) {
+  const dismissals = new Set<string>()
+  const client = {
+    auth: {
+      getUser: vi.fn(async () => ({ data: { user: userId ? { id: userId } : null } })),
+    },
+    from: vi.fn((table: string) => {
+      const builder: any = {
+        select: () => builder,
+        eq: () => builder,
+        maybeSingle: async () => ({
+          data: table === 'workout_plans'
+            ? { id: ATTENTION_PLAN_ID, updated_at: planUpdatedAt }
+            : null,
+          error: null,
+        }),
+        insert: async (value: { notice_key: string }) => {
+          if (table !== 'notification_attention_dismissals') {
+            throw new Error(`Unexpected insert on ${table}`)
+          }
+          if (insertError) return { error: insertError }
+          if (dismissals.has(value.notice_key)) return { error: { code: '23505' } }
+          dismissals.add(value.notice_key)
+          return { error: null }
+        },
+      }
+      return builder
+    }),
+  }
+  return { client, dismissals }
+}
+
+async function getDismissPlanUpdateNotification() {
+  const module = await import('../notifications') as unknown as Record<string, unknown>
+  const action = module.dismissPlanUpdateNotification
+  expect(action).toEqual(expect.any(Function))
+  return action as (noticeKey: string) => Promise<
+    { ok: true } | { ok: false; error: string }
+  >
+}
+
 describe('product notification actions', () => {
   beforeEach(() => {
     createClientMock.mockReset()
+    revalidatePathMock.mockReset()
   })
 
   afterEach(() => {
@@ -447,6 +524,7 @@ describe('product notification actions', () => {
         notice: { kind: 'ai-notes', text: 'Sube el peso de forma gradual.' },
         aiNotes: 'Sube el peso de forma gradual.',
         planName: 'Fuerza base',
+        dismissalKey: `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`,
         promo: {
           slot: 'dashboard-primary',
           kind: 'announcement',
@@ -463,6 +541,108 @@ describe('product notification actions', () => {
       },
     })
     expect(client.from).not.toHaveBeenCalledWith('progress_logs')
+  })
+
+  it('hides an exactly dismissed plan update and surfaces the next eligible notice', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const currentKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+    createClientMock.mockResolvedValue(createAttentionClient({ dismissedKeys: [currentKey] }))
+
+    await expect(loadNotificationAttention()).resolves.toEqual({
+      status: 'ready',
+      attention: {
+        notice: { kind: 'promo', title: 'Novedad' },
+        aiNotes: null,
+        planName: 'Fuerza base',
+        dismissalKey: null,
+        promo: expect.objectContaining({ title: 'Novedad' }),
+      },
+    })
+  })
+
+  it('shows a newly updated plan when only the previous version was dismissed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-21T12:00:00.000Z'))
+    const previousKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+    const nextUpdatedAt = '2026-08-21T07:00:00.000Z'
+    createClientMock.mockResolvedValue(createAttentionClient({
+      dismissedKeys: [previousKey],
+      planUpdatedAt: nextUpdatedAt,
+    }))
+
+    await expect(loadNotificationAttention()).resolves.toEqual({
+      status: 'ready',
+      attention: expect.objectContaining({
+        notice: { kind: 'ai-notes', text: 'Sube el peso de forma gradual.' },
+        dismissalKey: `plan-update:${ATTENTION_PLAN_ID}:${nextUpdatedAt}`,
+      }),
+    })
+  })
+
+  it('persists only the current authenticated plan-version notice key', async () => {
+    const state = createPlanDismissalClient()
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissPlanUpdateNotification()
+    const currentKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+
+    await expect(dismiss(currentKey)).resolves.toEqual({ ok: true })
+
+    expect(Array.from(state.dismissals)).toEqual([currentKey])
+    expect(revalidatePathMock).toHaveBeenCalledWith('/notifications')
+  })
+
+  it('rejects malformed dismissal keys before opening a session', async () => {
+    const dismiss = await getDismissPlanUpdateNotification()
+
+    await expect(dismiss('plan-update:not-valid')).resolves.toEqual({
+      ok: false,
+      error: 'Aviso no valido.',
+    })
+
+    expect(createClientMock).not.toHaveBeenCalled()
+  })
+
+  it('does not persist a stale plan-version notice key', async () => {
+    const state = createPlanDismissalClient({
+      planUpdatedAt: '2026-08-21T07:00:00.000Z',
+    })
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissPlanUpdateNotification()
+    const staleKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+
+    await expect(dismiss(staleKey)).resolves.toEqual({
+      ok: false,
+      error: 'El aviso ya no corresponde al plan actual.',
+    })
+
+    expect(state.dismissals.size).toBe(0)
+  })
+
+  it('treats a repeated current-version dismissal as success', async () => {
+    const state = createPlanDismissalClient()
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissPlanUpdateNotification()
+    const currentKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+
+    await expect(dismiss(currentKey)).resolves.toEqual({ ok: true })
+    await expect(dismiss(currentKey)).resolves.toEqual({ ok: true })
+
+    expect(state.dismissals.size).toBe(1)
+  })
+
+  it('keeps the notice visible when dismissal persistence fails', async () => {
+    const state = createPlanDismissalClient({ insertError: { code: 'XX000' } })
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissPlanUpdateNotification()
+    const currentKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+
+    await expect(dismiss(currentKey)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo quitar el aviso.',
+    })
+
+    expect(state.dismissals.size).toBe(0)
   })
 
   it('keeps the notification history available when attention data cannot load', async () => {

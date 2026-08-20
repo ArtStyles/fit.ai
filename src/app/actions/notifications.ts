@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { selectDashboardNotice, type DashboardNotice } from '@/components/dashboard/dashboardViewModel'
 import {
@@ -40,6 +41,7 @@ export type NotificationAttention = {
   notice: DashboardNotice
   aiNotes: string | null
   planName: string | null
+  dismissalKey: string | null
   promo: DashboardBannerData | null
 }
 
@@ -57,6 +59,7 @@ type AttentionPlanRow = {
   name: string
   ai_notes: string | null
   created_at: string
+  updated_at: string
 }
 
 const PRODUCT_NOTIFICATION_PAGE_SIZE = 30
@@ -66,6 +69,10 @@ const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:
 type NotificationCursor = {
   createdAt: string
   id: string
+}
+
+export function buildPlanUpdateNoticeKey(planId: string, updatedAt: string): string {
+  return `plan-update:${planId}:${updatedAt}`
 }
 
 function emptyNotificationPage(error?: string): ProductNotificationPage {
@@ -81,6 +88,23 @@ function isValidTimestamp(value: unknown): value is string {
   return typeof value === 'string'
     && ISO_TIMESTAMP_PATTERN.test(value)
     && Number.isFinite(Date.parse(value))
+}
+
+function parsePlanUpdateNoticeKey(value: unknown): {
+  noticeKey: string
+  planId: string
+  updatedAt: string
+} | null {
+  if (typeof value !== 'string') return null
+  const noticeKey = value.trim()
+  const prefix = 'plan-update:'
+  if (!noticeKey.startsWith(prefix) || noticeKey.length > 160) return null
+
+  const planId = noticeKey.slice(prefix.length, prefix.length + 36)
+  const updatedAt = noticeKey.slice(prefix.length + 37)
+  if (noticeKey[prefix.length + 36] !== ':') return null
+  if (!UUID_PATTERN.test(planId) || !isValidTimestamp(updatedAt)) return null
+  return { noticeKey, planId, updatedAt }
 }
 
 function decodeNotificationCursor(value: unknown): NotificationCursor | null | undefined {
@@ -130,7 +154,7 @@ async function loadNotificationAttentionData(): Promise<NotificationAttention | 
       .maybeSingle() as unknown as Promise<{ data: AttentionProfileRow | null; error: { message?: string } | null }>,
     supabase
       .from('workout_plans')
-      .select('id, name, ai_notes, created_at')
+      .select('id, name, ai_notes, created_at, updated_at')
       .eq('user_id', user.id)
       .eq('is_active', true)
       .maybeSingle() as unknown as Promise<{ data: AttentionPlanRow | null; error: { message?: string } | null }>,
@@ -154,10 +178,26 @@ async function loadNotificationAttentionData(): Promise<NotificationAttention | 
     : isDashboardBannerVisible(bannerResult.data, getLocalDateString(now, timeZone))
       ? bannerResult.data
       : null
-  const aiNotes = plan?.ai_notes
-    && new Date(plan.created_at).getTime() > addDays(now, -7, timeZone).getTime()
+  const candidateAiNotes = plan?.ai_notes
+    && new Date(plan.updated_at).getTime() > addDays(now, -7, timeZone).getTime()
     ? plan.ai_notes
     : null
+  const candidateDismissalKey = plan && candidateAiNotes
+    ? buildPlanUpdateNoticeKey(plan.id, plan.updated_at)
+    : null
+  let aiNotes = candidateAiNotes
+
+  if (candidateDismissalKey) {
+    const { data: dismissal } = await (supabase
+      .from('notification_attention_dismissals') as any)
+      .select('notice_key')
+      .eq('notice_key', candidateDismissalKey)
+      .maybeSingle() as {
+        data: { notice_key: string } | null
+        error: { message?: string } | null
+      }
+    if (dismissal?.notice_key === candidateDismissalKey) aiNotes = null
+  }
   const notice = selectDashboardNotice({
     needsPlan: !plan,
     checkInDue: isCheckInDue(profile?.last_check_in_at ?? null, now),
@@ -168,8 +208,9 @@ async function loadNotificationAttentionData(): Promise<NotificationAttention | 
   if (!notice) return null
   return {
     notice,
-    aiNotes,
+    aiNotes: notice.kind === 'ai-notes' ? aiNotes : null,
     planName: plan?.name ?? null,
+    dismissalKey: notice.kind === 'ai-notes' ? candidateDismissalKey : null,
     promo: visiblePromo,
   }
 }
@@ -180,6 +221,49 @@ export async function loadNotificationAttention(): Promise<NotificationAttention
   } catch {
     return { status: 'error' }
   }
+}
+
+export async function dismissPlanUpdateNotification(noticeKey: string): Promise<PushTokenResult> {
+  const parsed = parsePlanUpdateNoticeKey(noticeKey)
+  if (!parsed) return { ok: false, error: 'Aviso no valido.' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sesion no valida.' }
+
+  const { data: plan, error: planError } = await (supabase
+    .from('workout_plans') as any)
+    .select('id, updated_at')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle() as {
+      data: { id: string; updated_at: string } | null
+      error: { message?: string } | null
+    }
+
+  if (planError) return { ok: false, error: 'No se pudo comprobar el aviso.' }
+  const currentKey = plan ? buildPlanUpdateNoticeKey(plan.id, plan.updated_at) : null
+  if (
+    !plan
+    || parsed.planId !== plan.id
+    || parsed.updatedAt !== plan.updated_at
+    || parsed.noticeKey !== currentKey
+  ) {
+    return { ok: false, error: 'El aviso ya no corresponde al plan actual.' }
+  }
+
+  const { error } = await (supabase
+    .from('notification_attention_dismissals') as any)
+    .insert({ notice_key: currentKey }) as {
+      error: { code?: string; message?: string } | null
+    }
+
+  if (error && error.code !== '23505') {
+    return { ok: false, error: 'No se pudo quitar el aviso.' }
+  }
+
+  revalidatePath('/notifications')
+  return { ok: true }
 }
 
 async function listProductNotificationsData(
