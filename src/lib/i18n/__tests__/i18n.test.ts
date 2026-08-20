@@ -182,6 +182,10 @@ describe('UI translations', () => {
     ['Quitar aviso del plan', 'Remove plan notice'],
     ['Aviso quitado.', 'Notice removed.'],
     ['No se pudo quitar el aviso.', 'Could not remove the notice.'],
+    ['Aviso no valido.', 'Invalid notice.'],
+    ['Sesion no valida.', 'Invalid session.'],
+    ['No se pudo comprobar el aviso.', 'Could not verify the notice.'],
+    ['El aviso ya no corresponde al plan actual.', 'This notice no longer matches the current plan.'],
   ])('translates notification preference copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })
