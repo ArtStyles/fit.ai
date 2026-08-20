@@ -179,6 +179,9 @@ describe('UI translations', () => {
     ['Notificaciones profesionales', 'Professional notifications'],
     ['Lunes', 'Monday'],
     ['Lun', 'Mon'],
+    ['Quitar aviso del plan', 'Remove plan notice'],
+    ['Aviso quitado.', 'Notice removed.'],
+    ['No se pudo quitar el aviso.', 'Could not remove the notice.'],
   ])('translates notification preference copy: %s', (source, expected) => {
     expect(translate('en', source)).toBe(expected)
   })

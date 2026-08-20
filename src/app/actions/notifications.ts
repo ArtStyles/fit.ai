@@ -9,6 +9,7 @@ import {
   type DashboardBannerData,
 } from '@/lib/dashboard/banner'
 import { isCheckInDue } from '@/lib/profile/checkin'
+import { buildPlanUpdateNoticeKey } from '@/lib/notifications/attention'
 import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import type { Database } from '@/types/database'
 
@@ -69,10 +70,6 @@ const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:
 type NotificationCursor = {
   createdAt: string
   id: string
-}
-
-export function buildPlanUpdateNoticeKey(planId: string, updatedAt: string): string {
-  return `plan-update:${planId}:${updatedAt}`
 }
 
 function emptyNotificationPage(error?: string): ProductNotificationPage {
