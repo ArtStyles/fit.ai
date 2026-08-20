@@ -10,11 +10,12 @@ vi.mock('@/app/actions/notifications', () => ({
   listProductNotifications: actionMocks.list,
   loadNotificationAttention: actionMocks.attention,
   markProductNotificationRead: vi.fn(),
+  dismissPlanUpdateNotification: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/notifications',
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }))
 
 vi.mock('@/components/feedback/ToastProvider', () => ({
@@ -53,6 +54,7 @@ describe('dedicated notifications page', () => {
         notice: { kind: 'ai-notes', text: 'Sube el peso de forma gradual.' },
         aiNotes: 'Sube el peso de forma gradual.',
         planName: 'Fuerza base',
+        dismissalKey: 'plan-update:77777777-7777-4777-8777-777777777777:2026-08-20T07:00:00.000Z',
         promo: null,
       },
     })
@@ -64,17 +66,19 @@ describe('dedicated notifications page', () => {
     expect(decrementUnreadCount(null)).toBeNull()
   })
 
-  it('combines dashboard attention and recent activity in a full dedicated route', async () => {
+  it('combines attention and recent activity without redundant summary surfaces', async () => {
     const html = renderToStaticMarkup(await NotificationsPage())
 
-    expect(html).toContain('Requiere tu atención')
     expect(html).toContain('Sube el peso de forma gradual.')
     expect(html).toContain('Actividad reciente')
     expect(html).toContain('Solicitud aprobada')
     expect(html).toContain('href="/settings/notificaciones"')
     expect(html).toContain('Preferencias')
-    expect(html).toContain('max-w-4xl')
-    expect(html).toContain('41 notificaciones sin leer')
+    expect(html).toContain('max-w-3xl')
+    expect(html).not.toContain('Centro personal')
+    expect(html).not.toContain('notificaciones sin leer')
+    expect(html).not.toContain('Prioridad')
+    expect(html).not.toContain('Requiere tu atención')
     expect(html).not.toContain('role="dialog"')
     expect(html).not.toContain('aria-expanded=')
   })
@@ -90,8 +94,21 @@ describe('dedicated notifications page', () => {
 
     const html = renderToStaticMarkup(await NotificationsPage())
 
-    expect(html).toContain('No pudimos calcular tus pendientes')
     expect(html).toContain('No pudimos comprobar las acciones prioritarias')
+    expect(html).not.toContain('No pudimos calcular tus pendientes')
     expect(html).not.toContain('Todo está al día')
+  })
+
+  it('does not show an empty-history panel below an active plan notice', async () => {
+    actionMocks.list.mockResolvedValue({
+      notifications: [],
+      nextCursor: null,
+      unreadCount: 0,
+    })
+
+    const html = renderToStaticMarkup(await NotificationsPage())
+
+    expect(html).toContain('Sube el peso de forma gradual.')
+    expect(html).not.toContain('No tienes notificaciones todavía')
   })
 })

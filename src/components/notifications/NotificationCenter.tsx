@@ -160,10 +160,12 @@ export function NotificationCenter({
   initialPage,
   unreadCount: aggregateUnreadCount,
   onNotificationRead,
+  suppressEmptyState = false,
 }: {
   initialPage: ProductNotificationPage
   unreadCount?: number | null
   onNotificationRead?: () => void
+  suppressEmptyState?: boolean
 }) {
   const router = useRouter()
   const { language, timeZone } = useI18n()
@@ -249,10 +251,12 @@ export function NotificationCenter({
       )
     }
 
+    if (suppressEmptyState) return null
+
     return (
-      <section className="rounded-2xl border border-border/60 bg-muted/10 px-5 py-12 text-center">
-        <Bell className="mx-auto h-8 w-8 text-violet-300" aria-hidden="true" />
-        <h2 className="mt-4 text-base font-semibold text-foreground">No tienes notificaciones todavía</h2>
+      <section className="px-5 py-10 text-center">
+        <Bell className="mx-auto h-7 w-7 text-violet-300" aria-hidden="true" />
+        <h2 className="mt-3 text-base font-semibold text-foreground">No tienes notificaciones todavía</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Aquí aparecerán las novedades sobre entrenadores, solicitudes y rutinas.
         </p>
