@@ -21,7 +21,6 @@ const baseProps: ComponentProps<typeof DashboardHeader> = {
   dateLabel: 'sábado, 15 de agosto',
   avatarUrl: null,
   profileHref: null,
-  noticeLabel: 'Notificaciones',
 }
 
 function renderHeader(overrides: Partial<ComponentProps<typeof DashboardHeader>> = {}) {
@@ -29,23 +28,25 @@ function renderHeader(overrides: Partial<ComponentProps<typeof DashboardHeader>>
 }
 
 describe('DashboardHeader settings access', () => {
-  it('always exposes a 44px settings link from the personal Home header', () => {
+  it('always exposes 44px settings and notification links from the personal Home header', () => {
     const html = renderHeader()
 
     expect(html).toContain('href="/settings"')
     expect(html).toContain('aria-label="Abrir ajustes"')
     expect(html).toMatch(/<a[^>]+h-11[^>]+w-11[^>]+href="\/settings"/)
+    expect(html).toContain('href="/notifications"')
+    expect(html).toContain('aria-label="Abrir notificaciones"')
+    expect(html).toMatch(/<a[^>]+h-11[^>]+w-11[^>]+href="\/notifications"/)
   })
 
-  it('keeps the settings link beside the notice control', () => {
-    const html = renderHeader({ noticeContent: <span>Aviso</span> })
+  it('routes the notice control to the dedicated page without expanding content in the header', () => {
+    const html = renderHeader({ hasNotificationAttention: true })
 
     expect(html).toContain('href="/settings"')
-    expect(html).toContain('aria-label="Abrir avisos"')
-    expect([
-      /<a[^>]+href="\/settings"[^>]*>[\s\S]*?<\/a><button[^>]+aria-label="Abrir avisos"[^>]*>/,
-      /<button[^>]+aria-label="Abrir avisos"[^>]*>[\s\S]*?<\/button><a[^>]+href="\/settings"[^>]*>/,
-    ].some(pattern => pattern.test(html))).toBe(true)
+    expect(html).toContain('href="/notifications"')
+    expect(html).toContain('aria-label="Abrir notificaciones"')
+    expect(html).not.toContain('aria-expanded=')
+    expect(html).not.toContain('dashboard-notice-hub')
   })
 
   it('renders the user name as text unless an available social profile href is supplied', () => {

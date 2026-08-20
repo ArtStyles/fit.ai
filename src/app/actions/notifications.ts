@@ -1,6 +1,14 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { selectDashboardNotice, type DashboardNotice } from '@/components/dashboard/dashboardViewModel'
+import {
+  DASHBOARD_BANNER_SLOT,
+  isDashboardBannerVisible,
+  type DashboardBannerData,
+} from '@/lib/dashboard/banner'
+import { isCheckInDue } from '@/lib/profile/checkin'
+import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import type { Database } from '@/types/database'
 
 type PushPlatform = 'android' | 'ios'
@@ -24,7 +32,31 @@ export type ProductNotificationView = {
 export type ProductNotificationPage = {
   notifications: ProductNotificationView[]
   nextCursor: string | null
+  unreadCount: number | null
   error?: string
+}
+
+export type NotificationAttention = {
+  notice: DashboardNotice
+  aiNotes: string | null
+  planName: string | null
+  promo: DashboardBannerData | null
+}
+
+export type NotificationAttentionResult =
+  | { status: 'ready'; attention: NotificationAttention | null }
+  | { status: 'error' }
+
+type AttentionProfileRow = {
+  last_check_in_at: string | null
+  timezone: string | null
+}
+
+type AttentionPlanRow = {
+  id: string
+  name: string
+  ai_notes: string | null
+  created_at: string
 }
 
 const PRODUCT_NOTIFICATION_PAGE_SIZE = 30
@@ -40,6 +72,7 @@ function emptyNotificationPage(error?: string): ProductNotificationPage {
   return {
     notifications: [],
     nextCursor: null,
+    unreadCount: null,
     ...(error ? { error } : {}),
   }
 }
@@ -84,7 +117,72 @@ function toNotificationView(row: ProductNotificationRow): ProductNotificationVie
   }
 }
 
-export async function listProductNotifications(
+async function loadNotificationAttentionData(): Promise<NotificationAttention | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Notification attention requires an authenticated user.')
+
+  const [profileResult, planResult, bannerResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('last_check_in_at, timezone')
+      .eq('id', user.id)
+      .maybeSingle() as unknown as Promise<{ data: AttentionProfileRow | null; error: { message?: string } | null }>,
+    supabase
+      .from('workout_plans')
+      .select('id, name, ai_notes, created_at')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle() as unknown as Promise<{ data: AttentionPlanRow | null; error: { message?: string } | null }>,
+    supabase
+      .from('dashboard_banners')
+      .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
+      .eq('slot', DASHBOARD_BANNER_SLOT)
+      .maybeSingle() as unknown as Promise<{ data: DashboardBannerData | null; error: { message?: string } | null }>,
+  ])
+
+  if (profileResult.error || planResult.error) {
+    throw new Error('Notification attention data is unavailable.')
+  }
+
+  const now = new Date()
+  const profile = profileResult.data
+  const plan = planResult.data
+  const timeZone = resolveUserTimeZone(profile?.timezone)
+  const visiblePromo = bannerResult.error
+    ? null
+    : isDashboardBannerVisible(bannerResult.data, getLocalDateString(now, timeZone))
+      ? bannerResult.data
+      : null
+  const aiNotes = plan?.ai_notes
+    && new Date(plan.created_at).getTime() > addDays(now, -7, timeZone).getTime()
+    ? plan.ai_notes
+    : null
+  const notice = selectDashboardNotice({
+    needsPlan: !plan,
+    checkInDue: isCheckInDue(profile?.last_check_in_at ?? null, now),
+    aiNotes,
+    promo: visiblePromo ? { title: visiblePromo.title } : null,
+  })
+
+  if (!notice) return null
+  return {
+    notice,
+    aiNotes,
+    planName: plan?.name ?? null,
+    promo: visiblePromo,
+  }
+}
+
+export async function loadNotificationAttention(): Promise<NotificationAttentionResult> {
+  try {
+    return { status: 'ready', attention: await loadNotificationAttentionData() }
+  } catch {
+    return { status: 'error' }
+  }
+}
+
+async function listProductNotificationsData(
   input: { cursor?: string | null } = {},
 ): Promise<ProductNotificationPage> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -112,10 +210,22 @@ export async function listProductNotifications(
     )
   }
 
-  const { data, error } = await query as {
-    data: ProductNotificationRow[] | null
-    error: { message?: string } | null
-  }
+  const unreadCountQuery = (supabase
+    .from('product_notifications') as any)
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .is('read_at', null)
+
+  const [{ data, error }, { count, error: countError }] = await Promise.all([
+    query as Promise<{
+      data: ProductNotificationRow[] | null
+      error: { message?: string } | null
+    }>,
+    unreadCountQuery as Promise<{
+      count: number | null
+      error: { message?: string } | null
+    }>,
+  ])
   if (error) return emptyNotificationPage('No se pudieron cargar las notificaciones.')
 
   const rows = data ?? []
@@ -128,6 +238,17 @@ export async function listProductNotifications(
     nextCursor: hasMore && last
       ? encodeNotificationCursor({ createdAt: last.created_at, id: last.id })
       : null,
+    unreadCount: countError ? null : count ?? 0,
+  }
+}
+
+export async function listProductNotifications(
+  input: { cursor?: string | null } = {},
+): Promise<ProductNotificationPage> {
+  try {
+    return await listProductNotificationsData(input)
+  } catch {
+    return emptyNotificationPage('No se pudieron cargar las notificaciones.')
   }
 }
 

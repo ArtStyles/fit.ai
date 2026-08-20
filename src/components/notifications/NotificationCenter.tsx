@@ -156,7 +156,15 @@ function formatCreatedAt(value: string, formatter: Intl.DateTimeFormat): string 
   return Number.isFinite(timestamp) ? formatter.format(timestamp) : value
 }
 
-export function NotificationCenter({ initialPage }: { initialPage: ProductNotificationPage }) {
+export function NotificationCenter({
+  initialPage,
+  unreadCount: aggregateUnreadCount,
+  onNotificationRead,
+}: {
+  initialPage: ProductNotificationPage
+  unreadCount?: number | null
+  onNotificationRead?: () => void
+}) {
   const router = useRouter()
   const { language, timeZone } = useI18n()
   const { showToast } = useToast()
@@ -174,10 +182,13 @@ export function NotificationCenter({ initialPage }: { initialPage: ProductNotifi
   const [errorMessage, setErrorMessage] = useState<string | null>(initialPage.error ?? null)
   const [loadingMore, setLoadingMore] = useState(false)
 
-  const unreadCount = useMemo(
+  const loadedUnreadCount = useMemo(
     () => notifications.filter(notification => notification.readAt === null).length,
     [notifications],
   )
+  const unreadCount = aggregateUnreadCount === undefined
+    ? loadedUnreadCount
+    : aggregateUnreadCount
 
   async function openOrMark(notification: ProductNotificationView, destination: string | null) {
     if (busyId) return
@@ -198,6 +209,7 @@ export function NotificationCenter({ initialPage }: { initialPage: ProductNotifi
       setNotifications(current => current.map(item => (
         item.id === notification.id ? result.notification : item
       )))
+      onNotificationRead?.()
       setAnnouncement(result.announcement)
     }
 
@@ -253,10 +265,14 @@ export function NotificationCenter({ initialPage }: { initialPage: ProductNotifi
     <section aria-labelledby="notification-center-title">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 id="notification-center-title" className="text-sm font-semibold text-foreground">
-          Recientes
+          Actividad reciente
         </h2>
         <p className="text-xs text-muted-foreground">
-          {unreadCount === 1 ? '1 sin leer' : `${unreadCount} sin leer`}
+          {unreadCount === null
+            ? 'Conteo no disponible'
+            : unreadCount === 1
+              ? '1 sin leer'
+              : `${unreadCount} sin leer`}
         </p>
       </div>
 

@@ -1,5 +1,5 @@
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
-import { DashboardMainNotice, DashboardNotice } from '@/components/dashboard/DashboardNotice'
+import { DashboardMainNotice } from '@/components/dashboard/DashboardNotice'
 import { DashboardWeekJourney } from '@/components/dashboard/DashboardWeekJourney'
 import { buildDashboardViewModel } from '@/components/dashboard/dashboardViewModel'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -589,17 +589,7 @@ export default async function DashboardPage() {
           communityEnabled,
           username: profile.username,
         })}
-        noticeLabel={t('Notificaciones')}
-        noticeContent={dashboard.noticePlacement === 'hub' ? (
-          <DashboardNotice
-            notice={dashboard.notice}
-            aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}
-            planName={planRaw?.name ?? null}
-            bannerContext={bannerContext}
-            promo={dashboardBanner}
-            placement="hub"
-          />
-        ) : null}
+        hasNotificationAttention={dashboard.noticePlacement === 'hub'}
       />
 
       <main aria-label={t('Dashboard')} data-marketing-capture="dashboard" className="mx-auto max-w-6xl space-y-6 px-4 pt-5 sm:px-6">

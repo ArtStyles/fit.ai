@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import {
   disableProductPushToken,
   listProductNotifications,
+  loadNotificationAttention,
   markProductNotificationRead,
   registerProductPushToken,
   updateProductNotificationPreferences,
@@ -41,10 +42,12 @@ function createActionClient(userId: string | null = 'user-1') {
     let updateValue: Record<string, unknown> | null = null
     let requestedLimit: number | null = null
     let cursorFilter: string | null = null
+    let countOnly = false
     const requestedOrders: Array<{ column: string; ascending: boolean }> = []
 
     const builder: any = {
-      select() {
+      select(_columns?: string, options?: { count?: string; head?: boolean }) {
+        countOnly = options?.count === 'exact' && options.head === true
         return builder
       },
       order(column: string, options: { ascending?: boolean } = {}) {
@@ -111,6 +114,14 @@ function createActionClient(userId: string | null = 'user-1') {
           })
         }
         if (table === 'product_notifications') {
+          if (countOnly) {
+            const count = notifications.filter(notification => (
+              notification.user_id === filters.user_id
+              && notification.read_at === filters.read_at
+            )).length
+            return Promise.resolve({ data: null, count, error: null }).then(resolve, reject)
+          }
+
           if (updateValue) {
             const notificationUpdate = updateValue
             notifications.forEach((notification, index) => {
@@ -187,6 +198,55 @@ function notificationRow(index: number, userId = 'authenticated-user'): Notifica
     url: '/trainers',
     read_at: null,
     created_at: '2026-08-07T15:00:00.000Z',
+  }
+}
+
+function createAttentionClient() {
+  const rows: Record<string, unknown> = {
+    profiles: {
+      last_check_in_at: '2026-08-20T08:00:00.000Z',
+      timezone: 'UTC',
+    },
+    workout_plans: {
+      id: 'plan-1',
+      name: 'Fuerza base',
+      ai_notes: 'Sube el peso de forma gradual.',
+      created_at: '2026-08-20T07:00:00.000Z',
+      week_number: 2,
+      plan_context: 'weekly_regeneration',
+    },
+    progress_logs: [{ id: 'log-1' }],
+    dashboard_banners: {
+      slot: 'dashboard-primary',
+      kind: 'announcement',
+      title: 'Novedad',
+      description: 'Detalle',
+      image_url: null,
+      cta_label: null,
+      cta_href: null,
+      status: 'active',
+      starts_on: null,
+      ends_on: null,
+      updated_at: '2026-08-20T06:00:00.000Z',
+    },
+  }
+
+  return {
+    auth: {
+      getUser: vi.fn(async () => ({ data: { user: { id: 'authenticated-user' } } })),
+    },
+    from: vi.fn((table: string) => {
+      const builder: any = {
+        select: () => builder,
+        eq: () => builder,
+        limit: () => builder,
+        maybeSingle: async () => ({ data: rows[table] ?? null, error: null }),
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => (
+          Promise.resolve({ data: rows[table] ?? null, error: null }).then(resolve, reject)
+        ),
+      }
+      return builder
+    }),
   }
 }
 
@@ -305,6 +365,7 @@ describe('product notification actions', () => {
     await expect(listProductNotifications({ cursor: 'not-a-valid-cursor' })).resolves.toEqual({
       notifications: [],
       nextCursor: null,
+      unreadCount: null,
       error: 'Cursor no válido.',
     })
 
@@ -327,10 +388,12 @@ describe('product notification actions', () => {
     expect(firstPage.notifications.at(-1)?.id).toBe(notificationId(2))
     expect(firstPage.notifications.every(item => item.title !== 'Aviso 99')).toBe(true)
     expect(firstPage.nextCursor).toEqual(expect.any(String))
+    expect(firstPage.unreadCount).toBe(31)
 
     const secondPage = await listProductNotifications({ cursor: firstPage.nextCursor })
     expect(secondPage.notifications.map(item => item.id)).toEqual([notificationId(1)])
     expect(secondPage.nextCursor).toBeNull()
+    expect(secondPage.unreadCount).toBe(31)
   })
 
   it('marks only the authenticated owner notification as read', async () => {
@@ -369,5 +432,42 @@ describe('product notification actions', () => {
     })
 
     expect(createClientMock).not.toHaveBeenCalled()
+  })
+
+  it('builds the dedicated center attention card with dashboard priority and context', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const client = createAttentionClient()
+    createClientMock.mockResolvedValue(client)
+    const result = await loadNotificationAttention()
+
+    expect(result).toEqual({
+      status: 'ready',
+      attention: {
+        notice: { kind: 'ai-notes', text: 'Sube el peso de forma gradual.' },
+        aiNotes: 'Sube el peso de forma gradual.',
+        planName: 'Fuerza base',
+        promo: {
+          slot: 'dashboard-primary',
+          kind: 'announcement',
+          title: 'Novedad',
+          description: 'Detalle',
+          image_url: null,
+          cta_label: null,
+          cta_href: null,
+          status: 'active',
+          starts_on: null,
+          ends_on: null,
+          updated_at: '2026-08-20T06:00:00.000Z',
+        },
+      },
+    })
+    expect(client.from).not.toHaveBeenCalledWith('progress_logs')
+  })
+
+  it('keeps the notification history available when attention data cannot load', async () => {
+    createClientMock.mockRejectedValue(new Error('attention source unavailable'))
+
+    await expect(loadNotificationAttention()).resolves.toEqual({ status: 'error' })
   })
 })

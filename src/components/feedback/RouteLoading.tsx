@@ -123,15 +123,67 @@ export function RowSkeletons({ count = 3, avatar = true, className }: RowSkeleto
 
 export function NotificationCenterLoading() {
   return (
-    <AppLoadingShell>
+    <div className="min-h-screen bg-background pb-28">
       <BackHeader
         backLabel="Dashboard"
         title="Notificaciones"
-        subtitle="Novedades de tu entrenamiento"
+        subtitle="Avisos y novedades de tu cuenta"
         icon={Bell}
+        right={(
+          <Shimmer
+            data-loading-slot="notification-preferences"
+            className="h-11 w-11 rounded-xl border border-border/60 bg-muted/30 sm:w-32"
+          />
+        )}
       />
-      <RowSkeletons count={5} avatar={false} className="mt-8" />
-    </AppLoadingShell>
+
+      <main aria-label="Cargando centro de notificaciones" className="mx-auto max-w-4xl space-y-8 px-4 py-6 sm:px-6 sm:py-8">
+        <section
+          data-loading-slot="notification-summary"
+          className="rounded-3xl border border-border/60 bg-card/50 p-5 sm:p-6"
+        >
+          <div className="flex items-center gap-4">
+            <Shimmer className="h-14 w-14 shrink-0 rounded-2xl bg-violet-500/15" />
+            <div className="min-w-0 flex-1">
+              <Shimmer className="h-3 w-28 rounded bg-violet-500/20" />
+              <Shimmer className="mt-3 h-7 w-56 max-w-full rounded" />
+              <Shimmer className="mt-3 h-4 w-72 max-w-full rounded bg-muted/40" />
+            </div>
+          </div>
+        </section>
+
+        <section data-loading-slot="notification-attention" className="space-y-4">
+          <div>
+            <Shimmer className="h-3 w-20 rounded bg-violet-500/20" />
+            <Shimmer className="mt-3 h-6 w-52 max-w-full rounded" />
+          </div>
+          <div className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5 sm:p-6">
+            <div className="flex items-start gap-4">
+              <Shimmer className="h-12 w-12 shrink-0 rounded-2xl bg-violet-500/15" />
+              <div className="min-w-0 flex-1">
+                <Shimmer className="h-3 w-28 rounded bg-violet-500/20" />
+                <Shimmer className="mt-3 h-6 w-40 rounded" />
+                <Shimmer className="mt-4 h-4 w-full rounded bg-muted/40" />
+                <Shimmer className="mt-2 h-4 w-4/5 rounded bg-muted/40" />
+                <Shimmer className="mt-5 h-11 w-28 rounded-xl bg-violet-500/20" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          data-loading-slot="notification-activity"
+          aria-label="Cargando actividad reciente"
+          className="rounded-3xl border border-border/60 bg-card/40 p-4 sm:p-6"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <Shimmer className="h-4 w-32 rounded" />
+            <Shimmer className="h-3 w-16 rounded bg-muted/40" />
+          </div>
+          <RowSkeletons count={3} className="mt-4" />
+        </section>
+      </main>
+    </div>
   )
 }
 

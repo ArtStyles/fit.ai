@@ -34,6 +34,6 @@ test('community-off rollout exposes trainer navigation and guards social routes'
   await expect(page.getByRole('heading', { level: 1, name: 'Notificaciones', exact: true })).toBeVisible()
   await expect(
     page.getByRole('heading', { name: 'No tienes notificaciones todavía', exact: true })
-      .or(page.getByRole('heading', { name: 'Recientes', exact: true })),
+      .or(page.getByRole('heading', { name: 'Actividad reciente', exact: true })),
   ).toBeVisible()
 })

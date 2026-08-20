@@ -12,7 +12,7 @@ describe('dashboard structure', () => {
   it('renders one chronological journey as the dashboard composition', () => {
     const orderedSections = [
       '<DashboardHeader',
-      '<DashboardNotice',
+      '<DashboardMainNotice',
       '<DashboardWeekJourney',
     ]
     const positions = orderedSections.map(section => page.indexOf(section))
@@ -29,8 +29,10 @@ describe('dashboard structure', () => {
   })
 
   it('dispatches at most one notice instead of rendering parallel banners', () => {
-    expect(page.match(/<DashboardNotice\b/g)).toHaveLength(1)
+    expect(page.match(/<DashboardMainNotice\b/g)).toHaveLength(1)
     expect(page).not.toMatch(/<(DashboardPromoBanner|AINotesBanner|CheckInBanner)\b/)
+    expect(header).toContain('href="/notifications"')
+    expect(header).not.toContain('aria-expanded')
   })
 
   it('places the contextual coach link beside the recommendation', () => {

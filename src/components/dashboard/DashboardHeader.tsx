@@ -1,8 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, type ReactNode } from 'react'
-import { Bell, Settings, X } from 'lucide-react'
+import { Bell, Settings } from 'lucide-react'
 import { AvatarUploader } from '@/components/profile/AvatarUploader'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { useI18n } from '@/components/i18n/I18nProvider'
@@ -13,8 +12,7 @@ interface Props {
   dateLabel: string
   avatarUrl: string | null
   profileHref: `/u/${string}` | null
-  noticeContent?: ReactNode
-  noticeLabel?: string
+  hasNotificationAttention?: boolean
 }
 
 export function DashboardHeader({
@@ -23,11 +21,9 @@ export function DashboardHeader({
   dateLabel,
   avatarUrl,
   profileHref,
-  noticeContent,
-  noticeLabel,
+  hasNotificationAttention = false,
 }: Props) {
   const { t } = useI18n()
-  const [noticeOpen, setNoticeOpen] = useState(false)
   const initials = firstName.slice(0, 2).toUpperCase()
 
   return (
@@ -56,25 +52,15 @@ export function DashboardHeader({
         >
           <Settings className="h-5 w-5" aria-hidden="true" />
         </Link>
-        {noticeContent && (
-          <button
-            type="button"
-            onClick={() => setNoticeOpen(open => !open)}
-            aria-expanded={noticeOpen}
-            aria-controls="dashboard-notice-hub"
-            aria-label={noticeOpen ? t('Cerrar avisos') : t('Abrir avisos')}
-            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-foreground transition-colors hover:border-violet-400/50 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none"
-          >
-            {noticeOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Bell className="h-5 w-5" aria-hidden="true" />}
-            {!noticeOpen && <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[hsl(var(--training-warning))]" />}
-          </button>
-        )}
+        <Link
+          href="/notifications"
+          aria-label={t('Abrir notificaciones')}
+          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card text-foreground transition-colors hover:border-violet-400/50 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none"
+        >
+          <Bell className="h-5 w-5" aria-hidden="true" />
+          {hasNotificationAttention ? <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[hsl(var(--training-warning))]" /> : null}
+        </Link>
       </div>
-      {noticeContent && noticeOpen && (
-        <div id="dashboard-notice-hub" aria-label={noticeLabel} className="pb-3 pt-2">
-          {noticeContent}
-        </div>
-      )}
     </FixedTopBar>
   )
 }

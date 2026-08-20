@@ -127,6 +127,7 @@ test('authenticated core routes meet route-level accessibility acceptance', asyn
     { path: '/history', primary: /todas|all/i, namedMain: false },
     { path: `/history/${progressLogId}`, primary: /mostrar series|show sets/i, namedMain: false },
     { path: `/exercises/${fixture.exerciseId}`, primary: /12 semanas|12 weeks/i, namedMain: false },
+    { path: '/notifications', primary: /preferencias de notificaciones|notification preferences/i, namedMain: true },
   ] as const
 
   for (const route of routes) {
@@ -142,17 +143,15 @@ test('authenticated core routes meet route-level accessibility acceptance', asyn
   }
 })
 
-test('core training disclosures are keyboard reachable', async ({ page }) => {
+test('core training actions are keyboard reachable', async ({ page }) => {
   test.setTimeout(180_000)
   const fixture = await seedCoreProductFixture('es')
   await signInAsE2EUser(page)
 
   await page.goto('/dashboard')
-  const noticeControl = page.getByRole('button', { name: /abrir avisos|open notices/i })
-  if (await noticeControl.count()) {
-    await noticeControl.focus()
-    await expect(noticeControl).toBeFocused()
-  }
+  const notificationLink = page.getByRole('link', { name: /abrir notificaciones|open notifications/i })
+  await notificationLink.focus()
+  await expect(notificationLink).toBeFocused()
 
   await page.goto('/plan')
   const workout = page.getByRole('button', { name: /e2e full body/i }).first()

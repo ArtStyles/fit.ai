@@ -94,6 +94,7 @@ describe('NotificationCenter', () => {
         initialPage={{
           notifications: [SECOND, FIRST],
           nextCursor: 'next-page',
+          unreadCount: 1,
         }}
       />,
     )
@@ -106,15 +107,27 @@ describe('NotificationCenter', () => {
     expect(html).toContain('min-h-11')
   })
 
+  it('renders the aggregate unread count instead of recounting only the loaded page', () => {
+    const html = renderWithProviders(
+      <NotificationCenter
+        initialPage={{ notifications: [FIRST], nextCursor: 'next-page', unreadCount: 41 }}
+        unreadCount={41}
+      />,
+    )
+
+    expect(html).toContain('41 sin leer')
+    expect(html).not.toContain('>1 sin leer<')
+  })
+
   it('formats notification timestamps in the profile timezone at a UTC day boundary', () => {
     const createdAt = '2026-08-20T03:30:00.000Z'
     const boundaryNotification = { ...FIRST, createdAt }
     const havana = renderWithProviders(
-      <NotificationCenter initialPage={{ notifications: [boundaryNotification], nextCursor: null }} />,
+      <NotificationCenter initialPage={{ notifications: [boundaryNotification], nextCursor: null, unreadCount: 1 }} />,
       'America/Havana',
     )
     const utc = renderWithProviders(
-      <NotificationCenter initialPage={{ notifications: [boundaryNotification], nextCursor: null }} />,
+      <NotificationCenter initialPage={{ notifications: [boundaryNotification], nextCursor: null, unreadCount: 1 }} />,
       'UTC',
     )
     const expectedHavana = new Intl.DateTimeFormat('es-ES', {
@@ -135,6 +148,7 @@ describe('NotificationCenter', () => {
         initialPage={{
           notifications: [{ ...FIRST, url: '//evil.example/path' }],
           nextCursor: null,
+          unreadCount: 1,
         }}
       />,
     )
@@ -146,7 +160,7 @@ describe('NotificationCenter', () => {
 
   it('renders a useful empty state', () => {
     const html = renderWithProviders(
-      <NotificationCenter initialPage={{ notifications: [], nextCursor: null }} />,
+      <NotificationCenter initialPage={{ notifications: [], nextCursor: null, unreadCount: 0 }} />,
     )
 
     expect(html).toContain('No tienes notificaciones todavía')
@@ -158,6 +172,7 @@ describe('NotificationCenter', () => {
         initialPage={{
           notifications: [],
           nextCursor: null,
+          unreadCount: null,
           error: 'No se pudieron cargar las notificaciones.',
         }}
       />,
@@ -173,7 +188,7 @@ describe('NotificationCenter', () => {
       cursor: 'next-page',
     }, async ({ cursor }) => {
       expect(cursor).toBe('next-page')
-      return { notifications: [SECOND], nextCursor: null }
+      return { notifications: [SECOND], nextCursor: null, unreadCount: 0 }
     })
 
     expect(result).toEqual({
@@ -200,7 +215,7 @@ describe('NotificationCenter', () => {
 
     const loading = loadNextNotificationPage({
       cursor: 'next-page',
-    }, async () => pendingPage)
+    }, async () => ({ ...(await pendingPage), unreadCount: 2 }))
 
     const readAt = '2026-08-07T16:00:00.000Z'
     const currentAfterMark = [{ ...FIRST, readAt }]
