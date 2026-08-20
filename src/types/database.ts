@@ -143,6 +143,21 @@ export interface Database {
         Relationships: []
       }
 
+      notification_attention_dismissals: {
+        Row: {
+          user_id: string
+          notice_key: string
+          dismissed_at: string
+        }
+        Insert: {
+          user_id?: string
+          notice_key: string
+          dismissed_at?: string
+        }
+        Update: Record<string, never>
+        Relationships: []
+      }
+
       professional_audit_logs: {
         Row: {
           id: string

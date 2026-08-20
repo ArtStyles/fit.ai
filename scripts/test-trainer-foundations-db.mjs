@@ -16,6 +16,12 @@ const preferenceInsertMigrationPath = path.join(
 const preferenceInsertTestPath = path.join(
   repoRoot, 'supabase', 'tests', '047_product_notification_preferences_insert_test.sql',
 )
+const attentionDismissalTestPath = path.join(
+  repoRoot, 'supabase', 'tests', '052_notification_attention_dismissals_test.sql',
+)
+const attentionDismissalMigrationPath = path.join(
+  repoRoot, 'supabase', 'migrations', '052_notification_attention_dismissals.sql',
+)
 
 const bootstrapSql = `
 GRANT anon, authenticated, service_role TO postgres;
@@ -146,6 +152,16 @@ try {
   )
   if (/^not ok\b/m.test(preferenceInsertTap) || /# Looks like you failed\b/.test(preferenceInsertTap)) {
     throw new Error('migration 047 pgTAP reported one or more failed assertions')
+  }
+
+  runPsql(readFileSync(attentionDismissalMigrationPath, 'utf8'), 'applying migration 052')
+  runPsql(readFileSync(attentionDismissalMigrationPath, 'utf8'), 'reapplying migration 052')
+  const attentionDismissalTap = runPsql(
+    readFileSync(attentionDismissalTestPath, 'utf8'),
+    'running 052 attention-dismissal pgTAP suite',
+  )
+  if (/^not ok\b/m.test(attentionDismissalTap) || /# Looks like you failed\b/.test(attentionDismissalTap)) {
+    throw new Error('migration 052 pgTAP reported one or more failed assertions')
   }
 
   process.stdout.write('\n[trainer-db] PASS: all pgTAP assertions passed\n')

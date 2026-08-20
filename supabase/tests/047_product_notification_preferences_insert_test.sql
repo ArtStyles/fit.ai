@@ -14,7 +14,7 @@ SELECT ok(
 );
 SELECT is(
   (
-    SELECT column_default
+    SELECT column_default::text
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND table_name = 'product_notification_preferences'
