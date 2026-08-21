@@ -85,19 +85,22 @@ async function submitTrainerApplication(page: Page): Promise<void> {
   await page.getByLabel('Biografía profesional', { exact: true }).fill(
     'Entrenadora especializada en fuerza y movilidad con acompañamiento progresivo y seguro.',
   )
-  await page.getByLabel('Especialidades', { exact: true }).fill('Fuerza, movilidad')
+  await page.getByLabel('Fuerza', { exact: true }).check()
+  await page.getByLabel('Movilidad', { exact: true }).check()
+  await page.getByLabel('Español', { exact: true }).check()
   await page.getByLabel('En línea', { exact: true }).check()
   await page.getByLabel('Experiencia', { exact: true }).fill(
     'Ocho años de experiencia guiando entrenamientos de fuerza para personas adultas.',
   )
   await page.getByLabel('Correo de contacto', { exact: true }).fill('trainer-e2e@example.test')
-  await page.getByLabel('Zona horaria', { exact: true }).fill('America/Havana')
+  await page.getByLabel('Zona horaria', { exact: true }).selectOption('America/Havana')
   await page.getByLabel('Disponibilidad para entrevista', { exact: true }).fill('Entre semana después de las 14:00.')
   await page.getByRole('button', { name: 'Guardar borrador', exact: true }).click()
   await expect(page.getByText('Borrador guardado.', { exact: true })).toBeVisible()
 
   await page.getByLabel('Título de la credencial', { exact: true }).fill('Certificación E2E')
-  await page.getByRole('textbox', { name: 'Enlace HTTPS', exact: true }).fill('https://credentials.example.test/e2e')
+  await page.getByLabel('Usar enlace verificable', { exact: true }).check()
+  await page.getByRole('textbox', { name: 'Enlace verificable', exact: true }).fill('https://credentials.example.test/e2e')
   await page.getByRole('button', { name: 'Agregar credencial', exact: true }).click()
   await expect(page.getByText('Certificación E2E', { exact: true })).toBeVisible()
 

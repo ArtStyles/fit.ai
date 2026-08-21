@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { chromium, type Browser } from '@playwright/test'
+import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   ApplicationForm,
@@ -89,6 +89,60 @@ describe('ApplicationForm', () => {
     expect(html).not.toMatch(/documento de identidad|pasaporte|precio|tarifa|mensaje privado/i)
   })
 
+  it('renders specialties and languages as multi-select controls and timezone as a selector', () => {
+    const html = renderToStaticMarkup(
+      <ApplicationForm
+        initialApplication={APPLICATION}
+        initialCredentials={CREDENTIALS}
+        allowedPhotoUrls={[APPLICATION.professionalPhotoUrl!]}
+      />,
+    )
+
+    expect(html).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*name="specialties")(?=[^>]*value="Fuerza")(?=[^>]*checked="")[^>]*>/)
+    expect(html).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*name="specialties")(?=[^>]*value="Hipertrofia")[^>]*>/)
+    expect(html).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*name="languages")(?=[^>]*value="Español")(?=[^>]*checked="")[^>]*>/)
+    expect(html).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*name="languages")(?=[^>]*value="Inglés")[^>]*>/)
+    expect(html).toMatch(/<select[^>]*id="timezone"[^>]*name="timezone"/)
+    expect(html).toMatch(/<option value="America\/Havana" selected="">/)
+  })
+
+  it('keeps existing custom selections available when reopening an older draft', () => {
+    const legacyApplication: TrainerApplicationView = {
+      ...APPLICATION,
+      specialties: ['Preparación posparto, bienestar'],
+      languages: ['Lengua de señas\nlocal'],
+      timezone: 'Asia/Kathmandu',
+    }
+    const html = renderToStaticMarkup(
+      <ApplicationForm
+        initialApplication={legacyApplication}
+        initialCredentials={CREDENTIALS}
+        allowedPhotoUrls={[legacyApplication.professionalPhotoUrl!]}
+      />,
+    )
+
+    expect(html).toMatch(/<input(?=[^>]*name="specialties")(?=[^>]*value="Preparación posparto, bienestar")(?=[^>]*checked="")[^>]*>/)
+    expect(html).toMatch(/<input(?=[^>]*name="languages")(?=[^>]*value="Lengua de señas\nlocal")(?=[^>]*checked="")[^>]*>/)
+    expect(html).toMatch(/<option value="Asia\/Kathmandu" selected="">/)
+  })
+
+  it('starts accreditation with a private document and hides optional metadata details', () => {
+    const html = renderToStaticMarkup(
+      <ApplicationForm
+        initialApplication={APPLICATION}
+        initialCredentials={CREDENTIALS}
+        allowedPhotoUrls={[APPLICATION.professionalPhotoUrl!]}
+      />,
+    )
+
+    expect(html).toMatch(/<input(?=[^>]*type="radio")(?=[^>]*name="credentialTypeChoice")(?=[^>]*value="document")(?=[^>]*checked="")[^>]*>/)
+    expect(html).toContain('Subir documento')
+    expect(html).toContain('Usar enlace verificable')
+    expect(html).toMatch(/name="file" type="file"/)
+    expect(html).not.toContain('name="externalUrl"')
+    expect(html).toContain('<summary>Añadir entidad y fechas (opcional)</summary>')
+  })
+
   it('returns accessible field errors instead of opening confirmation for an incomplete request', () => {
     const result = prepareTrainerApplicationReview(new FormData(), {
       allowedPhotoUrls: [],
@@ -143,6 +197,48 @@ describe('ApplicationForm', () => {
       status: 'draft',
       announcement: 'Borrador guardado.',
     })
+  })
+
+  it('sends every selected specialty and language through the existing draft contract', async () => {
+    const formData = validFormData()
+    formData.append('specialties', 'Hipertrofia')
+    formData.append('languages', 'Inglés')
+    let savedSpecialties: FormDataEntryValue[] = []
+    let savedLanguages: FormDataEntryValue[] = []
+
+    await persistTrainerApplicationDraft(formData, async saved => {
+      savedSpecialties = saved.getAll('specialties')
+      savedLanguages = saved.getAll('languages')
+      return {
+        ok: true,
+        applicationId: APPLICATION.id,
+        status: 'changes_requested',
+      }
+    })
+
+    expect(savedSpecialties).toEqual(['Fuerza', 'Hipertrofia'])
+    expect(savedLanguages).toEqual(['Español', 'Inglés'])
+  })
+
+  it('keeps each legacy custom selector value atomic when saving again', async () => {
+    const formData = validFormData()
+    formData.set('specialties', 'Preparación posparto, bienestar')
+    formData.set('languages', 'Lengua de señas\nlocal')
+    let savedSpecialties: FormDataEntryValue[] = []
+    let savedLanguages: FormDataEntryValue[] = []
+
+    await persistTrainerApplicationDraft(formData, async saved => {
+      savedSpecialties = saved.getAll('specialties')
+      savedLanguages = saved.getAll('languages')
+      return {
+        ok: true,
+        applicationId: APPLICATION.id,
+        status: 'draft',
+      }
+    })
+
+    expect(savedSpecialties).toEqual(['Preparación posparto, bienestar'])
+    expect(savedLanguages).toEqual(['Lengua de señas\nlocal'])
   })
 })
 
@@ -305,6 +401,50 @@ describe('ApplicationForm DOM accessibility', () => {
       expect(state.describedBy?.split(/\s+/)).toContain(`${targetId}-error`)
       expect(state.errorText).toBeTruthy()
       expect(state.hidden).toBe(false)
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('submits selector values with the existing field names and reveals the link only on request', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      const hypertrophy = page.getByLabel('Hipertrofia', { exact: true })
+      const english = page.getByLabel('Inglés', { exact: true })
+      const timezone = page.getByLabel('Zona horaria', { exact: true })
+      expect(await hypertrophy.count()).toBe(1)
+      expect(await english.count()).toBe(1)
+      expect(await timezone.count()).toBe(1)
+      await hypertrophy.check({ timeout: 3_000 })
+      await english.check({ timeout: 3_000 })
+      await timezone.selectOption('America/Bogota', { timeout: 3_000 })
+
+      expect(await page.locator('form').first().evaluate(form => ({
+        specialties: new FormData(form as HTMLFormElement).getAll('specialties'),
+        languages: new FormData(form as HTMLFormElement).getAll('languages'),
+        timezone: new FormData(form as HTMLFormElement).get('timezone'),
+      }))).toEqual({
+        specialties: ['Fuerza', 'Hipertrofia'],
+        languages: ['Español', 'Inglés'],
+        timezone: 'America/Bogota',
+      })
+
+      const documentChoice = page.getByLabel('Subir documento', { exact: true })
+      const documentFile = page.getByLabel('Archivo de acreditación', { exact: true })
+      const linkChoice = page.getByLabel('Usar enlace verificable', { exact: true })
+      expect(await documentChoice.count()).toBe(1)
+      expect(await documentFile.count()).toBe(1)
+      expect(await linkChoice.count()).toBe(1)
+      await pwExpect(documentChoice).toBeChecked()
+      await pwExpect(documentFile).toBeVisible()
+      await pwExpect(page.getByLabel('Enlace verificable', { exact: true })).toHaveCount(0)
+
+      await linkChoice.check({ timeout: 3_000 })
+      await pwExpect(page.getByLabel('Enlace verificable', { exact: true })).toBeVisible()
+      await pwExpect(page.getByLabel('Archivo de acreditación', { exact: true })).toHaveCount(0)
     } finally {
       await page.close()
     }

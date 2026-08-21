@@ -4,6 +4,13 @@ import { useRef, useState } from 'react'
 import { CheckCircle2, Loader2, Save, Send, ShieldCheck } from 'lucide-react'
 import { saveTrainerApplicationDraft, submitTrainerApplication } from '@/app/actions/trainerApplications'
 import { validateTrainerApplication } from '@/lib/coaching/applicationValidation'
+import {
+  optionsWithCurrentValues,
+  TRAINER_LANGUAGE_OPTIONS,
+  TRAINER_SPECIALTY_OPTIONS,
+  trainerTimezoneOptions,
+  type TrainerApplicationOption,
+} from '@/lib/coaching/applicationOptions'
 import type { TrainerApplicationStatus } from '@/lib/coaching/status'
 import { CredentialFields, type TrainerCredentialView } from './CredentialFields'
 
@@ -68,27 +75,11 @@ const STATUS_LABELS: Record<TrainerApplicationStatus, string> = {
   withdrawn: 'Retirada',
 }
 
-function normalizeListFields(input: FormData): FormData {
-  const normalized = new FormData()
-  input.forEach((value, key) => normalized.append(key, value))
-  for (const key of ['specialties', 'languages']) {
-    const current = normalized.getAll(key)
-    normalized.delete(key)
-    for (const value of current) {
-      if (typeof value !== 'string') continue
-      for (const item of value.split(/[,\n]/).map(part => part.trim()).filter(Boolean)) {
-        normalized.append(key, item)
-      }
-    }
-  }
-  return normalized
-}
-
 export function prepareTrainerApplicationReview(
   input: FormData,
   options: { allowedPhotoUrls: readonly string[]; credentialCount: number },
 ): ReviewResult {
-  const validation = validateTrainerApplication(normalizeListFields(input), {
+  const validation = validateTrainerApplication(input, {
     mode: 'submit',
     allowedPhotoUrls: options.allowedPhotoUrls,
     credentialCount: options.credentialCount,
@@ -120,7 +111,7 @@ export async function persistTrainerApplicationDraft(
   save: DraftAction = saveTrainerApplicationDraft,
 ) {
   try {
-    const result = await save(normalizeListFields(input))
+    const result = await save(input)
     return result.ok
       ? { ...result, announcement: 'Borrador guardado.' as const }
       : { ...result, announcement: result.error }
@@ -135,6 +126,52 @@ function FieldError({ name, error }: { name: string; error?: string }) {
 
 function describedBy(name: string, error?: string) {
   return error ? `${name}-error` : undefined
+}
+
+function MultiSelectField({
+  name,
+  label,
+  hint,
+  options,
+  selectedValues,
+  error,
+}: {
+  name: 'specialties' | 'languages'
+  label: string
+  hint: string
+  options: readonly TrainerApplicationOption[]
+  selectedValues: readonly string[]
+  error?: string
+}) {
+  const describedByIds = `${name}-hint${error ? ` ${name}-error` : ''}`
+  return (
+    <fieldset
+      id={name}
+      tabIndex={-1}
+      aria-invalid={Boolean(error)}
+      aria-describedby={describedByIds}
+      className="rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400"
+    >
+      <legend className="text-sm font-semibold text-foreground">{label}</legend>
+      <p id={`${name}-hint`} className="mt-1 text-xs text-muted-foreground">{hint}</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {optionsWithCurrentValues(options, selectedValues).map(option => (
+          <label key={option.value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-3 text-sm font-normal">
+            <input
+              type="checkbox"
+              name={name}
+              value={option.value}
+              defaultChecked={selectedValues.includes(option.value)}
+              aria-invalid={Boolean(error)}
+              aria-describedby={describedByIds}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+      <FieldError name={name} error={error} />
+    </fieldset>
+  )
 }
 
 export function ApplicationForm({
@@ -284,18 +321,22 @@ export function ApplicationForm({
           </label>
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <label htmlFor="specialties" className="text-sm font-semibold text-foreground">
-              Especialidades
-              <input id="specialties" name="specialties" defaultValue={values.specialties.join(', ')} placeholder="Fuerza, movilidad" aria-invalid={Boolean(fieldErrors.specialties)} aria-describedby={describedBy('specialties', fieldErrors.specialties)} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
-              <span className="mt-1 block text-xs font-normal text-muted-foreground">Sepáralas con comas.</span>
-              <FieldError name="specialties" error={fieldErrors.specialties} />
-            </label>
-            <label htmlFor="languages" className="text-sm font-semibold text-foreground">
-              Idiomas
-              <input id="languages" name="languages" defaultValue={values.languages.join(', ')} placeholder="Español, inglés" aria-invalid={Boolean(fieldErrors.languages)} aria-describedby={describedBy('languages', fieldErrors.languages)} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
-              <span className="mt-1 block text-xs font-normal text-muted-foreground">Sepáralos con comas.</span>
-              <FieldError name="languages" error={fieldErrors.languages} />
-            </label>
+            <MultiSelectField
+              name="specialties"
+              label="Especialidades"
+              hint="Selecciona una o varias áreas."
+              options={TRAINER_SPECIALTY_OPTIONS}
+              selectedValues={values.specialties}
+              error={fieldErrors.specialties}
+            />
+            <MultiSelectField
+              name="languages"
+              label="Idiomas"
+              hint="Selecciona todos los idiomas en los que puedes atender."
+              options={TRAINER_LANGUAGE_OPTIONS}
+              selectedValues={values.languages}
+              error={fieldErrors.languages}
+            />
           </div>
 
           <fieldset
@@ -356,11 +397,15 @@ export function ApplicationForm({
                 </select>
                 <FieldError name="preferredContact" error={fieldErrors.preferredContact} />
               </label>
-              <label htmlFor="timezone" className="text-sm font-semibold text-foreground">
-                Zona horaria
-                <input id="timezone" name="timezone" defaultValue={values.timezone} placeholder="America/Havana" aria-invalid={Boolean(fieldErrors.timezone)} aria-describedby={describedBy('timezone', fieldErrors.timezone)} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
+              <div className="text-sm font-semibold text-foreground">
+                <label htmlFor="timezone">Zona horaria</label>
+                <select id="timezone" name="timezone" defaultValue={values.timezone} aria-invalid={Boolean(fieldErrors.timezone)} aria-describedby={describedBy('timezone', fieldErrors.timezone)} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal">
+                  {trainerTimezoneOptions(values.timezone).map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
                 <FieldError name="timezone" error={fieldErrors.timezone} />
-              </label>
+              </div>
             </div>
             <label htmlFor="interviewAvailability" className="mt-4 block text-sm font-semibold text-foreground">
               Disponibilidad para entrevista

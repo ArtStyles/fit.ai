@@ -52,7 +52,7 @@ export function CredentialFields({
 }) {
   const editable = status === 'draft' || status === 'changes_requested'
   const [credentials, setCredentials] = useState(initialCredentials)
-  const [credentialType, setCredentialType] = useState<'link' | 'document'>('link')
+  const [credentialType, setCredentialType] = useState<'link' | 'document'>('document')
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
@@ -108,7 +108,7 @@ export function CredentialFields({
         return next
       })
       form.reset()
-      setCredentialType('link')
+      setCredentialType('document')
       setAnnouncement('Credencial agregada.')
     } catch {
       setAnnouncement('No se pudo agregar la credencial.')
@@ -151,9 +151,9 @@ export function CredentialFields({
       aria-describedby={errorId}
       className="rounded-3xl border border-border/60 bg-muted/10 p-5 focus:outline-none focus:ring-2 focus:ring-red-400 sm:p-6"
     >
-      <h2 id="credentials-title" className="text-lg font-bold text-foreground">Credenciales profesionales</h2>
+      <h2 id="credentials-title" className="text-lg font-bold text-foreground">Acreditación profesional</h2>
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-        Añade un documento privado (PDF, JPEG o PNG, hasta 10 MB) o un enlace HTTPS verificable.
+        Sube un certificado o acreditación. Si solo existe en internet, también puedes usar un enlace verificable.
       </p>
 
       {credentials.length > 0 ? (
@@ -198,48 +198,56 @@ export function CredentialFields({
           <fieldset disabled={!applicationId || busy}>
             <legend className="text-sm font-semibold text-foreground">Agregar credencial</legend>
             {!applicationId ? <p className="mt-1 text-xs text-amber-200">Guarda primero el borrador para habilitar la carga privada.</p> : null}
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              {(['link', 'document'] as const).map(value => (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(['document', 'link'] as const).map(value => (
                 <label key={value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-3 text-sm">
                   <input type="radio" name="credentialTypeChoice" value={value} checked={credentialType === value} onChange={() => setCredentialType(value)} />
-                  {value === 'link' ? 'Enlace HTTPS' : 'Documento privado'}
+                  {value === 'document' ? 'Subir documento' : 'Usar enlace verificable'}
                 </label>
               ))}
             </div>
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="mt-4">
               <label className="text-sm font-semibold text-foreground" htmlFor="credential-title">
                 Título de la credencial
                 <input id="credential-title" name="title" aria-invalid={Boolean(fieldErrors.title)} aria-describedby={fieldErrors.title ? 'credential-title-error' : undefined} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
                 <FieldError id="credential-title-error" message={fieldErrors.title} />
               </label>
-              <label className="text-sm font-semibold text-foreground" htmlFor="credential-issuer">
-                Entidad emisora (opcional)
-                <input id="credential-issuer" name="issuer" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
-              </label>
-              <label className="text-sm font-semibold text-foreground" htmlFor="credential-issued-on">
-                Fecha de emisión (opcional)
-                <input id="credential-issued-on" name="issuedOn" type="date" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
-              </label>
-              <label className="text-sm font-semibold text-foreground" htmlFor="credential-expires-on">
-                Fecha de vencimiento (opcional)
-                <input id="credential-expires-on" name="expiresOn" type="date" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
-              </label>
             </div>
 
-            {credentialType === 'link' ? (
-              <label className="mt-4 block text-sm font-semibold text-foreground" htmlFor="credential-url">
-                Enlace HTTPS
-                <input id="credential-url" name="externalUrl" type="url" inputMode="url" placeholder="https://…" aria-invalid={Boolean(fieldErrors.externalUrl)} aria-describedby={fieldErrors.externalUrl ? 'credential-url-error' : undefined} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
-                <FieldError id="credential-url-error" message={fieldErrors.externalUrl} />
-              </label>
-            ) : (
-              <label className="mt-4 block text-sm font-semibold text-foreground" htmlFor="credential-file">
-                Archivo de credencial
+            {credentialType === 'document' ? (
+              <div className="mt-4 text-sm font-semibold text-foreground">
+                <label htmlFor="credential-file">Archivo de acreditación</label>
                 <input id="credential-file" name="file" type="file" accept="application/pdf,image/jpeg,image/png" aria-invalid={Boolean(fieldErrors.file)} aria-describedby={fieldErrors.file ? 'credential-file-error' : undefined} className="mt-2 block min-h-11 w-full rounded-xl border border-input bg-background px-3 py-2 font-normal" />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">PDF, JPEG o PNG de hasta 10 MB.</span>
                 <FieldError id="credential-file-error" message={fieldErrors.file} />
-              </label>
+              </div>
+            ) : (
+              <div className="mt-4 text-sm font-semibold text-foreground">
+                <label htmlFor="credential-url">Enlace verificable</label>
+                <input id="credential-url" name="externalUrl" type="url" inputMode="url" placeholder="https://sitio-de-la-entidad.example/certificado" aria-invalid={Boolean(fieldErrors.externalUrl)} aria-describedby={fieldErrors.externalUrl ? 'credential-url-error' : undefined} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">Debe comenzar con https:// para proteger la consulta.</span>
+                <FieldError id="credential-url-error" message={fieldErrors.externalUrl} />
+              </div>
             )}
+
+            <details className="mt-4 rounded-xl border border-border/60 px-3 [&>summary]:flex [&>summary]:min-h-11 [&>summary]:cursor-pointer [&>summary]:items-center [&>summary]:text-sm [&>summary]:font-semibold [&>summary]:text-foreground">
+              <summary>Añadir entidad y fechas (opcional)</summary>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="text-sm font-semibold text-foreground" htmlFor="credential-issuer">
+                  Entidad emisora
+                  <input id="credential-issuer" name="issuer" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
+                </label>
+                <label className="text-sm font-semibold text-foreground" htmlFor="credential-issued-on">
+                  Fecha de emisión
+                  <input id="credential-issued-on" name="issuedOn" type="date" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
+                </label>
+                <label className="text-sm font-semibold text-foreground" htmlFor="credential-expires-on">
+                  Fecha de vencimiento
+                  <input id="credential-expires-on" name="expiresOn" type="date" className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
+                </label>
+              </div>
+            </details>
 
             <button type="submit" className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-secondary px-4 text-sm font-semibold text-secondary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
