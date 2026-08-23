@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import '@/styles/globals.css'
 import { ApplicationForm, type TrainerApplicationView } from '../../ApplicationForm'
 
 const COMPLETE_APPLICATION: TrainerApplicationView = {
@@ -30,17 +31,38 @@ const CREDENTIALS = [{
   fileName: null,
 }]
 
+const NEW_APPLICATION_VALUES = {
+  professionalName: COMPLETE_APPLICATION.professionalName,
+  professionalPhotoUrl: COMPLETE_APPLICATION.professionalPhotoUrl,
+  bio: COMPLETE_APPLICATION.bio,
+  specialties: COMPLETE_APPLICATION.specialties,
+  modalities: COMPLETE_APPLICATION.modalities,
+  experienceSummary: COMPLETE_APPLICATION.experienceSummary,
+  generalLocation: COMPLETE_APPLICATION.generalLocation,
+  languages: COMPLETE_APPLICATION.languages,
+  contactEmail: COMPLETE_APPLICATION.contactEmail,
+  contactPhone: COMPLETE_APPLICATION.contactPhone,
+  preferredContact: COMPLETE_APPLICATION.preferredContact,
+  timezone: COMPLETE_APPLICATION.timezone,
+  interviewAvailability: COMPLETE_APPLICATION.interviewAvailability,
+}
+
 const testCase = new URLSearchParams(window.location.search).get('case')
+const isNewApplication = testCase === 'new'
 const application = {
   ...COMPLETE_APPLICATION,
   ...(testCase === 'photo' ? { professionalPhotoUrl: null } : {}),
   ...(testCase === 'modalities' ? { modalities: [] as TrainerApplicationView['modalities'] } : {}),
 }
 
+;(window as Window & { __TRAINER_APPLICATION_ACTION_CALLS__?: unknown[] })
+  .__TRAINER_APPLICATION_ACTION_CALLS__ = []
+
 createRoot(document.getElementById('root')!).render(
   <ApplicationForm
-    initialApplication={application}
-    initialCredentials={testCase === 'credentials' ? [] : CREDENTIALS}
+    initialApplication={isNewApplication ? null : application}
+    initialValues={isNewApplication ? NEW_APPLICATION_VALUES : undefined}
+    initialCredentials={testCase === 'credentials' || isNewApplication ? [] : CREDENTIALS}
     allowedPhotoUrls={application.professionalPhotoUrl ? [application.professionalPhotoUrl] : []}
   />,
 )

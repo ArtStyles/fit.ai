@@ -449,4 +449,185 @@ describe('ApplicationForm DOM accessibility', () => {
       await page.close()
     }
   })
+
+  it('saves a new draft before reporting review errors so the entered data is not lost', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=new`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      await page.getByRole('button', { name: 'Revisar y enviar', exact: true }).click()
+      await pwExpect(page.getByText('Agrega al menos una credencial por documento o enlace.', { exact: true })).toBeVisible()
+
+      const calls = await page.evaluate(() => (
+        (window as Window & {
+          __TRAINER_APPLICATION_ACTION_CALLS__?: Array<{
+            action: string
+            fields: Record<string, string[]>
+          }>
+        }).__TRAINER_APPLICATION_ACTION_CALLS__ ?? []
+      ))
+      expect(calls).toEqual([expect.objectContaining({
+        action: 'save',
+        fields: expect.objectContaining({
+          professionalName: ['Ada Entrenadora'],
+          specialties: ['Fuerza'],
+          languages: ['Español'],
+        }),
+      })])
+      await pwExpect(page.getByLabel('Título de la credencial', { exact: true })).toBeEnabled()
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('shows a visible confirmation after saving a draft', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=new`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      await page.getByRole('button', { name: 'Guardar borrador', exact: true }).click()
+      const confirmation = page.getByText('Borrador guardado.', { exact: true })
+      await pwExpect(confirmation).toBeVisible()
+      const bounds = await confirmation.evaluate(element => {
+        const rectangle = element.getBoundingClientRect()
+        return { width: rectangle.width, height: rectangle.height }
+      })
+      expect(bounds.width).toBeGreaterThan(20)
+      expect(bounds.height).toBeGreaterThan(10)
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('lets a new applicant enter a credential and saves the draft before uploading it', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=new`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      const title = page.getByLabel('Título de la credencial', { exact: true })
+      await pwExpect(title).toBeEnabled()
+      await title.fill('Certificación inicial')
+      await page.getByLabel('Usar enlace verificable', { exact: true }).check()
+      await page.getByLabel('Enlace verificable', { exact: true }).fill('https://issuer.example.test/cert/initial')
+      await page.getByRole('button', { name: 'Agregar credencial', exact: true }).click()
+      await pwExpect(page.getByText('Certificación inicial', { exact: true })).toBeVisible()
+
+      const calls = await page.evaluate(() => (
+        (window as Window & {
+          __TRAINER_APPLICATION_ACTION_CALLS__?: Array<{
+            action: string
+            fields: Record<string, string[]>
+          }>
+        }).__TRAINER_APPLICATION_ACTION_CALLS__ ?? []
+      ))
+      expect(calls.map(call => call.action)).toEqual(['save', 'upload'])
+      expect(calls[0].fields.professionalName).toEqual(['Ada Entrenadora'])
+      expect(calls[1].fields).toEqual(expect.objectContaining({
+        applicationId: ['31111111-1111-4111-8111-111111111111'],
+        credentialType: ['link'],
+        title: ['Certificación inicial'],
+        externalUrl: ['https://issuer.example.test/cert/initial'],
+      }))
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('keeps review disabled until a credential upload finishes', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=upload-pending`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      await page.getByLabel('Título de la credencial', { exact: true }).fill('Carga pendiente')
+      await page.getByLabel('Usar enlace verificable', { exact: true }).check()
+      await page.getByLabel('Enlace verificable', { exact: true }).fill('https://issuer.example.test/cert/pending')
+      await page.getByRole('button', { name: 'Agregar credencial', exact: true }).click()
+      await page.waitForFunction(() => (
+        (window as Window & { __TRAINER_APPLICATION_ACTION_CALLS__?: Array<{ action: string }> })
+          .__TRAINER_APPLICATION_ACTION_CALLS__?.some(call => call.action === 'upload')
+      ))
+
+      const review = page.getByRole('button', { name: 'Revisar y enviar', exact: true })
+      await pwExpect(review).toBeDisabled()
+      await page.evaluate(() => (
+        window as Window & { __RESOLVE_TRAINER_UPLOAD__?: () => void }
+      ).__RESOLVE_TRAINER_UPLOAD__?.())
+      await pwExpect(page.getByText('Carga pendiente', { exact: true })).toBeVisible()
+      await pwExpect(review).toBeEnabled()
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('keeps review disabled until a credential removal finishes', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=remove-pending`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      await page.getByRole('button', { name: 'Eliminar Certificación de fuerza', exact: true }).click()
+      await page.waitForFunction(() => (
+        (window as Window & { __TRAINER_APPLICATION_ACTION_CALLS__?: Array<{ action: string }> })
+          .__TRAINER_APPLICATION_ACTION_CALLS__?.some(call => call.action === 'remove')
+      ))
+
+      const review = page.getByRole('button', { name: 'Revisar y enviar', exact: true })
+      await pwExpect(review).toBeDisabled()
+      await page.evaluate(() => (
+        window as Window & { __RESOLVE_TRAINER_REMOVE__?: () => void }
+      ).__RESOLVE_TRAINER_REMOVE__?.())
+      await pwExpect(page.getByText('Certificación de fuerza', { exact: true })).not.toBeVisible()
+      await pwExpect(review).toBeEnabled()
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('locks credential editing while confirming so disabled main fields cannot be saved empty', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      await page.getByRole('button', { name: 'Revisar y enviar', exact: true }).click()
+      await pwExpect(page.getByRole('heading', { name: 'Confirma el envío', exact: true })).toBeVisible()
+      await pwExpect(page.getByLabel('Título de la credencial', { exact: true })).toBeDisabled()
+
+      const calls = await page.evaluate(() => (
+        (window as Window & {
+          __TRAINER_APPLICATION_ACTION_CALLS__?: Array<{
+            action: string
+            fields: Record<string, string[]>
+          }>
+        }).__TRAINER_APPLICATION_ACTION_CALLS__ ?? []
+      ))
+      expect(calls).toEqual([expect.objectContaining({
+        action: 'save',
+        fields: expect.objectContaining({ professionalName: ['Ada Entrenadora'] }),
+      })])
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('keeps submission failures visible while the applicant remains on confirmation', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=submit-error`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      await page.getByRole('button', { name: 'Revisar y enviar', exact: true }).click()
+      await pwExpect(page.getByRole('heading', { name: 'Confirma el envío', exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Confirmar y enviar', exact: true }).click()
+
+      await pwExpect(page.getByText('No se pudo enviar la solicitud.', { exact: true })).toBeVisible()
+      await pwExpect(page.getByRole('heading', { name: 'Confirma el envío', exact: true })).toBeVisible()
+    } finally {
+      await page.close()
+    }
+  })
 })

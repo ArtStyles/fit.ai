@@ -37,6 +37,9 @@ export function CredentialFields({
   applicationId,
   status,
   initialCredentials,
+  disabled = false,
+  onSaveDraft,
+  onMutationChange,
   onCountChange,
   focusTargetId,
   errorId,
@@ -45,6 +48,9 @@ export function CredentialFields({
   applicationId: string | null
   status: TrainerApplicationStatus
   initialCredentials: TrainerCredentialView[]
+  disabled?: boolean
+  onSaveDraft: () => Promise<string | null>
+  onMutationChange: (mutating: boolean) => void
   onCountChange: (count: number) => void
   focusTargetId?: string
   errorId?: string
@@ -60,10 +66,9 @@ export function CredentialFields({
 
   async function addCredential(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!applicationId || busy) return
+    if (disabled || busy || removingId) return
     const form = event.currentTarget
     const formData = new FormData(form)
-    formData.set('applicationId', applicationId)
     formData.set('credentialType', credentialType)
     const fileValue = formData.get('file')
     const validation = validateTrainerCredential({
@@ -75,15 +80,22 @@ export function CredentialFields({
       externalUrl: String(formData.get('externalUrl') ?? ''),
       file: fileValue instanceof File && fileValue.size > 0 ? fileValue : null,
     })
-    if (!validation.ok) {
-      setFieldErrors(validation.fieldErrors ?? {})
-      setAnnouncement('Revisa los campos de la credencial.')
-      return
-    }
-
     setBusy(true)
+    onMutationChange(true)
     setFieldErrors({})
     try {
+      const savedApplicationId = await onSaveDraft()
+      if (!savedApplicationId) {
+        setAnnouncement('No se pudo guardar el borrador. Revisa el formulario principal.')
+        return
+      }
+      if (!validation.ok) {
+        setFieldErrors(validation.fieldErrors ?? {})
+        setAnnouncement('Revisa los campos de la credencial.')
+        return
+      }
+
+      formData.set('applicationId', savedApplicationId)
       const result = await uploadTrainerCredential(formData)
       if (!result.ok) {
         setFieldErrors(result.fieldErrors ?? {})
@@ -114,12 +126,14 @@ export function CredentialFields({
       setAnnouncement('No se pudo agregar la credencial.')
     } finally {
       setBusy(false)
+      onMutationChange(false)
     }
   }
 
   async function removeCredential(credentialId: string) {
-    if (!applicationId || removingId) return
+    if (!applicationId || disabled || busy || removingId) return
     setRemovingId(credentialId)
+    onMutationChange(true)
     const formData = new FormData()
     formData.set('applicationId', applicationId)
     formData.set('credentialId', credentialId)
@@ -139,6 +153,7 @@ export function CredentialFields({
       setAnnouncement('No se pudo eliminar la credencial.')
     } finally {
       setRemovingId(null)
+      onMutationChange(false)
     }
   }
 
@@ -178,7 +193,7 @@ export function CredentialFields({
                   <button
                     type="button"
                     onClick={() => void removeCredential(credential.id)}
-                    disabled={Boolean(removingId)}
+                    disabled={disabled || busy || Boolean(removingId)}
                     aria-label={`Eliminar ${credential.title}`}
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50"
                   >
@@ -195,9 +210,9 @@ export function CredentialFields({
 
       {editable ? (
         <form onSubmit={event => void addCredential(event)} className="mt-6 space-y-4" noValidate>
-          <fieldset disabled={!applicationId || busy}>
+          <fieldset disabled={disabled || busy || Boolean(removingId)}>
             <legend className="text-sm font-semibold text-foreground">Agregar credencial</legend>
-            {!applicationId ? <p className="mt-1 text-xs text-amber-200">Guarda primero el borrador para habilitar la carga privada.</p> : null}
+            {!applicationId ? <p className="mt-1 text-xs text-muted-foreground">Al agregarla, guardaremos primero tu borrador.</p> : null}
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(['document', 'link'] as const).map(value => (
                 <label key={value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-3 text-sm">
@@ -257,7 +272,11 @@ export function CredentialFields({
         </form>
       ) : null}
 
-      <p className="sr-only" aria-live="polite">{announcement}</p>
+      {announcement ? (
+        <p role="status" aria-live="polite" className="mt-4 rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
+          {announcement}
+        </p>
+      ) : null}
     </section>
   )
 }

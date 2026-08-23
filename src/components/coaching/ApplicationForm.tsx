@@ -201,6 +201,7 @@ export function ApplicationForm({
   const [announcement, setAnnouncement] = useState('')
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [credentialMutating, setCredentialMutating] = useState(false)
   const editable = status === 'draft' || status === 'changes_requested'
 
   function focusField(name: string | null) {
@@ -209,7 +210,7 @@ export function ApplicationForm({
   }
 
   async function saveDraft(): Promise<DraftActionResult | null> {
-    if (!formRef.current || saving) return null
+    if (!formRef.current || saving || credentialMutating) return null
     setSaving(true)
     const result = await persistTrainerApplicationDraft(new FormData(formRef.current))
     setSaving(false)
@@ -227,6 +228,9 @@ export function ApplicationForm({
 
   async function reviewApplication() {
     if (!formRef.current) return
+    const saved = await saveDraft()
+    if (!saved?.ok || !formRef.current) return
+
     const currentFormData = new FormData(formRef.current)
     const review = prepareTrainerApplicationReview(currentFormData, {
       allowedPhotoUrls,
@@ -241,12 +245,10 @@ export function ApplicationForm({
     }
 
     setContactSummary(buildTrainerContactSummary(currentFormData))
-    const saved = await saveDraft()
-    if (!saved?.ok) setPhase('editing')
   }
 
   async function confirmSubmission() {
-    if (!applicationId || submitting) return
+    if (!applicationId || submitting || credentialMutating) return
     setSubmitting(true)
     const formData = new FormData()
     formData.set('applicationId', applicationId)
@@ -281,7 +283,7 @@ export function ApplicationForm({
           </span>
         </div>
 
-        <fieldset disabled={!editable || saving || submitting || phase === 'confirming'} className="mt-6 space-y-6">
+        <fieldset disabled={!editable || saving || submitting || credentialMutating || phase === 'confirming'} className="mt-6 space-y-6">
           <input type="hidden" name="professionalPhotoUrl" value={values.professionalPhotoUrl ?? ''} />
           <div
             id="professionalPhotoUrl"
@@ -417,14 +419,19 @@ export function ApplicationForm({
 
         {editable && phase === 'editing' ? (
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <button type="button" onClick={() => void saveDraft()} disabled={saving || submitting} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+            <button type="button" onClick={() => void saveDraft()} disabled={saving || submitting || credentialMutating} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
               {saving ? 'Guardando…' : 'Guardar borrador'}
             </button>
-            <button type="button" onClick={() => void reviewApplication()} disabled={saving || submitting} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
+            <button type="button" onClick={() => void reviewApplication()} disabled={saving || submitting || credentialMutating} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
               <Send className="h-4 w-4" aria-hidden="true" /> Revisar y enviar
             </button>
           </div>
+        ) : null}
+        {announcement && phase !== 'sent' ? (
+          <p role="status" aria-live="polite" className="mt-4 rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
+            {announcement}
+          </p>
         ) : null}
       </form>
 
@@ -433,9 +440,15 @@ export function ApplicationForm({
         applicationId={applicationId}
         status={status}
         initialCredentials={initialCredentials}
+        disabled={saving || submitting || credentialMutating || phase !== 'editing'}
         focusTargetId="credentials"
         errorId={describedBy('credentials', fieldErrors.credentials)}
         invalid={Boolean(fieldErrors.credentials)}
+        onSaveDraft={async () => {
+          const saved = await saveDraft()
+          return saved?.ok ? saved.applicationId : null
+        }}
+        onMutationChange={setCredentialMutating}
         onCountChange={count => {
           setCredentialCount(count)
           if (count > 0) {
@@ -460,7 +473,7 @@ export function ApplicationForm({
           </dl>
           <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setPhase('editing')} disabled={submitting} className="min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Volver a editar</button>
-            <button type="button" onClick={() => void confirmSubmission()} disabled={!applicationId || submitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
+            <button type="button" onClick={() => void confirmSubmission()} disabled={!applicationId || submitting || credentialMutating} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               {submitting ? 'Enviando…' : 'Confirmar y enviar'}
             </button>
@@ -473,7 +486,6 @@ export function ApplicationForm({
           Solicitud enviada. Puedes seguir aquí cualquier cambio de estado.
         </div>
       ) : null}
-      <p className="sr-only" aria-live="polite">{announcement}</p>
     </div>
   )
 }

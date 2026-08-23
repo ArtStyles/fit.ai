@@ -95,8 +95,6 @@ async function submitTrainerApplication(page: Page): Promise<void> {
   await page.getByLabel('Correo de contacto', { exact: true }).fill('trainer-e2e@example.test')
   await page.getByLabel('Zona horaria', { exact: true }).selectOption('America/Havana')
   await page.getByLabel('Disponibilidad para entrevista', { exact: true }).fill('Entre semana después de las 14:00.')
-  await page.getByRole('button', { name: 'Guardar borrador', exact: true }).click()
-  await expect(page.getByText('Borrador guardado.', { exact: true })).toBeVisible()
 
   await page.getByLabel('Título de la credencial', { exact: true }).fill('Certificación E2E')
   await page.getByLabel('Usar enlace verificable', { exact: true }).check()
