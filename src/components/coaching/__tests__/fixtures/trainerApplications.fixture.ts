@@ -17,11 +17,18 @@ function record(action: RecordedTrainerAction['action'], formData: FormData) {
 
 export async function saveTrainerApplicationDraft(formData: FormData) {
   record('save', formData)
-  return {
+  const result = {
     ok: true as const,
     applicationId: '31111111-1111-4111-8111-111111111111',
     status: 'draft' as const,
   }
+  if (new URLSearchParams(window.location.search).get('case') === 'save-pending') {
+    return new Promise<typeof result>(resolve => {
+      const fixtureWindow = window as Window & { __RESOLVE_TRAINER_SAVE__?: () => void }
+      fixtureWindow.__RESOLVE_TRAINER_SAVE__ = () => resolve(result)
+    })
+  }
+  return result
 }
 
 export async function submitTrainerApplication(formData: FormData) {

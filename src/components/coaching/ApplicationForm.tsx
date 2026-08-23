@@ -209,10 +209,11 @@ export function ApplicationForm({
     requestAnimationFrame(() => document.getElementById(name)?.focus())
   }
 
-  async function saveDraft(): Promise<DraftActionResult | null> {
+  async function saveDraft(formData?: FormData): Promise<DraftActionResult | null> {
     if (!formRef.current || saving || credentialMutating) return null
+    const draftFormData = formData ?? new FormData(formRef.current)
     setSaving(true)
-    const result = await persistTrainerApplicationDraft(new FormData(formRef.current))
+    const result = await persistTrainerApplicationDraft(draftFormData)
     setSaving(false)
     setAnnouncement(result.announcement)
     if (!result.ok) {
@@ -228,10 +229,10 @@ export function ApplicationForm({
 
   async function reviewApplication() {
     if (!formRef.current) return
-    const saved = await saveDraft()
-    if (!saved?.ok || !formRef.current) return
-
     const currentFormData = new FormData(formRef.current)
+    const saved = await saveDraft(currentFormData)
+    if (!saved?.ok) return
+
     const review = prepareTrainerApplicationReview(currentFormData, {
       allowedPhotoUrls,
       credentialCount,

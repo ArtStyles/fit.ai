@@ -501,6 +501,25 @@ describe('ApplicationForm DOM accessibility', () => {
     }
   })
 
+  it('reviews the same form values after an async draft save disables the controls', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/applicationForm.html?case=save-pending`)
+      await page.waitForFunction(() => Boolean((window as Window & { __APPLICATION_FORM_READY__?: boolean }).__APPLICATION_FORM_READY__))
+
+      const review = page.getByRole('button', { name: 'Revisar y enviar', exact: true })
+      await review.click()
+      await pwExpect(review).toBeDisabled()
+      await page.evaluate(() => (
+        window as Window & { __RESOLVE_TRAINER_SAVE__?: () => void }
+      ).__RESOLVE_TRAINER_SAVE__?.())
+
+      await pwExpect(page.getByRole('heading', { name: 'Confirma el envío', exact: true })).toBeVisible()
+    } finally {
+      await page.close()
+    }
+  })
+
   it('lets a new applicant enter a credential and saves the draft before uploading it', async () => {
     const page = await browser.newPage()
     try {
