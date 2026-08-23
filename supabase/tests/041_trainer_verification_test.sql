@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(206);
+SELECT plan(217);
 
 SELECT has_function('public', 'create_trainer_application_credential', ARRAY['uuid', 'uuid', 'text', 'text', 'text', 'date', 'date', 'text', 'text', 'bigint'], 'credential creation RPC exists');
 SELECT has_function('public', 'prepare_trainer_credential_removal', ARRAY['uuid', 'uuid'], 'credential removal preparation RPC exists');
@@ -46,6 +46,47 @@ SELECT ok(
   'authenticated applicants can execute atomic initial draft save'
 );
 SELECT ok(
+  CASE WHEN to_regprocedure('public.save_trainer_application_draft(jsonb)') IS NULL
+    THEN FALSE
+    ELSE NOT has_function_privilege('anon', 'public.save_trainer_application_draft(jsonb)', 'EXECUTE')
+  END,
+  'anonymous users cannot execute atomic initial draft save'
+);
+SELECT ok(
+  CASE WHEN to_regprocedure('public.save_trainer_application_draft(jsonb)') IS NULL
+    THEN FALSE
+    ELSE NOT has_function_privilege('service_role', 'public.save_trainer_application_draft(jsonb)', 'EXECUTE')
+  END,
+  'service role cannot impersonate an applicant through atomic initial draft save'
+);
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc function_definition
+    CROSS JOIN LATERAL aclexplode(COALESCE(
+      function_definition.proacl,
+      acldefault('f', function_definition.proowner)
+    )) privilege
+    WHERE function_definition.oid = 'public.save_trainer_application_draft(jsonb)'::regprocedure
+      AND privilege.grantee = 0
+      AND privilege.privilege_type = 'EXECUTE'
+  ),
+  'PUBLIC cannot execute atomic initial draft save'
+);
+SELECT ok(
+  (SELECT function_definition.prosecdef
+   FROM pg_catalog.pg_proc function_definition
+   WHERE function_definition.oid = 'public.save_trainer_application_draft(jsonb)'::regprocedure),
+  'atomic initial draft save remains SECURITY DEFINER'
+);
+SELECT is(
+  (SELECT pg_get_userbyid(function_definition.proowner)
+   FROM pg_catalog.pg_proc function_definition
+   WHERE function_definition.oid = 'public.save_trainer_application_draft(jsonb)'::regprocedure),
+  'postgres',
+  'postgres owns atomic initial draft save'
+);
+SELECT ok(
   CASE WHEN to_regprocedure('public.save_trainer_profile_changes(jsonb)') IS NULL
     THEN FALSE
     ELSE NOT has_function_privilege('anon', 'public.save_trainer_profile_changes(jsonb)', 'EXECUTE')
@@ -85,6 +126,7 @@ VALUES
   ('12121212-1212-4121-8121-121212121212', 'verification-review-cycle@example.test', '{}'::jsonb),
   ('99999999-9999-4999-8999-999999999999', 'verification-profile-update@example.test', '{}'::jsonb),
   ('90909090-9090-4090-8090-909090909090', 'verification-profile-source-other@example.test', '{}'::jsonb),
+  ('13131313-1313-4131-8131-131313131313', 'verification-first-save@example.test', '{}'::jsonb),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'verification-admin@example.test', '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -102,6 +144,7 @@ VALUES
   ('12121212-1212-4121-8121-121212121212', 'https://cdn.example.test/review-cycle.jpg', true, false, 'active'),
   ('99999999-9999-4999-8999-999999999999', 'https://cdn.example.test/profile-update.jpg', true, false, 'active'),
   ('90909090-9090-4090-8090-909090909090', 'https://cdn.example.test/profile-source-other.jpg', true, false, 'active'),
+  ('13131313-1313-4131-8131-131313131313', 'https://cdn.example.test/first-save.jpg', true, false, 'active'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'https://cdn.example.test/admin.jpg', true, true, 'active')
 ON CONFLICT (id) DO UPDATE SET
   avatar_url = EXCLUDED.avatar_url,
@@ -285,9 +328,74 @@ INSERT INTO public.trainer_interviews (
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   );
 
+SELECT set_config('request.jwt.claim.sub', '13131313-1313-4131-8131-131313131313', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+SELECT lives_ok(
+  $$SELECT public.save_trainer_application_draft(jsonb_build_object(
+    'professional_name', 'First Save Trainer',
+    'professional_photo_url', 'https://cdn.example.test/first-save.jpg',
+    'bio', '',
+    'specialties', jsonb_build_array(),
+    'modalities', jsonb_build_array(),
+    'experience_summary', '',
+    'general_location', NULL,
+    'languages', jsonb_build_array(),
+    'contact_email', 'verification-first-save@example.test',
+    'contact_phone', NULL,
+    'preferred_contact', 'email',
+    'timezone', 'America/Havana',
+    'interview_availability', ''
+  ))$$,
+  'authenticated applicant can persist the first valid draft through the atomic RPC'
+);
+SELECT is(
+  (SELECT count(*) FROM public.trainer_applications
+   WHERE user_id = '13131313-1313-4131-8131-131313131313'),
+  1::bigint,
+  'first atomic draft save inserts exactly one application'
+);
+SELECT is(
+  (SELECT status FROM public.trainer_applications
+   WHERE user_id = '13131313-1313-4131-8131-131313131313'),
+  'draft',
+  'first atomic draft save persists draft status'
+);
+RESET ROLE;
+
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
+
+SELECT throws_ok(
+  $$SELECT public.save_trainer_application_draft('[]'::jsonb)$$,
+  'P0001', NULL,
+  'atomic draft save rejects a non-object payload with its domain error'
+);
+SELECT lives_ok(
+  $$SELECT public.save_trainer_application_draft(jsonb_build_object(
+    'professional_name', 'Updated Trainer A',
+    'professional_photo_url', 'https://cdn.example.test/a.jpg',
+    'bio', repeat('updated bio ', 8),
+    'specialties', jsonb_build_array('strength'),
+    'modalities', jsonb_build_array('online'),
+    'experience_summary', repeat('updated experience ', 3),
+    'general_location', 'Havana',
+    'languages', jsonb_build_array('es'),
+    'contact_email', 'a@example.test',
+    'contact_phone', NULL,
+    'preferred_contact', 'email',
+    'timezone', 'America/Havana',
+    'interview_availability', 'Weekdays after 14:00'
+  ))$$,
+  'authenticated applicant can persist a valid draft through the atomic RPC'
+);
+SELECT is(
+  (SELECT professional_name FROM public.trainer_applications
+   WHERE id = '31111111-1111-4111-8111-111111111111'),
+  'Updated Trainer A',
+  'atomic draft save persists the submitted fields'
+);
 
 SELECT is((SELECT count(*) FROM public.trainer_applications), 1::bigint, 'RLS hides other applicant applications');
 SELECT is((SELECT count(*) FROM public.trainer_interviews_applicant_public), 1::bigint, 'applicant interview view hides other owners');

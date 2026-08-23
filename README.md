@@ -163,15 +163,19 @@ Aplica las migraciones SQL en este orden:
 049_trainer_iso_weekday_repair.sql
 050_product_events_conversion_funnel.sql
 051_workout_adjustment_atomic.sql
+052_notification_attention_dismissals.sql
+053_trainer_draft_rpc_json_repair.sql
 ```
 
 Para el marketplace de entrenadores, desplegar primero la base de datos y
 después una aplicación compatible. La `049_trainer_iso_weekday_repair.sql` debe
 permanecer como la última capa correctiva tras cualquier reaplicación de
 `043_trainer_programming.sql` o `045_trainer_hardening.sql`; a continuación se
-aplican `050_product_events_conversion_funnel.sql` y
-`051_workout_adjustment_atomic.sql`. La 051 es la última migración global y debe
-estar aplicada antes de publicar el editor transaccional de entrenamientos.
+aplican `050_product_events_conversion_funnel.sql`,
+`051_workout_adjustment_atomic.sql`, `052_notification_attention_dismissals.sql`
+y `053_trainer_draft_rpc_json_repair.sql`. La 053 es la última migración global
+y debe estar aplicada para que el formulario de entrenador pueda guardar el
+borrador mediante su RPC atómico.
 
 Las migraciones de continuidad se despliegan en orden y **primero en base de
 datos**: `036_completed_session_context.sql` → `037_atomic_plan_lifecycle.sql`

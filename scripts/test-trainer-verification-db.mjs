@@ -9,6 +9,7 @@ const image = process.env.TRAINER_FOUNDATIONS_DB_IMAGE
   ?? 'public.ecr.aws/supabase/postgres:17.6.1.143'
 const container = `fitai-trainer-verification-db-${process.pid}-${Date.now().toString(36)}`
 const migrationPath = path.join(repoRoot, 'supabase', 'migrations', '041_trainer_verification.sql')
+const repairMigrationPath = path.join(repoRoot, 'supabase', 'migrations', '053_trainer_draft_rpc_json_repair.sql')
 const testPath = path.join(repoRoot, 'supabase', 'tests', '041_trainer_verification_test.sql')
 
 const bootstrapSql = `
@@ -256,6 +257,7 @@ try {
   process.stdout.write(`[trainer-verification-db] database ready (${readiness.health}; ${readiness.diagnostic})\n`)
   runPsql(bootstrapSql, 'applying minimal historical bootstrap')
   runPsql(readFileSync(migrationPath, 'utf8'), 'applying migration 041')
+  runPsql(readFileSync(repairMigrationPath, 'utf8'), 'applying migration 053')
   runPsql(concurrencyFixtureSql, 'creating committed concurrency fixture')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 041 pgTAP behavior suite')
   if (/^\s*not ok\b/m.test(tapOutput)
