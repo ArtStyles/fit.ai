@@ -22,6 +22,18 @@ const attentionDismissalTestPath = path.join(
 const attentionDismissalMigrationPath = path.join(
   repoRoot, 'supabase', 'migrations', '052_notification_attention_dismissals.sql',
 )
+const notificationArchivingTestPath = path.join(
+  repoRoot, 'supabase', 'tests', '054_product_notification_archiving_test.sql',
+)
+const notificationArchivingMigrationPath = path.join(
+  repoRoot, 'supabase', 'migrations', '054_product_notification_archiving.sql',
+)
+const atomicAttentionDismissalTestPath = path.join(
+  repoRoot, 'supabase', 'tests', '055_atomic_notification_attention_dismissal_test.sql',
+)
+const atomicAttentionDismissalMigrationPath = path.join(
+  repoRoot, 'supabase', 'migrations', '055_atomic_notification_attention_dismissal.sql',
+)
 
 const bootstrapSql = `
 GRANT anon, authenticated, service_role TO postgres;
@@ -30,7 +42,29 @@ CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
 CREATE TABLE public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  timezone TEXT,
+  last_check_in_at TIMESTAMPTZ
+);
+
+CREATE TABLE public.workout_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  ai_notes TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX workout_plans_one_active_per_user_test_idx
+  ON public.workout_plans (user_id)
+  WHERE is_active = TRUE;
+
+CREATE TABLE public.dashboard_banners (
+  slot TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  starts_on DATE,
+  ends_on DATE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE public.social_push_tokens (
@@ -162,6 +196,26 @@ try {
   )
   if (/^not ok\b/m.test(attentionDismissalTap) || /# Looks like you failed\b/.test(attentionDismissalTap)) {
     throw new Error('migration 052 pgTAP reported one or more failed assertions')
+  }
+
+  runPsql(readFileSync(notificationArchivingMigrationPath, 'utf8'), 'applying migration 054')
+  runPsql(readFileSync(notificationArchivingMigrationPath, 'utf8'), 'reapplying migration 054')
+  const notificationArchivingTap = runPsql(
+    readFileSync(notificationArchivingTestPath, 'utf8'),
+    'running 054 notification-archiving pgTAP suite',
+  )
+  if (/^not ok\b/m.test(notificationArchivingTap) || /# Looks like you failed\b/.test(notificationArchivingTap)) {
+    throw new Error('migration 054 pgTAP reported one or more failed assertions')
+  }
+
+  runPsql(readFileSync(atomicAttentionDismissalMigrationPath, 'utf8'), 'applying migration 055')
+  runPsql(readFileSync(atomicAttentionDismissalMigrationPath, 'utf8'), 'reapplying migration 055')
+  const atomicAttentionDismissalTap = runPsql(
+    readFileSync(atomicAttentionDismissalTestPath, 'utf8'),
+    'running 055 atomic attention-dismissal pgTAP suite',
+  )
+  if (/^not ok\b/m.test(atomicAttentionDismissalTap) || /# Looks like you failed\b/.test(atomicAttentionDismissalTap)) {
+    throw new Error('migration 055 pgTAP reported one or more failed assertions')
   }
 
   process.stdout.write('\n[trainer-db] PASS: all pgTAP assertions passed\n')

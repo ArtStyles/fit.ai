@@ -52,6 +52,7 @@ export interface Database {
           payload: Json
           dedupe_key: string
           read_at: string | null
+          dismissed_at: string | null
           created_at: string
         }
         Insert: {
@@ -64,6 +65,7 @@ export interface Database {
           payload?: Json
           dedupe_key: string
           read_at?: string | null
+          dismissed_at?: string | null
           created_at?: string
         }
         Update: Partial<{
@@ -76,6 +78,7 @@ export interface Database {
           payload: Json
           dedupe_key: string
           read_at: string | null
+          dismissed_at: string | null
           created_at: string
         }>
         Relationships: []
@@ -1713,8 +1716,15 @@ export interface Database {
           payload: Json
           dedupe_key: string
           read_at: string | null
+          dismissed_at: string | null
           created_at: string
         }
+      }
+      dismiss_current_notification_attention: {
+        Args: {
+          p_notice_key: string
+        }
+        Returns: boolean
       }
       submit_trainer_application: {
         Args: {

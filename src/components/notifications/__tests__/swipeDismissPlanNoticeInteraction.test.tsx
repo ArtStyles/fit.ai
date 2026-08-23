@@ -89,7 +89,7 @@ async function buildBrowserFixture(): Promise<string> {
             })
           `],
           ['@/app/actions/notifications', `
-            export const dismissPlanUpdateNotification = noticeKey => window.__dismiss(noticeKey)
+            export const dismissNotificationAttention = noticeKey => window.__dismiss(noticeKey)
           `],
           ['@/components/feedback/ToastProvider', `
             export const useToast = () => ({ showToast: toast => { window.__toast = toast } })
@@ -180,7 +180,9 @@ describe('SwipeDismissPlanNotice mounted interaction', () => {
 
   it('restores the DOM and renders the aria-live error after a real click failure', async () => {
     const article = page.locator('article')
-    await page.getByRole('button', { name: 'Quitar aviso del plan' }).click()
+    const dismissButton = page.getByRole('button', { name: 'Quitar aviso del plan' })
+    await dismissButton.focus()
+    await dismissButton.click()
 
     await page.waitForFunction(() => Boolean((window as BrowserHarness).__lastDismissalKey))
     await page.waitForFunction(() => !document.querySelector('article'))
@@ -196,5 +198,7 @@ describe('SwipeDismissPlanNotice mounted interaction', () => {
     await page.waitForFunction(() => (
       (window as BrowserHarness).__toast?.title === 'No se pudo comprobar el aviso.'
     ))
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Quitar aviso del plan')
+    expect(await dismissButton.evaluate(element => document.activeElement === element)).toBe(true)
   })
 })

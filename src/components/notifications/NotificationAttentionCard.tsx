@@ -6,24 +6,47 @@ import { CheckInBanner } from '@/components/dashboard/CheckInBanner'
 import { DashboardPromoBanner } from '@/components/dashboard/DashboardPromoBanner'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { DismissibleAttentionNotice } from '@/components/notifications/DismissibleAttentionNotice'
 import { SwipeDismissPlanNotice } from '@/components/notifications/SwipeDismissPlanNotice'
 
 export {
   dismissPlanNoticeInteraction,
   shouldDismissPlanNotice,
 } from '@/components/notifications/SwipeDismissPlanNotice'
+export { dismissAttentionNoticeInteraction } from '@/components/notifications/DismissibleAttentionNotice'
 
 export function NotificationAttentionCard({ attention }: { attention: NotificationAttention }) {
   const { t } = useI18n()
 
-  if (attention.notice.kind === 'check-in') return <CheckInBanner />
+  if (attention.notice.kind === 'check-in') {
+    const banner = <CheckInBanner />
+    return attention.dismissalKey ? (
+      <DismissibleAttentionNotice
+        key={attention.dismissalKey}
+        noticeKey={attention.dismissalKey}
+        ariaLabel="Quitar aviso de revisión del perfil"
+      >
+        {banner}
+      </DismissibleAttentionNotice>
+    ) : banner
+  }
   if (attention.notice.kind === 'promo' && attention.promo) {
-    return <DashboardPromoBanner banner={attention.promo} />
+    const banner = <DashboardPromoBanner banner={attention.promo} />
+    return attention.dismissalKey ? (
+      <DismissibleAttentionNotice
+        key={attention.dismissalKey}
+        noticeKey={attention.dismissalKey}
+        ariaLabel="Quitar promoción"
+      >
+        {banner}
+      </DismissibleAttentionNotice>
+    ) : banner
   }
 
   if (attention.notice.kind === 'ai-notes' && attention.aiNotes) {
     return (
       <SwipeDismissPlanNotice
+        key={attention.dismissalKey ?? 'plan-update-not-dismissible'}
         aiNotes={attention.aiNotes}
         planName={attention.planName ?? t('Tu plan')}
         dismissalKey={attention.dismissalKey}

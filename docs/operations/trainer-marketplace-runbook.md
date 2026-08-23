@@ -98,12 +98,21 @@ Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 12. `051_workout_adjustment_atomic.sql`
 13. `052_notification_attention_dismissals.sql`
 14. `053_trainer_draft_rpc_json_repair.sql`
+15. `054_product_notification_archiving.sql`
+16. `055_atomic_notification_attention_dismissal.sql`
 
 La 053 reemplaza hacia delante el RPC `save_trainer_application_draft` para
 eliminar el uso de `jsonb_object_length(jsonb)`, que PostgreSQL no ofrece.
 Después de aplicarla, guardar un borrador autenticado y confirmar que el RPC
 devuelve `status = draft` y que la fila aparece en `trainer_applications` antes
 de desplegar o reabrir el formulario.
+
+La 054 conserva el historial de `product_notifications` y permite que cada
+usuario archive únicamente sus propias filas mediante `dismissed_at`.
+
+La 055 añade el RPC autenticado que valida y registra en una sola transacción la
+versión vigente de los avisos de plan, revisión del perfil y promoción. Desplegar
+054 y 055 antes que la aplicación que expone los nuevos controles de descarte.
 
 Programar la 050 en una ventana de bajo tráfico o mantenimiento. La migración
 toma un bloqueo `SHARE ROW EXCLUSIVE` sobre `public.progress_logs` antes del

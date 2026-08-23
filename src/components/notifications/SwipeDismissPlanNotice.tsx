@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, RefreshCw, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { dismissPlanUpdateNotification } from '@/app/actions/notifications'
+import { dismissNotificationAttention } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
@@ -28,7 +28,7 @@ export function shouldDismissPlanNotice(offsetX: number, velocityX: number): boo
 
 export async function dismissPlanNoticeInteraction(
   noticeKey: string,
-  persist: PersistDismissal = dismissPlanUpdateNotification,
+  persist: PersistDismissal = dismissNotificationAttention,
 ): Promise<PlanNoticeDismissalResult> {
   try {
     const result = await persist(noticeKey)
@@ -61,6 +61,14 @@ export function SwipeDismissPlanNotice({
   const [visible, setVisible] = useState(true)
   const [busy, setBusy] = useState(false)
   const [announcement, setAnnouncement] = useState('')
+  const dismissButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreFocusRef = useRef(false)
+
+  useEffect(() => {
+    if (!visible || !restoreFocusRef.current) return
+    restoreFocusRef.current = false
+    dismissButtonRef.current?.focus()
+  }, [visible])
 
   async function dismiss() {
     if (!dismissalKey || busy) return
@@ -76,6 +84,7 @@ export function SwipeDismissPlanNotice({
       return
     }
 
+    restoreFocusRef.current = true
     setVisible(true)
     showToast({
       title: t(result.error ?? 'No se pudo quitar el aviso.'),
@@ -130,6 +139,7 @@ export function SwipeDismissPlanNotice({
 
               {dismissalKey ? (
                 <button
+                  ref={dismissButtonRef}
                   type="button"
                   onPointerDown={event => event.stopPropagation()}
                   onClick={() => void dismiss()}

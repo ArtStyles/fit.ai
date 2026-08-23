@@ -20,6 +20,7 @@ type NotificationRow = {
   body: string
   url: string | null
   read_at: string | null
+  dismissed_at: string | null
   created_at: string
 }
 
@@ -122,6 +123,8 @@ function createActionClient(userId: string | null = 'user-1') {
             const count = notifications.filter(notification => (
               notification.user_id === filters.user_id
               && notification.read_at === filters.read_at
+              && (!('dismissed_at' in filters)
+                || notification.dismissed_at === filters.dismissed_at)
             )).length
             return Promise.resolve({ data: null, count, error: null }).then(resolve, reject)
           }
@@ -131,14 +134,22 @@ function createActionClient(userId: string | null = 'user-1') {
             notifications.forEach((notification, index) => {
               const matchesReadState = !('read_at' in filters)
                 || notification.read_at === filters.read_at
+              const matchesDismissedState = !('dismissed_at' in filters)
+                || notification.dismissed_at === filters.dismissed_at
               if (
                 notification.id === filters.id
                 && notification.user_id === filters.user_id
                 && matchesReadState
+                && matchesDismissedState
               ) {
                 notifications[index] = {
                   ...notification,
-                  read_at: String(notificationUpdate.read_at),
+                  ...('read_at' in notificationUpdate
+                    ? { read_at: String(notificationUpdate.read_at) }
+                    : {}),
+                  ...('dismissed_at' in notificationUpdate
+                    ? { dismissed_at: String(notificationUpdate.dismissed_at) }
+                    : {}),
                 }
               }
             })
@@ -146,7 +157,11 @@ function createActionClient(userId: string | null = 'user-1') {
           }
 
           let rows = notifications
-            .filter(notification => notification.user_id === filters.user_id)
+            .filter(notification => (
+              notification.user_id === filters.user_id
+              && (!('dismissed_at' in filters)
+                || notification.dismissed_at === filters.dismissed_at)
+            ))
             .sort((left, right) => {
               for (const order of requestedOrders) {
                 const leftValue = String(left[order.column as keyof NotificationRow])
@@ -201,6 +216,7 @@ function notificationRow(index: number, userId = 'authenticated-user'): Notifica
     body: `Detalle ${index}`,
     url: '/trainers',
     read_at: null,
+    dismissed_at: null,
     created_at: '2026-08-07T15:00:00.000Z',
   }
 }
@@ -211,13 +227,17 @@ const ATTENTION_PLAN_UPDATED_AT = '2026-08-20T07:00:00.000Z'
 function createAttentionClient({
   dismissedKeys = [],
   planUpdatedAt = ATTENTION_PLAN_UPDATED_AT,
+  lastCheckInAt = '2026-08-20T08:00:00.000Z',
+  bannerUpdatedAt = '2026-08-20T06:00:00.000Z',
 }: {
   dismissedKeys?: string[]
   planUpdatedAt?: string
+  lastCheckInAt?: string | null
+  bannerUpdatedAt?: string
 } = {}) {
   const rows: Record<string, unknown> = {
     profiles: {
-      last_check_in_at: '2026-08-20T08:00:00.000Z',
+      last_check_in_at: lastCheckInAt,
       timezone: 'UTC',
     },
     workout_plans: {
@@ -241,7 +261,7 @@ function createAttentionClient({
       status: 'active',
       starts_on: null,
       ends_on: null,
-      updated_at: '2026-08-20T06:00:00.000Z',
+      updated_at: bannerUpdatedAt,
     },
   }
 
@@ -257,6 +277,10 @@ function createAttentionClient({
           filters[column] = value
           return builder
         },
+        in: (column: string, values: unknown[]) => {
+          filters[column] = values
+          return builder
+        },
         limit: () => builder,
         maybeSingle: async () => {
           if (table === 'notification_attention_dismissals') {
@@ -268,9 +292,20 @@ function createAttentionClient({
           }
           return { data: rows[table] ?? null, error: null }
         },
-        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => (
-          Promise.resolve({ data: rows[table] ?? null, error: null }).then(resolve, reject)
-        ),
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => {
+          if (table === 'notification_attention_dismissals') {
+            const requested = Array.isArray(filters.notice_key)
+              ? filters.notice_key.map(String)
+              : [String(filters.notice_key ?? '')]
+            return Promise.resolve({
+              data: dismissedKeys
+                .filter(key => requested.includes(key))
+                .map(notice_key => ({ notice_key })),
+              error: null,
+            }).then(resolve, reject)
+          }
+          return Promise.resolve({ data: rows[table] ?? null, error: null }).then(resolve, reject)
+        },
       }
       return builder
     }),
@@ -280,25 +315,80 @@ function createAttentionClient({
 function createPlanDismissalClient({
   userId = 'authenticated-user',
   planUpdatedAt = ATTENTION_PLAN_UPDATED_AT,
+  planAiNotes = 'Sube el peso de forma gradual.',
+  lastCheckInAt = '2026-07-01T08:00:00.000Z',
+  profileTimeZone = 'UTC',
+  bannerUpdatedAt = '2026-08-20T06:00:00.000Z',
   insertError = null,
 }: {
   userId?: string | null
   planUpdatedAt?: string
+  planAiNotes?: string | null
+  lastCheckInAt?: string | null
+  profileTimeZone?: string | null
+  bannerUpdatedAt?: string
   insertError?: { code?: string } | null
 } = {}) {
   const dismissals = new Set<string>()
+  let storedProfileTimeZone = profileTimeZone
   const client = {
     auth: {
       getUser: vi.fn(async () => ({ data: { user: userId ? { id: userId } : null } })),
     },
+    rpc: vi.fn(async (name: string, args: { p_notice_key: string }) => {
+      if (name !== 'dismiss_current_notification_attention') {
+        throw new Error(`Unexpected RPC ${name}`)
+      }
+      if (insertError) return { data: null, error: insertError }
+      try {
+        if (!storedProfileTimeZone) return { data: false, error: null }
+        new Intl.DateTimeFormat('en-US', { timeZone: storedProfileTimeZone }).format(new Date())
+      } catch {
+        return { data: false, error: null }
+      }
+
+      const noticeKey = args.p_notice_key
+      let current = false
+      if (noticeKey.startsWith('plan-update:')) {
+        const currentKey = `plan-update:${ATTENTION_PLAN_ID}:${planUpdatedAt}`
+        const recent = Date.parse(planUpdatedAt) > Date.now() - (7 * 24 * 60 * 60 * 1000)
+        current = noticeKey === currentKey && Boolean(planAiNotes) && recent
+      } else if (noticeKey.startsWith('check-in:')) {
+        const currentKey = `check-in:${lastCheckInAt ?? 'never'}`
+        const due = lastCheckInAt === null
+          || Date.now() - Date.parse(lastCheckInAt) >= 28 * 24 * 60 * 60 * 1000
+        current = noticeKey === currentKey && due
+      } else if (noticeKey.startsWith('promo:dashboard-primary:')) {
+        current = noticeKey === `promo:dashboard-primary:${bannerUpdatedAt}`
+      }
+
+      if (current) dismissals.add(noticeKey)
+      return { data: current, error: null }
+    }),
     from: vi.fn((table: string) => {
+      let updateValue: Record<string, unknown> | null = null
       const builder: any = {
         select: () => builder,
         eq: () => builder,
+        is: () => builder,
+        update: (value: Record<string, unknown>) => {
+          updateValue = value
+          return builder
+        },
         maybeSingle: async () => ({
           data: table === 'workout_plans'
-            ? { id: ATTENTION_PLAN_ID, updated_at: planUpdatedAt }
-            : null,
+            ? { id: ATTENTION_PLAN_ID, ai_notes: planAiNotes, updated_at: planUpdatedAt }
+            : table === 'profiles'
+              ? { last_check_in_at: lastCheckInAt, timezone: storedProfileTimeZone }
+              : table === 'dashboard_banners'
+                ? {
+                    slot: 'dashboard-primary',
+                    status: 'active',
+                    starts_on: null,
+                    ends_on: null,
+                    updated_at: bannerUpdatedAt,
+                  }
+                : null,
           error: null,
         }),
         insert: async (value: { notice_key: string }) => {
@@ -310,16 +400,40 @@ function createPlanDismissalClient({
           dismissals.add(value.notice_key)
           return { error: null }
         },
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => {
+          if (table === 'profiles' && updateValue && 'timezone' in updateValue) {
+            storedProfileTimeZone = String(updateValue.timezone)
+          }
+          return Promise.resolve({ error: null }).then(resolve, reject)
+        },
       }
       return builder
     }),
   }
-  return { client, dismissals }
+  return { client, dismissals, getProfileTimeZone: () => storedProfileTimeZone }
 }
 
 async function getDismissPlanUpdateNotification() {
   const module = await import('../notifications') as unknown as Record<string, unknown>
   const action = module.dismissPlanUpdateNotification
+  expect(action).toEqual(expect.any(Function))
+  return action as (noticeKey: string) => Promise<
+    { ok: true } | { ok: false; error: string }
+  >
+}
+
+async function getDismissProductNotification() {
+  const module = await import('../notifications') as unknown as Record<string, unknown>
+  const action = module.dismissProductNotification
+  expect(action).toEqual(expect.any(Function))
+  return action as (id: string) => Promise<
+    { ok: true } | { ok: false; error: string }
+  >
+}
+
+async function getDismissNotificationAttention() {
+  const module = await import('../notifications') as unknown as Record<string, unknown>
+  const action = module.dismissNotificationAttention
   expect(action).toEqual(expect.any(Function))
   return action as (noticeKey: string) => Promise<
     { ok: true } | { ok: false; error: string }
@@ -473,6 +587,27 @@ describe('product notification actions', () => {
     expect(secondPage.unreadCount).toBe(31)
   })
 
+  it('omits archived notifications from both the feed and unread count', async () => {
+    const state = createActionClient('authenticated-user')
+    state.notifications.push(
+      {
+        ...notificationRow(1),
+        dismissed_at: '2026-08-07T16:00:00.000Z',
+      },
+      notificationRow(2),
+      { ...notificationRow(3), read_at: '2026-08-07T15:30:00.000Z' },
+    )
+    createClientMock.mockResolvedValue(state.client)
+
+    const page = await listProductNotifications()
+
+    expect(page.notifications.map(notification => notification.id)).toEqual([
+      notificationId(3),
+      notificationId(2),
+    ])
+    expect(page.unreadCount).toBe(1)
+  })
+
   it('marks only the authenticated owner notification as read', async () => {
     const state = createActionClient('authenticated-user')
     state.notifications.push(
@@ -504,6 +639,34 @@ describe('product notification actions', () => {
 
   it('rejects a malformed notification id before opening a session', async () => {
     await expect(markProductNotificationRead('not-a-uuid')).resolves.toEqual({
+      ok: false,
+      error: 'Notificación no válida.',
+    })
+
+    expect(createClientMock).not.toHaveBeenCalled()
+  })
+
+  it('soft-archives only the authenticated owner notification', async () => {
+    const state = createActionClient('authenticated-user')
+    state.notifications.push(
+      notificationRow(1),
+      notificationRow(2, 'other-user'),
+    )
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissProductNotification()
+
+    await expect(dismiss(notificationId(1))).resolves.toEqual({ ok: true })
+    await expect(dismiss(notificationId(2))).resolves.toEqual({ ok: true })
+
+    expect(state.notifications[0]?.dismissed_at).toEqual(expect.any(String))
+    expect(state.notifications[1]?.dismissed_at).toBeNull()
+    expect(revalidatePathMock).toHaveBeenCalledWith('/notifications')
+  })
+
+  it('rejects a malformed archive id before opening a session', async () => {
+    const dismiss = await getDismissProductNotification()
+
+    await expect(dismiss('not-a-uuid')).resolves.toEqual({
       ok: false,
       error: 'Notificación no válida.',
     })
@@ -555,10 +718,114 @@ describe('product notification actions', () => {
         notice: { kind: 'promo', title: 'Novedad' },
         aiNotes: null,
         planName: 'Fuerza base',
-        dismissalKey: null,
+        dismissalKey: 'promo:dashboard-primary:2026-08-20T06:00:00.000Z',
         promo: expect.objectContaining({ title: 'Novedad' }),
       },
     })
+  })
+
+  it('hides a dismissed promotion without hiding a later banner version', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const planKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+    const promoKey = 'promo:dashboard-primary:2026-08-20T06:00:00.000Z'
+    createClientMock.mockResolvedValue(createAttentionClient({
+      dismissedKeys: [planKey, promoKey],
+    }))
+
+    await expect(loadNotificationAttention()).resolves.toEqual({
+      status: 'ready',
+      attention: null,
+    })
+  })
+
+  it('shows a later promotion version after the previous version was dismissed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-21T12:00:00.000Z'))
+    const planKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+    const previousPromoKey = 'promo:dashboard-primary:2026-08-20T06:00:00.000Z'
+    const nextBannerUpdatedAt = '2026-08-21T06:00:00.000Z'
+    createClientMock.mockResolvedValue(createAttentionClient({
+      dismissedKeys: [planKey, previousPromoKey],
+      bannerUpdatedAt: nextBannerUpdatedAt,
+    }))
+
+    await expect(loadNotificationAttention()).resolves.toEqual({
+      status: 'ready',
+      attention: expect.objectContaining({
+        notice: { kind: 'promo', title: 'Novedad' },
+        dismissalKey: `promo:dashboard-primary:${nextBannerUpdatedAt}`,
+      }),
+    })
+  })
+
+  it('gives a due profile review its own versioned dismissal key', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const lastCheckInAt = '2026-07-01T08:00:00.000Z'
+    createClientMock.mockResolvedValue(createAttentionClient({ lastCheckInAt }))
+
+    await expect(loadNotificationAttention()).resolves.toEqual({
+      status: 'ready',
+      attention: expect.objectContaining({
+        notice: { kind: 'check-in' },
+        dismissalKey: `check-in:${lastCheckInAt}`,
+      }),
+    })
+  })
+
+  it('surfaces the next eligible notice after a profile review is dismissed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const lastCheckInAt = '2026-07-01T08:00:00.000Z'
+    createClientMock.mockResolvedValue(createAttentionClient({
+      lastCheckInAt,
+      dismissedKeys: [`check-in:${lastCheckInAt}`],
+    }))
+
+    await expect(loadNotificationAttention()).resolves.toEqual({
+      status: 'ready',
+      attention: expect.objectContaining({
+        notice: { kind: 'ai-notes', text: 'Sube el peso de forma gradual.' },
+        dismissalKey: `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`,
+      }),
+    })
+  })
+
+  it('persists only the current visible promotion version', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const state = createPlanDismissalClient()
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissNotificationAttention()
+    const currentKey = 'promo:dashboard-primary:2026-08-20T06:00:00.000Z'
+
+    await expect(dismiss(currentKey)).resolves.toEqual({ ok: true })
+    await expect(dismiss('promo:dashboard-primary:2026-08-19T06:00:00.000Z')).resolves.toEqual({
+      ok: false,
+      error: 'El aviso ya no corresponde a tu estado actual.',
+    })
+
+    expect(Array.from(state.dismissals)).toEqual([currentKey])
+    expect(state.client.rpc).toHaveBeenCalledWith(
+      'dismiss_current_notification_attention',
+      { p_notice_key: currentKey },
+    )
+  })
+
+  it('persists only the currently due profile-review version', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const lastCheckInAt = '2026-07-01T08:00:00.000Z'
+    const state = createPlanDismissalClient({ lastCheckInAt })
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissNotificationAttention()
+    const currentKey = `check-in:${lastCheckInAt}`
+
+    await expect(dismiss(currentKey)).resolves.toEqual({ ok: true })
+
+    expect(Array.from(state.dismissals)).toEqual([currentKey])
+    expect(revalidatePathMock).toHaveBeenCalledWith('/notifications')
   })
 
   it('shows a newly updated plan when only the previous version was dismissed', async () => {
@@ -589,7 +856,63 @@ describe('product notification actions', () => {
     await expect(dismiss(currentKey)).resolves.toEqual({ ok: true })
 
     expect(Array.from(state.dismissals)).toEqual([currentKey])
+    expect(state.client.rpc).toHaveBeenCalledWith(
+      'dismiss_current_notification_attention',
+      { p_notice_key: currentKey },
+    )
     expect(revalidatePathMock).toHaveBeenCalledWith('/notifications')
+  })
+
+  it('rejects a plan-update key when the active plan has no visible AI notes', async () => {
+    const state = createPlanDismissalClient({ planAiNotes: null })
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissNotificationAttention()
+    const noticeKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+
+    await expect(dismiss(noticeKey)).resolves.toEqual({
+      ok: false,
+      error: 'El aviso ya no corresponde a tu estado actual.',
+    })
+
+    expect(state.dismissals.size).toBe(0)
+  })
+
+  it('rejects a plan-update key once its seven-day visibility window expires', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    const expiredUpdatedAt = '2026-08-12T07:00:00.000Z'
+    const state = createPlanDismissalClient({ planUpdatedAt: expiredUpdatedAt })
+    createClientMock.mockResolvedValue(state.client)
+    const dismiss = await getDismissNotificationAttention()
+    const noticeKey = `plan-update:${ATTENTION_PLAN_ID}:${expiredUpdatedAt}`
+
+    await expect(dismiss(noticeKey)).resolves.toEqual({
+      ok: false,
+      error: 'El aviso ya no corresponde a tu estado actual.',
+    })
+
+    expect(state.dismissals.size).toBe(0)
+  })
+
+  it('passes the configured app fallback timezone when the profile has none', async () => {
+    const previousTimeZone = process.env.NEXT_PUBLIC_APP_TIME_ZONE
+    process.env.NEXT_PUBLIC_APP_TIME_ZONE = 'Pacific/Kiritimati'
+    try {
+      const state = createPlanDismissalClient({ profileTimeZone: null })
+      createClientMock.mockResolvedValue(state.client)
+      const dismiss = await getDismissNotificationAttention()
+      const noticeKey = `plan-update:${ATTENTION_PLAN_ID}:${ATTENTION_PLAN_UPDATED_AT}`
+
+      await expect(dismiss(noticeKey)).resolves.toEqual({ ok: true })
+      expect(state.getProfileTimeZone()).toBe('Pacific/Kiritimati')
+      expect(state.client.rpc).toHaveBeenCalledWith(
+        'dismiss_current_notification_attention',
+        { p_notice_key: noticeKey },
+      )
+    } finally {
+      if (previousTimeZone === undefined) delete process.env.NEXT_PUBLIC_APP_TIME_ZONE
+      else process.env.NEXT_PUBLIC_APP_TIME_ZONE = previousTimeZone
+    }
   })
 
   it('rejects malformed dismissal keys before opening a session', async () => {

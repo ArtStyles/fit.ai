@@ -9,7 +9,11 @@ import {
   type DashboardBannerData,
 } from '@/lib/dashboard/banner'
 import { isCheckInDue } from '@/lib/profile/checkin'
-import { buildPlanUpdateNoticeKey } from '@/lib/notifications/attention'
+import {
+  buildCheckInNoticeKey,
+  buildPlanUpdateNoticeKey,
+  buildPromoNoticeKey,
+} from '@/lib/notifications/attention'
 import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import type { Database } from '@/types/database'
 
@@ -20,6 +24,13 @@ type PushTokenResult =
   | { ok: false; error: string }
 
 type ProductNotificationRow = Database['public']['Tables']['product_notifications']['Row']
+type AttentionDismissalRpcArgs = Database['public']['Functions']['dismiss_current_notification_attention']['Args']
+type AttentionDismissalRpcClient = {
+  rpc: (
+    functionName: 'dismiss_current_notification_attention',
+    args: AttentionDismissalRpcArgs,
+  ) => Promise<{ data: boolean | null; error: { message?: string } | null }>
+}
 
 export type ProductNotificationView = {
   id: string
@@ -104,6 +115,41 @@ function parsePlanUpdateNoticeKey(value: unknown): {
   return { noticeKey, planId, updatedAt }
 }
 
+type ParsedAttentionNoticeKey =
+  | { kind: 'plan-update'; noticeKey: string; planId: string; updatedAt: string }
+  | { kind: 'promo'; noticeKey: string; updatedAt: string }
+  | { kind: 'check-in'; noticeKey: string; lastCheckInAt: string | null }
+
+function parseAttentionNoticeKey(value: unknown): ParsedAttentionNoticeKey | null {
+  const plan = parsePlanUpdateNoticeKey(value)
+  if (plan) return { kind: 'plan-update', ...plan }
+  if (typeof value !== 'string') return null
+
+  const noticeKey = value.trim()
+  if (!noticeKey || noticeKey.length > 160) return null
+
+  const promoPrefix = `promo:${DASHBOARD_BANNER_SLOT}:`
+  if (noticeKey.startsWith(promoPrefix)) {
+    const updatedAt = noticeKey.slice(promoPrefix.length)
+    return isValidTimestamp(updatedAt)
+      ? { kind: 'promo', noticeKey, updatedAt }
+      : null
+  }
+
+  const checkInPrefix = 'check-in:'
+  if (noticeKey.startsWith(checkInPrefix)) {
+    const version = noticeKey.slice(checkInPrefix.length)
+    if (version === 'never') {
+      return { kind: 'check-in', noticeKey, lastCheckInAt: null }
+    }
+    return isValidTimestamp(version)
+      ? { kind: 'check-in', noticeKey, lastCheckInAt: version }
+      : null
+  }
+
+  return null
+}
+
 function decodeNotificationCursor(value: unknown): NotificationCursor | null | undefined {
   if (value === undefined || value === null || value === '') return null
   if (typeof value !== 'string' || value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) {
@@ -182,24 +228,43 @@ async function loadNotificationAttentionData(): Promise<NotificationAttention | 
   const candidateDismissalKey = plan && candidateAiNotes
     ? buildPlanUpdateNoticeKey(plan.id, plan.updated_at)
     : null
-  let aiNotes = candidateAiNotes
+  const candidateCheckInDue = isCheckInDue(profile?.last_check_in_at ?? null, now)
+  const candidateCheckInKey = candidateCheckInDue
+    ? buildCheckInNoticeKey(profile?.last_check_in_at ?? null)
+    : null
+  const candidatePromoKey = visiblePromo
+    ? buildPromoNoticeKey(visiblePromo.slot, visiblePromo.updated_at)
+    : null
+  const candidateKeys = [candidateCheckInKey, candidateDismissalKey, candidatePromoKey]
+    .filter((key): key is string => Boolean(key))
+  const dismissedKeys = new Set<string>()
 
-  if (candidateDismissalKey) {
-    const { data: dismissal } = await (supabase
+  if (candidateKeys.length > 0) {
+    const { data: dismissals, error: dismissalError } = await (supabase
       .from('notification_attention_dismissals') as any)
       .select('notice_key')
-      .eq('notice_key', candidateDismissalKey)
-      .maybeSingle() as {
-        data: { notice_key: string } | null
+      .in('notice_key', candidateKeys) as {
+        data: Array<{ notice_key: string }> | null
         error: { message?: string } | null
       }
-    if (dismissal?.notice_key === candidateDismissalKey) aiNotes = null
+    if (!dismissalError) {
+      for (const dismissal of dismissals ?? []) dismissedKeys.add(dismissal.notice_key)
+    }
   }
+
+  let aiNotes = candidateAiNotes
+  if (candidateDismissalKey && dismissedKeys.has(candidateDismissalKey)) aiNotes = null
+  const checkInDue = candidateCheckInKey
+    ? !dismissedKeys.has(candidateCheckInKey)
+    : false
+  const promo = candidatePromoKey && dismissedKeys.has(candidatePromoKey)
+    ? null
+    : visiblePromo
   const notice = selectDashboardNotice({
     needsPlan: !plan,
-    checkInDue: isCheckInDue(profile?.last_check_in_at ?? null, now),
+    checkInDue,
     aiNotes,
-    promo: visiblePromo ? { title: visiblePromo.title } : null,
+    promo: promo ? { title: promo.title } : null,
   })
 
   if (!notice) return null
@@ -207,7 +272,13 @@ async function loadNotificationAttentionData(): Promise<NotificationAttention | 
     notice,
     aiNotes: notice.kind === 'ai-notes' ? aiNotes : null,
     planName: plan?.name ?? null,
-    dismissalKey: notice.kind === 'ai-notes' ? candidateDismissalKey : null,
+    dismissalKey: notice.kind === 'check-in'
+      ? candidateCheckInKey
+      : notice.kind === 'ai-notes'
+        ? candidateDismissalKey
+        : notice.kind === 'promo'
+          ? candidatePromoKey
+          : null,
     promo: visiblePromo,
   }
 }
@@ -220,47 +291,63 @@ export async function loadNotificationAttention(): Promise<NotificationAttention
   }
 }
 
-export async function dismissPlanUpdateNotification(noticeKey: string): Promise<PushTokenResult> {
-  const parsed = parsePlanUpdateNoticeKey(noticeKey)
-  if (!parsed) return { ok: false, error: 'Aviso no valido.' }
+export async function dismissNotificationAttention(noticeKey: string): Promise<PushTokenResult> {
+  const parsed = parseAttentionNoticeKey(noticeKey)
+  if (!parsed) return { ok: false, error: 'Aviso no válido.' }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { ok: false, error: 'Sesion no valida.' }
+  if (!user) return { ok: false, error: 'Sesión no válida.' }
 
-  const { data: plan, error: planError } = await (supabase
-    .from('workout_plans') as any)
-    .select('id, updated_at')
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .maybeSingle() as {
-      data: { id: string; updated_at: string } | null
+  const { data: profile, error: profileError } = await (supabase
+    .from('profiles')
+    .select('timezone')
+    .eq('id', user.id)
+    .maybeSingle() as unknown as Promise<{
+      data: { timezone: string | null } | null
+      error: { message?: string } | null
+    }>)
+  if (profileError || !profile) {
+    return { ok: false, error: 'No se pudo comprobar el aviso.' }
+  }
+  const timeZone = resolveUserTimeZone(profile.timezone)
+  if (profile.timezone !== timeZone) {
+    let timezoneUpdate = (supabase.from('profiles') as any)
+      .update({ timezone: timeZone })
+      .eq('id', user.id)
+    timezoneUpdate = profile.timezone === null
+      ? timezoneUpdate.is('timezone', null)
+      : timezoneUpdate.eq('timezone', profile.timezone)
+    const { error: timezoneUpdateError } = await timezoneUpdate as {
       error: { message?: string } | null
     }
-
-  if (planError) return { ok: false, error: 'No se pudo comprobar el aviso.' }
-  const currentKey = plan ? buildPlanUpdateNoticeKey(plan.id, plan.updated_at) : null
-  if (
-    !plan
-    || parsed.planId !== plan.id
-    || parsed.updatedAt !== plan.updated_at
-    || parsed.noticeKey !== currentKey
-  ) {
-    return { ok: false, error: 'El aviso ya no corresponde al plan actual.' }
+    if (timezoneUpdateError) {
+      return { ok: false, error: 'No se pudo comprobar el aviso.' }
+    }
   }
 
-  const { error } = await (supabase
-    .from('notification_attention_dismissals') as any)
-    .insert({ notice_key: currentKey }) as {
-      error: { code?: string; message?: string } | null
-    }
-
-  if (error && error.code !== '23505') {
-    return { ok: false, error: 'No se pudo quitar el aviso.' }
+  const rpcClient = supabase as unknown as AttentionDismissalRpcClient
+  const { data: dismissed, error } = await rpcClient.rpc(
+    'dismiss_current_notification_attention',
+    { p_notice_key: parsed.noticeKey },
+  )
+  if (error) return { ok: false, error: 'No se pudo quitar el aviso.' }
+  if (dismissed !== true) {
+    return { ok: false, error: 'El aviso ya no corresponde a tu estado actual.' }
   }
 
   revalidatePath('/notifications')
   return { ok: true }
+}
+
+export async function dismissPlanUpdateNotification(noticeKey: string): Promise<PushTokenResult> {
+  const parsed = parsePlanUpdateNoticeKey(noticeKey)
+  if (!parsed) return { ok: false, error: 'Aviso no valido.' }
+  const result = await dismissNotificationAttention(parsed.noticeKey)
+  if (!result.ok && result.error === 'El aviso ya no corresponde a tu estado actual.') {
+    return { ok: false, error: 'El aviso ya no corresponde al plan actual.' }
+  }
+  return result
 }
 
 async function listProductNotificationsData(
@@ -281,6 +368,7 @@ async function listProductNotificationsData(
     .from('product_notifications') as any)
     .select('id, type, title, body, url, read_at, created_at')
     .eq('user_id', user.id)
+    .is('dismissed_at', null)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(PRODUCT_NOTIFICATION_PAGE_SIZE + 1)
@@ -295,6 +383,7 @@ async function listProductNotificationsData(
     .from('product_notifications') as any)
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
+    .is('dismissed_at', null)
     .is('read_at', null)
 
   const [{ data, error }, { count, error: countError }] = await Promise.all([
@@ -351,6 +440,28 @@ export async function markProductNotificationRead(id: string): Promise<PushToken
     .is('read_at', null)
 
   if (error) return { ok: false, error: 'No se pudo marcar la notificación.' }
+  return { ok: true }
+}
+
+export async function dismissProductNotification(id: string): Promise<PushTokenResult> {
+  const normalized = typeof id === 'string' ? id.trim() : ''
+  if (!UUID_PATTERN.test(normalized)) {
+    return { ok: false, error: 'Notificación no válida.' }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sesión no válida.' }
+
+  const { error } = await (supabase
+    .from('product_notifications') as any)
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq('id', normalized)
+    .eq('user_id', user.id)
+    .is('dismissed_at', null)
+
+  if (error) return { ok: false, error: 'No se pudo quitar la notificación.' }
+  revalidatePath('/notifications')
   return { ok: true }
 }
 

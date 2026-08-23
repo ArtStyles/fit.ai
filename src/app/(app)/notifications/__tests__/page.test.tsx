@@ -10,6 +10,8 @@ vi.mock('@/app/actions/notifications', () => ({
   listProductNotifications: actionMocks.list,
   loadNotificationAttention: actionMocks.attention,
   markProductNotificationRead: vi.fn(),
+  dismissProductNotification: vi.fn(),
+  dismissNotificationAttention: vi.fn(),
   dismissPlanUpdateNotification: vi.fn(),
 }))
 
@@ -72,6 +74,7 @@ describe('dedicated notifications page', () => {
     expect(html).toContain('Sube el peso de forma gradual.')
     expect(html).toContain('Actividad reciente')
     expect(html).toContain('Solicitud aprobada')
+    expect(html).toContain('Quitar notificación: Solicitud aprobada')
     expect(html).toContain('href="/settings/notificaciones"')
     expect(html).toContain('Preferencias')
     expect(html).toContain('max-w-3xl')

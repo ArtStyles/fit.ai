@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import {
+  dismissNotificationInteraction,
   getSafeInternalNotificationUrl,
   loadNextNotificationPage,
   markNotificationReadInteraction,
@@ -103,6 +104,8 @@ describe('NotificationCenter', () => {
     expect(html).toContain('Nueva')
     expect(html).toContain('aria-live="polite"')
     expect(html).toContain('Abrir: Solicitud aceptada')
+    expect(html).toContain('aria-label="Quitar notificación: Solicitud aceptada"')
+    expect(html).toContain('aria-label="Quitar notificación: Rutina disponible"')
     expect(html).toContain('Cargar más')
     expect(html).toContain('min-h-11')
   })
@@ -265,6 +268,30 @@ describe('NotificationCenter', () => {
       error: 'No se pudo marcar la notificación.',
       announcement: 'No se pudo marcar la notificación.',
       toast: { title: 'No se pudo marcar la notificación.', variant: 'error' },
+    })
+  })
+
+  it('returns removable state only after notification archiving succeeds', async () => {
+    await expect(dismissNotificationInteraction(FIRST, async id => {
+      expect(id).toBe(FIRST.id)
+      return { ok: true }
+    })).resolves.toEqual({
+      ok: true,
+      notification: FIRST,
+      announcement: 'Solicitud aceptada quitada.',
+      error: null,
+      toast: null,
+    })
+
+    await expect(dismissNotificationInteraction(FIRST, async () => ({
+      ok: false,
+      error: 'No se pudo quitar la notificación.',
+    }))).resolves.toEqual({
+      ok: false,
+      notification: FIRST,
+      announcement: 'No se pudo quitar la notificación.',
+      error: 'No se pudo quitar la notificación.',
+      toast: { title: 'No se pudo quitar la notificación.', variant: 'error' },
     })
   })
 })

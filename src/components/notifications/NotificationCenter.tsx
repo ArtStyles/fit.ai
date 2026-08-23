@@ -1,9 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Bell, ChevronRight, Loader2 } from 'lucide-react'
+import { Bell, ChevronRight, Loader2, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
+  dismissProductNotification,
   listProductNotifications,
   markProductNotificationRead,
   type ProductNotificationPage,
@@ -68,6 +69,7 @@ type NotificationLoadInteractionResult = {
 }
 
 const LOAD_NOTIFICATIONS_ERROR = 'No se pudieron cargar las notificaciones.'
+const DISMISS_NOTIFICATION_ERROR = 'No se pudo quitar la notificación.'
 const MARK_NOTIFICATION_ERROR = 'No se pudo marcar la notificación.'
 
 export async function loadNextNotificationPage(
@@ -151,6 +153,40 @@ export async function markNotificationReadInteraction(
   }
 }
 
+export async function dismissNotificationInteraction(
+  notification: ProductNotificationView,
+  dismiss: (id: string) => Promise<MarkReadResult> = dismissProductNotification,
+): Promise<MarkReadInteractionResult> {
+  try {
+    const result = await dismiss(notification.id)
+    if (!result.ok) {
+      return {
+        ok: false,
+        notification,
+        announcement: result.error,
+        error: result.error,
+        toast: { title: result.error, variant: 'error' },
+      }
+    }
+
+    return {
+      ok: true,
+      notification,
+      announcement: `${notification.title} quitada.`,
+      error: null,
+      toast: null,
+    }
+  } catch {
+    return {
+      ok: false,
+      notification,
+      announcement: DISMISS_NOTIFICATION_ERROR,
+      error: DISMISS_NOTIFICATION_ERROR,
+      toast: { title: DISMISS_NOTIFICATION_ERROR, variant: 'error' },
+    }
+  }
+}
+
 function formatCreatedAt(value: string, formatter: Intl.DateTimeFormat): string {
   const timestamp = Date.parse(value)
   return Number.isFinite(timestamp) ? formatter.format(timestamp) : value
@@ -168,7 +204,7 @@ export function NotificationCenter({
   suppressEmptyState?: boolean
 }) {
   const router = useRouter()
-  const { language, timeZone } = useI18n()
+  const { language, timeZone, t } = useI18n()
   const { showToast } = useToast()
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(dateLocale(language), {
     dateStyle: 'medium',
@@ -216,6 +252,25 @@ export function NotificationCenter({
     }
 
     if (destination) router.push(destination)
+  }
+
+  async function dismiss(notification: ProductNotificationView) {
+    if (busyId) return
+    setBusyId(notification.id)
+    const result = await dismissNotificationInteraction(notification)
+    setBusyId(null)
+
+    if (!result.ok) {
+      setErrorMessage(result.error)
+      setAnnouncement(result.announcement)
+      if (result.toast) showToast(result.toast)
+      return
+    }
+
+    setErrorMessage(null)
+    setNotifications(current => current.filter(item => item.id !== notification.id))
+    if (notification.readAt === null) onNotificationRead?.()
+    setAnnouncement(result.announcement)
   }
 
   async function loadMore() {
@@ -324,6 +379,17 @@ export function NotificationCenter({
                     {formatCreatedAt(notification.createdAt, dateFormat)}
                   </time>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void dismiss(notification)}
+                  disabled={busy}
+                  aria-label={`${t('Quitar notificación')}: ${notification.title}`}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busy
+                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Trash2 className="h-4 w-4" aria-hidden="true" />}
+                </button>
               </div>
 
               {canAct ? (
