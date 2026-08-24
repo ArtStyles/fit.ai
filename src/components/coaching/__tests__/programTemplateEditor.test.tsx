@@ -36,6 +36,57 @@ describe('professional template editor browser interactions', () => {
 
   afterAll(async () => { await browser?.close(); await viteServer?.close() })
 
+  it('submits the new routine fields before the lazy server action and navigates to its editor', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?view=new`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_EDITOR_READY__?: boolean }).__PROGRAM_EDITOR_READY__))
+      await page.getByLabel('Nombre').fill('Fuerza base')
+      await page.getByLabel('Objetivo').fill('Ganar fuerza')
+      await page.getByRole('button', { name: 'Crear plantilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: unknown[] }).__PROGRAM_ACTIONS__?.length) || Boolean(document.querySelector('[role="alert"]')))
+
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: Array<{ action: string; fields: Record<string, string> }> }).__PROGRAM_ACTIONS__)).toEqual([
+        { action: 'create-template', fields: { name: 'Fuerza base', goal: 'Ganar fuerza', daysPerWeek: '3', description: '' } },
+      ])
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_PUSHES__?: string[] }).__PROGRAM_PUSHES__)).toEqual([
+        '/coach/programs/11111111-1111-4111-8111-111111111111',
+      ])
+    } finally { await page.close() }
+  }, 60_000)
+
+  it('submits template edits before the lazy server action and refreshes the editor', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_EDITOR_READY__?: boolean }).__PROGRAM_EDITOR_READY__))
+      await page.getByRole('button', { name: 'Guardar plantilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: unknown[] }).__PROGRAM_ACTIONS__?.length) || Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent?.includes('No se pudo guardar la rutina.')))
+
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: Array<{ action: string; fields: Record<string, string> }> }).__PROGRAM_ACTIONS__)).toEqual([
+        { action: 'update-template', fields: { templateId: '11111111-1111-4111-8111-111111111111', name: 'Fuerza', daysPerWeek: '2', goal: '', description: '' } },
+      ])
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_REFRESHES__?: number }).__PROGRAM_REFRESHES__)).toBe(1)
+    } finally { await page.close() }
+  }, 60_000)
+
+  it('submits a new workout before the lazy server action and refreshes the editor', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_EDITOR_READY__?: boolean }).__PROGRAM_EDITOR_READY__))
+      const addWorkoutForm = page.getByRole('heading', { name: 'Agregar entrenamiento' }).locator('..')
+      await addWorkoutForm.getByLabel('Nombre').fill('Día B')
+      await addWorkoutForm.getByRole('button', { name: 'Agregar entrenamiento' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: unknown[] }).__PROGRAM_ACTIONS__?.length) || Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent?.includes('No se pudo agregar el entrenamiento.')))
+
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: Array<{ action: string; fields: Record<string, string> }> }).__PROGRAM_ACTIONS__)).toEqual([
+        { action: 'create-workout', fields: { templateId: '11111111-1111-4111-8111-111111111111', name: 'Día B', dayOfWeek: '2', orderInPlan: '2' } },
+      ])
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_REFRESHES__?: number }).__PROGRAM_REFRESHES__)).toBe(1)
+    } finally { await page.close() }
+  }, 60_000)
+
   it('recovers controls after a save error and executes add and atomic reorder actions in a real browser', async () => {
     const page = await browser.newPage()
     try {

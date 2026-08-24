@@ -5,7 +5,11 @@ export function useRouter() {
       browserWindow.__PROGRAM_REFRESHES__ = (browserWindow.__PROGRAM_REFRESHES__ ?? 0) + 1
       browserWindow.__COACH_REFRESHES__ = (browserWindow.__COACH_REFRESHES__ ?? 0) + 1
     },
-    push: () => {},
+    push: (href: string) => {
+      const browserWindow = window as Window & { __PROGRAM_PUSHES__?: string[] }
+      browserWindow.__PROGRAM_PUSHES__ ??= []
+      browserWindow.__PROGRAM_PUSHES__.push(href)
+    },
   }
 }
 

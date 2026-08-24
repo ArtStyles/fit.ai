@@ -17,9 +17,10 @@ export function ProgramTemplateEditor({ template, workouts, options }: { templat
   async function saveTemplate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (saving) return
+    const formData = new FormData(event.currentTarget)
     setSaving(true)
     try {
-      const result: Result = await (await import('@/app/actions/trainerPrograms')).updateTrainerProgram(new FormData(event.currentTarget))
+      const result: Result = await (await import('@/app/actions/trainerPrograms')).updateTrainerProgram(formData)
       if (result.ok) router.refresh()
       setAnnouncement(result.ok ? 'Rutina guardada.' : result.error ?? 'No se pudo guardar la rutina.')
     } catch { setAnnouncement('No se pudo guardar la rutina.') } finally { setSaving(false) }
@@ -28,9 +29,10 @@ export function ProgramTemplateEditor({ template, workouts, options }: { templat
   async function addWorkout(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (saving) return
+    const formData = new FormData(event.currentTarget)
     setSaving(true)
     try {
-      const result: Result = await (await import('@/app/actions/trainerPrograms')).createTrainerTemplateWorkout(new FormData(event.currentTarget))
+      const result: Result = await (await import('@/app/actions/trainerPrograms')).createTrainerTemplateWorkout(formData)
       if (result.ok) router.refresh()
       setAnnouncement(result.ok ? 'Entrenamiento agregado.' : result.error ?? 'No se pudo agregar el entrenamiento.')
     } catch { setAnnouncement('No se pudo agregar el entrenamiento.') } finally { setSaving(false) }
