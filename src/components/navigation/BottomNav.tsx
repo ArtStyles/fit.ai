@@ -227,7 +227,7 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
   return (
     <nav
       aria-label={t('Navegación principal')}
-      className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-background/95 backdrop-blur lg:hidden"
+      className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-[hsl(var(--surface-1)/0.95)] backdrop-blur lg:hidden"
     >
       <div className="mx-auto flex h-16 max-w-lg items-center px-2">
         {navItems.map(({ href, label }) => {

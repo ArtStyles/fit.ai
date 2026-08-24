@@ -40,7 +40,7 @@ export function FixedTopBar({
   const topBar = (
     <header
       className={cn(
-        'fixed inset-x-0 top-0 z-30 border-b border-border/30 bg-background/90 pt-[var(--app-safe-area-top)] shadow-sm backdrop-blur-md',
+        'fixed inset-x-0 top-0 z-30 border-b border-border/30 bg-[hsl(var(--surface-1)/0.95)] pt-[var(--app-safe-area-top)] shadow-sm backdrop-blur-md',
         className,
       )}
     >
