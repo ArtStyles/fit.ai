@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { motion } from 'framer-motion'
 import { Bell, ChevronRight, Loader2, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
@@ -12,6 +13,7 @@ import {
 } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
 import { dateLocale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -219,6 +221,18 @@ export function NotificationCenter({
   const [announcement, setAnnouncement] = useState(initialPage.error ?? '')
   const [errorMessage, setErrorMessage] = useState<string | null>(initialPage.error ?? null)
   const [loadingMore, setLoadingMore] = useState(false)
+  const suppressOpenClickIdRef = useRef<string | null>(null)
+  const restoreDismissFocusIdRef = useRef<string | null>(null)
+  const dismissButtonRefs = useRef(new Map<string, HTMLButtonElement>())
+
+  useEffect(() => {
+    const notificationId = restoreDismissFocusIdRef.current
+    if (!notificationId) return
+    const button = dismissButtonRefs.current.get(notificationId)
+    if (!button) return
+    restoreDismissFocusIdRef.current = null
+    button.focus()
+  }, [notifications])
 
   const loadedUnreadCount = useMemo(
     () => notifications.filter(notification => notification.readAt === null).length,
@@ -229,6 +243,10 @@ export function NotificationCenter({
     : aggregateUnreadCount
 
   async function openOrMark(notification: ProductNotificationView, destination: string | null) {
+    if (suppressOpenClickIdRef.current === notification.id) {
+      suppressOpenClickIdRef.current = null
+      return
+    }
     if (busyId) return
 
     if (notification.readAt === null) {
@@ -257,10 +275,12 @@ export function NotificationCenter({
   async function dismiss(notification: ProductNotificationView) {
     if (busyId) return
     setBusyId(notification.id)
+    setNotifications(current => current.filter(item => item.id !== notification.id))
     const result = await dismissNotificationInteraction(notification)
     setBusyId(null)
 
     if (!result.ok) {
+      setNotifications(current => mergeNotificationPageIntoCurrent(current, [notification]))
       setErrorMessage(result.error)
       setAnnouncement(result.announcement)
       if (result.toast) showToast(result.toast)
@@ -268,7 +288,7 @@ export function NotificationCenter({
     }
 
     setErrorMessage(null)
-    setNotifications(current => current.filter(item => item.id !== notification.id))
+    restoreDismissFocusIdRef.current = null
     if (notification.readAt === null) onNotificationRead?.()
     setAnnouncement(result.announcement)
   }
@@ -352,15 +372,47 @@ export function NotificationCenter({
           const canAct = Boolean(destination) || unread
 
           return (
-            <article
+            <div
               key={notification.id}
-              className={cn(
-                'rounded-2xl border p-4 transition-colors',
-                unread
-                  ? 'border-violet-500/35 bg-violet-500/[0.08]'
-                  : 'border-border/60 bg-muted/10',
-              )}
+              className="relative overflow-hidden rounded-2xl"
+              data-swipe-dismiss="product-notification"
             >
+              <div
+                aria-hidden="true"
+                className="absolute inset-y-0 right-0 flex w-28 items-center justify-center gap-2 bg-red-500/15 text-xs font-semibold text-red-200"
+              >
+                <Trash2 className="h-4 w-4" />
+                {t('Quitar')}
+              </div>
+
+              <motion.article
+                drag={busyId ? false : 'x'}
+                dragConstraints={{ left: -112, right: 0 }}
+                dragElastic={0.08}
+                dragDirectionLock
+                dragSnapToOrigin
+                onDragStart={() => {
+                  suppressOpenClickIdRef.current = notification.id
+                }}
+                onDragEnd={(_, info) => {
+                  setTimeout(() => {
+                    if (suppressOpenClickIdRef.current === notification.id) {
+                      suppressOpenClickIdRef.current = null
+                    }
+                  }, 0)
+                  if (shouldDismissNotificationSwipe(info.offset.x, info.velocity.x)) {
+                    void dismiss(notification)
+                  }
+                }}
+                initial={{ x: 0 }}
+                animate={{ x: 0 }}
+                className={cn(
+                  'relative rounded-2xl border p-4 transition-colors touch-pan-y',
+                  unread
+                    ? 'border-violet-500/35 bg-violet-500/[0.08]'
+                    : 'border-border/60 bg-muted/10',
+                )}
+              >
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
                   <Bell className="h-4 w-4" aria-hidden="true" />
@@ -380,8 +432,16 @@ export function NotificationCenter({
                   </time>
                 </div>
                 <button
+                  ref={element => {
+                    if (element) dismissButtonRefs.current.set(notification.id, element)
+                    else dismissButtonRefs.current.delete(notification.id)
+                  }}
                   type="button"
-                  onClick={() => void dismiss(notification)}
+                  onPointerDown={event => event.stopPropagation()}
+                  onClick={() => {
+                    restoreDismissFocusIdRef.current = notification.id
+                    void dismiss(notification)
+                  }}
                   disabled={busy}
                   aria-label={`${t('Quitar notificación')}: ${notification.title}`}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-not-allowed disabled:opacity-50"
@@ -405,7 +465,8 @@ export function NotificationCenter({
                   {destination && !busy ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : null}
                 </button>
               ) : null}
-            </article>
+              </motion.article>
+            </div>
           )
         })}
       </div>

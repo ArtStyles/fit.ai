@@ -18,6 +18,8 @@ const browserFixtureTests = [
   'src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts',
   'src/components/coaching/__tests__/trainerAssignmentUi.test.tsx',
   'src/components/plan/__tests__/planInteractions.test.tsx',
+  'src/components/notifications/__tests__/dismissibleAttentionNoticeInteraction.test.tsx',
+  'src/components/notifications/__tests__/notificationCenterInteraction.test.tsx',
   'src/components/notifications/__tests__/swipeDismissPlanNoticeInteraction.test.tsx',
 ]
 

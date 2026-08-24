@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import path from 'node:path'
-import { chromium, type Browser, type Page } from '@playwright/test'
+import { chromium, type Browser, type Locator, type Page } from '@playwright/test'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 type FixtureResolveArgs = { path: string }
@@ -26,6 +26,7 @@ type Esbuild = {
 
 type AttentionKind = 'check-in' | 'promo'
 type BrowserHarness = Window & typeof globalThis & {
+  __childActionCount?: number
   __dismiss?: (noticeKey: string) => Promise<{ ok: true } | { ok: false; error: string }>
   __lastDismissalKey?: string
   __noticeReady?: boolean
@@ -115,7 +116,14 @@ async function buildBrowserFixture(): Promise<string> {
           `],
           ['@/components/dashboard/CheckInBanner', `
             import React from 'react'
-            export const CheckInBanner = () => <article data-notice-kind="check-in">Revisa tu perfil</article>
+            export const CheckInBanner = () => (
+              <article data-notice-kind="check-in">
+                Revisa tu perfil
+                <button onClick={() => { window.__childActionCount = (window.__childActionCount || 0) + 1 }}>
+                  Datos personales
+                </button>
+              </article>
+            )
           `],
           ['@/components/dashboard/DashboardPromoBanner', `
             import React from 'react'
@@ -132,12 +140,6 @@ async function buildBrowserFixture(): Promise<string> {
             export function PendingLink({ children, ...props }) {
               return <a {...props}>{children}</a>
             }
-          `],
-          ['framer-motion', `
-            import React from 'react'
-            export const AnimatePresence = ({ children }) => children
-            export const motion = { div: React.forwardRef(({ children, ...props }, ref) => <div ref={ref} {...props}>{children}</div>) }
-            export const useReducedMotion = () => true
           `],
         ])
 
@@ -162,6 +164,7 @@ async function preparePage() {
   await page.setContent('<main><div id="root"></div></main>')
   await page.evaluate(() => {
     const harness = window as BrowserHarness
+    harness.__childActionCount = 0
     harness.__refreshCount = 0
     harness.__dismiss = noticeKey => {
       harness.__lastDismissalKey = noticeKey
@@ -173,6 +176,18 @@ async function preparePage() {
   await page.addScriptTag({ content: bundle })
   await page.waitForFunction(() => Boolean((window as BrowserHarness).__noticeReady))
   await page.locator('[data-notice-kind="check-in"]').waitFor()
+}
+
+async function dragLeft(locator: Locator) {
+  const box = await locator.boundingBox()
+  expect(box).not.toBeNull()
+
+  const startX = (box?.x ?? 0) + Math.min((box?.width ?? 0) - 20, 120)
+  const y = (box?.y ?? 0) + Math.min((box?.height ?? 0) / 2, 60)
+  await page.mouse.move(startX, y)
+  await page.mouse.down()
+  await page.mouse.move(startX - 110, y, { steps: 8 })
+  await page.mouse.up()
 }
 
 beforeAll(async () => {
@@ -193,6 +208,34 @@ afterAll(async () => {
 })
 
 describe('DismissibleAttentionNotice mounted interaction', () => {
+  it('does not execute a child action when the left drag begins on it', async () => {
+    const childAction = page.getByRole('button', { name: 'Datos personales' })
+
+    await dragLeft(childAction)
+
+    await page.waitForFunction(() => Boolean((window as BrowserHarness).__lastDismissalKey))
+    await page.waitForTimeout(100)
+    expect(await page.evaluate(() => (window as BrowserHarness).__childActionCount)).toBe(0)
+    await page.evaluate(() => (window as BrowserHarness).__resolveDismissal?.({ ok: true }))
+    await page.waitForFunction(() => (window as BrowserHarness).__refreshCount === 1)
+  })
+
+  it('dismisses a check-in after a real left drag', async () => {
+    const checkIn = page.locator('[data-notice-kind="check-in"]')
+
+    await dragLeft(checkIn)
+
+    await page.waitForFunction(() => Boolean((window as BrowserHarness).__lastDismissalKey), null, {
+      timeout: 2_000,
+    })
+    expect(await page.evaluate(() => (window as BrowserHarness).__lastDismissalKey)).toBe(
+      'check-in:2026-07-01T08:00:00.000Z',
+    )
+    await page.waitForFunction(() => !document.querySelector('[data-notice-kind]'))
+    await page.evaluate(() => (window as BrowserHarness).__resolveDismissal?.({ ok: true }))
+    await page.waitForFunction(() => (window as BrowserHarness).__refreshCount === 1)
+  })
+
   it('shows the next attention kind after the dismissed check-in refreshes', async () => {
     await page.getByRole('button', { name: 'Quitar aviso de revisión del perfil' }).click()
     await page.waitForFunction(() => !document.querySelector('[data-notice-kind]'))

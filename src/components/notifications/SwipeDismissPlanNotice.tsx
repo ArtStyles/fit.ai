@@ -8,9 +8,7 @@ import { dismissNotificationAttention } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
-
-const SWIPE_DISTANCE_PX = 88
-const SWIPE_VELOCITY_PX_PER_SECOND = 650
+import { shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
 
 type PersistDismissal = (
   noticeKey: string,
@@ -23,7 +21,7 @@ export type PlanNoticeDismissalResult = {
 }
 
 export function shouldDismissPlanNotice(offsetX: number, velocityX: number): boolean {
-  return offsetX <= -SWIPE_DISTANCE_PX || velocityX <= -SWIPE_VELOCITY_PX_PER_SECOND
+  return shouldDismissNotificationSwipe(offsetX, velocityX)
 }
 
 export async function dismissPlanNoticeInteraction(
