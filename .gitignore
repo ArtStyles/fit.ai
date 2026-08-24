@@ -45,6 +45,8 @@ artifacts/
 test-results/
 playwright-report/
 dashboard-*.png
+__pycache__/
+*.pyc
 
 # Local Superpowers planning artifacts
 .superpowers/brainstorm/

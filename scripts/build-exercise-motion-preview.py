@@ -36,7 +36,11 @@ def build_motion_preview(source: Path, output: Path) -> None:
     with Image.open(source) as sheet:
         forward_frames = crop_six_frames(sheet)
 
-    loop_frames = forward_frames + [forward_frames[index].copy() for index in (4, 3, 2, 1)]
+    # The generated sixth panel is an experimental return pose and can drift back to the
+    # starting position. Build a deterministic ping-pong loop from the five verified ascent
+    # poses so the transition never jumps directly from start to full extension.
+    animation_indexes = (0, 1, 2, 3, 4, 3, 2, 1, 0, 1)
+    loop_frames = [forward_frames[index].copy() for index in animation_indexes]
     output.parent.mkdir(parents=True, exist_ok=True)
     loop_frames[0].save(
         output,

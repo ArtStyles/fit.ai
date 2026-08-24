@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageColor, ImageDraw
 
 
 class BuildExerciseMotionPreviewTest(unittest.TestCase):
@@ -40,6 +40,22 @@ class BuildExerciseMotionPreviewTest(unittest.TestCase):
                 self.assertTrue(animation.is_animated)
                 self.assertEqual(animation.n_frames, 10)
                 self.assertEqual(animation.size, (512, 512))
+                expected_indexes = [0, 1, 2, 3, 4, 3, 2, 1, 0, 1]
+                actual_indexes = []
+                reference_colors = [ImageColor.getrgb(color) for color in colors]
+                for frame_index in range(animation.n_frames):
+                    animation.seek(frame_index)
+                    pixel = animation.convert("RGB").getpixel((256, 256))
+                    nearest = min(
+                        range(len(reference_colors)),
+                        key=lambda color_index: sum(
+                            (pixel[channel] - reference_colors[color_index][channel]) ** 2
+                            for channel in range(3)
+                        ),
+                    )
+                    actual_indexes.append(nearest)
+
+                self.assertEqual(actual_indexes, expected_indexes)
 
 
 if __name__ == "__main__":

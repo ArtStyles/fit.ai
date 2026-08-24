@@ -68,7 +68,21 @@ export function validatePilotManifest(value: unknown): string[] {
     return errors
   }
 
+  const providedSlugs = new Set(
+    value.exercises
+      .map(candidate => isRecord(candidate) ? candidate.slug : undefined)
+      .filter(isNonEmptyString),
+  )
+  if (
+    value.exercises.length !== PILOT_EXERCISE_SLUGS.length
+    || providedSlugs.size !== PILOT_EXERCISE_SLUGS.length
+    || PILOT_EXERCISE_SLUGS.some(slug => !providedSlugs.has(slug))
+  ) {
+    errors.push('exercises must contain exactly the five supported pilot slugs')
+  }
+
   const seenSlugs = new Set<string>()
+  const seenAssetPaths = new Set<string>()
 
   value.exercises.forEach((candidate, index) => {
     const prefix = `exercises[${index}]`
@@ -122,7 +136,15 @@ export function validatePilotManifest(value: unknown): string[] {
       if (!path.startsWith('/exercises/pilot/')) {
         errors.push(`${prefix}.assets.${field} must start with /exercises/pilot/`)
       }
+      if (isNonEmptyString(slug) && !path.startsWith(`/exercises/pilot/${slug}/`)) {
+        errors.push(`${prefix}.assets.${field} must start with /exercises/pilot/${slug}/`)
+      }
       if (!path.endsWith(suffix)) errors.push(`${prefix}.assets.${field} must end with ${suffix}`)
+      if (seenAssetPaths.has(path)) {
+        errors.push(`${prefix}.assets.${field} must be unique`)
+      } else {
+        seenAssetPaths.add(path)
+      }
     }
 
     if (
