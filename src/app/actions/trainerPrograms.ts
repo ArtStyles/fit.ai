@@ -8,7 +8,25 @@ type Failure = { ok: false; error: string; fieldErrors?: FieldErrors }
 type IdResult = { ok: true; templateId: string } | Failure
 type WorkoutResult = { ok: true; workoutId: string } | Failure
 type ExerciseResult = { ok: true; templateExerciseId: string } | Failure
+type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
+type ExerciseBatchResult = { ok: true; exercises: AppendedExercise[] } | Failure
 type ChangeResult = { ok: true } | Failure
+
+const DEFAULT_TEMPLATE_PRESCRIPTION = {
+  sets: 3,
+  reps: 10,
+  weightKg: null,
+  targetRpe: 7,
+  restSeconds: 60,
+  notes: null,
+} as const
+
+const BATCH_ERROR_MESSAGES: Record<string, string> = {
+  TRAINER_TEMPLATE_OWNER_REQUIRED: 'No tienes permiso para modificar este entrenamiento.',
+  TRAINER_TEMPLATE_BATCH_INVALID: 'La selección de ejercicios no es válida.',
+  TRAINER_TEMPLATE_BATCH_EXERCISE_UNAVAILABLE: 'Uno de los ejercicios ya no está disponible.',
+  TRAINER_TEMPLATE_BATCH_LIMIT: 'Este día no puede superar 30 ejercicios.',
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -86,7 +104,7 @@ function templateInput(formData: FormData) {
   return Object.keys(errors).length ? { ok: false as const, result: failure(errors) } : { ok: true as const, value: { name, goal, description, days_per_week: daysPerWeek! } }
 }
 
-function workoutInput(formData: FormData) {
+function createWorkoutInput(formData: FormData) {
   const errors: FieldErrors = {}
   const name = value(formData, 'name')
   if (!name || name.length > 120) errors.name = 'El nombre debe tener entre 1 y 120 caracteres.'
@@ -95,11 +113,18 @@ function workoutInput(formData: FormData) {
   return Object.keys(errors).length ? { ok: false as const, result: failure(errors) } : { ok: true as const, value: { name, day_of_week: day_of_week!, order_in_plan: order_in_plan! } }
 }
 
-function exerciseInput(formData: FormData) {
+function updateWorkoutInput(formData: FormData) {
+  const errors: FieldErrors = {}
+  const name = value(formData, 'name')
+  if (!name || name.length > 120) errors.name = 'El nombre debe tener entre 1 y 120 caracteres.'
+  const day_of_week = parseInteger(formData, 'dayOfWeek', 1, 7, errors)
+  return Object.keys(errors).length ? { ok: false as const, result: failure(errors) } : { ok: true as const, value: { name, day_of_week: day_of_week! } }
+}
+
+function createExerciseInput(formData: FormData) {
   const errors: FieldErrors = {}
   const exercise_id = value(formData, 'exerciseId')
   if (!validUuid(exercise_id)) errors.exerciseId = 'Selecciona un ejercicio válido.'
-  const order_index = parseInteger(formData, 'orderIndex', 1, 30, errors)
   const sets = parseInteger(formData, 'sets', 1, 20, errors)
   const reps = parseInteger(formData, 'reps', 1, 100, errors)
   const weight_kg = parseNullableNumber(formData, 'weightKg', 0, 1000, errors)
@@ -108,8 +133,76 @@ function exerciseInput(formData: FormData) {
   const notes = nullableText(formData, 'notes', 1000, errors)
   return Object.keys(errors).length ? { ok: false as const, result: failure(errors) } : {
     ok: true as const,
-    value: { exercise_id, order_index: order_index!, sets: sets!, reps: reps!, weight_kg, target_rpe, rest_seconds: rest_seconds!, notes },
+    value: { exercise_id, sets: sets!, reps: reps!, weight_kg, target_rpe, rest_seconds: rest_seconds!, notes },
   }
+}
+
+function updateExerciseInput(formData: FormData) {
+  const errors: FieldErrors = {}
+  const exercise_id = value(formData, 'exerciseId')
+  if (!validUuid(exercise_id)) errors.exerciseId = 'Selecciona un ejercicio válido.'
+  const sets = parseInteger(formData, 'sets', 1, 20, errors)
+  const reps = parseInteger(formData, 'reps', 1, 100, errors)
+  const weight_kg = parseNullableNumber(formData, 'weightKg', 0, 1000, errors)
+  const target_rpe = parseNullableNumber(formData, 'targetRpe', 1, 10, errors)
+  const rest_seconds = parseInteger(formData, 'restSeconds', 0, 3600, errors)
+  const notes = nullableText(formData, 'notes', 1000, errors)
+  return Object.keys(errors).length ? { ok: false as const, result: failure(errors) } : {
+    ok: true as const,
+    value: { exercise_id, sets: sets!, reps: reps!, weight_kg, target_rpe, rest_seconds: rest_seconds!, notes },
+  }
+}
+
+function repeatedUuidValues(formData: FormData, field: string, maximum: number) {
+  const ids = formData.getAll(field)
+    .filter((candidate): candidate is string => typeof candidate === 'string')
+    .map(candidate => candidate.trim())
+    .filter(Boolean)
+  return ids.length > 0
+    && ids.length <= maximum
+    && new Set(ids).size === ids.length
+    && ids.every(validUuid)
+    ? ids
+    : null
+}
+
+function batchErrorMessage(error: unknown) {
+  if (!error || typeof error !== 'object') return null
+  const values = Object.values(error as Record<string, unknown>).filter((value): value is string => typeof value === 'string')
+  return Object.entries(BATCH_ERROR_MESSAGES).find(([code]) => values.some(value => value.includes(code)))?.[1] ?? null
+}
+
+function appendedExercises(data: unknown, workoutId: string, expectedExerciseIds: string[]): AppendedExercise[] | null {
+  if (!data || typeof data !== 'object') return null
+  const result = data as { templateWorkoutId?: unknown; exercises?: unknown }
+  if (result.templateWorkoutId !== workoutId || !Array.isArray(result.exercises) || result.exercises.length !== expectedExerciseIds.length) return null
+  const expected = new Set(expectedExerciseIds.map(exerciseId => exerciseId.toLowerCase()))
+  return result.exercises.every((exercise): exercise is AppendedExercise => (
+    Boolean(exercise)
+    && typeof exercise === 'object'
+    && validUuid((exercise as AppendedExercise).id)
+    && validUuid((exercise as AppendedExercise).exerciseId)
+    && expected.has((exercise as AppendedExercise).exerciseId.toLowerCase())
+    && Number.isInteger((exercise as AppendedExercise).orderIndex)
+    && (exercise as AppendedExercise).orderIndex >= 1
+    && (exercise as AppendedExercise).orderIndex <= 30
+  )) && new Set(result.exercises.map(exercise => exercise.exerciseId.toLowerCase())).size === expected.size ? result.exercises : null
+}
+
+async function appendTemplateExerciseDrafts(
+  context: Awaited<ReturnType<typeof requireActiveTrainerContext>>,
+  ownership: { workoutId: string; templateId: string },
+  drafts: Array<{ exerciseId: string; sets: number; reps: number; weightKg: number | null; targetRpe: number | null; restSeconds: number; notes: string | null }>,
+): Promise<ExerciseBatchResult> {
+  const { data, error } = await (context.supabase.rpc as any)('append_trainer_template_exercises', {
+    p_template_workout_id: ownership.workoutId,
+    p_exercises: drafts,
+  })
+  if (error) return failure({}, batchErrorMessage(error) ?? 'No se pudo agregar los ejercicios.')
+  const exercises = appendedExercises(data, ownership.workoutId, drafts.map(draft => draft.exerciseId))
+  if (!exercises) return failure({}, 'No se pudo agregar los ejercicios.')
+  revalidatePrograms(ownership.templateId)
+  return { ok: true, exercises }
 }
 
 export async function createTrainerProgram(formData: FormData): Promise<IdResult> {
@@ -149,7 +242,7 @@ export async function archiveTrainerProgram(formData: FormData): Promise<ChangeR
 
 export async function createTrainerTemplateWorkout(formData: FormData): Promise<WorkoutResult> {
   const context = await requireActiveTrainerContext()
-  const parsed = workoutInput(formData)
+  const parsed = createWorkoutInput(formData)
   if (!parsed.ok) return parsed.result
   const ownership = await ownedTemplate(context, value(formData, 'templateId'))
   if (!ownership.ok) return ownership.result
@@ -162,7 +255,7 @@ export async function createTrainerTemplateWorkout(formData: FormData): Promise<
 
 export async function updateTrainerTemplateWorkout(formData: FormData): Promise<WorkoutResult> {
   const context = await requireActiveTrainerContext()
-  const parsed = workoutInput(formData)
+  const parsed = updateWorkoutInput(formData)
   if (!parsed.ok) return parsed.result
   const ownership = await ownedWorkout(context, value(formData, 'templateWorkoutId'))
   if (!ownership.ok) return ownership.result
@@ -185,22 +278,39 @@ export async function deleteTrainerTemplateWorkout(formData: FormData): Promise<
 
 export async function addTrainerTemplateExercise(formData: FormData): Promise<ExerciseResult> {
   const context = await requireActiveTrainerContext()
-  const parsed = exerciseInput(formData)
+  const parsed = createExerciseInput(formData)
   if (!parsed.ok) return parsed.result
   const ownership = await ownedWorkout(context, value(formData, 'templateWorkoutId'))
   if (!ownership.ok) return ownership.result
-  const { data: exercise, error: exerciseError } = await (context.supabase.from('exercises') as any).select('id').eq('id', parsed.value.exercise_id).maybeSingle()
-  if (exerciseError || !exercise) return failure({ exerciseId: 'El ejercicio seleccionado ya no está disponible.' })
-  const { data, error } = await (context.supabase.from('trainer_template_exercises') as any)
-    .insert({ ...parsed.value, template_workout_id: ownership.workoutId }).select('id').single()
-  if (error || !data?.id) return failure({}, 'No se pudo agregar el ejercicio. Revisa el orden indicado.')
-  revalidatePrograms()
-  return { ok: true, templateExerciseId: data.id }
+  const { exercise_id, sets, reps, weight_kg, target_rpe, rest_seconds, notes } = parsed.value
+  const result = await appendTemplateExerciseDrafts(context, ownership, [{
+    exerciseId: exercise_id,
+    sets,
+    reps,
+    weightKg: weight_kg,
+    targetRpe: target_rpe,
+    restSeconds: rest_seconds,
+    notes,
+  }])
+  if (!result.ok) return result
+  return { ok: true, templateExerciseId: result.exercises[0].id }
+}
+
+export async function addTrainerTemplateExercises(formData: FormData): Promise<ExerciseBatchResult> {
+  const context = await requireActiveTrainerContext()
+  const ownership = await ownedWorkout(context, value(formData, 'templateWorkoutId'))
+  if (!ownership.ok) return ownership.result
+  const exerciseIds = repeatedUuidValues(formData, 'exerciseId', 30)
+  if (!exerciseIds) return failure({ exerciseId: 'Selecciona entre 1 y 30 ejercicios válidos.' })
+  return appendTemplateExerciseDrafts(context, ownership, exerciseIds.map(exerciseId => ({
+    exerciseId,
+    ...DEFAULT_TEMPLATE_PRESCRIPTION,
+  })))
 }
 
 export async function updateTrainerTemplateExercise(formData: FormData): Promise<ExerciseResult> {
   const context = await requireActiveTrainerContext()
-  const parsed = exerciseInput(formData)
+  const parsed = updateExerciseInput(formData)
   if (!parsed.ok) return parsed.result
   const templateExerciseId = value(formData, 'templateExerciseId')
   if (!validUuid(templateExerciseId)) return failure({ templateExerciseId: 'El ejercicio no es válido.' })
@@ -211,7 +321,7 @@ export async function updateTrainerTemplateExercise(formData: FormData): Promise
   const { data: catalogExercise, error: catalogError } = await (context.supabase.from('exercises') as any).select('id').eq('id', parsed.value.exercise_id).eq('is_public', true).maybeSingle()
   if (catalogError || !catalogExercise) return failure({ exerciseId: 'El ejercicio seleccionado ya no está disponible.' })
   const { data, error } = await exercises.update(parsed.value).eq('id', templateExerciseId).select('id').single()
-  if (error || !data?.id) return failure({}, 'No se pudo guardar el ejercicio. Revisa el orden indicado.')
+  if (error || !data?.id) return failure({}, 'No se pudo guardar el ejercicio.')
   revalidatePrograms()
   return { ok: true, templateExerciseId }
 }
