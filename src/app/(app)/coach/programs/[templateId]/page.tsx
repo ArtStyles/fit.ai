@@ -2,8 +2,6 @@ import { notFound } from 'next/navigation'
 import { Dumbbell } from 'lucide-react'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { ProgramTemplateEditor } from '@/components/coaching/ProgramTemplateEditor'
-import { AssignProgramDialog } from '@/components/coaching/AssignProgramDialog'
-import { PublishProgramRevisionDialog } from '@/components/coaching/PublishProgramRevisionDialog'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
@@ -18,7 +16,7 @@ export default async function CoachProgramDetailPage({ params }: { params: { tem
   if (error) throw new Error('No se pudo cargar la rutina.')
   if (!template) notFound()
   const [workoutResponse, exerciseResponse, relationshipResponse, assignmentResponse] = await Promise.all([
-    (supabase.from('trainer_template_workouts') as any).select('id, name, day_of_week, order_in_plan, trainer_template_exercises(id, exercise_id, order_index, sets, reps, weight_kg, target_rpe, rest_seconds, notes, exercises(name))').eq('template_id', template.id).order('order_in_plan'),
+    (supabase.from('trainer_template_workouts') as any).select('id, name, day_of_week, order_in_plan, trainer_template_exercises(id, exercise_id, order_index, sets, reps, weight_kg, target_rpe, rest_seconds, notes, exercises(name, muscle_groups, equipment, image_url))').eq('template_id', template.id).order('order_in_plan'),
     (supabase.from('exercises') as any).select('id, name, image_url, muscle_groups, equipment, difficulty, exercise_type, is_compound').eq('is_public', true).order('name').limit(200),
     (supabase.from('coaching_relationships') as any).select('id, started_at, trainer_service_offerings(name)').eq('trainer_user_id', user.id).eq('status', 'active').order('created_at', { ascending: false }).order('id', { ascending: false }),
     (supabase.from('trainer_plan_assignments') as any).select('id, coaching_relationships!inner(trainer_service_offerings(name))').eq('trainer_user_id', user.id).eq('source_template_id', template.id).eq('status', 'active').order('created_at', { ascending: false }).order('id', { ascending: false }),
@@ -35,5 +33,5 @@ export default async function CoachProgramDetailPage({ params }: { params: { tem
     const service = Array.isArray(relationship?.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship?.trainer_service_offerings
     return { id: assignment.id, label: `${service?.name ?? 'Acompañamiento'} · asignación ${assignment.id.slice(0, 8)}` }
   })
-  return <div className="min-h-screen bg-background pb-28"><PageTopBar title="Editar rutina" subtitle="Plantilla profesional" backHref="/coach/programs" backLabel="Rutinas" icon={<Dumbbell className="h-5 w-5" />} /><main className="mx-auto max-w-4xl space-y-6 px-4 py-8"><ProgramTemplateEditor template={template} workouts={workouts} options={(exerciseResponse.data ?? []) as PlanExerciseOption[]} /><AssignProgramDialog templateId={template.id} relationships={relationshipChoices} /><PublishProgramRevisionDialog templateId={template.id} assignments={revisionChoices} /></main></div>
+  return <div className="min-h-screen bg-background pb-28"><PageTopBar title="Editar rutina" subtitle="Plantilla profesional" backHref="/coach/programs" backLabel="Rutinas" icon={<Dumbbell className="h-5 w-5" />} /><main className="mx-auto max-w-6xl space-y-6 px-4 py-8"><ProgramTemplateEditor template={template} workouts={workouts} options={(exerciseResponse.data ?? []) as PlanExerciseOption[]} relationships={relationshipChoices} assignments={revisionChoices} /></main></div>
 }

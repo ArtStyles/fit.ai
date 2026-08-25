@@ -17,6 +17,7 @@ describe('professional template editor browser interactions', () => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
     const viteEntry = path.join(repoRoot, 'node_modules/.pnpm/node_modules/vite/dist/node/index.js')
     const fixtureActions = path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerPrograms.fixture.ts')
+    const fixtureAssignmentActions = path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerAssignments.fixture.ts')
     const { createServer } = await import(pathToFileURL(viteEntry).href)
     viteServer = await createServer({
       configFile: false,
@@ -29,6 +30,7 @@ describe('professional template editor browser interactions', () => {
         dedupe: ['react', 'react-dom'],
         alias: [
           { find: '@/app/actions/trainerPrograms', replacement: fixtureActions },
+          { find: '@/app/actions/trainerAssignments', replacement: fixtureAssignmentActions },
           { find: '@/app/actions/exerciseCatalog', replacement: fixtureActions },
           { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
           { find: 'next/image', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextImage.fixture.tsx') },
@@ -83,11 +85,126 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(templateSummary.getByText('Todo guardado')).toBeVisible()
       await page.getByLabel('Nombre de la rutina').fill('Fuerza total')
       await pwExpect(templateSummary.getByText('Cambios pendientes')).toBeVisible()
-      await page.getByRole('button', { name: 'Guardar plantilla' }).click()
+      await page.getByRole('button', { name: 'Guardar detalles' }).click()
       await pwExpect(templateSummary.getByText('Todo guardado')).toBeVisible()
 
       expect(await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__)).toEqual([
         { action: 'update-template', fields: { templateId: '11111111-1111-4111-8111-111111111111', name: 'Fuerza total', daysPerWeek: '3', goal: '', description: '' } },
+      ])
+    } finally { await page.close() }
+  })
+
+  it('blocks both professional actions until template details are explicitly saved', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.getByLabel('Nombre de la rutina').fill('Fuerza editada')
+      await pwExpect(page.getByText('Cambios pendientes')).toBeVisible()
+
+      for (const actionName of ['Enviar a un cliente', 'Publicar revisión']) {
+        await page.getByRole('button', { name: actionName }).click()
+        const actionRegion = page.getByRole('region', { name: actionName === 'Enviar a un cliente' ? 'Enviar como rutina profesional' : 'Publicar una revisión' })
+        const status = actionRegion.getByRole('status')
+        await pwExpect(status).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
+        await pwExpect(status).toBeFocused()
+      }
+
+      await page.getByRole('button', { name: 'Guardar detalles' }).click()
+      await pwExpect(page.getByText('Todo guardado').first()).toBeVisible()
+      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await pwExpect(page.locator('#assign-program-form')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('keeps a failed descriptive save protected and warns before leaving', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?save=error`)
+      await page.getByLabel('Objetivo de la rutina').fill('Fuerza máxima')
+      expect(await page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true })
+        return { dispatched: window.dispatchEvent(event), prevented: event.defaultPrevented }
+      })).toEqual({ dispatched: false, prevented: true })
+
+      await page.getByRole('button', { name: 'Guardar detalles' }).click()
+      await pwExpect(page.getByText('No se pudo guardar').first()).toBeVisible()
+      await page.getByRole('button', { name: 'Publicar revisión' }).click()
+      await pwExpect(page.getByRole('region', { name: 'Publicar una revisión' }).getByRole('status')).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
+      expect(await page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true })
+        return { dispatched: window.dispatchEvent(event), prevented: event.defaultPrevented }
+      })).toEqual({ dispatched: false, prevented: true })
+    } finally { await page.close() }
+  })
+
+  it('guards an already-open assignment form when details become dirty', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      const assignment = page.getByRole('region', { name: 'Enviar como rutina profesional' })
+      await assignment.getByLabel('Cliente del acompañamiento').selectOption('relationship-a')
+      await page.getByLabel('Descripción de la rutina').fill('Progresión pendiente')
+      await assignment.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
+
+      await pwExpect(assignment.getByRole('status')).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
+      expect(await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: unknown[] }).__ASSIGNMENT_ACTIONS__ ?? [])).toHaveLength(0)
+    } finally { await page.close() }
+  })
+
+  it('shares active-day save state with publication guards and clears it after save', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.getByText('Editar día', { exact: true }).click()
+      const workout = page.getByRole('group', { name: 'Editar día Día A' })
+      await workout.getByRole('textbox', { name: 'Nombre' }).fill('Día de fuerza')
+      await pwExpect(workout.getByText('Cambios pendientes')).toBeVisible()
+      await page.getByRole('button', { name: 'Publicar revisión' }).click()
+      await pwExpect(page.locator('#publish-program-revision-form')).toHaveCount(0)
+
+      await workout.getByRole('button', { name: 'Guardar día' }).click()
+      await pwExpect(workout.getByText('Todo guardado')).toBeVisible()
+      await page.getByRole('button', { name: 'Publicar revisión' }).click()
+      await pwExpect(page.locator('#publish-program-revision-form')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('clears a removed day dirty state after the structural deletion is reconciled', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByText('Editar día', { exact: true }).click()
+      await page.getByRole('group', { name: 'Editar día Día A' }).getByRole('textbox', { name: 'Nombre' }).fill('Día descartado')
+
+      page.once('dialog', dialog => void dialog.accept())
+      await page.getByRole('button', { name: 'Eliminar día' }).click()
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
+
+      await page.getByRole('button', { name: 'Publicar revisión' }).click()
+      await pwExpect(page.locator('#publish-program-revision-form')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('renders complete relationship, assignment, and nested exercise metadata inside the workspace', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await pwExpect(page.getByText('Piernas · Barra', { exact: true }).first()).toBeVisible()
+
+      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await pwExpect(page.getByLabel('Cliente del acompañamiento').getByRole('option')).toHaveText([
+        'Selecciona una relación activa',
+        'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a',
+        'Entrenamiento personal · iniciado 10 ago 2026 · ref. relationship-b',
+      ])
+
+      await page.getByRole('button', { name: 'Publicar revisión' }).click()
+      await pwExpect(page.locator('#publish-program-revision-form select[name="assignmentId"] option')).toHaveText([
+        'Selecciona una asignación activa',
+        'Entrenamiento personal · asignación assignment-a',
+        'Entrenamiento personal · asignación assignment-b',
       ])
     } finally { await page.close() }
   })
@@ -98,7 +215,7 @@ describe('professional template editor browser interactions', () => {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?save=hold`)
       const name = page.getByLabel('Nombre de la rutina')
       await name.fill('Fuerza en progreso')
-      await page.getByRole('button', { name: 'Guardar plantilla' }).click()
+      await page.getByRole('button', { name: 'Guardar detalles' }).click()
       await page.waitForFunction(() => Boolean((window as Window & { __RESOLVE_TEMPLATE_SAVE__?: () => void }).__RESOLVE_TEMPLATE_SAVE__))
 
       await pwExpect(name).toBeDisabled()

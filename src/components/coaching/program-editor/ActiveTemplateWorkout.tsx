@@ -37,6 +37,8 @@ export function ActiveTemplateWorkout({
   dayStructurePending,
   structuralPending,
   onStructuralPendingChange,
+  saveState,
+  onSaveStateChange,
   onChanged,
 }: {
   workout: TemplateWorkoutView
@@ -44,11 +46,12 @@ export function ActiveTemplateWorkout({
   dayStructurePending: boolean
   structuralPending: WorkoutStructuralPending
   onStructuralPendingChange: (update: (current: WorkoutStructuralPending) => WorkoutStructuralPending) => void
+  saveState: SaveState
+  onSaveStateChange: (state: SaveState) => void
   onChanged: () => void
 }) {
   const router = useRouter()
   const summary = summarizeWorkout(workout)
-  const [daySaveState, setDaySaveState] = useState<SaveState>('saved')
   const [announcement, setAnnouncement] = useState('')
   const exerciseIds = workout.exercises.map(exercise => exercise.id)
   const { reorderExpectedIds, deletePendingId, batchExpectedIds } = structuralPending
@@ -70,14 +73,14 @@ export function ActiveTemplateWorkout({
 
   async function updateDay(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (daySaveState === 'saving') return
+    if (saveState === 'saving') return
     const formData = new FormData(event.currentTarget)
-    setDaySaveState('saving')
+    onSaveStateChange('saving')
     const result = await safeAction(
       async () => (await import('@/app/actions/trainerPrograms')).updateTrainerTemplateWorkout(formData),
       'No se pudo actualizar el entrenamiento.',
     )
-    setDaySaveState(result.ok ? 'saved' : 'error')
+    onSaveStateChange(result.ok ? 'saved' : 'error')
     setAnnouncement(result.ok ? 'Entrenamiento actualizado.' : result.error ?? 'No se pudo actualizar el entrenamiento.')
     if (result.ok) {
       router.refresh()
@@ -175,14 +178,14 @@ export function ActiveTemplateWorkout({
 
       <details className="mt-3 rounded-xl border border-border/60 p-3">
         <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">Editar día</summary>
-        <form onSubmit={event => void updateDay(event)} onChangeCapture={() => setDaySaveState('dirty')} className="mt-2">
-          <fieldset aria-label={`Editar día ${workout.name}`} disabled={daySaveState === 'saving'} className="grid gap-3 sm:grid-cols-2">
+        <form onSubmit={event => void updateDay(event)} onInput={() => { if (saveState !== 'saving') onSaveStateChange('dirty') }} className="mt-2">
+          <fieldset aria-label={`Editar día ${workout.name}`} disabled={saveState === 'saving'} className="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="templateWorkoutId" value={workout.id} />
             <label className="text-sm">Nombre<input name="name" required maxLength={120} defaultValue={workout.name} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3" /></label>
             <label className="text-sm">Día<select name="dayOfWeek" defaultValue={String(workout.day_of_week)} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3">{WEEKDAYS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label>
             <div className="flex items-center gap-3 sm:col-span-2">
               <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">Guardar día</button>
-              <SaveStateIndicator state={daySaveState} />
+              <SaveStateIndicator state={saveState} />
             </div>
           </fieldset>
         </form>

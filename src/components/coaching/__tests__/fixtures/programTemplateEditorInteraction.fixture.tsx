@@ -119,6 +119,14 @@ function EditorFixture() {
     template={{ id: '11111111-1111-4111-8111-111111111111', name: 'Fuerza', goal: null, description: null, days_per_week: 3, status: 'draft' }}
     workouts={workouts}
     options={options}
+    relationships={[
+      { id: 'relationship-a', label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a' },
+      { id: 'relationship-b', label: 'Entrenamiento personal · iniciado 10 ago 2026 · ref. relationship-b' },
+    ]}
+    assignments={[
+      { id: 'assignment-a', label: 'Entrenamiento personal · asignación assignment-a' },
+      { id: 'assignment-b', label: 'Entrenamiento personal · asignación assignment-b' },
+    ]}
   />
 }
 

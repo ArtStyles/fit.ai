@@ -23,6 +23,7 @@ export type TemplateExerciseView = {
     name: string
     muscle_groups?: string[] | null
     equipment?: string[] | null
+    image_url?: string | null
   } | null
 }
 

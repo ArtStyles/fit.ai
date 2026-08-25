@@ -38,7 +38,7 @@ export function ProgramTemplateSummary({
 
       <details className="mt-4 rounded-xl border border-border/60 bg-background/40 p-3" open>
         <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-foreground">Editar información</summary>
-        <form onSubmit={event => void submit(event)} onChangeCapture={onDirty} noValidate className="mt-2">
+        <form onSubmit={event => void submit(event)} onInput={onDirty} noValidate className="mt-2">
           <fieldset disabled={saveState === 'saving'} className="m-0 grid border-0 p-0 gap-3 disabled:opacity-70 sm:grid-cols-2">
             <input type="hidden" name="templateId" value={template.id} />
           <label className="text-sm font-semibold text-foreground">
@@ -58,7 +58,7 @@ export function ProgramTemplateSummary({
             <textarea aria-label="Descripción de la rutina" name="description" maxLength={2000} defaultValue={template.description ?? ''} rows={3} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 font-normal" />
           </label>
             <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-fit">
-              {saveState === 'saving' ? 'Guardando…' : 'Guardar plantilla'}
+              {saveState === 'saving' ? 'Guardando…' : 'Guardar detalles'}
             </button>
           </fieldset>
         </form>

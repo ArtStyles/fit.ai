@@ -23,15 +23,20 @@ type DayMutationExpectation =
   | { kind: 'reorder'; workoutIds: string[] }
 
 const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+const PENDING_DESCRIPTION_MESSAGE = 'Guarda los cambios pendientes antes de asignar o publicar.'
 
 export function ProgramTemplateEditor({
   template,
   workouts,
   options,
+  relationships = [],
+  assignments = [],
 }: {
   template: ProgramTemplateView
   workouts: TemplateWorkoutView[]
   options: PlanExerciseOption[]
+  relationships?: Array<{ id: string; label: string }>
+  assignments?: Array<{ id: string; label: string }>
 }) {
   const router = useRouter()
   const orderedWorkouts = useMemo(
@@ -40,6 +45,7 @@ export function ProgramTemplateEditor({
   )
   const [activeWorkoutId, setActiveWorkoutId] = useState(orderedWorkouts[0]?.id ?? '')
   const [templateSaveState, setTemplateSaveState] = useState<SaveState>('saved')
+  const [workoutSaveStates, setWorkoutSaveStates] = useState<Record<string, SaveState>>({})
   const [addingWorkout, setAddingWorkout] = useState(false)
   const [dayMutation, setDayMutation] = useState<DayMutationExpectation | null>(null)
   const [workoutStructuralPending, setWorkoutStructuralPending] = useState<Record<string, WorkoutStructuralPending>>({})
@@ -48,6 +54,9 @@ export function ProgramTemplateEditor({
   const dayDeletePending = Object.values(workoutStructuralPending).some(pending => pending.dayDeletePending)
   const dayStructurePending = dayMutationPending || dayDeletePending
   const canAddWorkout = orderedWorkouts.length < template.days_per_week
+  const descriptiveSaveStates = [templateSaveState, ...Object.values(workoutSaveStates)]
+  const hasPendingDescriptions = descriptiveSaveStates.some(state => state !== 'saved')
+  const hasUnloadPendingDescriptions = descriptiveSaveStates.some(state => state === 'dirty' || state === 'error')
 
   useEffect(() => {
     if (!orderedWorkouts.some(workout => workout.id === activeWorkoutId)) {
@@ -75,7 +84,24 @@ export function ProgramTemplateEditor({
       removedIds.forEach(id => { delete next[id] })
       return next
     })
+    setWorkoutSaveStates(current => {
+      const removedIds = Object.keys(current).filter(id => !workoutIds.has(id))
+      if (!removedIds.length) return current
+      const next = { ...current }
+      removedIds.forEach(id => { delete next[id] })
+      return next
+    })
   }, [orderedWorkouts])
+
+  useEffect(() => {
+    if (!hasUnloadPendingDescriptions) return
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', preventUnload)
+    return () => window.removeEventListener('beforeunload', preventUnload)
+  }, [hasUnloadPendingDescriptions])
 
   const activeWorkout = orderedWorkouts.find(workout => workout.id === activeWorkoutId) ?? orderedWorkouts[0]
   const routineSummary = summarizeRoutine(orderedWorkouts)
@@ -155,6 +181,8 @@ export function ProgramTemplateEditor({
         onSave={saveTemplate}
       />
 
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <div className="min-w-0 space-y-4">
       {orderedWorkouts.length ? (
         <>
           <TemplateDayTabs
@@ -173,6 +201,10 @@ export function ProgramTemplateEditor({
               options={options}
               dayStructurePending={dayStructurePending}
               structuralPending={workoutStructuralPending[activeWorkout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING}
+              saveState={workoutSaveStates[activeWorkout.id] ?? 'saved'}
+              onSaveStateChange={state => {
+                setWorkoutSaveStates(current => ({ ...current, [activeWorkout.id]: state }))
+              }}
               onStructuralPendingChange={update => {
                 setWorkoutStructuralPending(current => ({
                   ...current,
@@ -205,8 +237,16 @@ export function ProgramTemplateEditor({
           </button>
         </form>
       ) : null}
-
-      <ProgramTemplateActions template={template} summary={routineSummary} />
+        </div>
+        <ProgramTemplateActions
+          template={template}
+          summary={routineSummary}
+          relationships={relationships}
+          assignments={assignments}
+          blocked={hasPendingDescriptions}
+          blockedMessage={PENDING_DESCRIPTION_MESSAGE}
+        />
+      </div>
       {announcement ? <p role="status" aria-live="polite" className="sr-only">{announcement}</p> : null}
     </section>
   )
