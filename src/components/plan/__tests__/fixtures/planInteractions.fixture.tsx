@@ -13,6 +13,7 @@ const initialCatalogOptions = Array.from({ length: 24 }, (_, index) => ({
   equipment: [index % 2 === 0 ? 'Barra' : 'Mancuernas'],
   imageUrl: null,
 }))
+let catalogConfirmAttempts = 0
 
 function WorkspaceFixture() {
   const summary = {
@@ -67,15 +68,23 @@ function WorkspaceFixture() {
 }
 
 function CatalogFixture() {
+  async function confirmCatalog(ids: string[]) {
+    catalogConfirmAttempts += 1
+    ;(window as Window & { __CATALOG_ATTEMPTS__?: number }).__CATALOG_ATTEMPTS__ = catalogConfirmAttempts
+    if (new URLSearchParams(window.location.search).get('confirm') === 'retry' && catalogConfirmAttempts === 1) {
+      return false
+    }
+    ;(window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__ = ids
+    return true
+  }
+
   return <ExerciseCatalogDialog
     open
     onOpenChange={() => {}}
     options={initialCatalogOptions}
     selectionMode="multiple"
     paginated
-    onConfirm={ids => {
-      (window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__ = ids
-    }}
+    onConfirm={confirmCatalog}
   />
 }
 
