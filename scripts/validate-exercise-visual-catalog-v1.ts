@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -9,25 +9,37 @@ import {
 } from '../src/lib/exercises/visualCatalogV1'
 
 const POSTER_MAX_BYTES = 102400
+type FileInspection = { kind: 'missing' } | { kind: 'non-regular' } | { kind: 'file', size: number }
 
-function resolveWithin(root: string, assetPath: string): string | null {
+function isWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+}
+
+async function resolveWithin(root: string, assetPath: string): Promise<string | null> {
   const resolvedRoot = path.resolve(root)
   const resolvedAsset = path.resolve(resolvedRoot, assetPath.replace(/^[/\\]+/, ''))
-  const relative = path.relative(resolvedRoot, resolvedAsset)
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
-    ? resolvedAsset
-    : null
+  if (!isWithin(resolvedRoot, resolvedAsset)) return null
+
+  try {
+    const [canonicalRoot, canonicalAsset] = await Promise.all([realpath(resolvedRoot), realpath(resolvedAsset)])
+    return isWithin(canonicalRoot, canonicalAsset) ? canonicalAsset : null
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return resolvedAsset
+    throw error
+  }
 }
 
 async function fileDigest(filePath: string): Promise<string> {
   return createHash('sha256').update(await readFile(filePath)).digest('hex')
 }
 
-async function isFile(filePath: string): Promise<boolean> {
+async function inspectFile(filePath: string): Promise<FileInspection> {
   try {
-    return (await stat(filePath)).isFile()
+    const file = await stat(filePath)
+    return file.isFile() ? { kind: 'file', size: file.size } : { kind: 'non-regular' }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' }
     throw error
   }
 }
@@ -48,31 +60,36 @@ export async function validateCatalogV1AssetFiles(
   for (const entry of manifest.exercises) {
     if (!requiresAssets(entry, complete)) continue
     const { assets, slug } = entry
-    const posterPath = resolveWithin(publicRoot, assets.poster)
+    if (!assets.posterSha256) errors.push(`missing poster digest: ${slug}`)
+    if (!assets.sourceSha256) errors.push(`missing source digest: ${slug}`)
+
+    const posterPath = await resolveWithin(publicRoot, assets.poster)
 
     if (!posterPath) {
       errors.push(`poster path escapes public root: ${slug}`)
-    } else if (!await isFile(posterPath)) {
-      errors.push(`missing poster: ${slug}`)
     } else {
-      const poster = await stat(posterPath)
-      if (poster.size > POSTER_MAX_BYTES) errors.push(`poster exceeds ${POSTER_MAX_BYTES} bytes: ${slug}`)
-      if (assets.posterSha256 && await fileDigest(posterPath) !== assets.posterSha256) {
+      const poster = await inspectFile(posterPath)
+      if (poster.kind === 'missing') errors.push(`missing poster: ${slug}`)
+      else if (poster.kind === 'non-regular') errors.push(`poster is not a regular file: ${slug}`)
+      else if (poster.size > POSTER_MAX_BYTES) errors.push(`poster exceeds ${POSTER_MAX_BYTES} bytes: ${slug}`)
+      if (poster.kind === 'file' && assets.posterSha256 && await fileDigest(posterPath) !== assets.posterSha256) {
         errors.push(`poster digest mismatch: ${slug}`)
       }
     }
 
     if (!assets.sourceObjectKey) {
       errors.push(`missing source metadata: ${slug}`)
-      continue
     }
-    const sourcePath = resolveWithin(artifactsRoot, assets.sourceObjectKey)
+    const sourcePath = await resolveWithin(artifactsRoot, path.join(slug, 'source.png'))
     if (!sourcePath) {
       errors.push(`source path escapes artifacts root: ${slug}`)
-    } else if (!await isFile(sourcePath)) {
-      errors.push(`missing source: ${slug}`)
-    } else if (assets.sourceSha256 && await fileDigest(sourcePath) !== assets.sourceSha256) {
-      errors.push(`source digest mismatch: ${slug}`)
+    } else {
+      const source = await inspectFile(sourcePath)
+      if (source.kind === 'missing') errors.push(`missing source: ${slug}`)
+      else if (source.kind === 'non-regular') errors.push(`source is not a regular file: ${slug}`)
+      else if (assets.sourceSha256 && await fileDigest(sourcePath) !== assets.sourceSha256) {
+        errors.push(`source digest mismatch: ${slug}`)
+      }
     }
   }
 

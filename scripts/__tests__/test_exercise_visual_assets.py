@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 from scripts.exercise_visual_assets import build_contact_sheet, build_poster
-from scripts.validate_exercise_visual_assets import validate_image_file
+from scripts.validate_exercise_visual_assets import validate_catalog_assets, validate_image_file
 
 
 class ExerciseVisualAssetsTest(unittest.TestCase):
@@ -57,3 +57,60 @@ class ExerciseVisualAssetsTest(unittest.TestCase):
             self.assertEqual(validate_image_file(small, "poster"), ["poster must be 1024 x 1024: small.webp"])
             self.assertEqual(validate_image_file(too_large, "poster"), ["poster exceeds 102400 bytes: too-large.webp"])
             self.assertEqual(validate_image_file(wrong_format, "poster"), ["poster must be WebP: wrong-format.png"])
+
+    def test_validates_the_local_staged_source_path_instead_of_remote_archive_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public_root = root / "public"
+            artifacts_root = root / "artifacts"
+            slug = "sentadilla-trasera-barra"
+            poster = public_root / "exercises" / "catalog" / "v1" / slug / "poster.webp"
+            source = artifacts_root / slug / "source.png"
+            poster.parent.mkdir(parents=True)
+            source.parent.mkdir(parents=True)
+            Image.new("RGB", (1024, 1024), "#f8f3eb").save(poster, "WEBP")
+            Image.new("RGB", (1254, 1254), "#f8f3eb").save(source, "PNG")
+            poster_hash = hashlib.sha256(poster.read_bytes()).hexdigest()
+            source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+            manifest = {"exercises": [{
+                "slug": slug,
+                "status": "visual-approved",
+                "assets": {
+                    "poster": f"/exercises/catalog/v1/{slug}/poster.webp",
+                    "posterSha256": poster_hash,
+                    "sourceObjectKey": "v1/archive/remote-identity.png",
+                    "sourceSha256": source_hash,
+                },
+            }]}
+
+            self.assertEqual(validate_catalog_assets(manifest, public_root, artifacts_root, False), [])
+
+    def test_requires_hashes_and_regular_asset_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public_root = root / "public"
+            artifacts_root = root / "artifacts"
+            slug = "sentadilla-trasera-barra"
+            poster = public_root / "exercises" / "catalog" / "v1" / slug / "poster.webp"
+            source = artifacts_root / slug / "source.png"
+            poster.parent.mkdir(parents=True)
+            source.parent.mkdir(parents=True)
+            Image.new("RGB", (1024, 1024), "#f8f3eb").save(poster, "WEBP")
+            Image.new("RGB", (1254, 1254), "#f8f3eb").save(source, "PNG")
+            manifest = {"exercises": [{
+                "slug": slug,
+                "status": "visual-approved",
+                "assets": {
+                    "poster": f"/exercises/catalog/v1/{slug}/poster.webp",
+                    "sourceObjectKey": "v1/archive/remote-identity.png",
+                },
+            }]}
+
+            errors = validate_catalog_assets(manifest, public_root, artifacts_root, False)
+            self.assertIn(f"missing poster digest: {slug}", errors)
+            self.assertIn(f"missing source digest: {slug}", errors)
+
+            poster.unlink()
+            poster.mkdir()
+            errors = validate_catalog_assets(manifest, public_root, artifacts_root, False)
+            self.assertIn(f"poster is not a regular file: {slug}", errors)

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { CatalogV1Manifest } from '../../src/lib/exercises/visualCatalogV1'
@@ -29,10 +29,10 @@ async function fixtureWithOneApprovedEntry() {
   const sourceObjectKey = `v1/${slug}/${sourceSha256}.png`
 
   await mkdir(path.join(publicRoot, 'exercises', 'catalog', 'v1', slug), { recursive: true })
-  await mkdir(path.join(artifactsRoot, 'v1', slug), { recursive: true })
+  await mkdir(path.join(artifactsRoot, slug), { recursive: true })
   await Promise.all([
     writeFile(path.join(publicRoot, 'exercises', 'catalog', 'v1', slug, 'poster.webp'), poster),
-    writeFile(path.join(artifactsRoot, sourceObjectKey), source),
+    writeFile(path.join(artifactsRoot, slug, 'source.png'), source),
   ])
 
   const manifest = {
@@ -62,8 +62,9 @@ async function fixtureWithOneApprovedEntry() {
 }
 
 describe('validateCatalogV1AssetFiles', () => {
-  it('accepts matching approved poster and staged source paths and hashes', async () => {
+  it('accepts matching approved poster and real staged source paths and hashes', async () => {
     const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
+    manifest.exercises[0].assets.sourceObjectKey = 'v1/archive/remote-identity.png'
 
     await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot)).resolves.toEqual([])
   })
@@ -82,26 +83,71 @@ describe('validateCatalogV1AssetFiles', () => {
     const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
     const approved = manifest.exercises[0]
     await rm(path.join(publicRoot, 'exercises', 'catalog', 'v1', approved.slug, 'poster.webp'))
-    await rm(path.join(artifactsRoot, approved.assets.sourceObjectKey!))
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot)).resolves.toContain(
+      'missing poster: sentadilla-trasera-barra',
+    )
+
     approved.assets.poster = '/../escape.webp'
-    approved.assets.sourceObjectKey = '../escape.png'
 
     const errors = await validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot)
 
-    expect(errors).toEqual(expect.arrayContaining([
-      'poster path escapes public root: sentadilla-trasera-barra',
-      'source path escapes artifacts root: sentadilla-trasera-barra',
-    ]))
+    expect(errors).toContain('poster path escapes public root: sentadilla-trasera-barra')
 
     approved.assets.poster = `/exercises/catalog/v1/${approved.slug}/poster.webp`
-    approved.assets.sourceObjectKey = `v1/${approved.slug}/${approved.assets.sourceSha256}.png`
     await mkdir(path.join(publicRoot, 'exercises', 'catalog', 'v1', approved.slug), { recursive: true })
     await writeFile(path.join(publicRoot, 'exercises', 'catalog', 'v1', approved.slug, 'poster.webp'), Buffer.alloc(102401))
 
     await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot)).resolves.toEqual(expect.arrayContaining([
       'poster exceeds 102400 bytes: sentadilla-trasera-barra',
-      'missing source: sentadilla-trasera-barra',
     ]))
+  })
+
+  it('requires hashes for approved assets before comparing their contents', async () => {
+    const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
+    manifest.exercises[0].assets.posterSha256 = undefined
+    manifest.exercises[0].assets.sourceSha256 = undefined
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot)).resolves.toEqual(expect.arrayContaining([
+      'missing poster digest: sentadilla-trasera-barra',
+      'missing source digest: sentadilla-trasera-barra',
+    ]))
+  })
+
+  it('rejects non-regular asset paths', async () => {
+    const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
+    const posterPath = path.join(publicRoot, 'exercises', 'catalog', 'v1', manifest.exercises[0].slug, 'poster.webp')
+    await rm(posterPath)
+    await mkdir(posterPath)
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot)).resolves.toContain(
+      'poster is not a regular file: sentadilla-trasera-barra',
+    )
+  })
+
+  it('rejects a reparse link inside the public root that points outside it', async ({ skip }) => {
+    const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
+    const root = path.dirname(publicRoot)
+    const externalDirectory = path.join(root, 'external-assets')
+    const linkDirectory = path.join(publicRoot, 'linked-assets')
+    await mkdir(externalDirectory)
+    await writeFile(path.join(externalDirectory, 'poster.webp'), Buffer.from('approved poster'))
+
+    try {
+      await symlink(externalDirectory, linkDirectory, process.platform === 'win32' ? 'junction' : 'dir')
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EPERM' || code === 'EACCES' || code === 'ENOTSUP') {
+        skip(`cannot create a directory link on this platform (${code})`)
+        return
+      }
+      throw error
+    }
+    manifest.exercises[0].assets.poster = '/linked-assets/poster.webp'
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot)).resolves.toContain(
+      'poster path escapes public root: sentadilla-trasera-barra',
+    )
   })
 
   it('requires draft poster files in complete mode', async () => {
