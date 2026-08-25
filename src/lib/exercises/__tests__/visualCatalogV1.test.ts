@@ -45,6 +45,16 @@ describe('validateCatalogV1Manifest', () => {
     expect(errors).toContain(`exercises[0].assets.poster must belong to ${exercises[0].slug}`)
   })
 
+  it('requires the specification batch for each catalog position', () => {
+    const exercises = valid.exercises.map((exercise, index) => index === 5
+      ? { ...exercise, batch: 4 }
+      : exercise)
+
+    expect(validateCatalogV1Manifest({ ...valid, exercises })).toContain(
+      'exercises[5].batch must be 1',
+    )
+  })
+
   it('requires hashes and a private source key before visual approval', () => {
     const exercises = valid.exercises.map((exercise, index) => index === 5
       ? { ...exercise, status: 'visual-approved' }
