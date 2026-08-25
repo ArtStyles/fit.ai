@@ -8,11 +8,11 @@ import {
   EMPTY_WORKOUT_STRUCTURAL_PENDING,
   type WorkoutStructuralPending,
 } from './program-editor/ActiveTemplateWorkout'
-import { moveItem, summarizeRoutine } from './program-editor/model'
+import { moveItem, summarizeRoutine, templateExerciseDraftMatches } from './program-editor/model'
 import { ProgramTemplateActions } from './program-editor/ProgramTemplateActions'
 import { ProgramTemplateSummary } from './program-editor/ProgramTemplateSummary'
 import { TemplateDayTabs } from './program-editor/TemplateDayTabs'
-import type { ProgramTemplateView, SaveState, TemplateWorkoutView } from './program-editor/types'
+import type { ProgramTemplateView, SaveState, TemplateExerciseDraft, TemplateWorkoutView } from './program-editor/types'
 
 export type { ProgramTemplateView, TemplateExerciseView, TemplateWorkoutView } from './program-editor/types'
 
@@ -43,9 +43,12 @@ export function ProgramTemplateEditor({
     () => [...workouts].sort((left, right) => left.order_in_plan - right.order_in_plan),
     [workouts],
   )
+  const templateExercises = useMemo(() => orderedWorkouts.flatMap(workout => workout.exercises), [orderedWorkouts])
   const [activeWorkoutId, setActiveWorkoutId] = useState(orderedWorkouts[0]?.id ?? '')
   const [templateSaveState, setTemplateSaveState] = useState<SaveState>('saved')
   const [workoutSaveStates, setWorkoutSaveStates] = useState<Record<string, SaveState>>({})
+  const [exerciseDrafts, setExerciseDrafts] = useState<Record<string, TemplateExerciseDraft>>({})
+  const [exerciseSaveStates, setExerciseSaveStates] = useState<Record<string, SaveState>>({})
   const [addingWorkout, setAddingWorkout] = useState(false)
   const [dayMutation, setDayMutation] = useState<DayMutationExpectation | null>(null)
   const [workoutStructuralPending, setWorkoutStructuralPending] = useState<Record<string, WorkoutStructuralPending>>({})
@@ -54,9 +57,9 @@ export function ProgramTemplateEditor({
   const dayDeletePending = Object.values(workoutStructuralPending).some(pending => pending.dayDeletePending)
   const dayStructurePending = dayMutationPending || dayDeletePending
   const canAddWorkout = orderedWorkouts.length < template.days_per_week
-  const descriptiveSaveStates = [templateSaveState, ...Object.values(workoutSaveStates)]
-  const hasPendingDescriptions = descriptiveSaveStates.some(state => state !== 'saved')
-  const hasUnloadPendingDescriptions = descriptiveSaveStates.some(state => state === 'dirty' || state === 'error')
+  const guardedSaveStates = [templateSaveState, ...Object.values(workoutSaveStates), ...Object.values(exerciseSaveStates)]
+  const hasPendingDescriptions = guardedSaveStates.some(state => state !== 'saved')
+  const hasUnloadPendingDescriptions = guardedSaveStates.some(state => state === 'dirty' || state === 'error')
 
   useEffect(() => {
     if (!orderedWorkouts.some(workout => workout.id === activeWorkoutId)) {
@@ -92,6 +95,35 @@ export function ProgramTemplateEditor({
       return next
     })
   }, [orderedWorkouts])
+
+  useEffect(() => {
+    const exercisesById = new Map(templateExercises.map(exercise => [exercise.id, exercise]))
+    setExerciseDrafts(current => {
+      const removedIds = Object.entries(current)
+        .filter(([id, draft]) => {
+          const exercise = exercisesById.get(id)
+          return !exercise || (exerciseSaveStates[id] === 'saved' && templateExerciseDraftMatches(exercise, draft))
+        })
+        .map(([id]) => id)
+      if (!removedIds.length) return current
+      const next = { ...current }
+      removedIds.forEach(id => { delete next[id] })
+      return next
+    })
+    setExerciseSaveStates(current => {
+      const removedIds = Object.entries(current)
+        .filter(([id, state]) => {
+          const exercise = exercisesById.get(id)
+          const draft = exerciseDrafts[id]
+          return !exercise || (state === 'saved' && draft && templateExerciseDraftMatches(exercise, draft))
+        })
+        .map(([id]) => id)
+      if (!removedIds.length) return current
+      const next = { ...current }
+      removedIds.forEach(id => { delete next[id] })
+      return next
+    })
+  }, [exerciseDrafts, exerciseSaveStates, templateExercises])
 
   useEffect(() => {
     if (!hasUnloadPendingDescriptions) return
@@ -204,6 +236,14 @@ export function ProgramTemplateEditor({
               saveState={workoutSaveStates[activeWorkout.id] ?? 'saved'}
               onSaveStateChange={state => {
                 setWorkoutSaveStates(current => ({ ...current, [activeWorkout.id]: state }))
+              }}
+              exerciseDrafts={exerciseDrafts}
+              exerciseSaveStates={exerciseSaveStates}
+              onExerciseDraftChange={(exerciseId, draft) => {
+                setExerciseDrafts(current => ({ ...current, [exerciseId]: draft }))
+              }}
+              onExerciseSaveStateChange={(exerciseId, state) => {
+                setExerciseSaveStates(current => ({ ...current, [exerciseId]: state }))
               }}
               onStructuralPendingChange={update => {
                 setWorkoutStructuralPending(current => ({

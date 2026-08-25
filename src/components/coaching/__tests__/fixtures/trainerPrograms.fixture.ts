@@ -122,6 +122,13 @@ export async function addTrainerTemplateExercises(formData: FormData) {
 
 export async function updateTrainerTemplateExercise(formData: FormData) {
   record('update-exercise', formData)
+  if (queryMode('prescription') === 'hold') {
+    return new Promise<{ ok: true; templateExerciseId: string }>(resolve => {
+      const state = window as Window & { __RESOLVE_EXERCISE_SAVE__?: () => void }
+      state.__RESOLVE_EXERCISE_SAVE__ = () => resolve({ ok: true, templateExerciseId: '33333333-3333-4333-8333-333333333333' })
+    })
+  }
+  if (queryMode('prescription') === 'error') return { ok: false as const, error: 'No se pudo guardar el ejercicio.' }
   return { ok: true as const, templateExerciseId: '33333333-3333-4333-8333-333333333333' }
 }
 

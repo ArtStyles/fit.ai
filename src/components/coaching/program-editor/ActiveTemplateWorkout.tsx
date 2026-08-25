@@ -3,11 +3,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
-import { moveItem, summarizeWorkout } from './model'
+import { createTemplateExerciseDraft, moveItem, summarizeWorkout } from './model'
 import { SaveStateIndicator } from './SaveStateIndicator'
 import { TemplateExerciseBatchPicker, type AppendedExercise } from './TemplateExerciseBatchPicker'
 import { TemplateExerciseCard } from './TemplateExerciseCard'
-import type { SaveState, TemplateWorkoutView } from './types'
+import type { SaveState, TemplateExerciseDraft, TemplateWorkoutView } from './types'
 
 type Result = { ok: boolean; error?: string }
 
@@ -39,6 +39,10 @@ export function ActiveTemplateWorkout({
   onStructuralPendingChange,
   saveState,
   onSaveStateChange,
+  exerciseDrafts,
+  exerciseSaveStates,
+  onExerciseDraftChange,
+  onExerciseSaveStateChange,
   onChanged,
 }: {
   workout: TemplateWorkoutView
@@ -48,6 +52,10 @@ export function ActiveTemplateWorkout({
   onStructuralPendingChange: (update: (current: WorkoutStructuralPending) => WorkoutStructuralPending) => void
   saveState: SaveState
   onSaveStateChange: (state: SaveState) => void
+  exerciseDrafts: Record<string, TemplateExerciseDraft>
+  exerciseSaveStates: Record<string, SaveState>
+  onExerciseDraftChange: (exerciseId: string, draft: TemplateExerciseDraft) => void
+  onExerciseSaveStateChange: (exerciseId: string, state: SaveState) => void
   onChanged: () => void
 }) {
   const router = useRouter()
@@ -202,6 +210,10 @@ export function ActiveTemplateWorkout({
               options={options}
               reorderPending={exerciseStructurePending}
               deletePending={exerciseStructurePending}
+              draft={exerciseDrafts[exercise.id] ?? createTemplateExerciseDraft(exercise)}
+              saveState={exerciseSaveStates[exercise.id] ?? 'saved'}
+              onDraftChange={draft => onExerciseDraftChange(exercise.id, draft)}
+              onSaveStateChange={state => onExerciseSaveStateChange(exercise.id, state)}
               onMove={delta => void reorderExercise(index, delta)}
               onDelete={() => void deleteExercise(exercise.id, exercise.exercise?.name ?? 'este ejercicio')}
               onSave={saveExercise}

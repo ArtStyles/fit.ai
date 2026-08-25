@@ -1,5 +1,15 @@
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error'
 
+export type TemplateExerciseDraft = {
+  exerciseId: string
+  sets: string
+  reps: string
+  weightKg: string
+  targetRpe: string
+  restSeconds: string
+  notes: string
+}
+
 export type ProgramTemplateView = {
   id: string
   name: string

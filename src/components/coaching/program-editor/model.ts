@@ -1,4 +1,21 @@
-import type { RoutineSummary, TemplateWorkoutView } from './types'
+import type { RoutineSummary, TemplateExerciseDraft, TemplateExerciseView, TemplateWorkoutView } from './types'
+
+export function createTemplateExerciseDraft(exercise: TemplateExerciseView): TemplateExerciseDraft {
+  return {
+    exerciseId: exercise.exercise_id,
+    sets: String(exercise.sets),
+    reps: String(exercise.reps),
+    weightKg: exercise.weight_kg === null ? '' : String(exercise.weight_kg),
+    targetRpe: exercise.target_rpe === null ? '' : String(exercise.target_rpe),
+    restSeconds: String(exercise.rest_seconds),
+    notes: exercise.notes ?? '',
+  }
+}
+
+export function templateExerciseDraftMatches(exercise: TemplateExerciseView, draft: TemplateExerciseDraft) {
+  const persisted = createTemplateExerciseDraft(exercise)
+  return Object.keys(persisted).every(key => persisted[key as keyof TemplateExerciseDraft] === draft[key as keyof TemplateExerciseDraft])
+}
 
 function summarizeExercises(workouts: TemplateWorkoutView[]) {
   const exercises = workouts.flatMap(workout => workout.exercises)

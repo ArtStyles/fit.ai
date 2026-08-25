@@ -170,6 +170,138 @@ describe('professional template editor browser interactions', () => {
     } finally { await page.close() }
   })
 
+  it('blocks both professional actions while a prescription draft is dirty', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      const exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await exercise.getByLabel('Series').fill('5')
+      await exercise.getByLabel('Notas').fill('Progresión pendiente')
+      await pwExpect(exercise.getByText('Cambios pendientes')).toBeVisible()
+      expect(await page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true })
+        return { dispatched: window.dispatchEvent(event), prevented: event.defaultPrevented }
+      })).toEqual({ dispatched: false, prevented: true })
+
+      for (const actionName of ['Enviar a un cliente', 'Publicar revisión']) {
+        await page.getByRole('button', { name: actionName }).click()
+        const actionRegion = page.getByRole('region', { name: actionName === 'Enviar a un cliente' ? 'Enviar como rutina profesional' : 'Publicar una revisión' })
+        await pwExpect(actionRegion.getByRole('status')).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
+      }
+    } finally { await page.close() }
+  })
+
+  it('preserves prescription values and dirty state across active-day tab switches', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      let exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await exercise.getByLabel('Series').fill('6')
+      await exercise.getByLabel('RPE').fill('9')
+      await exercise.getByLabel('Notas').fill('Mantener técnica')
+
+      await page.getByRole('tab', { name: /Día B/ }).click()
+      await page.getByRole('tab', { name: /Día A/ }).click()
+      exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await pwExpect(exercise).toBeVisible()
+      await pwExpect(exercise.getByLabel('Series')).toHaveValue('6')
+      await pwExpect(exercise.getByLabel('RPE')).toHaveValue('9')
+      await pwExpect(exercise.getByLabel('Notas')).toHaveValue('Mantener técnica')
+      await pwExpect(exercise.getByText('Cambios pendientes')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('clears the prescription guard after an explicit successful save', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      const exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await exercise.getByLabel('Repeticiones').fill('12')
+      await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
+      await pwExpect(exercise).toHaveCount(0)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      await pwExpect(page.getByRole('group', { name: 'Editar ejercicio Sentadilla' }).getByLabel('Repeticiones')).toHaveValue('12')
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+
+      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await pwExpect(page.locator('#assign-program-form')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('keeps a failed prescription save guarded with its draft intact', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?prescription=error`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      const exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await exercise.getByLabel('Peso (kg)').fill('82.5')
+      await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
+      await pwExpect(exercise.getByText('No se pudo guardar')).toBeVisible()
+      await pwExpect(exercise.getByLabel('Peso (kg)')).toHaveValue('82.5')
+
+      await page.getByRole('button', { name: 'Publicar revisión' }).click()
+      await pwExpect(page.locator('#publish-program-revision-form')).toHaveCount(0)
+      await pwExpect(page.getByRole('region', { name: 'Publicar una revisión' }).getByRole('status')).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
+    } finally { await page.close() }
+  })
+
+  it('blocks actions during a prescription save and clears the guard after success', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?prescription=hold`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      const exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await exercise.getByLabel('Descanso (seg.)').fill('75')
+      await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __RESOLVE_EXERCISE_SAVE__?: () => void }).__RESOLVE_EXERCISE_SAVE__))
+      await pwExpect(exercise.getByText('Guardando…')).toBeVisible()
+
+      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await pwExpect(page.locator('#assign-program-form')).toHaveCount(0)
+      await page.evaluate(() => (window as Window & { __RESOLVE_EXERCISE_SAVE__?: () => void }).__RESOLVE_EXERCISE_SAVE__?.())
+      await pwExpect(exercise).toHaveCount(0)
+      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await pwExpect(page.locator('#assign-program-form')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('clears an obsolete prescription guard after exercise deletion is reconciled', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      await page.getByRole('group', { name: 'Editar ejercicio Sentadilla' }).getByLabel('Series').fill('7')
+      page.once('dialog', dialog => void dialog.accept())
+      await page.getByRole('button', { name: 'Eliminar Sentadilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-exercise')))
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('button', { name: 'Editar Sentadilla' })).toHaveCount(0)
+
+      await page.getByRole('button', { name: 'Publicar revisión' }).click()
+      await pwExpect(page.locator('#publish-program-revision-form')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('clears obsolete prescription drafts when their whole day is reconciled away', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      await page.getByRole('group', { name: 'Editar ejercicio Sentadilla' }).getByLabel('Notas').fill('Descartar con el día')
+      page.once('dialog', dialog => void dialog.accept())
+      await page.getByRole('button', { name: 'Eliminar día' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-workout')))
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
+
+      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await pwExpect(page.locator('#assign-program-form')).toBeVisible()
+    } finally { await page.close() }
+  })
+
   it('clears a removed day dirty state after the structural deletion is reconciled', async () => {
     const page = await browser.newPage()
     try {
@@ -179,6 +311,7 @@ describe('professional template editor browser interactions', () => {
 
       page.once('dialog', dialog => void dialog.accept())
       await page.getByRole('button', { name: 'Eliminar día' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-workout')))
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
       await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
 
