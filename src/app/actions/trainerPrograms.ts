@@ -87,11 +87,12 @@ async function ownedTemplate(context: Awaited<ReturnType<typeof requireActiveTra
 
 async function ownedWorkout(context: Awaited<ReturnType<typeof requireActiveTrainerContext>>, workoutId: string) {
   if (!validUuid(workoutId)) return { ok: false as const, result: failure({ templateWorkoutId: 'El entrenamiento no es válido.' }) }
+  const normalizedWorkoutId = workoutId.toLowerCase()
   const workouts = context.supabase.from('trainer_template_workouts') as any
-  const { data, error } = await workouts.select('id, template_id, trainer_program_templates!inner(trainer_user_id)').eq('id', workoutId).eq('trainer_program_templates.trainer_user_id', context.user.id).maybeSingle()
+  const { data, error } = await workouts.select('id, template_id, trainer_program_templates!inner(trainer_user_id)').eq('id', normalizedWorkoutId).eq('trainer_program_templates.trainer_user_id', context.user.id).maybeSingle()
   if (error) return { ok: false as const, result: failure({}, 'No se pudo verificar el entrenamiento.') }
   if (!data) return { ok: false as const, result: failure({}, 'No tienes permiso para modificar este entrenamiento.') }
-  return { ok: true as const, workoutId, templateId: data.template_id as string }
+  return { ok: true as const, workoutId: normalizedWorkoutId, templateId: data.template_id as string }
 }
 
 function templateInput(formData: FormData) {
@@ -156,7 +157,7 @@ function updateExerciseInput(formData: FormData) {
 function repeatedUuidValues(formData: FormData, field: string, maximum: number) {
   const ids = formData.getAll(field)
     .filter((candidate): candidate is string => typeof candidate === 'string')
-    .map(candidate => candidate.trim())
+    .map(candidate => candidate.trim().toLowerCase())
     .filter(Boolean)
   return ids.length > 0
     && ids.length <= maximum

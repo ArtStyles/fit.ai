@@ -210,6 +210,37 @@ describe('trainer program actions', () => {
     })
   })
 
+  it('accepts a normalized workout UUID returned for an uppercase workout identifier', async () => {
+    const selectedWorkoutId = 'abcdefab-cdef-4abc-8abc-abcdefabcdef'
+    const supabase = supabaseFixture({ rpcData: {
+      templateWorkoutId: selectedWorkoutId,
+      exercises: [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', exerciseId: ids.exercise, orderIndex: 2 }],
+    } })
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { addTrainerTemplateExercises } = await import('../trainerPrograms')
+    const data = form({ templateWorkoutId: selectedWorkoutId.toUpperCase() })
+    data.append('exerciseId', ids.exercise)
+
+    await expect(addTrainerTemplateExercises(data)).resolves.toMatchObject({ ok: true })
+    expect(revalidatePath).toHaveBeenCalledWith(`/coach/programs/${ids.template}`)
+  })
+
+  it('rejects mixed-case aliases before calling the RPC', async () => {
+    const selectedExerciseId = 'abcdefab-cdef-4abc-8abc-abcdefabcdef'
+    const supabase = supabaseFixture()
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { addTrainerTemplateExercises } = await import('../trainerPrograms')
+    const data = form({ templateWorkoutId: ids.workout })
+    data.append('exerciseId', selectedExerciseId)
+    data.append('exerciseId', selectedExerciseId.toUpperCase())
+
+    await expect(addTrainerTemplateExercises(data)).resolves.toMatchObject({
+      ok: false,
+      fieldErrors: { exerciseId: 'Selecciona entre 1 y 30 ejercicios válidos.' },
+    })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
   it('updates a workout without accepting a client-owned plan order', async () => {
     const supabase = supabaseFixture()
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
@@ -237,6 +268,41 @@ describe('trainer program actions', () => {
     }))).resolves.toEqual({ ok: true, templateExerciseId: ids.exercise })
     expect(supabase.update).toHaveBeenCalledWith({ exercise_id: ids.exercise, sets: 3, reps: 10, weight_kg: null, target_rpe: 7, rest_seconds: 60, notes: null })
     expect(JSON.stringify(supabase.update.mock.calls)).not.toContain('order_index')
+  })
+
+  it('ignores malicious client order values during workout and exercise updates', async () => {
+    const supabase = supabaseFixture()
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { updateTrainerTemplateWorkout, updateTrainerTemplateExercise } = await import('../trainerPrograms')
+
+    await expect(updateTrainerTemplateWorkout(form({
+      templateWorkoutId: ids.workout,
+      name: 'Día A',
+      dayOfWeek: '1',
+      orderInPlan: '999',
+    }))).resolves.toEqual({ ok: true, workoutId: ids.workout })
+    await expect(updateTrainerTemplateExercise(form({
+      templateExerciseId: ids.exercise,
+      exerciseId: ids.exercise,
+      sets: '3',
+      reps: '10',
+      weightKg: '',
+      targetRpe: '7',
+      restSeconds: '60',
+      notes: '',
+      orderIndex: '999',
+    }))).resolves.toEqual({ ok: true, templateExerciseId: ids.exercise })
+
+    expect(supabase.update).toHaveBeenNthCalledWith(1, { name: 'Día A', day_of_week: 1 })
+    expect(supabase.update).toHaveBeenNthCalledWith(2, {
+      exercise_id: ids.exercise,
+      sets: 3,
+      reps: 10,
+      weight_kg: null,
+      target_rpe: 7,
+      rest_seconds: 60,
+      notes: null,
+    })
   })
 
   it('does not write a workout outside the signed-in trainer template ownership boundary', async () => {
