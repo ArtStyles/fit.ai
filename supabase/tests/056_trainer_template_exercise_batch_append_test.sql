@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(23);
+SELECT plan(25);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('56000000-0000-4000-8000-000000000001', 'batch-owner@example.test', '{}'::JSONB),
@@ -141,10 +141,22 @@ SELECT throws_ok(
   'TRAINER_TEMPLATE_BATCH_INVALID',
   'duplicate exercise identifiers in one payload are rejected'
 );
+SELECT throws_ok(
+  $$SELECT public.append_trainer_template_exercises(
+    '56000000-0000-4000-8000-000000000071',
+    '[{"exerciseId":"56abcdef-0000-4000-8000-000000000099","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null},{"exerciseId":"56ABCDEF-0000-4000-8000-000000000099","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null}]'::JSONB
+  )$$,
+  'TRAINER_TEMPLATE_BATCH_INVALID',
+  'UUID aliases that differ only by hexadecimal case are duplicate identifiers'
+);
 
 SELECT throws_ok(
   $$SELECT public.append_trainer_template_exercises('56000000-0000-4000-8000-000000000071', '[{"exerciseId":"56000000-0000-4000-8000-000000000052","sets":21,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null}]'::JSONB)$$,
   'TRAINER_TEMPLATE_BATCH_INVALID', 'sets above 20 are rejected'
+);
+SELECT throws_ok(
+  $$SELECT public.append_trainer_template_exercises('56000000-0000-4000-8000-000000000071', '[{"exerciseId":"56000000-0000-4000-8000-000000000052","sets":2147483648,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null}]'::JSONB)$$,
+  'TRAINER_TEMPLATE_BATCH_INVALID', 'an out-of-integer-range sets value is rejected with the domain error'
 );
 SELECT throws_ok(
   $$SELECT public.append_trainer_template_exercises('56000000-0000-4000-8000-000000000071', '[{"exerciseId":"56000000-0000-4000-8000-000000000052","sets":3,"reps":101,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null}]'::JSONB)$$,

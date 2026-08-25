@@ -82,11 +82,11 @@ BEGIN
     SELECT 1
     FROM jsonb_to_recordset(p_exercises) AS request(
       "exerciseId" TEXT,
-      sets INTEGER,
-      reps INTEGER,
+      sets NUMERIC,
+      reps NUMERIC,
       "weightKg" NUMERIC,
       "targetRpe" NUMERIC,
-      "restSeconds" INTEGER,
+      "restSeconds" NUMERIC,
       notes TEXT
     )
     WHERE request.sets NOT BETWEEN 1 AND 20
@@ -100,7 +100,7 @@ BEGIN
   END IF;
 
   IF (
-    SELECT count(DISTINCT request.item->>'exerciseId')
+    SELECT count(DISTINCT (request.item->>'exerciseId')::UUID)
     FROM jsonb_array_elements(p_exercises) request(item)
   ) <> v_requested_count THEN
     RAISE EXCEPTION 'TRAINER_TEMPLATE_BATCH_INVALID';
