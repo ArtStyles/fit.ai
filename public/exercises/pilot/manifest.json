@@ -18,7 +18,7 @@
         "Evitar que las rodillas colapsen hacia dentro",
         "Conservar el apoyo completo de los pies"
       ],
-      "status": "draft",
+      "status": "visual-approved",
       "assets": {
         "source": "/exercises/pilot/sentadilla-trasera-barra/source.png",
         "poster": "/exercises/pilot/sentadilla-trasera-barra/poster.webp"
@@ -39,7 +39,7 @@
         "Mantener ambos pies apoyados",
         "Evitar separar los glúteos del banco"
       ],
-      "status": "draft",
+      "status": "visual-approved",
       "assets": {
         "source": "/exercises/pilot/press-banca-barra/source.png",
         "poster": "/exercises/pilot/press-banca-barra/poster.webp"
@@ -60,7 +60,7 @@
         "Evitar un balanceo excesivo del torso",
         "Mantener el cable conectado y bajo tensión"
       ],
-      "status": "draft",
+      "status": "visual-approved",
       "assets": {
         "source": "/exercises/pilot/jalon-pecho-polea/source.png",
         "poster": "/exercises/pilot/jalon-pecho-polea/poster.webp"
@@ -81,7 +81,7 @@
         "Mantener la columna neutra contra el respaldo",
         "El movimiento del preview es experimental y requiere validación técnica antes de publicarse"
       ],
-      "status": "draft",
+      "status": "visual-approved",
       "assets": {
         "source": "/exercises/pilot/arnold-press-mancuernas/source.png",
         "poster": "/exercises/pilot/arnold-press-mancuernas/poster.webp",
@@ -103,7 +103,7 @@
         "Mantener ambas manos sujetando la rueda",
         "Conservar las rodillas apoyadas durante toda la variante"
       ],
-      "status": "draft",
+      "status": "visual-approved",
       "assets": {
         "source": "/exercises/pilot/rueda-abdominal-rodillas/source.png",
         "poster": "/exercises/pilot/rueda-abdominal-rodillas/poster.webp"

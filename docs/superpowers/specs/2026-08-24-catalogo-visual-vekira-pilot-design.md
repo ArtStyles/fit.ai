@@ -1,7 +1,14 @@
 # Catálogo visual original de Vekira — diseño del piloto
 
 **Fecha:** 2026-08-24
-**Estado:** Aprobado para prototipo visual
+**Estado:** Identidad visual aprobada; validación técnica pendiente
+
+## Aprobación visual
+
+El 2026-08-25 el usuario aprobó la identidad `vekira-anatomical-3d-v1` como estándar para
+escalar el catálogo: maniquí técnico gris opaco, anatomía esculpida, músculos activos en coral,
+equipo grafito, fondo marfil y composición inicio/fin. Esta aprobación es visual y no convierte
+automáticamente un ejercicio o una animación en `technique-approved`.
 
 ## Contexto
 
@@ -177,4 +184,3 @@ El piloto se aprueba cuando:
 - Integrar un reproductor de movimiento en la UI.
 - Producir los 120–150 ejercicios antes de aprobar el piloto.
 - Instalar Blender o importar modelos de terceros durante esta primera prueba.
-
