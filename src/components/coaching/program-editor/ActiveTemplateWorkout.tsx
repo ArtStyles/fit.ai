@@ -1,0 +1,185 @@
+'use client'
+
+import { useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
+import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
+import { moveItem, summarizeWorkout } from './model'
+import { SaveStateIndicator } from './SaveStateIndicator'
+import { TemplateExerciseBatchPicker } from './TemplateExerciseBatchPicker'
+import { TemplateExerciseCard } from './TemplateExerciseCard'
+import type { SaveState, TemplateWorkoutView } from './types'
+
+type Result = { ok: boolean; error?: string }
+
+const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+async function safeAction(loader: () => Promise<Result>, fallback: string): Promise<Result> {
+  try { return await loader() } catch { return { ok: false, error: fallback } }
+}
+
+export function ActiveTemplateWorkout({
+  workout,
+  options,
+  onChanged,
+}: {
+  workout: TemplateWorkoutView
+  options: PlanExerciseOption[]
+  onChanged: () => void
+}) {
+  const router = useRouter()
+  const summary = summarizeWorkout(workout)
+  const [daySaveState, setDaySaveState] = useState<SaveState>('saved')
+  const [reorderPending, setReorderPending] = useState(false)
+  const [deletePendingId, setDeletePendingId] = useState<string | null>(null)
+  const [dayDeletePending, setDayDeletePending] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
+
+  async function updateDay(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (daySaveState === 'saving') return
+    const formData = new FormData(event.currentTarget)
+    setDaySaveState('saving')
+    const result = await safeAction(
+      async () => (await import('@/app/actions/trainerPrograms')).updateTrainerTemplateWorkout(formData),
+      'No se pudo actualizar el entrenamiento.',
+    )
+    setDaySaveState(result.ok ? 'saved' : 'error')
+    setAnnouncement(result.ok ? 'Entrenamiento actualizado.' : result.error ?? 'No se pudo actualizar el entrenamiento.')
+    if (result.ok) {
+      router.refresh()
+      onChanged()
+    }
+  }
+
+  async function reorderExercise(index: number, delta: number) {
+    if (reorderPending) return
+    const ordered = moveItem(workout.exercises, index, delta)
+    if (ordered.every((exercise, current) => exercise.id === workout.exercises[current]?.id)) return
+    setReorderPending(true)
+    const formData = new FormData()
+    formData.set('templateWorkoutId', workout.id)
+    formData.set('templateExerciseIds', ordered.map(exercise => exercise.id).join(','))
+    const result = await safeAction(
+      async () => (await import('@/app/actions/trainerPrograms')).reorderTrainerTemplateExercises(formData),
+      'No se pudo actualizar el orden.',
+    )
+    setAnnouncement(result.ok ? 'Orden actualizado.' : result.error ?? 'No se pudo actualizar el orden.')
+    if (result.ok) {
+      router.refresh()
+      onChanged()
+    }
+    setReorderPending(false)
+  }
+
+  async function deleteExercise(id: string, name: string) {
+    if (deletePendingId || !window.confirm(`¿Eliminar ${name}?`)) return
+    setDeletePendingId(id)
+    const formData = new FormData()
+    formData.set('templateExerciseId', id)
+    const result = await safeAction(
+      async () => (await import('@/app/actions/trainerPrograms')).deleteTrainerTemplateExercise(formData),
+      'No se pudo eliminar el ejercicio.',
+    )
+    setAnnouncement(result.ok ? 'Ejercicio eliminado.' : result.error ?? 'No se pudo eliminar el ejercicio.')
+    if (result.ok) {
+      router.refresh()
+      onChanged()
+    }
+    setDeletePendingId(null)
+  }
+
+  async function saveExercise(formData: FormData): Promise<Result> {
+    const result = await safeAction(
+      async () => (await import('@/app/actions/trainerPrograms')).updateTrainerTemplateExercise(formData),
+      'No se pudo guardar el ejercicio.',
+    )
+    setAnnouncement(result.ok ? 'Ejercicio actualizado.' : result.error ?? 'No se pudo guardar el ejercicio.')
+    if (result.ok) {
+      router.refresh()
+      onChanged()
+    }
+    return result
+  }
+
+  async function deleteDay() {
+    if (dayDeletePending || !window.confirm(`¿Eliminar ${workout.name}?`)) return
+    setDayDeletePending(true)
+    const formData = new FormData()
+    formData.set('templateWorkoutId', workout.id)
+    const result = await safeAction(
+      async () => (await import('@/app/actions/trainerPrograms')).deleteTrainerTemplateWorkout(formData),
+      'No se pudo eliminar el entrenamiento.',
+    )
+    setAnnouncement(result.ok ? 'Entrenamiento eliminado.' : result.error ?? 'No se pudo eliminar el entrenamiento.')
+    if (result.ok) {
+      router.refresh()
+      onChanged()
+    }
+    setDayDeletePending(false)
+  }
+
+  return (
+    <section
+      id={`template-day-panel-${workout.id}`}
+      role="tabpanel"
+      aria-labelledby={`template-day-tab-${workout.id}`}
+      aria-label={workout.name}
+      className="min-w-0 rounded-2xl border border-border/70 bg-muted/10 p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground">{WEEKDAYS[workout.day_of_week - 1] ?? `Día ${workout.day_of_week}`}</p>
+          <h2 className="text-lg font-bold text-foreground">{workout.name}</h2>
+          <p className="text-sm text-muted-foreground">{summary.sets} series · {summary.estimatedMinutes} min estimados</p>
+        </div>
+        <button type="button" disabled={dayDeletePending} onClick={() => void deleteDay()} className="min-h-11 rounded-xl border border-destructive/40 px-3 text-sm font-semibold text-destructive disabled:opacity-50">Eliminar día</button>
+      </div>
+
+      <details className="mt-3 rounded-xl border border-border/60 p-3">
+        <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">Editar día</summary>
+        <form onSubmit={event => void updateDay(event)} onChangeCapture={() => setDaySaveState('dirty')} className="mt-2">
+          <fieldset aria-label={`Editar día ${workout.name}`} disabled={daySaveState === 'saving'} className="grid gap-3 sm:grid-cols-2">
+            <input type="hidden" name="templateWorkoutId" value={workout.id} />
+            <label className="text-sm">Nombre<input name="name" required maxLength={120} defaultValue={workout.name} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3" /></label>
+            <label className="text-sm">Día<select name="dayOfWeek" defaultValue={String(workout.day_of_week)} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3">{WEEKDAYS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label>
+            <div className="flex items-center gap-3 sm:col-span-2">
+              <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">Guardar día</button>
+              <SaveStateIndicator state={daySaveState} />
+            </div>
+          </fieldset>
+        </form>
+      </details>
+
+      {workout.exercises.length ? (
+        <ol className="mt-4 space-y-3" aria-label={`Ejercicios de ${workout.name}`}>
+          {workout.exercises.map((exercise, index) => (
+            <TemplateExerciseCard
+              key={exercise.id}
+              exercise={exercise}
+              index={index}
+              count={workout.exercises.length}
+              options={options}
+              reorderPending={reorderPending}
+              deletePending={deletePendingId === exercise.id}
+              onMove={delta => void reorderExercise(index, delta)}
+              onDelete={() => void deleteExercise(exercise.id, exercise.exercise?.name ?? 'este ejercicio')}
+              onSave={saveExercise}
+            />
+          ))}
+        </ol>
+      ) : <p className="mt-4 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">Este día todavía no tiene ejercicios.</p>}
+
+      <TemplateExerciseBatchPicker
+        workoutId={workout.id}
+        options={options}
+        remainingCapacity={Math.max(0, 30 - workout.exercises.length)}
+        onAdded={() => {
+          setAnnouncement('Ejercicios agregados.')
+          router.refresh()
+          onChanged()
+        }}
+      />
+      {announcement ? <p role="status" aria-live="polite" className="sr-only">{announcement}</p> : null}
+    </section>
+  )
+}
