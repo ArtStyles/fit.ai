@@ -215,14 +215,18 @@ describe('plan editor mobile interactions', () => {
       const catalog = page.getByRole('dialog', { name: 'Agregar ejercicio' })
       await catalog.getByRole('button', { name: /Ejercicio 01/ }).click()
       await catalog.getByRole('button', { name: 'Agregar 1 ejercicio' }).click()
+      await pwExpect.poll(() => page.evaluate(() => (window as Window & { __CATALOG_ATTEMPTS__?: number }).__CATALOG_ATTEMPTS__)).toBe(1)
+      await pwExpect.poll(() => page.evaluate(() => (window as Window & { __CATALOG_OPEN__?: boolean }).__CATALOG_OPEN__)).toBe(true)
       await pwExpect(catalog).toBeVisible()
       await pwExpect(catalog.getByRole('button', { name: /Ejercicio 01/ })).toHaveAttribute('aria-pressed', 'true')
       await catalog.getByRole('button', { name: 'Agregar 1 ejercicio' }).click()
       await pwExpect.poll(() => page.evaluate(() => (window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__)).toEqual(['exercise-01'])
+      await pwExpect.poll(() => page.evaluate(() => (window as Window & { __CATALOG_OPEN__?: boolean }).__CATALOG_OPEN__)).toBe(false)
+      await pwExpect(catalog).toBeHidden()
     } finally {
       await context.close()
     }
-  }, 20_000)
+  }, 40_000)
 
   it('keeps the workout structure open after saving exercise details', async () => {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 } })

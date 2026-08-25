@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import { useEffect, useState } from 'react'
 import '@/styles/globals.css'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import { ToastProvider } from '@/components/feedback/ToastProvider'
@@ -68,6 +69,12 @@ function WorkspaceFixture() {
 }
 
 function CatalogFixture() {
+  const [open, setOpen] = useState(true)
+
+  useEffect(() => {
+    ;(window as Window & { __CATALOG_OPEN__?: boolean }).__CATALOG_OPEN__ = open
+  }, [open])
+
   async function confirmCatalog(ids: string[]) {
     catalogConfirmAttempts += 1
     ;(window as Window & { __CATALOG_ATTEMPTS__?: number }).__CATALOG_ATTEMPTS__ = catalogConfirmAttempts
@@ -79,8 +86,8 @@ function CatalogFixture() {
   }
 
   return <ExerciseCatalogDialog
-    open
-    onOpenChange={() => {}}
+    open={open}
+    onOpenChange={setOpen}
     options={initialCatalogOptions}
     selectionMode="multiple"
     paginated
