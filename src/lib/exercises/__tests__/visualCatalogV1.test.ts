@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import {
   CATALOG_V1_EXERCISE_SLUGS,
   validateCatalogV1Manifest,
@@ -33,6 +35,24 @@ const valid = {
 }
 
 describe('validateCatalogV1Manifest', () => {
+  it('accepts the committed 25-entry V1 manifest', () => {
+    const manifest = JSON.parse(readFileSync(
+      path.resolve(process.cwd(), 'public/exercises/catalog/v1/manifest.json'),
+      'utf8',
+    ))
+
+    expect(validateCatalogV1Manifest(manifest)).toEqual([])
+    expect(manifest.exercises).toHaveLength(25)
+    expect(manifest.exercises.slice(0, 5).every((entry: { batch: unknown }) => entry.batch === 'pilot')).toBe(true)
+    expect(manifest.exercises.every((entry: { status: unknown }) =>
+      entry.status === 'draft' || entry.status === 'visual-approved',
+    )).toBe(true)
+    expect(Object.fromEntries(['pilot', 1, 2, 3, 4].map(batch => [
+      batch,
+      manifest.exercises.filter((entry: { batch: unknown }) => entry.batch === batch).length,
+    ]))).toEqual({ pilot: 5, 1: 5, 2: 5, 3: 5, 4: 5 })
+  })
+
   it('accepts the exact V1 draft catalog', () => {
     expect(validateCatalogV1Manifest(valid)).toEqual([])
   })
