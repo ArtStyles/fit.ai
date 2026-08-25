@@ -45,6 +45,8 @@ export function ProgramTemplateEditor({
   const [workoutStructuralPending, setWorkoutStructuralPending] = useState<Record<string, WorkoutStructuralPending>>({})
   const [announcement, setAnnouncement] = useState('')
   const dayMutationPending = dayMutation !== null
+  const dayDeletePending = Object.values(workoutStructuralPending).some(pending => pending.dayDeletePending)
+  const dayStructurePending = dayMutationPending || dayDeletePending
   const canAddWorkout = orderedWorkouts.length < template.days_per_week
 
   useEffect(() => {
@@ -61,6 +63,19 @@ export function ProgramTemplateEditor({
       setDayMutation(null)
     }
   }, [dayMutation, orderedWorkouts])
+
+  useEffect(() => {
+    const workoutIds = new Set(orderedWorkouts.map(workout => workout.id))
+    setWorkoutStructuralPending(current => {
+      const removedIds = Object.entries(current)
+        .filter(([id, pending]) => pending.dayDeletePending && !workoutIds.has(id))
+        .map(([id]) => id)
+      if (!removedIds.length) return current
+      const next = { ...current }
+      removedIds.forEach(id => { delete next[id] })
+      return next
+    })
+  }, [orderedWorkouts])
 
   const activeWorkout = orderedWorkouts.find(workout => workout.id === activeWorkoutId) ?? orderedWorkouts[0]
   const routineSummary = summarizeRoutine(orderedWorkouts)
@@ -83,7 +98,7 @@ export function ProgramTemplateEditor({
 
   async function addWorkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (dayMutationPending || !canAddWorkout) {
+    if (dayStructurePending || !canAddWorkout) {
       setAnnouncement('La rutina ya tiene todos los días configurados.')
       return
     }
@@ -108,7 +123,7 @@ export function ProgramTemplateEditor({
   }
 
   async function moveWorkout(id: string, delta: number) {
-    if (dayMutationPending) return
+    if (dayStructurePending) return
     const index = orderedWorkouts.findIndex(workout => workout.id === id)
     const moved = moveItem(orderedWorkouts, index, delta)
     if (moved.every((workout, current) => workout.id === orderedWorkouts[current]?.id)) return
@@ -145,17 +160,18 @@ export function ProgramTemplateEditor({
           <TemplateDayTabs
             workouts={orderedWorkouts}
             activeWorkoutId={activeWorkout.id}
-            pending={dayMutationPending}
+            pending={dayStructurePending}
             canAdd={canAddWorkout}
             onSelect={setActiveWorkoutId}
             onMove={(id, delta) => void moveWorkout(id, delta)}
-            onAdd={() => { if (canAddWorkout) setAddingWorkout(true) }}
+            onAdd={() => { if (canAddWorkout && !dayStructurePending) setAddingWorkout(true) }}
           />
           {activeWorkout ? (
             <ActiveTemplateWorkout
               key={activeWorkout.id}
               workout={activeWorkout}
               options={options}
+              dayStructurePending={dayStructurePending}
               structuralPending={workoutStructuralPending[activeWorkout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING}
               onStructuralPendingChange={update => {
                 setWorkoutStructuralPending(current => ({
@@ -184,7 +200,7 @@ export function ProgramTemplateEditor({
             <label className="text-sm">Nombre<input aria-label="Nombre del día" required name="name" maxLength={120} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3" /></label>
             <label className="text-sm">Día de la semana<select aria-label="Día de la semana" name="dayOfWeek" defaultValue={String(Math.min(7, orderedWorkouts.length + 1))} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3">{WEEKDAYS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label>
           </div>
-          <button type="submit" disabled={dayMutationPending || !canAddWorkout} className="mt-4 min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+          <button type="submit" disabled={dayStructurePending || !canAddWorkout} className="mt-4 min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
             {dayMutationPending ? 'Agregando…' : 'Agregar día'}
           </button>
         </form>

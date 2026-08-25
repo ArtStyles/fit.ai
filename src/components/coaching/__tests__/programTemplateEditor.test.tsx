@@ -284,6 +284,69 @@ describe('professional template editor browser interactions', () => {
     } finally { await page.close() }
   })
 
+  it('serializes reorder, append, and delete mutations of the active exercise list', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByRole('button', { name: 'Bajar Sentadilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'reorder-exercises')))
+
+      await pwExpect(page.getByRole('button', { name: 'Eliminar Sentadilla' })).toBeDisabled()
+      await pwExpect(page.getByRole('button', { name: 'Agregar varios ejercicios' })).toBeDisabled()
+      const overlapCalls = await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])
+      expect(overlapCalls.filter(call => call.action === 'delete-exercise' || call.action === 'add-exercises')).toHaveLength(0)
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('button', { name: 'Eliminar Sentadilla' })).toBeEnabled()
+      await pwExpect(page.getByRole('button', { name: 'Agregar varios ejercicios' })).toBeEnabled()
+
+      await page.getByRole('button', { name: 'Agregar varios ejercicios' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Agregar ejercicios' })
+      await dialog.getByRole('button', { name: /Prensa/ }).click()
+      await dialog.getByRole('button', { name: 'Agregar 1 ejercicio' }).click()
+      await pwExpect(dialog).toBeHidden()
+      await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeDisabled()
+      await pwExpect(page.getByRole('button', { name: 'Eliminar Sentadilla' })).toBeDisabled()
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
+      await pwExpect(page.getByRole('button', { name: 'Eliminar Prensa' })).toBeEnabled()
+
+      page.once('dialog', confirmation => void confirmation.accept())
+      await page.getByRole('button', { name: 'Eliminar Prensa' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-exercise')))
+      await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeDisabled()
+      await pwExpect(page.getByRole('button', { name: 'Agregar varios ejercicios' })).toBeDisabled()
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
+      await pwExpect(page.getByRole('button', { name: 'Agregar varios ejercicios' })).toBeEnabled()
+      await pwExpect(page.getByRole('button', { name: 'Eliminar Prensa' })).toHaveCount(0)
+    } finally { await page.close() }
+  })
+
+  it('serializes day reorder and deletion until refreshed workout props settle', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByRole('button', { name: 'Bajar Día A' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'reorder-workouts')))
+      await pwExpect(page.getByRole('button', { name: 'Eliminar día' })).toBeDisabled()
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('button', { name: 'Eliminar día' })).toBeEnabled()
+
+      page.once('dialog', confirmation => void confirmation.accept())
+      await page.getByRole('button', { name: 'Eliminar día' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-workout')))
+      await pwExpect(page.getByRole('button', { name: 'Subir Día A' })).toBeDisabled()
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
+      await pwExpect(page.getByRole('button', { name: 'Agregar día' })).toBeEnabled()
+    } finally { await page.close() }
+  })
+
   it('keeps exercise deletion pending until refreshed props remove the card', async () => {
     const page = await browser.newPage()
     try {

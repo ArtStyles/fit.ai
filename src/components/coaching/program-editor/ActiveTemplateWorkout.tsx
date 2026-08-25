@@ -34,12 +34,14 @@ async function safeAction(loader: () => Promise<Result>, fallback: string): Prom
 export function ActiveTemplateWorkout({
   workout,
   options,
+  dayStructurePending,
   structuralPending,
   onStructuralPendingChange,
   onChanged,
 }: {
   workout: TemplateWorkoutView
   options: PlanExerciseOption[]
+  dayStructurePending: boolean
   structuralPending: WorkoutStructuralPending
   onStructuralPendingChange: (update: (current: WorkoutStructuralPending) => WorkoutStructuralPending) => void
   onChanged: () => void
@@ -49,9 +51,10 @@ export function ActiveTemplateWorkout({
   const [daySaveState, setDaySaveState] = useState<SaveState>('saved')
   const [announcement, setAnnouncement] = useState('')
   const exerciseIds = workout.exercises.map(exercise => exercise.id)
-  const { reorderExpectedIds, deletePendingId, dayDeletePending, batchExpectedIds } = structuralPending
+  const { reorderExpectedIds, deletePendingId, batchExpectedIds } = structuralPending
   const reorderPending = structuralPending.reorderExpectedIds !== null
   const batchPending = structuralPending.batchExpectedIds !== null
+  const exerciseStructurePending = reorderPending || deletePendingId !== null || batchPending
 
   useEffect(() => {
     if (reorderExpectedIds && reorderExpectedIds.length === exerciseIds.length && reorderExpectedIds.every((id, index) => id === exerciseIds[index])) {
@@ -83,7 +86,7 @@ export function ActiveTemplateWorkout({
   }
 
   async function reorderExercise(index: number, delta: number) {
-    if (reorderPending) return
+    if (exerciseStructurePending) return
     const ordered = moveItem(workout.exercises, index, delta)
     if (ordered.every((exercise, current) => exercise.id === workout.exercises[current]?.id)) return
     const expectedIds = ordered.map(exercise => exercise.id)
@@ -105,7 +108,7 @@ export function ActiveTemplateWorkout({
   }
 
   async function deleteExercise(id: string, name: string) {
-    if (deletePendingId || !window.confirm(`¿Eliminar ${name}?`)) return
+    if (exerciseStructurePending || !window.confirm(`¿Eliminar ${name}?`)) return
     onStructuralPendingChange(current => ({ ...current, deletePendingId: id }))
     const formData = new FormData()
     formData.set('templateExerciseId', id)
@@ -136,7 +139,7 @@ export function ActiveTemplateWorkout({
   }
 
   async function deleteDay() {
-    if (dayDeletePending || !window.confirm(`¿Eliminar ${workout.name}?`)) return
+    if (dayStructurePending || !window.confirm(`¿Eliminar ${workout.name}?`)) return
     onStructuralPendingChange(current => ({ ...current, dayDeletePending: true }))
     const formData = new FormData()
     formData.set('templateWorkoutId', workout.id)
@@ -167,7 +170,7 @@ export function ActiveTemplateWorkout({
           <h2 className="text-lg font-bold text-foreground">{workout.name}</h2>
           <p className="text-sm text-muted-foreground">{summary.sets} series · {summary.estimatedMinutes} min estimados</p>
         </div>
-        <button type="button" disabled={dayDeletePending} onClick={() => void deleteDay()} className="min-h-11 rounded-xl border border-destructive/40 px-3 text-sm font-semibold text-destructive disabled:opacity-50">Eliminar día</button>
+        <button type="button" disabled={dayStructurePending} onClick={() => void deleteDay()} className="min-h-11 rounded-xl border border-destructive/40 px-3 text-sm font-semibold text-destructive disabled:opacity-50">Eliminar día</button>
       </div>
 
       <details className="mt-3 rounded-xl border border-border/60 p-3">
@@ -194,8 +197,8 @@ export function ActiveTemplateWorkout({
               index={index}
               count={workout.exercises.length}
               options={options}
-              reorderPending={reorderPending}
-              deletePending={deletePendingId === exercise.id}
+              reorderPending={exerciseStructurePending}
+              deletePending={exerciseStructurePending}
               onMove={delta => void reorderExercise(index, delta)}
               onDelete={() => void deleteExercise(exercise.id, exercise.exercise?.name ?? 'este ejercicio')}
               onSave={saveExercise}
@@ -208,7 +211,7 @@ export function ActiveTemplateWorkout({
         workoutId={workout.id}
         options={options}
         remainingCapacity={Math.max(0, 30 - workout.exercises.length)}
-        pending={batchPending}
+        pending={exerciseStructurePending}
         onAdded={(exercises: AppendedExercise[]) => {
           onStructuralPendingChange(current => ({ ...current, batchExpectedIds: exercises.map(exercise => exercise.id) }))
           setAnnouncement('Ejercicios agregados.')
