@@ -1,4 +1,14 @@
 type RecordedFields = Record<string, string | string[]>
+type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
+type ServerEvent =
+  | { type: 'create-workout'; workoutId: string; fields: RecordedFields }
+  | { type: 'delete-workout'; workoutId: string }
+  | { type: 'reorder-workouts'; workoutIds: string[] }
+  | { type: 'add-exercises'; workoutId: string; exercises: AppendedExercise[] }
+  | { type: 'delete-exercise'; exerciseId: string }
+  | { type: 'reorder-exercises'; workoutId: string; exerciseIds: string[] }
+
+let appendedExerciseSequence = 0
 
 function queryMode(name: string) {
   return new URLSearchParams(window.location.search).get(name)
@@ -31,6 +41,17 @@ function record(action: string, formData?: FormData) {
   recordedActions().push({ action, fields: fieldsFrom(formData) })
 }
 
+function queueServerEvent(event: ServerEvent) {
+  const state = window as Window & { __PROGRAM_SERVER_EVENTS__?: ServerEvent[] }
+  state.__PROGRAM_SERVER_EVENTS__ ??= []
+  state.__PROGRAM_SERVER_EVENTS__.push(event)
+}
+
+function stringField(formData: FormData, name: string) {
+  const value = formData.get(name)
+  return typeof value === 'string' ? value : ''
+}
+
 export async function createTrainerProgram(formData: FormData) {
   record('create-template', formData)
   return { ok: true as const, templateId: '11111111-1111-4111-8111-111111111111' }
@@ -38,6 +59,12 @@ export async function createTrainerProgram(formData: FormData) {
 
 export async function updateTrainerProgram(formData: FormData) {
   record('update-template', formData)
+  if (queryMode('save') === 'hold') {
+    return new Promise<{ ok: true; templateId: string }>(resolve => {
+      const state = window as Window & { __RESOLVE_TEMPLATE_SAVE__?: () => void }
+      state.__RESOLVE_TEMPLATE_SAVE__ = () => resolve({ ok: true, templateId: '11111111-1111-4111-8111-111111111111' })
+    })
+  }
   return queryMode('save') === 'error'
     ? { ok: false as const, error: 'No se pudo guardar la rutina.' }
     : { ok: true as const, templateId: '11111111-1111-4111-8111-111111111111' }
@@ -50,7 +77,9 @@ export async function archiveTrainerProgram(formData: FormData) {
 
 export async function createTrainerTemplateWorkout(formData: FormData) {
   record('create-workout', formData)
-  return { ok: true as const, workoutId: '88888888-8888-4888-8888-888888888888' }
+  const workoutId = '88888888-8888-4888-8888-888888888888'
+  queueServerEvent({ type: 'create-workout', workoutId, fields: fieldsFrom(formData) })
+  return { ok: true as const, workoutId }
 }
 
 export async function updateTrainerTemplateWorkout(formData: FormData) {
@@ -60,6 +89,7 @@ export async function updateTrainerTemplateWorkout(formData: FormData) {
 
 export async function deleteTrainerTemplateWorkout(formData: FormData) {
   record('delete-workout', formData)
+  queueServerEvent({ type: 'delete-workout', workoutId: stringField(formData, 'templateWorkoutId') })
   return { ok: true as const }
 }
 
@@ -71,15 +101,22 @@ export async function addTrainerTemplateExercises(formData: FormData) {
   }
 
   const selected = formData.getAll('exerciseId').filter((value): value is string => typeof value === 'string')
+  const exercises = selected.map(exerciseId => {
+    appendedExerciseSequence += 1
+    return {
+      id: `99999999-9999-4999-8999-${String(appendedExerciseSequence).padStart(12, '0')}`,
+      exerciseId,
+      orderIndex: 2 + appendedExerciseSequence,
+    }
+  })
+  queueServerEvent({
+    type: 'add-exercises',
+    workoutId: stringField(formData, 'templateWorkoutId'),
+    exercises,
+  })
   return {
     ok: true as const,
-    exercises: selected.map((exerciseId, index) => ({
-      id: index === 0
-        ? '99999999-9999-4999-8999-999999999991'
-        : '99999999-9999-4999-8999-999999999992',
-      exerciseId,
-      orderIndex: 3 + index,
-    })),
+    exercises,
   }
 }
 
@@ -90,21 +127,26 @@ export async function updateTrainerTemplateExercise(formData: FormData) {
 
 export async function deleteTrainerTemplateExercise(formData: FormData) {
   record('delete-exercise', formData)
+  queueServerEvent({ type: 'delete-exercise', exerciseId: stringField(formData, 'templateExerciseId') })
   return { ok: true as const }
 }
 
 export async function reorderTrainerTemplateWorkouts(formData: FormData) {
   record('reorder-workouts', formData)
-  return queryMode('reorder') === 'days-error'
-    ? { ok: false as const, error: 'No se pudo actualizar el orden.' }
-    : { ok: true as const }
+  if (queryMode('reorder') === 'days-error') return { ok: false as const, error: 'No se pudo actualizar el orden.' }
+  queueServerEvent({ type: 'reorder-workouts', workoutIds: stringField(formData, 'workoutIds').split(',') })
+  return { ok: true as const }
 }
 
 export async function reorderTrainerTemplateExercises(formData: FormData) {
   record('reorder-exercises', formData)
-  return queryMode('reorder') === 'error'
-    ? { ok: false as const, error: 'No se pudo actualizar el orden.' }
-    : { ok: true as const }
+  if (queryMode('reorder') === 'error') return { ok: false as const, error: 'No se pudo actualizar el orden.' }
+  queueServerEvent({
+    type: 'reorder-exercises',
+    workoutId: stringField(formData, 'templateWorkoutId'),
+    exerciseIds: stringField(formData, 'templateExerciseIds').split(','),
+  })
+  return { ok: true as const }
 }
 
 export async function loadExerciseCatalogPage() {

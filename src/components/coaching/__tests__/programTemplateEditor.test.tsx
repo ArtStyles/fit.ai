@@ -92,6 +92,22 @@ describe('professional template editor browser interactions', () => {
     } finally { await page.close() }
   })
 
+  it('locks template metadata to the submitted snapshot while save is pending', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?save=hold`)
+      const name = page.getByLabel('Nombre de la rutina')
+      await name.fill('Fuerza en progreso')
+      await page.getByRole('button', { name: 'Guardar plantilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __RESOLVE_TEMPLATE_SAVE__?: () => void }).__RESOLVE_TEMPLATE_SAVE__))
+
+      await pwExpect(name).toBeDisabled()
+      await page.evaluate(() => (window as Window & { __RESOLVE_TEMPLATE_SAVE__?: () => void }).__RESOLVE_TEMPLATE_SAVE__?.())
+      await pwExpect(name).toBeEnabled()
+      await pwExpect(page.getByRole('region', { name: 'Fuerza' }).getByText('Todo guardado')).toBeVisible()
+    } finally { await page.close() }
+  })
+
   it('creates a day with a localized weekday and an internally computed order', async () => {
     const page = await browser.newPage()
     try {
@@ -103,6 +119,8 @@ describe('professional template editor browser interactions', () => {
       await expect(form.getByLabel(/Orden/).count()).resolves.toBe(0)
       await form.getByRole('button', { name: 'Agregar día' }).click()
       await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'create-workout')))
+      await pwExpect(page.getByRole('tab', { name: /Día C/ })).toBeVisible()
+      await pwExpect(page.getByRole('button', { name: 'Agregar día' })).toHaveCount(0)
 
       expect((await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__))?.at(-1)).toEqual({
         action: 'create-workout',
@@ -113,6 +131,43 @@ describe('professional template editor browser interactions', () => {
           orderInPlan: '3',
         },
       })
+    } finally { await page.close() }
+  })
+
+  it('keeps day creation pending until refreshed props add the day', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByRole('button', { name: 'Agregar día' }).click()
+      const form = page.getByRole('form', { name: 'Agregar día' })
+      await form.getByLabel('Nombre del día').fill('Día C')
+      await form.getByRole('button', { name: 'Agregar día' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'create-workout')))
+
+      const addDay = page.getByRole('button', { name: 'Agregar día' })
+      await pwExpect(addDay).toBeDisabled()
+      expect((await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])).filter(call => call.action === 'create-workout')).toHaveLength(1)
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('tab', { name: /Día C/ })).toBeVisible()
+      await pwExpect(addDay).toHaveCount(0)
+    } finally { await page.close() }
+  })
+
+  it('keeps day reorder pending and non-optimistic until refreshed order arrives', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      const dayTabs = page.getByRole('tab')
+      await page.getByRole('button', { name: 'Bajar Día A' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'reorder-workouts')))
+
+      await pwExpect(page.getByRole('button', { name: 'Bajar Día A' })).toBeDisabled()
+      await pwExpect(dayTabs.first()).toContainText('Día A')
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(dayTabs.first()).toContainText('Día B')
+      await pwExpect(page.getByRole('button', { name: 'Subir Día A' })).toBeEnabled()
     } finally { await page.close() }
   })
 
@@ -165,6 +220,102 @@ describe('professional template editor browser interactions', () => {
       const batches = calls.filter(call => call.action === 'add-exercises')
       expect(batches).toHaveLength(2)
       expect(batches.every(call => call.fields.orderIndex === undefined)).toBe(true)
+      await pwExpect(page.getByText('3. Prensa', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText('4. Gemelos', { exact: true })).toBeVisible()
+      await pwExpect(page.getByRole('tab', { name: /Día A/ })).toContainText('4 ejercicios')
+      await pwExpect(page.getByText('26 espacios disponibles')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('keeps a successful batch pending until refreshed exercises become visible', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByRole('button', { name: 'Agregar varios ejercicios' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Agregar ejercicios' })
+      await dialog.getByRole('button', { name: /Prensa/ }).click()
+      await dialog.getByRole('button', { name: 'Agregar 1 ejercicio' }).click()
+      await pwExpect(dialog).toBeHidden()
+
+      const addBatch = page.getByRole('button', { name: 'Agregar varios ejercicios' })
+      await pwExpect(addBatch).toBeDisabled()
+      await pwExpect(page.locator('[data-template-exercise-id]')).toHaveCount(2)
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.locator('[data-template-exercise-id]')).toHaveCount(3)
+      await pwExpect(page.getByText('3. Prensa', { exact: true })).toBeVisible()
+      await pwExpect(addBatch).toBeEnabled()
+      await pwExpect(page.getByText('27 espacios disponibles')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it('keeps exercise reorder pending and non-optimistic until refreshed order arrives', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      const exerciseIds = page.locator('[data-template-exercise-id]')
+      const before = await exerciseIds.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-template-exercise-id')))
+      await page.getByRole('button', { name: 'Bajar Sentadilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'reorder-exercises')))
+
+      await pwExpect(page.getByRole('button', { name: 'Bajar Sentadilla' })).toBeDisabled()
+      expect(await exerciseIds.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-template-exercise-id')))).toEqual(before)
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      expect(await exerciseIds.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-template-exercise-id')))).toEqual([...before].reverse())
+      await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
+    } finally { await page.close() }
+  })
+
+  it('preserves an active-day structural pending state across tab switches', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      await page.getByRole('button', { name: 'Bajar Sentadilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'reorder-exercises')))
+      await pwExpect(page.getByRole('button', { name: 'Bajar Sentadilla' })).toBeDisabled()
+
+      await page.getByRole('tab', { name: /Día B/ }).click()
+      await page.getByRole('tab', { name: /Día A/ }).click()
+      await pwExpect(page.getByRole('button', { name: 'Bajar Sentadilla' })).toBeDisabled()
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
+    } finally { await page.close() }
+  })
+
+  it('keeps exercise deletion pending until refreshed props remove the card', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      page.once('dialog', dialog => void dialog.accept())
+      const deleteExercise = page.getByRole('button', { name: 'Eliminar Sentadilla' })
+      await deleteExercise.click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-exercise')))
+
+      await pwExpect(deleteExercise).toBeDisabled()
+      await pwExpect(page.locator('[data-template-exercise-id="33333333-3333-4333-8333-333333333333"]')).toBeVisible()
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.locator('[data-template-exercise-id="33333333-3333-4333-8333-333333333333"]')).toHaveCount(0)
+    } finally { await page.close() }
+  })
+
+  it('keeps day deletion pending until refreshed props remove the day', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
+      page.once('dialog', dialog => void dialog.accept())
+      const deleteDay = page.getByRole('button', { name: 'Eliminar día' })
+      await deleteDay.click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-workout')))
+
+      await pwExpect(deleteDay).toBeDisabled()
+      await pwExpect(page.getByRole('tabpanel', { name: /Día A/ })).toBeVisible()
+
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
+      await pwExpect(page.getByRole('tabpanel', { name: /Día B/ })).toBeVisible()
     } finally { await page.close() }
   })
 
@@ -175,6 +326,7 @@ describe('professional template editor browser interactions', () => {
       const before = await page.locator('[data-template-exercise-id]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-template-exercise-id')))
       await page.getByRole('button', { name: 'Bajar Sentadilla' }).click()
       await pwExpect(page.getByRole('status')).toContainText('No se pudo actualizar el orden.')
+      await pwExpect(page.getByRole('button', { name: 'Bajar Sentadilla' })).toBeEnabled()
       const after = await page.locator('[data-template-exercise-id]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-template-exercise-id')))
       expect(after).toEqual(before)
     } finally { await page.close() }

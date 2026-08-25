@@ -6,6 +6,7 @@ export function TemplateDayTabs({
   workouts,
   activeWorkoutId,
   pending,
+  canAdd,
   onSelect,
   onMove,
   onAdd,
@@ -13,6 +14,7 @@ export function TemplateDayTabs({
   workouts: TemplateWorkoutView[]
   activeWorkoutId: string
   pending?: boolean
+  canAdd: boolean
   onSelect: (id: string) => void
   onMove: (id: string, delta: number) => void
   onAdd: () => void
@@ -39,9 +41,11 @@ export function TemplateDayTabs({
           </div>
         </div>
       ))}
-      <button type="button" onClick={onAdd} disabled={pending} className="min-h-11 shrink-0 snap-start rounded-xl border border-dashed border-primary/50 px-4 text-sm font-semibold text-primary disabled:opacity-50">
-        Agregar día
-      </button>
+      {canAdd ? (
+        <button type="button" onClick={onAdd} disabled={pending} className="min-h-11 shrink-0 snap-start rounded-xl border border-dashed border-primary/50 px-4 text-sm font-semibold text-primary disabled:opacity-50">
+          Agregar día
+        </button>
+      ) : null}
     </div>
   )
 }

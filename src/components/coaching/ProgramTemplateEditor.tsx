@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
-import { ActiveTemplateWorkout } from './program-editor/ActiveTemplateWorkout'
+import {
+  ActiveTemplateWorkout,
+  EMPTY_WORKOUT_STRUCTURAL_PENDING,
+  type WorkoutStructuralPending,
+} from './program-editor/ActiveTemplateWorkout'
 import { moveItem, summarizeRoutine } from './program-editor/model'
 import { ProgramTemplateActions } from './program-editor/ProgramTemplateActions'
 import { ProgramTemplateSummary } from './program-editor/ProgramTemplateSummary'
@@ -13,6 +17,10 @@ import type { ProgramTemplateView, SaveState, TemplateWorkoutView } from './prog
 export type { ProgramTemplateView, TemplateExerciseView, TemplateWorkoutView } from './program-editor/types'
 
 type Result = { ok: boolean; error?: string }
+type DayMutationExpectation =
+  | { kind: 'create-request' }
+  | { kind: 'create'; workoutId: string }
+  | { kind: 'reorder'; workoutIds: string[] }
 
 const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
@@ -33,14 +41,26 @@ export function ProgramTemplateEditor({
   const [activeWorkoutId, setActiveWorkoutId] = useState(orderedWorkouts[0]?.id ?? '')
   const [templateSaveState, setTemplateSaveState] = useState<SaveState>('saved')
   const [addingWorkout, setAddingWorkout] = useState(false)
-  const [dayMutationPending, setDayMutationPending] = useState(false)
+  const [dayMutation, setDayMutation] = useState<DayMutationExpectation | null>(null)
+  const [workoutStructuralPending, setWorkoutStructuralPending] = useState<Record<string, WorkoutStructuralPending>>({})
   const [announcement, setAnnouncement] = useState('')
+  const dayMutationPending = dayMutation !== null
+  const canAddWorkout = orderedWorkouts.length < template.days_per_week
 
   useEffect(() => {
     if (!orderedWorkouts.some(workout => workout.id === activeWorkoutId)) {
       setActiveWorkoutId(orderedWorkouts[0]?.id ?? '')
     }
   }, [activeWorkoutId, orderedWorkouts])
+
+  useEffect(() => {
+    if (dayMutation?.kind === 'create' && orderedWorkouts.some(workout => workout.id === dayMutation.workoutId)) {
+      setDayMutation(null)
+    }
+    if (dayMutation?.kind === 'reorder' && dayMutation.workoutIds.length === orderedWorkouts.length && dayMutation.workoutIds.every((id, index) => id === orderedWorkouts[index]?.id)) {
+      setDayMutation(null)
+    }
+  }, [dayMutation, orderedWorkouts])
 
   const activeWorkout = orderedWorkouts.find(workout => workout.id === activeWorkoutId) ?? orderedWorkouts[0]
   const routineSummary = summarizeRoutine(orderedWorkouts)
@@ -63,22 +83,27 @@ export function ProgramTemplateEditor({
 
   async function addWorkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (dayMutationPending) return
+    if (dayMutationPending || !canAddWorkout) {
+      setAnnouncement('La rutina ya tiene todos los días configurados.')
+      return
+    }
     const formData = new FormData(event.currentTarget)
     formData.set('templateId', template.id)
     formData.set('orderInPlan', String(Math.min(7, orderedWorkouts.length + 1)))
-    setDayMutationPending(true)
+    setDayMutation({ kind: 'create-request' })
     try {
       const result = await (await import('@/app/actions/trainerPrograms')).createTrainerTemplateWorkout(formData)
       setAnnouncement(result.ok ? 'Entrenamiento agregado.' : result.error ?? 'No se pudo agregar el entrenamiento.')
       if (result.ok) {
+        setDayMutation({ kind: 'create', workoutId: result.workoutId })
         setAddingWorkout(false)
         router.refresh()
+      } else {
+        setDayMutation(null)
       }
     } catch {
       setAnnouncement('No se pudo agregar el entrenamiento.')
-    } finally {
-      setDayMutationPending(false)
+      setDayMutation(null)
     }
   }
 
@@ -90,15 +115,15 @@ export function ProgramTemplateEditor({
     const formData = new FormData()
     formData.set('templateId', template.id)
     formData.set('workoutIds', moved.map(workout => workout.id).join(','))
-    setDayMutationPending(true)
+    setDayMutation({ kind: 'reorder', workoutIds: moved.map(workout => workout.id) })
     try {
       const result = await (await import('@/app/actions/trainerPrograms')).reorderTrainerTemplateWorkouts(formData)
       setAnnouncement(result.ok ? 'Orden de días actualizado.' : result.error ?? 'No se pudo actualizar el orden.')
       if (result.ok) router.refresh()
+      else setDayMutation(null)
     } catch {
       setAnnouncement('No se pudo actualizar el orden.')
-    } finally {
-      setDayMutationPending(false)
+      setDayMutation(null)
     }
   }
 
@@ -121,15 +146,23 @@ export function ProgramTemplateEditor({
             workouts={orderedWorkouts}
             activeWorkoutId={activeWorkout.id}
             pending={dayMutationPending}
+            canAdd={canAddWorkout}
             onSelect={setActiveWorkoutId}
             onMove={(id, delta) => void moveWorkout(id, delta)}
-            onAdd={() => setAddingWorkout(true)}
+            onAdd={() => { if (canAddWorkout) setAddingWorkout(true) }}
           />
           {activeWorkout ? (
             <ActiveTemplateWorkout
               key={activeWorkout.id}
               workout={activeWorkout}
               options={options}
+              structuralPending={workoutStructuralPending[activeWorkout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING}
+              onStructuralPendingChange={update => {
+                setWorkoutStructuralPending(current => ({
+                  ...current,
+                  [activeWorkout.id]: update(current[activeWorkout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING),
+                }))
+              }}
               onChanged={() => undefined}
             />
           ) : null}
@@ -141,7 +174,7 @@ export function ProgramTemplateEditor({
         </div>
       )}
 
-      {addingWorkout ? (
+      {addingWorkout && canAddWorkout ? (
         <form aria-label="Agregar día" onSubmit={event => void addWorkout(event)} noValidate className="rounded-2xl border border-border/70 bg-muted/10 p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-bold text-foreground">Agregar día</h2>
@@ -151,7 +184,7 @@ export function ProgramTemplateEditor({
             <label className="text-sm">Nombre<input aria-label="Nombre del día" required name="name" maxLength={120} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3" /></label>
             <label className="text-sm">Día de la semana<select aria-label="Día de la semana" name="dayOfWeek" defaultValue={String(Math.min(7, orderedWorkouts.length + 1))} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3">{WEEKDAYS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label>
           </div>
-          <button type="submit" disabled={dayMutationPending || orderedWorkouts.length >= 7} className="mt-4 min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+          <button type="submit" disabled={dayMutationPending || !canAddWorkout} className="mt-4 min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
             {dayMutationPending ? 'Agregando…' : 'Agregar día'}
           </button>
         </form>

@@ -5,17 +5,19 @@ import { Plus } from 'lucide-react'
 import { ExerciseCatalogDialog, toExerciseCatalogOptions } from '@/components/plan/ExercisePicker'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
 
-type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
+export type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
 
 export function TemplateExerciseBatchPicker({
   workoutId,
   options,
   remainingCapacity,
+  pending,
   onAdded,
 }: {
   workoutId: string
   options: PlanExerciseOption[]
   remainingCapacity: number
+  pending: boolean
   onAdded: (exercises: AppendedExercise[]) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -26,7 +28,8 @@ export function TemplateExerciseBatchPicker({
     <div className="mt-4">
       <button
         type="button"
-        disabled={remainingCapacity <= 0 || options.length === 0}
+        disabled={pending || remainingCapacity <= 0 || options.length === 0}
+        aria-busy={pending || undefined}
         onClick={() => {
           setError(null)
           setOpen(true)
@@ -36,6 +39,7 @@ export function TemplateExerciseBatchPicker({
         <Plus className="h-4 w-4" aria-hidden="true" />
         {remainingCapacity <= 0 ? 'Límite de 30 ejercicios alcanzado' : 'Agregar varios ejercicios'}
       </button>
+      <p className="mt-1 text-center text-xs text-muted-foreground">{remainingCapacity} espacios disponibles</p>
 
       <ExerciseCatalogDialog
         open={open}

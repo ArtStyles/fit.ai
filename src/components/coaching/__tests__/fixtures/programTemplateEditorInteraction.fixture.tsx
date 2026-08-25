@@ -1,8 +1,21 @@
 import { createRoot } from 'react-dom/client'
+import { useEffect, useRef, useState } from 'react'
 import { NewProgramTemplateForm } from '../../NewProgramTemplateForm'
 import { ProgramTemplateEditor } from '../../ProgramTemplateEditor'
+import type { TemplateWorkoutView } from '../../program-editor/types'
 
-const showNewTemplateForm = new URLSearchParams(window.location.search).get('view') === 'new'
+type RecordedFields = Record<string, string | string[]>
+type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
+type ServerEvent =
+  | { type: 'create-workout'; workoutId: string; fields: RecordedFields }
+  | { type: 'delete-workout'; workoutId: string }
+  | { type: 'reorder-workouts'; workoutIds: string[] }
+  | { type: 'add-exercises'; workoutId: string; exercises: AppendedExercise[] }
+  | { type: 'delete-exercise'; exerciseId: string }
+  | { type: 'reorder-exercises'; workoutId: string; exerciseIds: string[] }
+
+const query = new URLSearchParams(window.location.search)
+const showNewTemplateForm = query.get('view') === 'new'
 
 const options = [
   { id: '44444444-4444-4444-8444-444444444444', name: 'Sentadilla', muscle_groups: ['Piernas'], equipment: ['Barra'], difficulty: 'beginner', exercise_type: 'strength', is_compound: true },
@@ -10,7 +23,7 @@ const options = [
   { id: '77777777-7777-4777-8777-777777777777', name: 'Gemelos', muscle_groups: ['Pantorrillas'], equipment: ['Máquina'], difficulty: 'beginner', exercise_type: 'strength', is_compound: false },
 ]
 
-const workouts = [
+const initialWorkouts: TemplateWorkoutView[] = [
   {
     id: '22222222-2222-4222-8222-222222222222', name: 'Día A', day_of_week: 1, order_in_plan: 1,
     exercises: [
@@ -26,16 +39,91 @@ const workouts = [
   },
 ]
 
+function field(fields: RecordedFields, name: string) {
+  const value = fields[name]
+  return typeof value === 'string' ? value : ''
+}
+
+function applyEvent(workouts: TemplateWorkoutView[], event: ServerEvent): TemplateWorkoutView[] {
+  if (event.type === 'create-workout') {
+    return [...workouts, {
+      id: event.workoutId,
+      name: field(event.fields, 'name'),
+      day_of_week: Number(field(event.fields, 'dayOfWeek')),
+      order_in_plan: Number(field(event.fields, 'orderInPlan')),
+      exercises: [],
+    }]
+  }
+  if (event.type === 'delete-workout') return workouts.filter(workout => workout.id !== event.workoutId)
+  if (event.type === 'reorder-workouts') {
+    const byId = new Map(workouts.map(workout => [workout.id, workout]))
+    return event.workoutIds.flatMap((id, index) => {
+      const workout = byId.get(id)
+      return workout ? [{ ...workout, order_in_plan: index + 1 }] : []
+    })
+  }
+  if (event.type === 'delete-exercise') {
+    return workouts.map(workout => ({ ...workout, exercises: workout.exercises.filter(exercise => exercise.id !== event.exerciseId) }))
+  }
+  if (event.type === 'reorder-exercises') {
+    return workouts.map(workout => {
+      if (workout.id !== event.workoutId) return workout
+      const byId = new Map(workout.exercises.map(exercise => [exercise.id, exercise]))
+      return {
+        ...workout,
+        exercises: event.exerciseIds.flatMap((id, index) => {
+          const exercise = byId.get(id)
+          return exercise ? [{ ...exercise, order_index: index + 1 }] : []
+        }),
+      }
+    })
+  }
+  return workouts.map(workout => workout.id !== event.workoutId ? workout : {
+    ...workout,
+    exercises: [...workout.exercises, ...event.exercises.map(item => {
+      const option = options.find(candidate => candidate.id === item.exerciseId)
+      return {
+        id: item.id,
+        exercise_id: item.exerciseId,
+        order_index: item.orderIndex,
+        sets: 3,
+        reps: 10,
+        weight_kg: null,
+        target_rpe: 7,
+        rest_seconds: 60,
+        notes: null,
+        exercise: option ? { name: option.name, muscle_groups: option.muscle_groups, equipment: option.equipment } : null,
+      }
+    })],
+  })
+}
+
+function EditorFixture() {
+  const [workouts, setWorkouts] = useState(initialWorkouts)
+  const appliedEvents = useRef(0)
+
+  useEffect(() => {
+    const state = window as Window & {
+      __PROGRAM_SERVER_EVENTS__?: ServerEvent[]
+      __PROGRAM_APPLY_SERVER_STATE__?: () => void
+    }
+    state.__PROGRAM_APPLY_SERVER_STATE__ = () => {
+      const events = (state.__PROGRAM_SERVER_EVENTS__ ?? []).slice(appliedEvents.current)
+      appliedEvents.current += events.length
+      setWorkouts(current => events.reduce(applyEvent, current))
+    }
+    return () => { delete state.__PROGRAM_APPLY_SERVER_STATE__ }
+  }, [])
+
+  return <ProgramTemplateEditor
+    template={{ id: '11111111-1111-4111-8111-111111111111', name: 'Fuerza', goal: null, description: null, days_per_week: 3, status: 'draft' }}
+    workouts={workouts}
+    options={options}
+  />
+}
+
 createRoot(document.getElementById('root')!).render(
-  <main>
-    {showNewTemplateForm
-      ? <NewProgramTemplateForm />
-      : <ProgramTemplateEditor
-          template={{ id: '11111111-1111-4111-8111-111111111111', name: 'Fuerza', goal: null, description: null, days_per_week: 3, status: 'draft' }}
-          workouts={workouts}
-          options={options}
-        />}
-  </main>,
+  <main>{showNewTemplateForm ? <NewProgramTemplateForm /> : <EditorFixture />}</main>,
 )
 
 ;(window as Window & { __PROGRAM_EDITOR_READY__?: boolean }).__PROGRAM_EDITOR_READY__ = true
