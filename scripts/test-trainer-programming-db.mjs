@@ -24,6 +24,7 @@ const trainerMigrationFiles = [
   '050_product_events_conversion_funnel.sql',
   '051_workout_adjustment_atomic.sql',
   '053_trainer_draft_rpc_json_repair.sql',
+  '056_trainer_template_exercise_batch_append.sql',
 ]
 const migrationPath = file => path.join(repoRoot, 'supabase', 'migrations', file)
 const readMigration = file => readFileSync(migrationPath(file), 'utf8')
@@ -33,6 +34,12 @@ const insightsTestPath = path.join(repoRoot, 'supabase', 'tests', '044_trainer_i
 const isoWeekdayTestPath = path.join(repoRoot, 'supabase', 'tests', '049_trainer_iso_weekday_repair_test.sql')
 const conversionFunnelTestPath = path.join(repoRoot, 'supabase', 'tests', '050_product_events_conversion_funnel_test.sql')
 const workoutAdjustmentTestPath = path.join(repoRoot, 'supabase', 'tests', '051_workout_adjustment_atomic_test.sql')
+const templateBatchAppendTestPath = path.join(
+  repoRoot,
+  'supabase',
+  'tests',
+  '056_trainer_template_exercise_batch_append_test.sql',
+)
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
@@ -828,7 +835,7 @@ BEGIN
   SELECT snapshot INTO before_snapshot FROM public.trainer_migration_rerun_snapshot;
   SELECT public.capture_trainer_migration_rerun_snapshot() INTO after_snapshot;
   IF before_snapshot IS DISTINCT FROM after_snapshot THEN
-    RAISE EXCEPTION 'trainer migrations 040-053 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
+    RAISE EXCEPTION 'trainer migrations 040-051, 053, 056 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
   END IF;
 END $$;
 DROP TABLE public.trainer_migration_rerun_snapshot;
@@ -952,10 +959,13 @@ try {
   if (/^\s*not ok\b/m.test(conversionTapOutput) || /# Looks like you (?:failed|planned)\b/.test(conversionTapOutput)) throw new Error('050 pgTAP reported one or more failed assertions')
   const workoutAdjustmentTapOutput = runPsql(readFileSync(workoutAdjustmentTestPath, 'utf8'), 'running 051 atomic workout adjustment pgTAP suite')
   if (/^\s*not ok\b/m.test(workoutAdjustmentTapOutput) || /# Looks like you (?:failed|planned)\b/.test(workoutAdjustmentTapOutput)) throw new Error('051 pgTAP reported one or more failed assertions')
+  runPsql(readMigration('056_trainer_template_exercise_batch_append.sql'), 'applying migration 056 trainer template exercise batch append')
+  const templateBatchAppendTapOutput = runPsql(readFileSync(templateBatchAppendTestPath, 'utf8'), 'running 056 trainer template exercise batch append pgTAP suite')
+  if (/^\s*not ok\b/m.test(templateBatchAppendTapOutput) || /# Looks like you (?:failed|planned)\b/.test(templateBatchAppendTapOutput)) throw new Error('056 pgTAP reported one or more failed assertions')
   const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
   if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-053')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-051, 053, 056')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
@@ -966,7 +976,7 @@ try {
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
     trainerMigrationFiles.map(readMigration).join('\n'),
-    'reapplying trainer migrations 040-053 after locked professional data',
+    'reapplying trainer migrations 040-051, 053, 056 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   runPsql(conversionFunnelRerunFixtureSql, 'seeding committed conversion rerun fixture')
@@ -975,7 +985,7 @@ try {
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-053 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-051, 053, 056 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

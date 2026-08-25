@@ -115,7 +115,7 @@ SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
    WHERE namespace.nspname = 'public' AND function.prosecdef),
-  '65281f1de5190b82865b0b5813545830',
+  '3486fb9b88f1fdd434d3efc87aa62707',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -166,6 +166,9 @@ SELECT ok(
   AND has_function_privilege('authenticated', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
   AND has_function_privilege('service_role', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
   AND NOT has_function_privilege('anon', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.append_trainer_template_exercises(uuid,jsonb)', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.append_trainer_template_exercises(uuid,jsonb)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.append_trainer_template_exercises(uuid,jsonb)', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE'),
   'effective function ACLs expose only the reviewed API-role entry points, including inherited anonymous trigger grants'
 );
@@ -177,7 +180,7 @@ SELECT is(
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  'a26130a18fefc8fd85940d92d8d6eaf8',
+  '158229783bc602c43d601032a335883f',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
 );
 
