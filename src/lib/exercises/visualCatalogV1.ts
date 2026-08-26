@@ -34,6 +34,27 @@ export const CATALOG_V1_BATCHES = [
     'crunch-polea-rodillas',
     'caminata-cinta',
   ] },
+  { batch: 5, slugs: [
+    'peso-muerto-convencional-barra', 'press-plano-mancuernas', 'flexiones-pecho',
+    'dominadas-pronas', 'press-militar-pie-barra',
+  ] },
+  { batch: 6, slugs: [
+    'sentadilla-goblet-kettlebell', 'sentadilla-bulgara-mancuernas',
+    'zancadas-caminando-mancuernas', 'extension-cuadriceps-maquina',
+    'elevacion-gemelos-pie-maquina',
+  ] },
+  { batch: 7, slugs: [
+    'aperturas-pecho-maquina', 'fondos-paralelas-pecho', 'remo-inclinado-barra',
+    'remo-t-agarre', 'jalon-brazos-rectos-polea',
+  ] },
+  { batch: 8, slugs: [
+    'face-pull-polea', 'elevacion-frontal-mancuernas', 'curl-biceps-barra-recta',
+    'curl-predicador-barra-ez', 'curl-biceps-polea-pie',
+  ] },
+  { batch: 9, slugs: [
+    'press-frances-tumbado-barra-ez', 'elevacion-rodillas-colgado', 'plancha-lateral',
+    'eliptica', 'remo-estacionario',
+  ] },
 ] as const
 
 export type CatalogV1Batch = (typeof CATALOG_V1_BATCHES)[number]['batch']
@@ -81,6 +102,8 @@ export type CatalogV1ExerciseEntry = {
   startPosition: string
   endPosition: string
   techniqueChecks: string[]
+  legacySource?: 'free-exercise-db'
+  legacyExternalId?: string
   batch: CatalogV1Batch
   status: CatalogV1ReviewStatus
   reviews: {
@@ -173,6 +196,7 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
 
   const seenSlugs = new Set<string>()
   const seenPosters = new Set<string>()
+  const seenLegacyExternalIds = new Set<string>()
 
   value.exercises.forEach((candidate, index) => {
     const prefix = `exercises[${index}]`
@@ -205,6 +229,24 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
       !isNonEmptyStringArray(candidate.movementPatterns)
       || !candidate.movementPatterns.every(pattern => MOVEMENT_PATTERNS.has(pattern as CatalogV1MovementPattern))
     ) errors.push(`${prefix}.movementPatterns must be a non-empty array of supported V1 movement patterns`)
+
+    const hasLegacySource = candidate.legacySource !== undefined
+    const hasLegacyExternalId = candidate.legacyExternalId !== undefined
+    if (hasLegacySource !== hasLegacyExternalId) {
+      errors.push(`${prefix}.legacySource and legacyExternalId must appear together`)
+    }
+    if (hasLegacySource && candidate.legacySource !== 'free-exercise-db') {
+      errors.push(`${prefix}.legacySource must be free-exercise-db`)
+    }
+    if (hasLegacyExternalId) {
+      if (!isNonEmptyString(candidate.legacyExternalId)) {
+        errors.push(`${prefix}.legacyExternalId must be a non-empty string`)
+      } else if (seenLegacyExternalIds.has(candidate.legacyExternalId)) {
+        errors.push(`legacyExternalId must be unique: ${candidate.legacyExternalId}`)
+      } else {
+        seenLegacyExternalIds.add(candidate.legacyExternalId)
+      }
+    }
 
     if (validSlug) {
       const expectedBatch = BATCH_BY_SLUG.get(slug as CatalogV1ExerciseSlug)!
