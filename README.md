@@ -167,6 +167,7 @@ Aplica las migraciones SQL en este orden:
 053_trainer_draft_rpc_json_repair.sql
 054_product_notification_archiving.sql
 055_atomic_notification_attention_dismissal.sql
+056_trainer_template_exercise_batch_append.sql
 ```
 
 Para el marketplace de entrenadores, desplegar primero la base de datos y
@@ -176,11 +177,15 @@ permanecer como la última capa correctiva tras cualquier reaplicación de
 aplican `050_product_events_conversion_funnel.sql`,
 `051_workout_adjustment_atomic.sql`, `052_notification_attention_dismissals.sql`,
 `053_trainer_draft_rpc_json_repair.sql`, `054_product_notification_archiving.sql`
-y `055_atomic_notification_attention_dismissal.sql`.
+y `055_atomic_notification_attention_dismissal.sql`, antes de
+`056_trainer_template_exercise_batch_append.sql`.
 La 053 debe estar aplicada para que el formulario de entrenador pueda guardar el
 borrador mediante su RPC atómico; la 054 habilita el archivado no destructivo de
 notificaciones y la 055 valida y persiste de forma atómica únicamente la versión
-vigente de cada aviso descartable.
+vigente de cada aviso descartable. La 056 agrega ejercicios de una plantilla en
+un lote atómico; confirmar `trainer_security_preflight() = 56` en el proyecto
+remoto antes de desplegar la interfaz compatible. Que la migración esté
+confirmada en Git no demuestra que se haya aplicado al proyecto remoto.
 
 Las migraciones de continuidad se despliegan en orden y **primero en base de
 datos**: `036_completed_session_context.sql` → `037_atomic_plan_lifecycle.sql`

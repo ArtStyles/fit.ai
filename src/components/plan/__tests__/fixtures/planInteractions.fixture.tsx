@@ -72,7 +72,7 @@ function CatalogFixture() {
   const [open, setOpen] = useState(true)
 
   useEffect(() => {
-    ;(window as Window & { __CATALOG_OPEN__?: boolean }).__CATALOG_OPEN__ = open
+    (window as Window & { __CATALOG_OPEN__?: boolean }).__CATALOG_OPEN__ = open
   }, [open])
 
   async function confirmCatalog(ids: string[]) {
@@ -81,7 +81,7 @@ function CatalogFixture() {
     if (new URLSearchParams(window.location.search).get('confirm') === 'retry' && catalogConfirmAttempts === 1) {
       return false
     }
-    ;(window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__ = ids
+    (window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__ = ids
     return true
   }
 

@@ -246,8 +246,8 @@ describe('trainer program actions', () => {
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
     const { updateTrainerTemplateWorkout } = await import('../trainerPrograms')
 
-    await expect(updateTrainerTemplateWorkout(form({ templateWorkoutId: ids.workout, name: 'DÃ­a A', dayOfWeek: '1' }))).resolves.toEqual({ ok: true, workoutId: ids.workout })
-    expect(supabase.update).toHaveBeenCalledWith({ name: 'DÃ­a A', day_of_week: 1 })
+    await expect(updateTrainerTemplateWorkout(form({ templateWorkoutId: ids.workout, name: 'Día A', dayOfWeek: '1' }))).resolves.toEqual({ ok: true, workoutId: ids.workout })
+    expect(supabase.update).toHaveBeenCalledWith({ name: 'Día A', day_of_week: 1 })
     expect(JSON.stringify(supabase.update.mock.calls)).not.toContain('order_in_plan')
   })
 
