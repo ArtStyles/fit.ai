@@ -111,6 +111,13 @@ export async function addTrainerTemplateExercises(formData: FormData) {
   }
 
   const selected = formData.getAll('exerciseId').filter((value): value is string => typeof value === 'string')
+  if (queryMode('batch') === 'stale' && attempts === 1) {
+    return {
+      ok: false as const,
+      error: 'Algunos ejercicios ya no están disponibles. Desmárcalos para reintentar.',
+      unavailableExerciseIds: selected.slice(0, 2),
+    }
+  }
   const exercises = selected.map(exerciseId => {
     appendedExerciseSequence += 1
     return {
@@ -189,18 +196,26 @@ export async function reorderTrainerTemplateExercises(formData: FormData) {
 }
 
 export async function loadExerciseCatalogPage() {
+  const auxiliary = Array.from({ length: 10 }, (_, index) => ({
+    id: `88000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    name: `Auxiliar ${String(index + 1).padStart(2, '0')}`,
+    muscleGroups: ['General'],
+    equipment: ['Libre'],
+    imageUrl: null,
+  }))
   return {
     items: [
       { id: '44444444-4444-4444-8444-444444444444', name: 'Sentadilla', muscleGroups: ['Piernas'], equipment: ['Barra'], imageUrl: null },
       { id: '66666666-6666-4666-8666-666666666666', name: 'Prensa', muscleGroups: ['Piernas'], equipment: ['Máquina'], imageUrl: null },
       { id: '77777777-7777-4777-8777-777777777777', name: 'Gemelos', muscleGroups: ['Pantorrillas'], equipment: ['Máquina'], imageUrl: null },
+      ...auxiliary,
     ],
     page: 1,
-    total: 3,
+    total: 13,
     totalPages: 1,
     facets: {
       muscles: [{ value: 'Piernas', label: 'Piernas' }, { value: 'Pantorrillas', label: 'Pantorrillas' }],
-      equipment: [{ value: 'Barra', label: 'Barra' }, { value: 'Máquina', label: 'Máquina' }],
+      equipment: [{ value: 'Barra', label: 'Barra' }, { value: 'Máquina', label: 'Máquina' }, { value: 'Libre', label: 'Libre' }],
     },
   }
 }

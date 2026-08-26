@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NewProgramTemplateForm } from '../../NewProgramTemplateForm'
 import { ProgramTemplateEditor } from '../../ProgramTemplateEditor'
 import type { TemplateWorkoutView } from '../../program-editor/types'
+import { PendingLink } from '@/components/navigation/PendingLink'
 
 type RecordedFields = Record<string, string | string[]>
 type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
@@ -27,10 +28,25 @@ type ServerEvent =
 const query = new URLSearchParams(window.location.search)
 const showNewTemplateForm = query.get('view') === 'new'
 
+;(window as Window & { __NEXT_LINK_NAVIGATE__?: (href: string) => void; __PROGRAM_NAVIGATIONS__?: string[] }).__NEXT_LINK_NAVIGATE__ = href => {
+  const state = window as Window & { __PROGRAM_NAVIGATIONS__?: string[] }
+  state.__PROGRAM_NAVIGATIONS__ ??= []
+  state.__PROGRAM_NAVIGATIONS__.push(href)
+}
+
 const options = [
   { id: '44444444-4444-4444-8444-444444444444', name: 'Sentadilla', muscle_groups: ['Piernas'], equipment: ['Barra'], difficulty: 'beginner', exercise_type: 'strength', is_compound: true },
   { id: '66666666-6666-4666-8666-666666666666', name: 'Prensa', muscle_groups: ['Piernas'], equipment: ['Máquina'], difficulty: 'beginner', exercise_type: 'strength', is_compound: true },
   { id: '77777777-7777-4777-8777-777777777777', name: 'Gemelos', muscle_groups: ['Pantorrillas'], equipment: ['Máquina'], difficulty: 'beginner', exercise_type: 'strength', is_compound: false },
+  ...Array.from({ length: 10 }, (_, index) => ({
+    id: `88000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    name: `Auxiliar ${String(index + 1).padStart(2, '0')}`,
+    muscle_groups: ['General'],
+    equipment: ['Libre'],
+    difficulty: 'beginner',
+    exercise_type: 'strength',
+    is_compound: false,
+  })),
 ]
 
 const initialWorkouts: TemplateWorkoutView[] = [
@@ -156,7 +172,10 @@ function EditorFixture() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <main>{showNewTemplateForm ? <NewProgramTemplateForm /> : <EditorFixture />}</main>,
+  <main>
+    {!showNewTemplateForm ? <PendingLink href="/coach/programs">Rutinas</PendingLink> : null}
+    {showNewTemplateForm ? <NewProgramTemplateForm /> : <EditorFixture />}
+  </main>,
 )
 
 ;(window as Window & { __PROGRAM_EDITOR_READY__?: boolean }).__PROGRAM_EDITOR_READY__ = true

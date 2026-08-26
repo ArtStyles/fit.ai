@@ -25,6 +25,7 @@ function supabaseFixture(options: {
   ownedTemplate?: boolean
   ownedWorkout?: boolean
   exerciseExists?: boolean
+  availableExerciseIds?: string[]
   rpcData?: unknown
   rpcError?: { message?: string; code?: string } | null
 } = {}) {
@@ -43,22 +44,33 @@ function supabaseFixture(options: {
     ],
   }
   const rpc = vi.fn(async () => ({ data: options.rpcData ?? defaultRpcData, error: options.rpcError ?? null }))
-  const query = (data: unknown) => {
+  const query = (data: unknown, table: string) => {
+    let requestedIds: string[] = []
     const chain: any = {
       select: vi.fn(() => chain),
       eq: vi.fn(() => chain),
+      in: vi.fn((_field: string, values: string[]) => {
+        requestedIds = values
+        return chain
+      }),
       maybeSingle: vi.fn(async () => ({ data, error: null })),
       insert,
       update,
       delete: vi.fn(() => ({ eq: async () => ({ error: null }) })),
     }
+    chain.then = (resolve: (value: unknown) => unknown) => resolve({
+      data: table === 'exercises'
+        ? (options.availableExerciseIds ?? requestedIds).map(id => ({ id }))
+        : data,
+      error: null,
+    })
     return chain
   }
   const from = vi.fn((table: string) => {
-    if (table === 'trainer_template_workouts') return query(state.ownedWorkout ? { id: ids.workout, template_id: ids.template } : null)
-    if (table === 'trainer_template_exercises') return query(state.ownedWorkout ? { id: ids.exercise } : null)
-    if (table === 'exercises') return query(state.exerciseExists ? { id: ids.exercise } : null)
-    return query(state.ownedTemplate ? { id: ids.template } : null)
+    if (table === 'trainer_template_workouts') return query(state.ownedWorkout ? { id: ids.workout, template_id: ids.template } : null, table)
+    if (table === 'trainer_template_exercises') return query(state.ownedWorkout ? { id: ids.exercise } : null, table)
+    if (table === 'exercises') return query(state.exerciseExists ? { id: ids.exercise } : null, table)
+    return query(state.ownedTemplate ? { id: ids.template } : null, table)
   })
   return { from, insert, update, rpc }
 }
@@ -169,6 +181,26 @@ describe('trainer program actions', () => {
     await expect(addTrainerTemplateExercises(data)).resolves.toEqual({ ok: false, error: message })
   })
 
+  it('returns only selected unavailable IDs after the catalog rejects a stale batch', async () => {
+    const availableId = ids.exercise
+    const unavailableId = '44444444-4444-4444-8444-444444444444'
+    const supabase = supabaseFixture({
+      rpcError: { message: 'TRAINER_TEMPLATE_BATCH_EXERCISE_UNAVAILABLE' },
+      availableExerciseIds: [availableId],
+    })
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { addTrainerTemplateExercises } = await import('../trainerPrograms')
+    const data = form({ templateWorkoutId: ids.workout })
+    data.append('exerciseId', availableId)
+    data.append('exerciseId', unavailableId)
+
+    await expect(addTrainerTemplateExercises(data)).resolves.toEqual({
+      ok: false,
+      error: 'Algunos ejercicios ya no están disponibles. Desmárcalos para reintentar.',
+      unavailableExerciseIds: [unavailableId],
+    })
+  })
+
   it('rejects a malformed RPC batch response instead of reporting a partial success', async () => {
     const supabase = supabaseFixture({ rpcData: { templateWorkoutId: ids.workout, exercises: [{ id: ids.exercise, exerciseId: 'not-a-uuid', orderIndex: 2 }] } })
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
@@ -184,6 +216,26 @@ describe('trainer program actions', () => {
       templateWorkoutId: ids.workout,
       exercises: [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', exerciseId: ids.exercise, orderIndex: 2 }],
     } })
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { addTrainerTemplateExercises } = await import('../trainerPrograms')
+    const data = form({ templateWorkoutId: ids.workout })
+    data.append('exerciseId', ids.exercise)
+    data.append('exerciseId', '44444444-4444-4444-8444-444444444444')
+
+    await expect(addTrainerTemplateExercises(data)).resolves.toEqual({ ok: false, error: 'No se pudo agregar los ejercicios.' })
+  })
+
+  it.each([
+    ['inverted exercise order', [
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', exerciseId: '44444444-4444-4444-8444-444444444444', orderIndex: 2 },
+      { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', exerciseId: ids.exercise, orderIndex: 3 },
+    ]],
+    ['non-increasing order indexes', [
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', exerciseId: ids.exercise, orderIndex: 3 },
+      { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', exerciseId: '44444444-4444-4444-8444-444444444444', orderIndex: 2 },
+    ]],
+  ])('rejects a non-canonical RPC response with %s', async (_label, exercises) => {
+    const supabase = supabaseFixture({ rpcData: { templateWorkoutId: ids.workout, exercises } })
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
     const { addTrainerTemplateExercises } = await import('../trainerPrograms')
     const data = form({ templateWorkoutId: ids.workout })

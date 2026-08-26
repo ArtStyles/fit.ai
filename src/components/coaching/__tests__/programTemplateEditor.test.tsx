@@ -1,11 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
+import { chromium, expect as pwExpect, type Browser, type Page } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 type RecordedCall = {
   action: string
   fields: Record<string, string | string[]>
+}
+
+async function openTemplateDetails(page: Page) {
+  if (!await page.getByLabel('Nombre de la rutina').isVisible()) {
+    await page.getByText('Editar información', { exact: true }).click()
+  }
 }
 
 describe('professional template editor browser interactions', () => {
@@ -33,6 +39,7 @@ describe('professional template editor browser interactions', () => {
           { find: '@/app/actions/trainerAssignments', replacement: fixtureAssignmentActions },
           { find: '@/app/actions/exerciseCatalog', replacement: fixtureActions },
           { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
+          { find: 'next/link', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextLink.fixture.tsx') },
           { find: 'next/image', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextImage.fixture.tsx') },
           { find: '@', replacement: path.join(repoRoot, 'src') },
         ],
@@ -83,6 +90,8 @@ describe('professional template editor browser interactions', () => {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
       const templateSummary = page.getByRole('region', { name: 'Fuerza' })
       await pwExpect(templateSummary.getByText('Todo guardado')).toBeVisible()
+      await pwExpect(page.getByLabel('Nombre de la rutina')).toBeHidden()
+      await page.getByText('Editar información', { exact: true }).click()
       await page.getByLabel('Nombre de la rutina').fill('Fuerza total')
       await pwExpect(templateSummary.getByText('Cambios pendientes')).toBeVisible()
       await page.getByRole('button', { name: 'Guardar detalles' }).click()
@@ -98,6 +107,7 @@ describe('professional template editor browser interactions', () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await openTemplateDetails(page)
       await page.getByLabel('Nombre de la rutina').fill('Fuerza editada')
       await pwExpect(page.getByText('Cambios pendientes')).toBeVisible()
 
@@ -120,6 +130,7 @@ describe('professional template editor browser interactions', () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?save=error`)
+      await openTemplateDetails(page)
       await page.getByLabel('Objetivo de la rutina').fill('Fuerza máxima')
       expect(await page.evaluate(() => {
         const event = new Event('beforeunload', { cancelable: true })
@@ -144,6 +155,7 @@ describe('professional template editor browser interactions', () => {
       await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
       const assignment = page.getByRole('region', { name: 'Enviar como rutina profesional' })
       await assignment.getByLabel('Cliente del acompañamiento').selectOption('relationship-a')
+      await openTemplateDetails(page)
       await page.getByLabel('Descripción de la rutina').fill('Progresión pendiente')
       await assignment.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
 
@@ -390,6 +402,7 @@ describe('professional template editor browser interactions', () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?save=hold`)
+      await openTemplateDetails(page)
       const name = page.getByLabel('Nombre de la rutina')
       await name.fill('Fuerza en progreso')
       await page.getByRole('button', { name: 'Guardar detalles' }).click()
@@ -399,6 +412,57 @@ describe('professional template editor browser interactions', () => {
       await page.evaluate(() => (window as Window & { __RESOLVE_TEMPLATE_SAVE__?: () => void }).__RESOLVE_TEMPLATE_SAVE__?.())
       await pwExpect(name).toBeEnabled()
       await pwExpect(page.getByRole('region', { name: 'Fuerza' }).getByText('Todo guardado')).toBeVisible()
+    } finally { await page.close() }
+  })
+
+  it.each([
+    { mode: 'dirty', url: '', prepare: async (page: Page) => {
+      await openTemplateDetails(page)
+      await page.getByLabel('Nombre de la rutina').fill('Fuerza pendiente')
+    } },
+    { mode: 'saving', url: '?save=hold', prepare: async (page: Page) => {
+      await openTemplateDetails(page)
+      await page.getByLabel('Nombre de la rutina').fill('Fuerza guardando')
+      await page.getByRole('button', { name: 'Guardar detalles' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __RESOLVE_TEMPLATE_SAVE__?: () => void }).__RESOLVE_TEMPLATE_SAVE__))
+    } },
+    { mode: 'error', url: '?save=error', prepare: async (page: Page) => {
+      await openTemplateDetails(page)
+      await page.getByLabel('Nombre de la rutina').fill('Fuerza con error')
+      await page.getByRole('button', { name: 'Guardar detalles' }).click()
+      await pwExpect(page.getByText('No se pudo guardar').first()).toBeVisible()
+    } },
+  ])('cancels internal Rutinas navigation while metadata is $mode', async ({ url, prepare }) => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html${url}`)
+      await prepare(page)
+      expect(await page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true })
+        return { dispatched: window.dispatchEvent(event), prevented: event.defaultPrevented }
+      })).toEqual({ dispatched: false, prevented: true })
+      page.once('dialog', dialog => void dialog.dismiss())
+      await page.getByRole('link', { name: 'Rutinas' }).click()
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_NAVIGATIONS__?: string[] }).__PROGRAM_NAVIGATIONS__ ?? [])).toEqual([])
+    } finally { await page.close() }
+  })
+
+  it('cancels browser back while metadata is dirty and does not block a saved internal navigation', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await openTemplateDetails(page)
+      await page.getByLabel('Nombre de la rutina').fill('Fuerza pendiente')
+      const dialog = page.waitForEvent('dialog', { timeout: 2_000 })
+      void dialog.then(prompt => prompt.dismiss())
+      await page.evaluate(() => history.back())
+      await dialog
+      await pwExpect(page).toHaveURL(/programTemplateEditorInteraction\.html/)
+
+      await page.getByRole('button', { name: 'Guardar detalles' }).click()
+      await pwExpect(page.getByText('Todo guardado').first()).toBeVisible()
+      await page.getByRole('link', { name: 'Rutinas' }).click()
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_NAVIGATIONS__?: string[] }).__PROGRAM_NAVIGATIONS__ ?? [])).toEqual(['/coach/programs'])
     } finally { await page.close() }
   })
 
@@ -498,6 +562,35 @@ describe('professional template editor browser interactions', () => {
       expect(batches[1].fields.exerciseId).toEqual(batches[0].fields.exerciseId)
     } finally { await page.close() }
   })
+
+  it('keeps a large stale selection, marks unavailable IDs, and retries the valid remainder', async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?batch=stale`)
+      await page.getByRole('button', { name: 'Agregar varios ejercicios' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Agregar ejercicios' })
+      for (const name of ['Prensa', 'Gemelos', ...Array.from({ length: 8 }, (_, index) => `Auxiliar ${String(index + 1).padStart(2, '0')}`)]) {
+        await dialog.getByRole('button', { name: new RegExp(name) }).click()
+      }
+      await dialog.getByRole('button', { name: 'Agregar 10 ejercicios' }).click()
+
+      await pwExpect(dialog).toBeVisible()
+      await pwExpect(dialog.getByRole('alert')).toContainText('Desmárcalos para reintentar')
+      for (const id of ['66666666-6666-4666-8666-666666666666', '77777777-7777-4777-8777-777777777777']) {
+        await pwExpect(dialog.getByText(`ID ${id} ya no disponible`)).toBeVisible()
+      }
+      await pwExpect(dialog.locator('button[aria-pressed="true"]')).toHaveCount(10)
+      await dialog.getByRole('button', { name: /Prensa/ }).click()
+      await dialog.getByRole('button', { name: /Gemelos/ }).click()
+      await dialog.getByRole('button', { name: 'Agregar 8 ejercicios' }).click()
+      await pwExpect(dialog).toBeHidden()
+
+      const calls = await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])
+      const batches = calls.filter(call => call.action === 'add-exercises')
+      expect(batches).toHaveLength(2)
+      expect(batches[1]?.fields.exerciseId).toEqual(Array.from({ length: 8 }, (_, index) => `88000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`))
+    } finally { await page.close() }
+  }, 40_000)
 
   it('submits two consecutive batches without an order field', async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })

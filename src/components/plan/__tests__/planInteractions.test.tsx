@@ -228,6 +228,34 @@ describe('plan editor mobile interactions', () => {
     }
   }, 40_000)
 
+  it('rejects X and Escape closes while confirmation is pending, then closes after success', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/plan/__tests__/fixtures/planInteractions.html?surface=catalog&confirm=hold`)
+      await page.waitForFunction(() => Boolean((window as Window & { __PLAN_INTERACTIONS_READY__?: boolean }).__PLAN_INTERACTIONS_READY__))
+      const catalog = page.getByRole('dialog', { name: 'Agregar ejercicio' })
+      const selected = catalog.getByRole('button', { name: /Ejercicio 01/ })
+      await selected.click()
+      await catalog.getByRole('button', { name: 'Agregar 1 ejercicio' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __RESOLVE_CATALOG_CONFIRM__?: () => void }).__RESOLVE_CATALOG_CONFIRM__))
+
+      await catalog.getByRole('button', { name: 'Cerrar' }).click()
+      await pwExpect(catalog).toBeVisible()
+      await pwExpect(selected).toHaveAttribute('aria-pressed', 'true')
+      await page.keyboard.press('Escape')
+      await pwExpect(catalog).toBeVisible()
+      await pwExpect(selected).toHaveAttribute('aria-pressed', 'true')
+      expect(await page.evaluate(() => (window as Window & { __CATALOG_CLOSE_REQUESTS__?: number }).__CATALOG_CLOSE_REQUESTS__ ?? 0)).toBe(0)
+
+      await page.evaluate(() => (window as Window & { __RESOLVE_CATALOG_CONFIRM__?: () => void }).__RESOLVE_CATALOG_CONFIRM__?.())
+      await pwExpect(catalog).toBeHidden()
+      expect(await page.evaluate(() => (window as Window & { __CATALOG_CLOSE_REQUESTS__?: number }).__CATALOG_CLOSE_REQUESTS__)).toBe(1)
+    } finally {
+      await context.close()
+    }
+  }, 40_000)
+
   it('keeps the workout structure open after saving exercise details', async () => {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
     const page = await context.newPage()

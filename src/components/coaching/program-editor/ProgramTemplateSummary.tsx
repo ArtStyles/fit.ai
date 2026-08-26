@@ -36,7 +36,7 @@ export function ProgramTemplateSummary({
         <SaveStateIndicator state={saveState} />
       </div>
 
-      <details className="mt-4 rounded-xl border border-border/60 bg-background/40 p-3" open>
+      <details className="mt-4 rounded-xl border border-border/60 bg-background/40 p-3">
         <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-foreground">Editar información</summary>
         <form onSubmit={event => void submit(event)} onInput={onDirty} noValidate className="mt-2">
           <fieldset disabled={saveState === 'saving'} className="m-0 grid border-0 p-0 gap-3 disabled:opacity-70 sm:grid-cols-2">

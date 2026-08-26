@@ -126,6 +126,7 @@ type ExerciseCatalogDialogViewProps = {
   confirming?: boolean
   confirmationError?: string | null
   confirmationDetails?: ReactNode
+  invalidIds?: string[]
 }
 
 export function ExerciseCatalogDialogView({
@@ -151,6 +152,7 @@ export function ExerciseCatalogDialogView({
   confirming = false,
   confirmationError = null,
   confirmationDetails,
+  invalidIds = [],
 }: ExerciseCatalogDialogViewProps) {
   const localFacets = collectExerciseFacets(options)
   const facets = providedFacets ?? {
@@ -220,6 +222,7 @@ export function ExerciseCatalogDialogView({
           <ul className="min-w-0 max-w-full divide-y divide-border/50 overflow-hidden">
             {matches.map(option => {
               const selected = selectedIds.includes(option.id)
+              const invalid = invalidIds.includes(option.id)
               const limitReached = selectionLimit !== undefined && selectedIds.length >= selectionLimit
               const meta = [...option.muscleGroups.slice(0, 2), ...option.equipment.slice(0, 1)].join(' · ')
               return (
@@ -227,7 +230,8 @@ export function ExerciseCatalogDialogView({
                   <button
                     type="button"
                     aria-pressed={selected}
-                    disabled={confirming || loading || (!selected && limitReached)}
+                    aria-invalid={invalid || undefined}
+                    disabled={confirming || loading || (!selected && (limitReached || invalid))}
                     onClick={() => onToggle(option.id)}
                     className="flex min-h-[68px] w-full min-w-0 max-w-full items-center gap-3 overflow-hidden py-2 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:bg-muted/20"
                   >
@@ -241,6 +245,7 @@ export function ExerciseCatalogDialogView({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-foreground">{option.name}</span>
                       {meta ? <span className="mt-0.5 block truncate text-xs text-foreground/70">{meta}</span> : null}
+                      {invalid ? <span className="mt-0.5 block truncate text-xs font-semibold text-destructive">ID {option.id} ya no disponible</span> : null}
                     </span>
                     <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent'}`}>
                       <Check className="h-4 w-4" aria-hidden="true" />
@@ -318,6 +323,7 @@ export function ExerciseCatalogDialog({
   paginated = false,
   confirmationError,
   confirmationDetails,
+  invalidIds = [],
   onConfirm,
 }: {
   open: boolean
@@ -331,6 +337,7 @@ export function ExerciseCatalogDialog({
   paginated?: boolean
   confirmationError?: string | null
   confirmationDetails?: ReactNode
+  invalidIds?: string[]
   onConfirm: (ids: string[], selectedOptions?: ExerciseCatalogOption[]) => boolean | void | Promise<boolean | void>
 }) {
   const [query, setQuery] = useState('')
@@ -423,8 +430,13 @@ export function ExerciseCatalogDialog({
     }
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && confirming) return
+    onOpenChange(nextOpen)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         aria-describedby={undefined}
         className="h-[42rem] max-w-lg gap-0 border-border/70 bg-background p-0"
@@ -459,6 +471,7 @@ export function ExerciseCatalogDialog({
             confirming={confirming}
             confirmationError={confirmationError ?? internalConfirmationError}
             confirmationDetails={confirmationDetails}
+            invalidIds={invalidIds}
           />
         </div>
       </DialogContent>

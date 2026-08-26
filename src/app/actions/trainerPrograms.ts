@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
 
 type FieldErrors = Record<string, string>
-type Failure = { ok: false; error: string; fieldErrors?: FieldErrors }
+type Failure = { ok: false; error: string; fieldErrors?: FieldErrors; unavailableExerciseIds?: string[] }
 type IdResult = { ok: true; templateId: string } | Failure
 type WorkoutResult = { ok: true; workoutId: string } | Failure
 type ExerciseResult = { ok: true; templateExerciseId: string } | Failure
@@ -173,21 +173,47 @@ function batchErrorMessage(error: unknown) {
   return Object.entries(BATCH_ERROR_MESSAGES).find(([code]) => values.some(value => value.includes(code)))?.[1] ?? null
 }
 
+function hasBatchErrorCode(error: unknown, code: string) {
+  return Boolean(error && typeof error === 'object'
+    && Object.values(error as Record<string, unknown>).some(value => typeof value === 'string' && value.includes(code)))
+}
+
+async function unavailableExerciseIds(
+  context: Awaited<ReturnType<typeof requireActiveTrainerContext>>,
+  selectedIds: string[],
+) {
+  const { data, error } = await (context.supabase.from('exercises') as any)
+    .select('id')
+    .in('id', selectedIds)
+    .eq('is_public', true)
+  if (error || !Array.isArray(data)) return []
+  const available = new Set(data.flatMap(row => (
+    row && typeof row === 'object' && typeof row.id === 'string' && validUuid(row.id)
+      ? [row.id.toLowerCase()]
+      : []
+  )))
+  return selectedIds.filter(id => !available.has(id.toLowerCase()))
+}
+
 function appendedExercises(data: unknown, workoutId: string, expectedExerciseIds: string[]): AppendedExercise[] | null {
   if (!data || typeof data !== 'object') return null
   const result = data as { templateWorkoutId?: unknown; exercises?: unknown }
   if (result.templateWorkoutId !== workoutId || !Array.isArray(result.exercises) || result.exercises.length !== expectedExerciseIds.length) return null
-  const expected = new Set(expectedExerciseIds.map(exerciseId => exerciseId.toLowerCase()))
-  return result.exercises.every((exercise): exercise is AppendedExercise => (
-    Boolean(exercise)
-    && typeof exercise === 'object'
-    && validUuid((exercise as AppendedExercise).id)
-    && validUuid((exercise as AppendedExercise).exerciseId)
-    && expected.has((exercise as AppendedExercise).exerciseId.toLowerCase())
-    && Number.isInteger((exercise as AppendedExercise).orderIndex)
-    && (exercise as AppendedExercise).orderIndex >= 1
-    && (exercise as AppendedExercise).orderIndex <= 30
-  )) && new Set(result.exercises.map(exercise => exercise.exerciseId.toLowerCase())).size === expected.size ? result.exercises : null
+  let previousOrder = 0
+  for (let index = 0; index < result.exercises.length; index += 1) {
+    const exercise = result.exercises[index]
+    if (!exercise || typeof exercise !== 'object') return null
+    const candidate = exercise as AppendedExercise
+    if (!validUuid(candidate.id)
+      || !validUuid(candidate.exerciseId)
+      || candidate.exerciseId.toLowerCase() !== expectedExerciseIds[index]?.toLowerCase()
+      || !Number.isInteger(candidate.orderIndex)
+      || candidate.orderIndex < 1
+      || candidate.orderIndex > 30
+      || candidate.orderIndex <= previousOrder) return null
+    previousOrder = candidate.orderIndex
+  }
+  return result.exercises as AppendedExercise[]
 }
 
 async function appendTemplateExerciseDrafts(
@@ -199,7 +225,19 @@ async function appendTemplateExerciseDrafts(
     p_template_workout_id: ownership.workoutId,
     p_exercises: drafts,
   })
-  if (error) return failure({}, batchErrorMessage(error) ?? 'No se pudo agregar los ejercicios.')
+  if (error) {
+    if (hasBatchErrorCode(error, 'TRAINER_TEMPLATE_BATCH_EXERCISE_UNAVAILABLE')) {
+      const unavailable = await unavailableExerciseIds(context, drafts.map(draft => draft.exerciseId))
+      if (unavailable.length) {
+        return {
+          ok: false,
+          error: 'Algunos ejercicios ya no están disponibles. Desmárcalos para reintentar.',
+          unavailableExerciseIds: unavailable,
+        }
+      }
+    }
+    return failure({}, batchErrorMessage(error) ?? 'No se pudo agregar los ejercicios.')
+  }
   const exercises = appendedExercises(data, ownership.workoutId, drafts.map(draft => draft.exerciseId))
   if (!exercises) return failure({}, 'No se pudo agregar los ejercicios.')
   revalidatePrograms(ownership.templateId)

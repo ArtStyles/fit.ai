@@ -71,6 +71,14 @@ function WorkspaceFixture() {
 function CatalogFixture() {
   const [open, setOpen] = useState(true)
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      const state = window as Window & { __CATALOG_CLOSE_REQUESTS__?: number }
+      state.__CATALOG_CLOSE_REQUESTS__ = (state.__CATALOG_CLOSE_REQUESTS__ ?? 0) + 1
+    }
+    setOpen(nextOpen)
+  }
+
   useEffect(() => {
     (window as Window & { __CATALOG_OPEN__?: boolean }).__CATALOG_OPEN__ = open
   }, [open])
@@ -81,13 +89,18 @@ function CatalogFixture() {
     if (new URLSearchParams(window.location.search).get('confirm') === 'retry' && catalogConfirmAttempts === 1) {
       return false
     }
+    if (new URLSearchParams(window.location.search).get('confirm') === 'hold') {
+      await new Promise<void>(resolve => {
+        (window as Window & { __RESOLVE_CATALOG_CONFIRM__?: () => void }).__RESOLVE_CATALOG_CONFIRM__ = resolve
+      })
+    }
     (window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__ = ids
     return true
   }
 
   return <ExerciseCatalogDialog
     open={open}
-    onOpenChange={setOpen}
+    onOpenChange={handleOpenChange}
     options={initialCatalogOptions}
     selectionMode="multiple"
     paginated

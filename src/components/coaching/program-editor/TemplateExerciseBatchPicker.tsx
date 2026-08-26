@@ -22,6 +22,7 @@ export function TemplateExerciseBatchPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [unavailableExerciseIds, setUnavailableExerciseIds] = useState<string[]>([])
   const triggerRef = useRef<HTMLButtonElement>(null)
   const catalogOptions = useMemo(() => toExerciseCatalogOptions(options), [options])
   const unavailable = pending || remainingCapacity <= 0 || options.length === 0
@@ -43,6 +44,7 @@ export function TemplateExerciseBatchPicker({
         onClick={() => {
           if (unavailable) return
           setError(null)
+          setUnavailableExerciseIds([])
           setOpen(true)
         }}
         className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/60 bg-primary/10 px-4 text-sm font-semibold text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
@@ -61,6 +63,7 @@ export function TemplateExerciseBatchPicker({
         paginated
         title="Agregar ejercicios"
         confirmationError={error}
+        invalidIds={unavailableExerciseIds}
         confirmationDetails={<p>Valores iniciales: 3 × 10 · RPE 7 · 60 s</p>}
         onConfirm={async ids => {
           const data = new FormData()
@@ -72,9 +75,11 @@ export function TemplateExerciseBatchPicker({
             const result = await action.addTrainerTemplateExercises(data)
             if (!result.ok) {
               setError(result.error)
+              setUnavailableExerciseIds(result.unavailableExerciseIds ?? [])
               return false
             }
             setError(null)
+            setUnavailableExerciseIds([])
             onAdded(result.exercises)
             return true
           } catch {

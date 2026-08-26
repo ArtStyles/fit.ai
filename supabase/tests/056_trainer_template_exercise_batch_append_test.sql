@@ -1,8 +1,26 @@
+CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
+
+CREATE OR REPLACE FUNCTION public.trainer_template_batch_test_reject_insert()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.notes = '__force_batch_rollback__' THEN
+    RAISE EXCEPTION 'TRAINER_TEMPLATE_BATCH_FORCED_FAILURE';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trainer_template_batch_test_reject_insert ON public.trainer_template_exercises;
+CREATE TRIGGER trainer_template_batch_test_reject_insert
+  BEFORE INSERT ON public.trainer_template_exercises
+  FOR EACH ROW EXECUTE FUNCTION public.trainer_template_batch_test_reject_insert();
+
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(25);
+SELECT plan(28);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('56000000-0000-4000-8000-000000000001', 'batch-owner@example.test', '{}'::JSONB),
@@ -241,34 +259,18 @@ UPDATE public.trainer_template_exercises
 SET order_index = 8
 WHERE id = '56000000-0000-4000-8000-000000000083';
 
-CREATE FUNCTION pg_temp.reject_second_batch_insert()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  IF NEW.exercise_id = '56000000-0000-4000-8000-000000000054'::UUID THEN
-    RAISE EXCEPTION 'TRAINER_TEMPLATE_BATCH_FORCED_FAILURE';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-CREATE TRIGGER reject_second_batch_insert
-  BEFORE INSERT ON public.trainer_template_exercises
-  FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_second_batch_insert();
-
 SELECT set_config('request.jwt.claim.sub', '56000000-0000-4000-8000-000000000001', TRUE);
 SELECT set_config('request.jwt.claim.role', 'authenticated', TRUE);
 SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$SELECT public.append_trainer_template_exercises(
     '56000000-0000-4000-8000-000000000071',
-    '[{"exerciseId":"56000000-0000-4000-8000-000000000052","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null},{"exerciseId":"56000000-0000-4000-8000-000000000054","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null}]'::JSONB
+    '[{"exerciseId":"56000000-0000-4000-8000-000000000052","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null},{"exerciseId":"56000000-0000-4000-8000-000000000054","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":"__force_batch_rollback__"}]'::JSONB
   )$$,
   'TRAINER_TEMPLATE_BATCH_FORCED_FAILURE',
   'a failure on the second insert aborts the call'
 );
 RESET ROLE;
-DROP TRIGGER reject_second_batch_insert ON public.trainer_template_exercises;
 
 SELECT results_eq(
   $$SELECT order_index FROM public.trainer_template_exercises
@@ -277,6 +279,155 @@ SELECT results_eq(
   $$VALUES (1), (3), (4), (5), (6), (8)$$,
   'the failed second insert rolls back both the first insert and gap compaction'
 );
+
+-- Seed a committed, dedicated fixture because dblink sessions cannot observe
+-- the surrounding pgTAP transaction's uncommitted rows.
+SELECT dblink_connect('batch_append_setup', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec('batch_append_setup', $setup$
+  DELETE FROM public.trainer_program_templates WHERE id = '57000000-0000-4000-8000-000000000061';
+  DELETE FROM public.trainer_profiles WHERE user_id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM public.trainer_applications WHERE user_id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM public.profiles WHERE id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM auth.users WHERE id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM public.exercises WHERE id BETWEEN '57000000-0000-4000-8000-000000000051' AND '57000000-0000-4000-8000-000000000054';
+  INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+    ('57000000-0000-4000-8000-000000000001', 'batch-concurrent@example.test', '{}'::JSONB);
+  INSERT INTO public.profiles (id, full_name, onboarding_done, account_status) VALUES
+    ('57000000-0000-4000-8000-000000000001', 'Concurrent batch owner', TRUE, 'active');
+  INSERT INTO public.trainer_applications (id, user_id, status, decided_at) VALUES
+    ('57000000-0000-4000-8000-000000000011', '57000000-0000-4000-8000-000000000001', 'approved', NOW());
+  INSERT INTO public.trainer_profiles (
+    id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary
+  ) VALUES (
+    '57000000-0000-4000-8000-000000000021', '57000000-0000-4000-8000-000000000001',
+    '57000000-0000-4000-8000-000000000011', 'batch-concurrent', 'active',
+    'Concurrent batch owner', 'Bio', 'Evidence'
+  );
+  INSERT INTO public.exercises (id, name, is_public) VALUES
+    ('57000000-0000-4000-8000-000000000051', 'Concurrent exercise one', TRUE),
+    ('57000000-0000-4000-8000-000000000052', 'Concurrent exercise two', TRUE),
+    ('57000000-0000-4000-8000-000000000053', 'Concurrent exercise three', TRUE),
+    ('57000000-0000-4000-8000-000000000054', 'Concurrent exercise four', TRUE);
+  INSERT INTO public.trainer_program_templates (id, trainer_user_id, name, days_per_week) VALUES
+    ('57000000-0000-4000-8000-000000000061', '57000000-0000-4000-8000-000000000001', 'Concurrent template', 1);
+  INSERT INTO public.trainer_template_workouts (id, template_id, name, day_of_week, order_in_plan) VALUES
+    ('57000000-0000-4000-8000-000000000071', '57000000-0000-4000-8000-000000000061', 'Concurrent day', 1, 1);
+$setup$);
+
+SELECT dblink_connect('batch_append_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('batch_append_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec(name, $$SET request.jwt.claim.sub = '57000000-0000-4000-8000-000000000001'$$)
+FROM (VALUES ('batch_append_a'), ('batch_append_b')) AS actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
+FROM (VALUES ('batch_append_a'), ('batch_append_b')) AS actor(name);
+SELECT dblink_exec(name, 'SET ROLE authenticated')
+FROM (VALUES ('batch_append_a'), ('batch_append_b')) AS actor(name);
+
+SELECT dblink_exec('batch_append_a', $function$
+  CREATE FUNCTION pg_temp.append_batch_then_wait() RETURNS JSONB LANGUAGE plpgsql AS $body$
+  DECLARE result JSONB;
+  BEGIN
+    result := public.append_trainer_template_exercises(
+      '57000000-0000-4000-8000-000000000071',
+      '[{"exerciseId":"57000000-0000-4000-8000-000000000051","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null},{"exerciseId":"57000000-0000-4000-8000-000000000052","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null}]'::JSONB
+    );
+    PERFORM pg_advisory_xact_lock(570056);
+    RETURN result;
+  END;
+  $body$;
+$function$);
+
+CREATE OR REPLACE FUNCTION pg_temp.wait_for_batch_lock(p_pid INTEGER)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  FOR attempt IN 1..500 LOOP
+    IF EXISTS (
+      SELECT 1 FROM pg_stat_activity
+      WHERE pid = p_pid AND state = 'active' AND wait_event_type = 'Lock'
+    ) THEN
+      RETURN TRUE;
+    END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+  RETURN FALSE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION pg_temp.wait_for_batch_blocker(p_waiter_pid INTEGER, p_blocker_pid INTEGER)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  FOR attempt IN 1..500 LOOP
+    IF p_blocker_pid = ANY(pg_blocking_pids(p_waiter_pid)) THEN
+      RETURN TRUE;
+    END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+  RETURN FALSE;
+END;
+$$;
+
+CREATE TEMP TABLE batch_append_pids (actor TEXT PRIMARY KEY, pid INTEGER NOT NULL);
+INSERT INTO batch_append_pids VALUES
+  ('a', (SELECT pid FROM dblink('batch_append_a', 'SELECT pg_backend_pid()') response(pid INTEGER))),
+  ('b', (SELECT pid FROM dblink('batch_append_b', 'SELECT pg_backend_pid()') response(pid INTEGER)));
+CREATE TEMP TABLE batch_append_results (actor TEXT PRIMARY KEY, result JSONB NOT NULL);
+
+SELECT pg_advisory_lock(570056);
+SELECT dblink_send_query('batch_append_a', 'SELECT pg_temp.append_batch_then_wait()');
+DO $$
+BEGIN
+  IF NOT pg_temp.wait_for_batch_lock((SELECT pid FROM batch_append_pids WHERE actor = 'a')) THEN
+    RAISE EXCEPTION 'first batch did not reach the controlled commit gate';
+  END IF;
+END;
+$$;
+SELECT dblink_send_query('batch_append_b', $query$
+  SELECT public.append_trainer_template_exercises(
+    '57000000-0000-4000-8000-000000000071',
+    '[{"exerciseId":"57000000-0000-4000-8000-000000000053","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null},{"exerciseId":"57000000-0000-4000-8000-000000000054","sets":3,"reps":10,"weightKg":null,"targetRpe":7,"restSeconds":60,"notes":null}]'::JSONB
+  )
+$query$);
+SELECT ok(
+  pg_temp.wait_for_batch_blocker(
+    (SELECT pid FROM batch_append_pids WHERE actor = 'b'),
+    (SELECT pid FROM batch_append_pids WHERE actor = 'a')
+  ),
+  'the second concurrent append waits for the first batch lock'
+);
+SELECT pg_advisory_unlock(570056);
+
+INSERT INTO batch_append_results
+SELECT 'a', result FROM dblink_get_result('batch_append_a') AS response(result JSONB);
+INSERT INTO batch_append_results
+SELECT 'b', result FROM dblink_get_result('batch_append_b') AS response(result JSONB);
+SELECT is(
+  (SELECT sum(jsonb_array_length(result->'exercises')) FROM batch_append_results),
+  4::BIGINT,
+  'both concurrent append calls complete their full batches'
+);
+SELECT results_eq(
+  $$SELECT order_index FROM public.trainer_template_exercises
+    WHERE template_workout_id = '57000000-0000-4000-8000-000000000071'
+    ORDER BY order_index$$,
+  $$VALUES (1), (2), (3), (4)$$,
+  'concurrent batches leave unique consecutive server-owned orders'
+);
+
+SELECT dblink_disconnect('batch_append_a');
+SELECT dblink_disconnect('batch_append_b');
+SELECT dblink_exec('batch_append_setup', $cleanup$
+  DELETE FROM public.trainer_program_templates WHERE id = '57000000-0000-4000-8000-000000000061';
+  DELETE FROM public.trainer_profiles WHERE user_id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM public.trainer_applications WHERE user_id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM public.profiles WHERE id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM auth.users WHERE id = '57000000-0000-4000-8000-000000000001';
+  DELETE FROM public.exercises WHERE id BETWEEN '57000000-0000-4000-8000-000000000051' AND '57000000-0000-4000-8000-000000000054';
+$cleanup$);
+SELECT dblink_disconnect('batch_append_setup');
 
 SELECT ok(
   (
@@ -295,3 +446,6 @@ SELECT is(public.trainer_security_preflight(), 56, 'trainer preflight marks the 
 
 SELECT * FROM finish();
 ROLLBACK;
+
+DROP TRIGGER trainer_template_batch_test_reject_insert ON public.trainer_template_exercises;
+DROP FUNCTION public.trainer_template_batch_test_reject_insert();

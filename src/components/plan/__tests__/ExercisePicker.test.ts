@@ -75,6 +75,7 @@ describe('professional exercise picker search', () => {
         onConfirm: () => void
         confirming?: boolean
         confirmationError?: string | null
+        invalidIds?: string[]
         confirmationDetails?: ReactNode
       }>
     }).ExerciseCatalogDialogView
@@ -93,6 +94,7 @@ describe('professional exercise picker search', () => {
         onConfirm: () => undefined,
         confirming: true,
         confirmationError: 'No se pudieron agregar los ejercicios.',
+        invalidIds: ['curl'],
         confirmationDetails: createElement('p', null, '3 × 10 · RPE 7 · 60 s'),
       }))
       : ''
@@ -107,6 +109,8 @@ describe('professional exercise picker search', () => {
     expect(html).toContain('aria-disabled="true"')
     expect(html).toContain('role="alert"')
     expect(html).toContain('No se pudieron agregar los ejercicios.')
+    expect(html).toContain('aria-invalid="true"')
+    expect(html).toContain('ID curl ya no disponible')
     expect(html).toContain('3 × 10 · RPE 7 · 60 s')
   })
 

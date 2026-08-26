@@ -108,7 +108,6 @@ describe('trainer accessibility acceptance in a local browser', () => {
       if (editorState === 'metadata editor') {
         const metadata = page.getByText('Editar información', { exact: true })
         await metadata.click()
-        await metadata.click()
         await pwExpect(page.getByLabel('Nombre de la rutina')).toBeVisible()
       } else {
         await page.getByRole('button', { name: 'Agregar varios ejercicios' }).click()
