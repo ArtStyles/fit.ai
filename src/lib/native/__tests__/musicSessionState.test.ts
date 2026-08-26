@@ -51,6 +51,7 @@ function createHarness(options: HarnessOptions = {}) {
   const states: NowPlayingState[] = []
   const remove = vi.fn(async () => undefined)
   let listener: ((snapshot: MusicPlaybackSnapshot | null) => void) | null = null
+  let listenerCount = 0
   const currentReads = [...(options.currentReads ?? [options.current ?? null])]
   const clock: MusicSessionClock = {
     now: () => now,
@@ -70,6 +71,7 @@ function createHarness(options: HarnessOptions = {}) {
     play: async () => undefined,
     pause: async () => undefined,
     addListener: async (_eventName, nextListener) => {
+      listenerCount += 1
       listener = nextListener
       if (options.emitOnListen !== undefined) nextListener(options.emitOnListen)
       return { remove }
@@ -89,6 +91,9 @@ function createHarness(options: HarnessOptions = {}) {
     },
     pendingTimers() {
       return timers.size
+    },
+    listenerCount() {
+      return listenerCount
     },
     advanceBy(durationMs: number) {
       const target = now + durationMs
@@ -191,6 +196,111 @@ describe('now playing session controller', () => {
     expect(harness.pendingTimers()).toBe(0)
   })
 
+  it('attaches one listener when refresh finds permission granted after settings', async () => {
+    const harness = createHarness({
+      authorizationReads: ['not_granted', 'granted'],
+      current: PLAYING_SNAPSHOT,
+    })
+    const controller = createNowPlayingSessionController(harness.adapter, harness.onState, harness.clock)
+    await controller.start()
+
+    await controller.refresh()
+    harness.emit({ ...PLAYING_SNAPSHOT, title: 'Changed after settings', updatedAtMs: 2_000 })
+
+    expect(harness.listenerCount()).toBe(1)
+    expect(harness.latest().snapshot?.title).toBe('Changed after settings')
+  })
+
+  it('does not attach a listener when a concurrent refresh revokes permission', async () => {
+    let resolveInitial: (snapshot: MusicPlaybackSnapshot) => void = () => undefined
+    let requestInitial: () => void = () => undefined
+    const initialRequested = new Promise<void>(resolve => {
+      requestInitial = resolve
+    })
+    let authorizationReads = 0
+    let currentReads = 0
+    const addListener = vi.fn(async () => ({ remove: vi.fn(async () => undefined) }))
+    const adapter: MusicSessionAdapter = {
+      getAuthorizationStatus: async () => {
+        authorizationReads += 1
+        return authorizationReads === 1 ? 'granted' : 'not_granted'
+      },
+      openNotificationListenerSettings: async () => undefined,
+      getCurrentSession: () => {
+        currentReads += 1
+        if (currentReads > 1) return Promise.resolve(PLAYING_SNAPSHOT)
+        return new Promise(resolve => {
+          resolveInitial = resolve
+          requestInitial()
+        })
+      },
+      play: async () => undefined,
+      pause: async () => undefined,
+      addListener,
+    }
+    const states: NowPlayingState[] = []
+    const controller = createNowPlayingSessionController(adapter, state => states.push(state), createHarness().clock)
+    const starting = controller.start()
+    await initialRequested
+
+    await controller.refresh()
+    resolveInitial(PLAYING_SNAPSHOT)
+    await starting
+
+    expect(states.at(-1)).toEqual({ status: 'not_granted', snapshot: null, error: null })
+    expect(addListener).not.toHaveBeenCalled()
+  })
+
+  it('keeps a newer visible snapshot when the foreground read is older', async () => {
+    const newestSnapshot = { ...PLAYING_SNAPSHOT, title: 'Newest', updatedAtMs: 5_000 }
+    const harness = createHarness({
+      currentReads: [newestSnapshot, newestSnapshot, { ...PLAYING_SNAPSHOT, title: 'Stale', updatedAtMs: 4_000 }],
+    })
+    const controller = createNowPlayingSessionController(harness.adapter, harness.onState, harness.clock)
+    await controller.start()
+
+    await controller.refresh()
+
+    expect(harness.latest()).toEqual({ status: 'active', snapshot: newestSnapshot, error: null })
+  })
+
+  it('does not extend a paused session grace period while a foreground read is pending', async () => {
+    let resolveRefresh: (snapshot: MusicPlaybackSnapshot) => void = () => undefined
+    let requestRefresh: () => void = () => undefined
+    const refreshRequested = new Promise<void>(resolve => {
+      requestRefresh = resolve
+    })
+    let currentReads = 0
+    const harness = createHarness()
+    const adapter: MusicSessionAdapter = {
+      getAuthorizationStatus: async () => 'granted',
+      openNotificationListenerSettings: async () => undefined,
+      getCurrentSession: () => {
+        currentReads += 1
+        if (currentReads <= 2) return Promise.resolve(PAUSED_SNAPSHOT)
+        return new Promise(resolve => {
+          resolveRefresh = resolve
+          requestRefresh()
+        })
+      },
+      play: async () => undefined,
+      pause: async () => undefined,
+      addListener: async () => ({ remove: vi.fn(async () => undefined) }),
+    }
+    const controller = createNowPlayingSessionController(adapter, harness.onState, harness.clock)
+    await controller.start()
+
+    harness.advanceBy(11_000)
+    const refreshing = controller.refresh()
+    await refreshRequested
+    harness.advanceBy(1_000)
+    resolveRefresh(PAUSED_SNAPSHOT)
+    await refreshing
+
+    expect(harness.latest()).toEqual({ status: 'granted_idle', snapshot: null, error: null })
+    expect(harness.pendingTimers()).toBe(0)
+  })
+
   it('does not publish a snapshot or attach a listener after stop invalidates a pending start', async () => {
     let resolveSnapshot: (snapshot: MusicPlaybackSnapshot) => void = () => undefined
     let requestSnapshot: () => void = () => undefined
@@ -253,7 +363,7 @@ describe('now playing session controller', () => {
     resolveRefresh({ ...PLAYING_SNAPSHOT, title: 'Late refresh', updatedAtMs: 2_000 })
     await refreshing
 
-    expect(states.at(-1)).toEqual({ status: 'checking', snapshot: null, error: null })
+    expect(states.at(-1)).toEqual({ status: 'active', snapshot: PLAYING_SNAPSHOT, error: null })
   })
 })
 

@@ -67,10 +67,13 @@ export function createNowPlayingSessionController(
   clock: MusicSessionClock = systemClock,
 ): NowPlayingSessionController {
   let active = false
-  let lifecycle = 0
+  let operation = 0
   let startPromise: Promise<void> | null = null
   let listener: PluginListenerHandle | null = null
   let pauseTimeout: ReturnType<typeof setTimeout> | null = null
+  let pauseDeadlineMs: number | null = null
+  let pausedSnapshotUpdatedAtMs: number | null = null
+  let latestSnapshotUpdatedAtMs: number | null = null
   let state: NowPlayingState = { status: 'checking', snapshot: null, error: null }
 
   const publish = (nextState: NowPlayingState) => {
@@ -84,6 +87,12 @@ export function createNowPlayingSessionController(
     pauseTimeout = null
   }
 
+  const resetPauseGrace = () => {
+    clearPauseTimeout()
+    pauseDeadlineMs = null
+    pausedSnapshotUpdatedAtMs = null
+  }
+
   const removeListener = async () => {
     const currentListener = listener
     listener = null
@@ -91,32 +100,77 @@ export function createNowPlayingSessionController(
   }
 
   const clearResources = async () => {
-    clearPauseTimeout()
+    resetPauseGrace()
     await removeListener()
   }
 
+  const schedulePausedExit = (snapshot: MusicPlaybackSnapshot) => {
+    if (pausedSnapshotUpdatedAtMs !== snapshot.updatedAtMs) {
+      clearPauseTimeout()
+      pausedSnapshotUpdatedAtMs = snapshot.updatedAtMs
+      pauseDeadlineMs = clock.now() + PAUSED_SESSION_GRACE_MS
+    }
+
+    const deadline = pauseDeadlineMs
+    if (deadline === null) return
+    const remainingMs = Math.max(0, deadline - clock.now())
+    if (remainingMs === 0) {
+      publish(idleState())
+      return
+    }
+    if (pauseTimeout !== null) return
+    pauseTimeout = clock.setTimeout(() => {
+      pauseTimeout = null
+      if (!active || pauseDeadlineMs !== deadline) return
+      publish(idleState())
+    }, remainingMs)
+  }
+
   const applySnapshot = (snapshot: MusicPlaybackSnapshot | null) => {
-    if (snapshot && state.snapshot && snapshot.updatedAtMs < state.snapshot.updatedAtMs) return
+    if (snapshot && latestSnapshotUpdatedAtMs !== null && snapshot.updatedAtMs < latestSnapshotUpdatedAtMs) return
+    if (snapshot) latestSnapshotUpdatedAtMs = snapshot.updatedAtMs
 
     if (!snapshot || !snapshot.title.trim() || snapshot.state === 'stopped') {
-      clearPauseTimeout()
+      resetPauseGrace()
       publish(idleState())
       return
     }
 
     if (snapshot.state === 'playing') {
-      clearPauseTimeout()
+      resetPauseGrace()
       publish({ status: 'active', snapshot, error: null })
       return
     }
 
-    publish({ status: 'active', snapshot, error: null })
-    if (pauseTimeout !== null) return
-    pauseTimeout = clock.setTimeout(() => {
-      pauseTimeout = null
-      if (!active || state.snapshot?.state !== 'paused') return
+    if (pauseDeadlineMs !== null && pauseDeadlineMs <= clock.now()
+      && pausedSnapshotUpdatedAtMs === snapshot.updatedAtMs) {
       publish(idleState())
-    }, PAUSED_SESSION_GRACE_MS)
+      return
+    }
+    publish({ status: 'active', snapshot, error: null })
+    schedulePausedExit(snapshot)
+  }
+
+  const isCurrentOperation = (run: number) => active && operation === run
+
+  const readSessionAndEnsureListener = async (run: number) => {
+    const initialSnapshot = await adapter.getCurrentSession()
+    if (!isCurrentOperation(run)) return
+    applySnapshot(initialSnapshot)
+    if (listener) return
+
+    const attachedListener = await adapter.addListener('sessionChanged', snapshot => {
+      if (active) applySnapshot(snapshot)
+    })
+    if (!isCurrentOperation(run)) {
+      await attachedListener.remove()
+      return
+    }
+    listener = attachedListener
+
+    const postListenerSnapshot = await adapter.getCurrentSession()
+    if (!isCurrentOperation(run)) return
+    applySnapshot(postListenerSnapshot)
   }
 
   const start = async () => {
@@ -124,65 +178,45 @@ export function createNowPlayingSessionController(
     if (active) return
 
     active = true
-    const run = ++lifecycle
-    const isCurrentRun = () => active && lifecycle === run
+    const run = ++operation
     const startWork = async () => {
       publish({ status: 'checking', snapshot: null, error: null })
       try {
         const authorization = await adapter.getAuthorizationStatus()
-        if (!isCurrentRun()) return
+        if (!isCurrentOperation(run)) return
         if (authorization !== 'granted') {
           publish({ status: authorization, snapshot: null, error: null })
           return
         }
-
-        const initialSnapshot = await adapter.getCurrentSession()
-        if (!isCurrentRun()) return
-        applySnapshot(initialSnapshot)
-
-        const attachedListener = await adapter.addListener('sessionChanged', snapshot => {
-          if (isCurrentRun()) applySnapshot(snapshot)
-        })
-        if (!isCurrentRun()) {
-          await attachedListener.remove()
-          return
-        }
-        listener = attachedListener
-
-        const postListenerSnapshot = await adapter.getCurrentSession()
-        if (!isCurrentRun()) return
-        applySnapshot(postListenerSnapshot)
+        await readSessionAndEnsureListener(run)
       } catch (error) {
-        if (!isCurrentRun()) return
+        if (!isCurrentOperation(run)) return
         await clearResources()
         publish({ status: 'error', snapshot: null, error: errorMessage(error) })
       }
     }
     startPromise = startWork().finally(() => {
-      if (lifecycle === run) startPromise = null
+      if (operation === run) startPromise = null
     })
     return startPromise
   }
 
   const refresh = async () => {
     if (!active) return
-    const run = lifecycle
-    publish({ status: 'checking', snapshot: null, error: null })
+    const run = ++operation
     try {
       const authorization = await adapter.getAuthorizationStatus()
-      if (!active || lifecycle !== run) return
+      if (!isCurrentOperation(run)) return
       if (authorization !== 'granted') {
         await clearResources()
-        if (active && lifecycle === run) publish({ status: authorization, snapshot: null, error: null })
+        if (isCurrentOperation(run)) publish({ status: authorization, snapshot: null, error: null })
         return
       }
-      const refreshedSnapshot = await adapter.getCurrentSession()
-      if (!active || lifecycle !== run) return
-      applySnapshot(refreshedSnapshot)
+      await readSessionAndEnsureListener(run)
     } catch (error) {
-      if (!active || lifecycle !== run) return
+      if (!isCurrentOperation(run)) return
       await clearResources()
-      if (active && lifecycle === run) {
+      if (isCurrentOperation(run)) {
         publish({ status: 'error', snapshot: null, error: errorMessage(error) })
       }
     }
@@ -191,7 +225,7 @@ export function createNowPlayingSessionController(
   const stop = async () => {
     if (!active && !listener && pauseTimeout === null) return
     active = false
-    lifecycle += 1
+    operation += 1
     await clearResources()
   }
 

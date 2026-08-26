@@ -1,0 +1,62 @@
+import { describe, expect, it, vi } from 'vitest'
+
+const appMocks = vi.hoisted(() => ({
+  addListener: vi.fn(),
+}))
+
+vi.mock('@capacitor/app', () => ({
+  App: appMocks,
+}))
+
+vi.mock('../musicSession', () => ({
+  musicSessionAdapter: {},
+}))
+
+import {
+  createControlPendingTracker,
+  subscribeToForegroundAppState,
+} from '../useNowPlayingSession'
+
+describe('now playing hook lifecycles', () => {
+  it('removes a delayed app-state listener exactly once after cleanup', async () => {
+    let resolveRegistration: (handle: { remove(): Promise<void> }) => void = () => undefined
+    const registration = new Promise<{ remove(): Promise<void> }>(resolve => {
+      resolveRegistration = resolve
+    })
+    const remove = vi.fn(async () => undefined)
+
+    const cleanup = subscribeToForegroundAppState(
+      () => registration,
+      vi.fn(),
+    )
+    cleanup()
+    cleanup()
+    resolveRegistration({ remove })
+    await registration
+    await Promise.resolve()
+
+    expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it('keeps pending true until all overlapping controls complete and ignores an old lifecycle', () => {
+    const pending: boolean[] = []
+    const oldTracker = createControlPendingTracker(value => pending.push(value))
+    const firstDone = oldTracker.begin()
+    const secondDone = oldTracker.begin()
+
+    firstDone()
+    expect(pending.at(-1)).toBe(true)
+    secondDone()
+    expect(pending.at(-1)).toBe(false)
+
+    const oldRequestDone = oldTracker.begin()
+    oldTracker.dispose()
+    const nextTracker = createControlPendingTracker(value => pending.push(value))
+    const nextRequestDone = nextTracker.begin()
+    oldRequestDone()
+
+    expect(pending.at(-1)).toBe(true)
+    nextRequestDone()
+    expect(pending.at(-1)).toBe(false)
+  })
+})
