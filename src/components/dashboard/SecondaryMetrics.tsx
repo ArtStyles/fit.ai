@@ -16,8 +16,8 @@ export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['sec
   const { language, t } = useI18n()
 
   return (
-    <section aria-labelledby="metrics-title" className="rounded-3xl border border-border/70 bg-[hsl(var(--surface-1))] p-5">
-      <div className="flex items-center justify-between gap-4">
+    <section aria-labelledby="metrics-title" className="min-w-0 overflow-hidden rounded-3xl border border-border/70 bg-[hsl(var(--surface-1))] p-5">
+      <div className="flex min-w-0 items-center justify-between gap-4">
         <h2 id="metrics-title" className="font-display text-xl font-bold text-foreground">{t('Tu progreso')}</h2>
         <PendingLink href="/history" className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
           {t('Historial')}<ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -31,16 +31,16 @@ export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['sec
         </div>
       ) : (
         <>
-          <div className="mt-3 grid grid-cols-2 divide-x divide-border/70 rounded-2xl bg-[hsl(var(--surface-2))] p-4">
-            <div className="pr-4">
+          <div className="mt-3 grid min-w-0 grid-cols-2 divide-x divide-border/70 rounded-2xl bg-[hsl(var(--surface-2))] p-4">
+            <div className="min-w-0 overflow-hidden pr-4">
               <Flame className="h-5 w-5 text-[hsl(var(--training-warning))]" aria-hidden="true" />
               <p className="mt-2 text-xs font-medium text-muted-foreground">{t('Racha activa')}</p>
-              <p className="mt-1 font-display text-2xl font-bold text-foreground">{metrics.streak} <span className="text-base font-medium text-muted-foreground">{t('días')}</span></p>
+              <p className="mt-1 break-words font-display text-2xl font-bold text-foreground">{metrics.streak} <span className="text-base font-medium text-muted-foreground">{t('días')}</span></p>
             </div>
-            <div className="pl-4">
+            <div className="min-w-0 overflow-hidden pl-4">
               <Weight className="h-5 w-5 text-violet-300" aria-hidden="true" />
               <p className="mt-2 text-xs font-medium text-muted-foreground">{t('Volumen semanal')}</p>
-              <p className="mt-1 font-display text-2xl font-bold text-foreground">{metrics.volumeKg.toLocaleString(language === 'en' ? 'en-US' : 'es-ES')} <span className="text-base font-medium text-muted-foreground">kg</span></p>
+              <p className="mt-1 break-words font-display text-2xl font-bold text-foreground">{metrics.volumeKg.toLocaleString(language === 'en' ? 'en-US' : 'es-ES')} <span className="text-base font-medium text-muted-foreground">kg</span></p>
               {metrics.volumeSeries.length >= 3 && (
                 <div className="mt-3 h-8 text-violet-300" role="img" aria-label={t('Tendencia de volumen')}>
                   <Sparkline data={metrics.volumeSeries} />
@@ -49,9 +49,9 @@ export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['sec
             </div>
           </div>
 
-          <div className="mt-3 grid gap-3">
+          <div className="mt-3 grid min-w-0 gap-3">
             {metrics.latestSession && (
-              <PendingLink href={`/history/${metrics.latestSession.id}`} className="flex min-h-14 items-center gap-3 rounded-2xl border border-border/70 bg-[hsl(var(--surface-2))] p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
+              <PendingLink href={`/history/${metrics.latestSession.id}`} className="flex min-h-14 min-w-0 items-center gap-3 overflow-hidden rounded-2xl border border-border/70 bg-[hsl(var(--surface-2))] p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
                 <Activity className="h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
                 <span className="min-w-0 flex-1">
                   <span className="block text-base font-semibold text-foreground">{t('Última sesión')}</span>
@@ -68,11 +68,11 @@ export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['sec
                     ].filter(Boolean).join(' · ')}
                   </span>
                 </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               </PendingLink>
             )}
             {metrics.topRecord && (
-              <PendingLink href={`/exercises/${metrics.topRecord.exerciseId}`} className="flex min-h-14 items-center gap-3 rounded-2xl border border-border/70 bg-[hsl(var(--surface-2))] p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
+              <PendingLink href={`/exercises/${metrics.topRecord.exerciseId}`} className="flex min-h-14 min-w-0 items-center gap-3 overflow-hidden rounded-2xl border border-border/70 bg-[hsl(var(--surface-2))] p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
                 <Medal className="h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
                 <span className="min-w-0 flex-1">
                   <span className="block text-base font-semibold text-foreground">{t('Mejor marca personal')}</span>
@@ -84,14 +84,14 @@ export function SecondaryMetrics({ metrics }: { metrics: DashboardViewModel['sec
                     ].filter(Boolean).join(' · ')}
                   </span>
                 </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               </PendingLink>
             )}
             {metrics.activeAdjustments > 0 && (
-              <PendingLink href="/plan" className="flex min-h-14 items-center gap-3 rounded-2xl border border-border/70 bg-[hsl(var(--surface-2))] p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
+              <PendingLink href="/plan" className="flex min-h-14 min-w-0 items-center gap-3 overflow-hidden rounded-2xl border border-border/70 bg-[hsl(var(--surface-2))] p-4 transition-colors hover:border-violet-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 motion-reduce:transition-none">
                 <TrendingUp className="h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
                 <span className="min-w-0 flex-1 text-base font-semibold text-foreground">{metrics.activeAdjustments} {t(metrics.activeAdjustments === 1 ? 'peso actualizado' : 'pesos actualizados')}</span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               </PendingLink>
             )}
           </div>

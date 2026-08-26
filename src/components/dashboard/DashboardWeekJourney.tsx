@@ -309,7 +309,7 @@ export function DashboardWeekJourney({ dashboard }: { dashboard: DashboardViewMo
         </PendingLink>
       </div>
 
-      <aside aria-label={t('Tu progreso')} className="space-y-5 pt-7 lg:col-start-2 lg:row-start-2 lg:self-start lg:pt-4">
+      <aside aria-label={t('Tu progreso')} className="min-w-0 space-y-5 pt-7 lg:col-start-2 lg:row-start-2 lg:self-start lg:pt-4">
         <NextRecommendation recommendation={dashboard.recommendation} />
         <SecondaryMetrics metrics={dashboard.secondaryMetrics} />
       </aside>
