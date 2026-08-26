@@ -6,6 +6,15 @@ import type { TemplateWorkoutView } from '../../program-editor/types'
 
 type RecordedFields = Record<string, string | string[]>
 type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
+type PersistedExerciseUpdate = {
+  exerciseId: string
+  sets: number
+  reps: number
+  weightKg: number | null
+  targetRpe: number | null
+  restSeconds: number
+  notes: string | null
+}
 type ServerEvent =
   | { type: 'create-workout'; workoutId: string; fields: RecordedFields }
   | { type: 'delete-workout'; workoutId: string }
@@ -13,6 +22,7 @@ type ServerEvent =
   | { type: 'add-exercises'; workoutId: string; exercises: AppendedExercise[] }
   | { type: 'delete-exercise'; exerciseId: string }
   | { type: 'reorder-exercises'; workoutId: string; exerciseIds: string[] }
+  | { type: 'update-exercise'; exerciseId: string; update: PersistedExerciseUpdate }
 
 const query = new URLSearchParams(window.location.search)
 const showNewTemplateForm = query.get('view') === 'new'
@@ -77,6 +87,21 @@ function applyEvent(workouts: TemplateWorkoutView[], event: ServerEvent): Templa
         }),
       }
     })
+  }
+  if (event.type === 'update-exercise') {
+    return workouts.map(workout => ({
+      ...workout,
+      exercises: workout.exercises.map(exercise => exercise.id !== event.exerciseId ? exercise : {
+        ...exercise,
+        exercise_id: event.update.exerciseId,
+        sets: event.update.sets,
+        reps: event.update.reps,
+        weight_kg: event.update.weightKg,
+        target_rpe: event.update.targetRpe,
+        rest_seconds: event.update.restSeconds,
+        notes: event.update.notes,
+      }),
+    }))
   }
   return workouts.map(workout => workout.id !== event.workoutId ? workout : {
     ...workout,

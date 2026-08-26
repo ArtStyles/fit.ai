@@ -8,11 +8,11 @@ import {
   EMPTY_WORKOUT_STRUCTURAL_PENDING,
   type WorkoutStructuralPending,
 } from './program-editor/ActiveTemplateWorkout'
-import { moveItem, summarizeRoutine, templateExerciseDraftMatches } from './program-editor/model'
+import { createTemplateExerciseDraft, moveItem, shouldPruneTemplateExerciseDraft, summarizeRoutine } from './program-editor/model'
 import { ProgramTemplateActions } from './program-editor/ProgramTemplateActions'
 import { ProgramTemplateSummary } from './program-editor/ProgramTemplateSummary'
 import { TemplateDayTabs } from './program-editor/TemplateDayTabs'
-import type { ProgramTemplateView, SaveState, TemplateExerciseDraft, TemplateWorkoutView } from './program-editor/types'
+import type { ProgramTemplateView, SaveState, TemplateExerciseDraft, TemplateExerciseView, TemplateWorkoutView } from './program-editor/types'
 
 export type { ProgramTemplateView, TemplateExerciseView, TemplateWorkoutView } from './program-editor/types'
 
@@ -21,6 +21,10 @@ type DayMutationExpectation =
   | { kind: 'create-request' }
   | { kind: 'create'; workoutId: string }
   | { kind: 'reorder'; workoutIds: string[] }
+type ExerciseSaveCheckpoint = {
+  baseline: TemplateExerciseDraft
+  exercise: TemplateExerciseView
+}
 
 const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const PENDING_DESCRIPTION_MESSAGE = 'Guarda los cambios pendientes antes de asignar o publicar.'
@@ -49,6 +53,7 @@ export function ProgramTemplateEditor({
   const [workoutSaveStates, setWorkoutSaveStates] = useState<Record<string, SaveState>>({})
   const [exerciseDrafts, setExerciseDrafts] = useState<Record<string, TemplateExerciseDraft>>({})
   const [exerciseSaveStates, setExerciseSaveStates] = useState<Record<string, SaveState>>({})
+  const [exerciseSaveCheckpoints, setExerciseSaveCheckpoints] = useState<Record<string, ExerciseSaveCheckpoint>>({})
   const [addingWorkout, setAddingWorkout] = useState(false)
   const [dayMutation, setDayMutation] = useState<DayMutationExpectation | null>(null)
   const [workoutStructuralPending, setWorkoutStructuralPending] = useState<Record<string, WorkoutStructuralPending>>({})
@@ -98,32 +103,43 @@ export function ProgramTemplateEditor({
 
   useEffect(() => {
     const exercisesById = new Map(templateExercises.map(exercise => [exercise.id, exercise]))
+    const trackedIds = new Set([
+      ...Object.keys(exerciseDrafts),
+      ...Object.keys(exerciseSaveStates),
+      ...Object.keys(exerciseSaveCheckpoints),
+    ])
+    const removedIds = Array.from(trackedIds).filter(id => {
+      const exercise = exercisesById.get(id)
+      if (!exercise) return true
+      const draft = exerciseDrafts[id]
+      const state = exerciseSaveStates[id]
+      const checkpoint = exerciseSaveCheckpoints[id]
+      if (!draft || !state) return Boolean(checkpoint)
+      return shouldPruneTemplateExerciseDraft({
+        exercise,
+        draft,
+        baseline: checkpoint?.baseline,
+        propsRefreshed: Boolean(checkpoint && exercise !== checkpoint.exercise),
+        saveState: state,
+      })
+    })
+    if (!removedIds.length) return
     setExerciseDrafts(current => {
-      const removedIds = Object.entries(current)
-        .filter(([id, draft]) => {
-          const exercise = exercisesById.get(id)
-          return !exercise || (exerciseSaveStates[id] === 'saved' && templateExerciseDraftMatches(exercise, draft))
-        })
-        .map(([id]) => id)
-      if (!removedIds.length) return current
       const next = { ...current }
       removedIds.forEach(id => { delete next[id] })
       return next
     })
     setExerciseSaveStates(current => {
-      const removedIds = Object.entries(current)
-        .filter(([id, state]) => {
-          const exercise = exercisesById.get(id)
-          const draft = exerciseDrafts[id]
-          return !exercise || (state === 'saved' && draft && templateExerciseDraftMatches(exercise, draft))
-        })
-        .map(([id]) => id)
-      if (!removedIds.length) return current
       const next = { ...current }
       removedIds.forEach(id => { delete next[id] })
       return next
     })
-  }, [exerciseDrafts, exerciseSaveStates, templateExercises])
+    setExerciseSaveCheckpoints(current => {
+      const next = { ...current }
+      removedIds.forEach(id => { delete next[id] })
+      return next
+    })
+  }, [exerciseDrafts, exerciseSaveCheckpoints, exerciseSaveStates, templateExercises])
 
   useEffect(() => {
     if (!hasUnloadPendingDescriptions) return
@@ -244,6 +260,15 @@ export function ProgramTemplateEditor({
               }}
               onExerciseSaveStateChange={(exerciseId, state) => {
                 setExerciseSaveStates(current => ({ ...current, [exerciseId]: state }))
+              }}
+              onExerciseSaveAccepted={exercise => {
+                setExerciseSaveCheckpoints(current => ({
+                  ...current,
+                  [exercise.id]: {
+                    baseline: createTemplateExerciseDraft(exercise),
+                    exercise,
+                  },
+                }))
               }}
               onStructuralPendingChange={update => {
                 setWorkoutStructuralPending(current => ({

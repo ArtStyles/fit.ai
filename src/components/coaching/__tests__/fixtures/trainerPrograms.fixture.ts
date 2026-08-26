@@ -1,5 +1,14 @@
 type RecordedFields = Record<string, string | string[]>
 type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
+type PersistedExerciseUpdate = {
+  exerciseId: string
+  sets: number
+  reps: number
+  weightKg: number | null
+  targetRpe: number | null
+  restSeconds: number
+  notes: string | null
+}
 type ServerEvent =
   | { type: 'create-workout'; workoutId: string; fields: RecordedFields }
   | { type: 'delete-workout'; workoutId: string }
@@ -7,6 +16,7 @@ type ServerEvent =
   | { type: 'add-exercises'; workoutId: string; exercises: AppendedExercise[] }
   | { type: 'delete-exercise'; exerciseId: string }
   | { type: 'reorder-exercises'; workoutId: string; exerciseIds: string[] }
+  | { type: 'update-exercise'; exerciseId: string; update: PersistedExerciseUpdate }
 
 let appendedExerciseSequence = 0
 
@@ -129,6 +139,28 @@ export async function updateTrainerTemplateExercise(formData: FormData) {
     })
   }
   if (queryMode('prescription') === 'error') return { ok: false as const, error: 'No se pudo guardar el ejercicio.' }
+  const nullableNumber = (name: string) => {
+    const raw = stringField(formData, name).trim()
+    return raw ? Number(raw) : null
+  }
+  const update: PersistedExerciseUpdate = {
+    exerciseId: stringField(formData, 'exerciseId').trim(),
+    sets: Number(stringField(formData, 'sets').trim()),
+    reps: Number(stringField(formData, 'reps').trim()),
+    weightKg: nullableNumber('weightKg'),
+    targetRpe: nullableNumber('targetRpe'),
+    restSeconds: Number(stringField(formData, 'restSeconds').trim()),
+    notes: stringField(formData, 'notes').trim() || null,
+  }
+  if (queryMode('prescription') === 'concurrent') {
+    update.reps = 15
+    update.notes = 'Ajuste externo'
+  }
+  queueServerEvent({
+    type: 'update-exercise',
+    exerciseId: stringField(formData, 'templateExerciseId'),
+    update,
+  })
   return { ok: true as const, templateExerciseId: '33333333-3333-4333-8333-333333333333' }
 }
 

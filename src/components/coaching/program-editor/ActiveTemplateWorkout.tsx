@@ -7,7 +7,7 @@ import { createTemplateExerciseDraft, moveItem, summarizeWorkout } from './model
 import { SaveStateIndicator } from './SaveStateIndicator'
 import { TemplateExerciseBatchPicker, type AppendedExercise } from './TemplateExerciseBatchPicker'
 import { TemplateExerciseCard } from './TemplateExerciseCard'
-import type { SaveState, TemplateExerciseDraft, TemplateWorkoutView } from './types'
+import type { SaveState, TemplateExerciseDraft, TemplateExerciseView, TemplateWorkoutView } from './types'
 
 type Result = { ok: boolean; error?: string }
 
@@ -43,6 +43,7 @@ export function ActiveTemplateWorkout({
   exerciseSaveStates,
   onExerciseDraftChange,
   onExerciseSaveStateChange,
+  onExerciseSaveAccepted,
   onChanged,
 }: {
   workout: TemplateWorkoutView
@@ -56,6 +57,7 @@ export function ActiveTemplateWorkout({
   exerciseSaveStates: Record<string, SaveState>
   onExerciseDraftChange: (exerciseId: string, draft: TemplateExerciseDraft) => void
   onExerciseSaveStateChange: (exerciseId: string, state: SaveState) => void
+  onExerciseSaveAccepted: (exercise: TemplateExerciseView) => void
   onChanged: () => void
 }) {
   const router = useRouter()
@@ -136,13 +138,14 @@ export function ActiveTemplateWorkout({
     }
   }
 
-  async function saveExercise(formData: FormData): Promise<Result> {
+  async function saveExercise(exercise: TemplateExerciseView, formData: FormData): Promise<Result> {
     const result = await safeAction(
       async () => (await import('@/app/actions/trainerPrograms')).updateTrainerTemplateExercise(formData),
       'No se pudo guardar el ejercicio.',
     )
     setAnnouncement(result.ok ? 'Ejercicio actualizado.' : result.error ?? 'No se pudo guardar el ejercicio.')
     if (result.ok) {
+      onExerciseSaveAccepted(exercise)
       router.refresh()
       onChanged()
     }
@@ -216,7 +219,7 @@ export function ActiveTemplateWorkout({
               onSaveStateChange={state => onExerciseSaveStateChange(exercise.id, state)}
               onMove={delta => void reorderExercise(index, delta)}
               onDelete={() => void deleteExercise(exercise.id, exercise.exercise?.name ?? 'este ejercicio')}
-              onSave={saveExercise}
+              onSave={formData => saveExercise(exercise, formData)}
             />
           ))}
         </ol>

@@ -1,4 +1,4 @@
-import type { RoutineSummary, TemplateExerciseDraft, TemplateExerciseView, TemplateWorkoutView } from './types'
+import type { RoutineSummary, SaveState, TemplateExerciseDraft, TemplateExerciseView, TemplateWorkoutView } from './types'
 
 export function createTemplateExerciseDraft(exercise: TemplateExerciseView): TemplateExerciseDraft {
   return {
@@ -13,8 +13,43 @@ export function createTemplateExerciseDraft(exercise: TemplateExerciseView): Tem
 }
 
 export function templateExerciseDraftMatches(exercise: TemplateExerciseView, draft: TemplateExerciseDraft) {
-  const persisted = createTemplateExerciseDraft(exercise)
-  return Object.keys(persisted).every(key => persisted[key as keyof TemplateExerciseDraft] === draft[key as keyof TemplateExerciseDraft])
+  const numericValue = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : trimmed
+  }
+  const nullableNumberMatches = (persisted: number | null, value: string) => {
+    const normalized = numericValue(value)
+    return normalized === null ? persisted === null : normalized === persisted
+  }
+
+  return exercise.exercise_id.toLowerCase() === draft.exerciseId.trim().toLowerCase()
+    && numericValue(draft.sets) === exercise.sets
+    && numericValue(draft.reps) === exercise.reps
+    && nullableNumberMatches(exercise.weight_kg, draft.weightKg)
+    && nullableNumberMatches(exercise.target_rpe, draft.targetRpe)
+    && numericValue(draft.restSeconds) === exercise.rest_seconds
+    && (exercise.notes ?? '').trim() === draft.notes.trim()
+}
+
+export function shouldPruneTemplateExerciseDraft({
+  exercise,
+  draft,
+  baseline,
+  propsRefreshed,
+  saveState,
+}: {
+  exercise: TemplateExerciseView
+  draft: TemplateExerciseDraft
+  baseline?: TemplateExerciseDraft
+  propsRefreshed: boolean
+  saveState: SaveState
+}) {
+  if (saveState !== 'saved') return false
+  if (templateExerciseDraftMatches(exercise, draft)) return true
+  if (baseline && !templateExerciseDraftMatches(exercise, baseline)) return true
+  return propsRefreshed
 }
 
 function summarizeExercises(workouts: TemplateWorkoutView[]) {

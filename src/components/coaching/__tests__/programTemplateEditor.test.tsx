@@ -231,6 +231,50 @@ describe('professional template editor browser interactions', () => {
     } finally { await page.close() }
   })
 
+  it('reconciles a successful prescription draft to canonical refreshed values', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      let exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await exercise.getByLabel('Series').fill('05')
+      await exercise.getByLabel('Repeticiones').fill('012')
+      await exercise.getByLabel('Peso (kg)').fill('082.50')
+      await exercise.getByLabel('RPE').fill('8.0')
+      await exercise.getByLabel('Descanso (seg.)').fill('075')
+      await exercise.getByLabel('Notas').fill('   ')
+      await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
+      await pwExpect(exercise).toHaveCount(0)
+
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await pwExpect(exercise.getByLabel('Series')).toHaveValue('5')
+      await pwExpect(exercise.getByLabel('Repeticiones')).toHaveValue('12')
+      await pwExpect(exercise.getByLabel('Peso (kg)')).toHaveValue('82.5')
+      await pwExpect(exercise.getByLabel('RPE')).toHaveValue('8')
+      await pwExpect(exercise.getByLabel('Descanso (seg.)')).toHaveValue('75')
+      await pwExpect(exercise.getByLabel('Notas')).toHaveValue('')
+    } finally { await page.close() }
+  })
+
+  it('shows a conflicting refreshed server prescription instead of the saved draft', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?prescription=concurrent`)
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      let exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await exercise.getByLabel('Repeticiones').fill('12')
+      await exercise.getByLabel('Notas').fill('Propuesta enviada')
+      await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
+      await pwExpect(exercise).toHaveCount(0)
+
+      await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
+      exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
+      await pwExpect(exercise.getByLabel('Repeticiones')).toHaveValue('15')
+      await pwExpect(exercise.getByLabel('Notas')).toHaveValue('Ajuste externo')
+    } finally { await page.close() }
+  })
+
   it('keeps a failed prescription save guarded with its draft intact', async () => {
     const page = await browser.newPage()
     try {
