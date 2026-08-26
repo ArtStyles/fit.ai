@@ -53,6 +53,31 @@ describe('validateCatalogV1Manifest', () => {
     ]))).toEqual({ pilot: 5, 1: 5, 2: 5, 3: 5, 4: 5 })
   })
 
+  it('does not claim technical approval in visual notes without a technique review', () => {
+    const manifest = JSON.parse(readFileSync(
+      path.resolve(process.cwd(), 'public/exercises/catalog/v1/manifest.json'),
+      'utf8',
+    )) as {
+      exercises: Array<{
+        slug: string
+        reviews?: {
+          visual?: { notes?: unknown }
+          technique?: unknown
+        }
+      }>
+    }
+    const technicalApprovalClaim = /(?:\b(?:aprobaci[oó]n|aprob(?:ado|ada)|validaci[oó]n|valid(?:ado|ada)|qa)\b[^.!?;]{0,80}\bt[eé]cnica\b|\bt[eé]cnica\b[^.!?;]{0,80}\b(?:aprobaci[oó]n|aprob(?:ado|ada)|validaci[oó]n|valid(?:ado|ada))\b)/i
+
+    const unsupportedClaims = manifest.exercises
+      .filter(exercise => exercise.reviews?.technique === undefined)
+      .filter(exercise => Array.isArray(exercise.reviews?.visual?.notes)
+        && exercise.reviews.visual.notes.some(note =>
+          typeof note === 'string' && technicalApprovalClaim.test(note)))
+      .map(exercise => exercise.slug)
+
+    expect(unsupportedClaims).toEqual([])
+  })
+
   it('accepts the exact V1 draft catalog', () => {
     expect(validateCatalogV1Manifest(valid)).toEqual([])
   })
