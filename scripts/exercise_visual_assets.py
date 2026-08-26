@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import math
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -32,19 +33,33 @@ def build_poster(source: Path, output: Path) -> str:
     raise ValueError(f"unable to create a WebP poster within {POSTER_MAX_BYTES} bytes")
 
 
-def build_contact_sheet(posters: list[Path], output: Path, tile_size: int) -> None:
-    """Create one unlabelled horizontal review sheet from poster files."""
+def build_contact_sheet(
+    posters: list[Path],
+    output: Path,
+    tile_size: int,
+    columns: int | None = None,
+) -> None:
+    """Create one unlabelled row-major review sheet from poster files."""
     if tile_size <= 0:
         raise ValueError("tile_size must be positive")
+    if columns is not None and columns <= 0:
+        raise ValueError("columns must be positive")
+    if not posters:
+        raise ValueError("posters must not be empty")
 
     gap = 12
-    width = tile_size * len(posters) + gap * max(0, len(posters) - 1)
-    contact_sheet = Image.new("RGB", (width, tile_size), IVORY)
+    column_count = min(columns or len(posters), len(posters))
+    row_count = math.ceil(len(posters) / column_count)
+    width = tile_size * column_count + gap * (column_count - 1)
+    height = tile_size * row_count + gap * (row_count - 1)
+    contact_sheet = Image.new("RGB", (width, height), IVORY)
     for index, poster_path in enumerate(posters):
         with Image.open(poster_path) as image:
             tile = ImageOps.contain(image.convert("RGB"), (tile_size, tile_size), Image.Resampling.LANCZOS)
-        offset_x = index * (tile_size + gap) + (tile_size - tile.width) // 2
-        offset_y = (tile_size - tile.height) // 2
+        column = index % column_count
+        row = index // column_count
+        offset_x = column * (tile_size + gap) + (tile_size - tile.width) // 2
+        offset_y = row * (tile_size + gap) + (tile_size - tile.height) // 2
         contact_sheet.paste(tile, (offset_x, offset_y))
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -62,13 +77,14 @@ def main() -> None:
     sheet_parser = subcommands.add_parser("contact-sheet")
     sheet_parser.add_argument("--tile-size", required=True, type=int)
     sheet_parser.add_argument("--output", required=True, type=Path)
+    sheet_parser.add_argument("--columns", type=int)
     sheet_parser.add_argument("posters", nargs="+", type=Path)
 
     arguments = parser.parse_args()
     if arguments.command == "poster":
         print(build_poster(arguments.input, arguments.output))
     else:
-        build_contact_sheet(arguments.posters, arguments.output, arguments.tile_size)
+        build_contact_sheet(arguments.posters, arguments.output, arguments.tile_size, arguments.columns)
 
 
 if __name__ == "__main__":

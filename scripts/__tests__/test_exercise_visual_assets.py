@@ -40,6 +40,35 @@ class ExerciseVisualAssetsTest(unittest.TestCase):
                 with Image.open(sheet) as image:
                     self.assertEqual(image.size, (tile_size * 5 + 12 * 4, tile_size))
 
+    def test_builds_a_row_major_contact_sheet_grid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            posters = []
+            for index in range(7):
+                poster = root / f"poster-{index}.webp"
+                Image.new("RGB", (1024, 1024), (20 * index, 40, 80)).save(poster, "WEBP")
+                posters.append(poster)
+
+            sheet = root / "grid.webp"
+            build_contact_sheet(posters, sheet, 80, columns=3)
+
+            with Image.open(sheet) as image:
+                self.assertEqual(image.size, (264, 264))
+                for actual, expected in zip(image.getpixel((4, 188)), (120, 40, 80), strict=True):
+                    self.assertAlmostEqual(actual, expected, delta=3)
+
+    def test_rejects_non_positive_contact_sheet_columns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            poster = root / "poster.webp"
+            Image.new("RGB", (1024, 1024), "#f8f3eb").save(poster, "WEBP")
+
+            with self.assertRaisesRegex(ValueError, "columns must be positive"):
+                build_contact_sheet([poster], root / "grid.webp", 80, columns=0)
+
+            with self.assertRaisesRegex(ValueError, "posters must not be empty"):
+                build_contact_sheet([], root / "empty.webp", 80, columns=3)
+
     def test_rejects_invalid_poster_images(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
