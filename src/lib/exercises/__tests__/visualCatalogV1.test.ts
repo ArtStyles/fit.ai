@@ -130,7 +130,18 @@ describe('validateCatalogV1Manifest', () => {
     expect(CATALOG_V1_EXERCISE_SLUGS.slice(25)).toEqual(NEW_WAVE_SLUGS)
     expect(manifest.exercises).toHaveLength(50)
     expect(manifest.exercises.slice(25).map((exercise: { slug: string }) => exercise.slug)).toEqual(NEW_WAVE_SLUGS)
-    expect(manifest.exercises.slice(25).every((exercise: { status: string }) => exercise.status === 'draft')).toBe(true)
+    const newWaveGroups = Array.from({ length: 5 }, (_, groupIndex) => (
+      manifest.exercises.slice(25 + groupIndex * 5, 30 + groupIndex * 5)
+    ))
+    const newWaveGroupStatuses = newWaveGroups.map((group: Array<{ status: string }>) => group[0]?.status)
+
+    expect(newWaveGroups.every((group: Array<{ status: string }>) => (
+      group.length === 5 && new Set(group.map(exercise => exercise.status)).size === 1
+    ))).toBe(true)
+    expect(newWaveGroupStatuses.every(status => status === 'visual-approved' || status === 'draft')).toBe(true)
+
+    const firstDraftGroup = newWaveGroupStatuses.indexOf('draft')
+    expect(firstDraftGroup === -1 || newWaveGroupStatuses.slice(firstDraftGroup).every(status => status === 'draft')).toBe(true)
   })
 
   it('requires paired and unique legacy references', () => {
