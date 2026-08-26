@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-08-26
 
-**Estado:** Diseño visual aprobado; especificación técnica pendiente de revisión final
+**Estado:** Aprobado por el usuario
 
 **Producto:** Vekira
 
