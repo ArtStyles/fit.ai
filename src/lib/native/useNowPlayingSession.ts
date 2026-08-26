@@ -62,7 +62,9 @@ export function createControlPendingTracker(onPendingChange: (pending: boolean) 
       }
     },
     dispose() {
+      if (disposed) return
       disposed = true
+      if (pendingCount > 0) onPendingChange(false)
       pendingCount = 0
     },
   }

@@ -196,6 +196,22 @@ describe('now playing session controller', () => {
     expect(harness.pendingTimers()).toBe(0)
   })
 
+  it('accepts a lower-timestamp session after permission is revoked and granted again', async () => {
+    const priorSession = { ...PLAYING_SNAPSHOT, title: 'Prior session', updatedAtMs: 5_000 }
+    const reauthorizedSession = { ...PLAYING_SNAPSHOT, title: 'Reauthorized session', updatedAtMs: 4_000 }
+    const harness = createHarness({
+      authorizationReads: ['granted', 'not_granted', 'granted'],
+      currentReads: [priorSession, priorSession, reauthorizedSession, reauthorizedSession],
+    })
+    const controller = createNowPlayingSessionController(harness.adapter, harness.onState, harness.clock)
+    await controller.start()
+    await controller.refresh()
+    await controller.refresh()
+
+    expect(harness.latest()).toEqual({ status: 'active', snapshot: reauthorizedSession, error: null })
+    expect(harness.listenerCount()).toBe(2)
+  })
+
   it('attaches one listener when refresh finds permission granted after settings', async () => {
     const harness = createHarness({
       authorizationReads: ['not_granted', 'granted'],

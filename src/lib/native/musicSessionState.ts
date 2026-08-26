@@ -104,6 +104,11 @@ export function createNowPlayingSessionController(
     await removeListener()
   }
 
+  const clearAuthorizationResources = async () => {
+    latestSnapshotUpdatedAtMs = null
+    await clearResources()
+  }
+
   const schedulePausedExit = (snapshot: MusicPlaybackSnapshot) => {
     if (pausedSnapshotUpdatedAtMs !== snapshot.updatedAtMs) {
       clearPauseTimeout()
@@ -208,7 +213,7 @@ export function createNowPlayingSessionController(
       const authorization = await adapter.getAuthorizationStatus()
       if (!isCurrentOperation(run)) return
       if (authorization !== 'granted') {
-        await clearResources()
+        await clearAuthorizationResources()
         if (isCurrentOperation(run)) publish({ status: authorization, snapshot: null, error: null })
         return
       }

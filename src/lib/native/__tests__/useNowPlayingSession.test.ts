@@ -39,24 +39,26 @@ describe('now playing hook lifecycles', () => {
   })
 
   it('keeps pending true until all overlapping controls complete and ignores an old lifecycle', () => {
-    const pending: boolean[] = []
-    const oldTracker = createControlPendingTracker(value => pending.push(value))
+    const oldPending: boolean[] = []
+    const nextPending: boolean[] = []
+    const oldTracker = createControlPendingTracker(value => oldPending.push(value))
     const firstDone = oldTracker.begin()
     const secondDone = oldTracker.begin()
 
     firstDone()
-    expect(pending.at(-1)).toBe(true)
+    expect(oldPending.at(-1)).toBe(true)
     secondDone()
-    expect(pending.at(-1)).toBe(false)
+    expect(oldPending.at(-1)).toBe(false)
 
     const oldRequestDone = oldTracker.begin()
     oldTracker.dispose()
-    const nextTracker = createControlPendingTracker(value => pending.push(value))
+    expect(oldPending.at(-1)).toBe(false)
+    const nextTracker = createControlPendingTracker(value => nextPending.push(value))
     const nextRequestDone = nextTracker.begin()
     oldRequestDone()
 
-    expect(pending.at(-1)).toBe(true)
+    expect(nextPending.at(-1)).toBe(true)
     nextRequestDone()
-    expect(pending.at(-1)).toBe(false)
+    expect(nextPending.at(-1)).toBe(false)
   })
 })
