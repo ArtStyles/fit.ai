@@ -53,7 +53,13 @@ describe('SecondaryMetrics responsive containment', () => {
     await viteServer?.close()
   }, 30_000)
 
-  it.each([360, 390, 412, 1280])('keeps long progress details inside a %ipx viewport', async viewportWidth => {
+  it.each([
+    [320, true],
+    [360, true],
+    [390, false],
+    [412, false],
+    [1280, false],
+  ])('keeps every progress row readable inside a %ipx viewport', async (viewportWidth, expectStackedSummary) => {
     const page = await browser.newPage({ viewport: { width: viewportWidth, height: 900 } })
     try {
       await page.goto(`${baseUrl}/src/components/dashboard/__tests__/fixtures/secondaryMetrics.html`)
@@ -62,23 +68,76 @@ describe('SecondaryMetrics responsive containment', () => {
       const geometry = await page.evaluate(() => {
         const fixture = document.querySelector<HTMLElement>('[data-dashboard-fixture]')
         const section = document.querySelector<HTMLElement>('section[aria-labelledby="metrics-title"]')
-        const links = Array.from(section?.querySelectorAll<HTMLElement>('a') ?? [])
         if (!fixture || !section) throw new Error('Secondary metrics fixture did not render.')
 
         const fixtureRight = fixture.getBoundingClientRect().right
         const sectionBounds = section.getBoundingClientRect()
+        const progressRows = [
+          section.querySelector<HTMLElement>('a[href="/history/latest-session"]'),
+          section.querySelector<HTMLElement>('a[href="/exercises/record-exercise"]'),
+          section.querySelector<HTMLElement>('a[href="/plan"]'),
+        ]
+        if (progressRows.some(row => !row)) throw new Error('A progress detail row is missing.')
+
+        const summaryLabels = Array.from(section.querySelectorAll<HTMLElement>('p'))
+        const streakCell = summaryLabels.find(label => label.textContent === 'Racha activa')?.parentElement
+        const volumeCell = summaryLabels.find(label => label.textContent === 'Volumen semanal')?.parentElement
+        if (!streakCell || !volumeCell) throw new Error('The progress summary cells are missing.')
+        const streakBounds = streakCell.getBoundingClientRect()
+        const volumeBounds = volumeCell.getBoundingClientRect()
+
+        const rows = progressRows.map(row => {
+          const rowElement = row!
+          const copy = rowElement.querySelector<HTMLElement>(':scope > span')
+          if (!copy) throw new Error('A progress detail row has no copy container.')
+          const lines = Array.from(copy.querySelectorAll<HTMLElement>(':scope > span'))
+          const rowBounds = rowElement.getBoundingClientRect()
+          const copyBounds = copy.getBoundingClientRect()
+
+          return {
+            rowRight: rowBounds.right,
+            copyRight: copyBounds.right,
+            lineCount: lines.length,
+            lines: lines.map(line => {
+              const style = getComputedStyle(line)
+              return {
+                clientWidth: line.clientWidth,
+                scrollWidth: line.scrollWidth,
+                overflowX: style.overflowX,
+                textOverflow: style.textOverflow,
+                whiteSpace: style.whiteSpace,
+              }
+            }),
+          }
+        })
+
         return {
           viewportWidth: window.innerWidth,
           documentScrollWidth: document.documentElement.scrollWidth,
           sectionRight: sectionBounds.right,
           fixtureRight,
-          overflowingLinks: links.filter(link => link.getBoundingClientRect().right > sectionBounds.right + 0.5).length,
+          summaryIsStacked: volumeBounds.top >= streakBounds.bottom - 0.5,
+          rows,
         }
       })
 
       expect(geometry.documentScrollWidth).toBeLessThanOrEqual(geometry.viewportWidth)
       expect(geometry.sectionRight).toBeLessThanOrEqual(geometry.fixtureRight + 0.5)
-      expect(geometry.overflowingLinks).toBe(0)
+      expect(geometry.summaryIsStacked).toBe(expectStackedSummary)
+      expect(geometry.rows.map(row => row.lineCount)).toEqual([3, 3, 1])
+      for (const row of geometry.rows) {
+        expect(row.rowRight).toBeLessThanOrEqual(geometry.sectionRight + 0.5)
+        expect(row.copyRight).toBeLessThanOrEqual(row.rowRight + 0.5)
+        for (const line of row.lines) {
+          expect(line.clientWidth).toBeGreaterThan(0)
+          expect(line.overflowX).toBe('hidden')
+          expect(line.textOverflow).toBe('ellipsis')
+          expect(line.whiteSpace).toBe('nowrap')
+        }
+      }
+
+      expect(geometry.rows[0].lines[1].scrollWidth).toBeGreaterThan(geometry.rows[0].lines[1].clientWidth)
+      expect(geometry.rows[1].lines[1].scrollWidth).toBeGreaterThan(geometry.rows[1].lines[1].clientWidth)
     } finally {
       await page.close()
     }

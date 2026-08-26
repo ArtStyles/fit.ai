@@ -19,14 +19,14 @@ createRoot(root).render(
           referenceInstant: '2026-08-26T12:00:00.000Z',
           latestSession: {
             id: 'latest-session',
-            workoutName: 'Entrenamiento de fuerza del tren inferior con estabilización unilateral avanzada',
+            workoutName: 'EntrenamientoDeFuerzaDelTrenInferiorConEstabilizacionUnilateralAvanzadaSinEspacios',
             completedAt: '2026-08-25T12:00:00.000Z',
             durationMinutes: 125,
           },
           topRecord: {
             logId: 'record-log',
             exerciseId: 'record-exercise',
-            exerciseName: 'Press inclinado con mancuernas y rotación escapular controlada de recorrido completo',
+            exerciseName: 'PressInclinadoConMancuernasYRotacionEscapularControladaDeRecorridoCompletoSinEspacios',
             maxWeightKg: 98765.5,
             repsAtMaxWeight: 12345,
           },
