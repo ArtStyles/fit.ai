@@ -242,16 +242,17 @@ export function ProgramTemplateEditor({
             onMove={(id, delta) => void moveWorkout(id, delta)}
             onAdd={() => { if (canAddWorkout && !dayStructurePending) setAddingWorkout(true) }}
           />
-          {activeWorkout ? (
+          {orderedWorkouts.map(workout => (
             <ActiveTemplateWorkout
-              key={activeWorkout.id}
-              workout={activeWorkout}
+              key={workout.id}
+              workout={workout}
+              active={workout.id === activeWorkout.id}
               options={options}
               dayStructurePending={dayStructurePending}
-              structuralPending={workoutStructuralPending[activeWorkout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING}
-              saveState={workoutSaveStates[activeWorkout.id] ?? 'saved'}
+              structuralPending={workoutStructuralPending[workout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING}
+              saveState={workoutSaveStates[workout.id] ?? 'saved'}
               onSaveStateChange={state => {
-                setWorkoutSaveStates(current => ({ ...current, [activeWorkout.id]: state }))
+                setWorkoutSaveStates(current => ({ ...current, [workout.id]: state }))
               }}
               exerciseDrafts={exerciseDrafts}
               exerciseSaveStates={exerciseSaveStates}
@@ -273,12 +274,12 @@ export function ProgramTemplateEditor({
               onStructuralPendingChange={update => {
                 setWorkoutStructuralPending(current => ({
                   ...current,
-                  [activeWorkout.id]: update(current[activeWorkout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING),
+                  [workout.id]: update(current[workout.id] ?? EMPTY_WORKOUT_STRUCTURAL_PENDING),
                 }))
               }}
               onChanged={() => undefined}
             />
-          ) : null}
+          ))}
         </>
       ) : (
         <div className="rounded-2xl border border-dashed border-border p-6 text-center">

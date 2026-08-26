@@ -42,7 +42,7 @@ export function ProgramTemplateActions({
   }
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-muted/10 p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:pb-4" aria-labelledby="routine-summary-title">
+    <section className="rounded-2xl border border-border/70 bg-muted/10 p-4 pb-[max(0.75rem,var(--app-safe-area-bottom))] lg:pb-4" aria-labelledby="routine-summary-title">
       <div className="flex items-center justify-between gap-3">
         <h2 id="routine-summary-title" className="font-bold text-foreground">Resumen semanal</h2>
         <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold capitalize text-muted-foreground">{template.status === 'draft' ? 'Borrador' : template.status}</span>

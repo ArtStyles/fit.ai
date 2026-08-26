@@ -27,12 +27,17 @@ export const EMPTY_WORKOUT_STRUCTURAL_PENDING: WorkoutStructuralPending = {
 
 const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
+function setPanelInert(panel: HTMLElement | null, inert: boolean) {
+  if (panel) panel.inert = inert
+}
+
 async function safeAction(loader: () => Promise<Result>, fallback: string): Promise<Result> {
   try { return await loader() } catch { return { ok: false, error: fallback } }
 }
 
 export function ActiveTemplateWorkout({
   workout,
+  active,
   options,
   dayStructurePending,
   structuralPending,
@@ -47,6 +52,7 @@ export function ActiveTemplateWorkout({
   onChanged,
 }: {
   workout: TemplateWorkoutView
+  active: boolean
   options: PlanExerciseOption[]
   dayStructurePending: boolean
   structuralPending: WorkoutStructuralPending
@@ -170,12 +176,24 @@ export function ActiveTemplateWorkout({
     }
   }
 
+  if (!active) {
+    return <section
+      id={`template-day-panel-${workout.id}`}
+      role="tabpanel"
+      aria-labelledby={`template-day-tab-${workout.id}`}
+      aria-label={workout.name}
+      hidden
+      ref={panel => setPanelInert(panel, true)}
+    />
+  }
+
   return (
     <section
       id={`template-day-panel-${workout.id}`}
       role="tabpanel"
       aria-labelledby={`template-day-tab-${workout.id}`}
       aria-label={workout.name}
+      ref={panel => setPanelInert(panel, false)}
       className="min-w-0 rounded-2xl border border-border/70 bg-muted/10 p-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">

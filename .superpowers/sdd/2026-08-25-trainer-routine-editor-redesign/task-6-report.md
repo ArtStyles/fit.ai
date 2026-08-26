@@ -113,3 +113,90 @@ The temporary Vite review configuration was deleted, its exact child process was
 - Vitest emitted the repository's existing `vite-tsconfig-paths` advisory; it did not affect exit status.
 - Browser acceptance and visual review validate CSS geometry, keyboard interaction, focus restoration, and Axe rules in the local fixture. They do not replace VoiceOver/TalkBack or physical-device safe-area validation.
 - Remote Supabase persistence and deployment are outside this client hardening task and were not changed.
+
+## Fix round 1/5: resolved tab relationships and bound mobile accessibility contracts
+
+### Status
+
+Addressed every review finding. Each day tab now owns a resolvable panel ID, the fixture binds all requested keyboard/focus/safe-area/theme behaviors, and existing editor state/reconciliation regressions remain green.
+
+Commit message: `fix(coach): complete routine editor accessibility`
+
+The fix commit hash is recorded in the handoff because this appended report is part of that commit.
+
+### Changes
+
+- Rendered one stable `tabpanel` for every day. The active panel contains the editor; inactive panels remain as empty `hidden` and `inert` shells so every `aria-controls` IDREF resolves without duplicate forms, exercise nodes, or visible controls.
+- Kept panels keyed by workout ID and retained the existing lifted day/exercise save state, prescription drafts, structural pending state, and reconciliation policy.
+- Added runtime coverage for Arrow Left and End alongside Arrow Right and Home. The test verifies roving focus, selection, panel visibility, both IDREF targets, and exactly one panel in the accessibility tree.
+- Added a successful batch-confirmation path that selects with Space, confirms with Enter, waits for close, verifies focus on the external `Agregar varios ejercicios` opener, proves its pending `aria-disabled` state, and measures its 44 px target.
+- Updated the shared touch-target helper to measure rendered `aria-disabled` actions. A negative sentinel regression proves a 44 by 20 px aria-disabled button is rejected rather than skipped.
+- Added a route-like fixture using the real `AppShell`, `AppScrollViewport`, and fixed `BottomNav`, plus the route's `pb-28` clearance. With a simulated 24 px Capacitor inset, the test reaches the true scroll end, keeps the action panel above the nav, and verifies the panel incorporates the full inset.
+- Routed action-panel padding through `--app-safe-area-bottom`, which already combines Capacitor variables with browser `env()` fallbacks.
+- Ran metadata and batch-dialog Axe acceptance independently in both dark and light themes.
+- Raised the saved-state light tone from emerald 600 to emerald 700 and changed the assignment explanation to `text-foreground/80` after light-theme Axe identified serious contrast failures. Dark-theme tones remain unchanged.
+- Did not add an opener-unmount fallback: the component contract keeps the workout and its external opener mounted after batch confirmation, including while refreshed exercises are pending. The bound success test verifies that exact contract; adding a fallback target for an out-of-contract parent removal would introduce unused behavior.
+
+### RED evidence
+
+Initial focused review run:
+
+```powershell
+pnpm vitest run src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts --maxWorkers=4 --reporter=verbose -t "uses roving|restores focus to the external|measures aria-disabled|scrolls the route editor"
+```
+
+Result before fixes: exit code 1; 3 failed, 1 passed, 32 skipped.
+
+- Day B's tab referenced `template-day-panel-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`, but the locator count was 0 because only the active panel existed.
+- The aria-disabled sentinel expected the target helper to reject, but the helper resolved successfully because `[aria-disabled="true"]` was explicitly excluded.
+- The route-shell test could not find `[data-app-scroll-viewport]` because the fixture exposed only the standalone editor.
+- The successful-confirmation focus test passed immediately, proving the existing implementation already restored focus after the real async success path; the missing issue was binding coverage, not product behavior.
+
+After introducing the real route shell, the safe-area assertion still failed with 12 px instead of the simulated 24 px, isolating the product defect to the action panel's direct `env()` use.
+
+Light-theme Axe RED:
+
+```powershell
+pnpm vitest run src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts --maxWorkers=4 --reporter=verbose -t "editor with .* theme has no critical/serious Axe findings"
+```
+
+Result before contrast fixes: exit code 1; both dark cases passed and both light cases failed with serious `color-contrast` findings. The exact targets were the saved-state `text-emerald-600` indicator and the assignment explanation on its violet-tinted surface.
+
+The first complete combined run with full inactive panel contents produced 14 failures: hidden controls still duplicated raw DOM locators and structural exercise counts. Reducing inactive panels to empty hidden/inert shells fixed the root cause without weakening selectors or accessibility assertions.
+
+### GREEN and final verification
+
+Final amended accessibility and editor suites:
+
+```powershell
+pnpm vitest run src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts src/components/coaching/__tests__/programTemplateEditor.test.tsx --maxWorkers=4
+```
+
+Result: exit code 0; 2 files passed; 70 tests passed; duration 38.28 seconds. The accessibility suite now contributes 36 tests and the unchanged editor regression suite contributes 34.
+
+Static gates:
+
+```powershell
+pnpm type-check
+pnpm exec eslint src/components/coaching/AssignProgramDialog.tsx src/components/coaching/ProgramTemplateEditor.tsx src/components/coaching/__tests__/fixtures/trainerAccessibility.fixture.tsx src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts src/components/coaching/program-editor/ActiveTemplateWorkout.tsx src/components/coaching/program-editor/ProgramTemplateActions.tsx src/components/coaching/program-editor/SaveStateIndicator.tsx tests/e2e/helpers/acceptance.ts
+git diff --check
+```
+
+Result: type-check exited 0 with `tsc --noEmit --incremental false`; scoped ESLint exited 0 with no findings after removing one unused test locator; diff validation exited 0.
+
+### Files in fix round
+
+- `src/components/coaching/AssignProgramDialog.tsx`
+- `src/components/coaching/ProgramTemplateEditor.tsx`
+- `src/components/coaching/__tests__/fixtures/trainerAccessibility.fixture.tsx`
+- `src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts`
+- `src/components/coaching/program-editor/ActiveTemplateWorkout.tsx`
+- `src/components/coaching/program-editor/ProgramTemplateActions.tsx`
+- `src/components/coaching/program-editor/SaveStateIndicator.tsx`
+- `tests/e2e/helpers/acceptance.ts`
+- `.superpowers/sdd/2026-08-25-trainer-routine-editor-redesign/task-6-report.md`
+
+### Boundaries
+
+- The existing Vite path-resolution and stale Browserslist advisories remain warnings only; no assertion or exit status was weakened.
+- The fixture validates a nonzero Capacitor safe-area variable and the real fixed navigation geometry in Chromium. Physical-device system bars and screen-reader announcements remain device-validation boundaries.

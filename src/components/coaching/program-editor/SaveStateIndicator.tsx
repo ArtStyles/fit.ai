@@ -8,7 +8,7 @@ const SAVE_COPY: Record<SaveState, string> = {
 }
 
 const SAVE_TONE: Record<SaveState, string> = {
-  saved: 'text-emerald-600 dark:text-emerald-300',
+  saved: 'text-emerald-700 dark:text-emerald-300',
   dirty: 'text-amber-700 dark:text-amber-300',
   saving: 'text-primary',
   error: 'text-destructive',
