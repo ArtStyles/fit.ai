@@ -79,6 +79,22 @@ describe('validateCatalogV1AssetFiles', () => {
     expect(errors).not.toContain('missing poster: peso-muerto-rumano-barra')
   })
 
+  it.each(['technique-approved', 'published'] as const)(
+    'validates %s assets in partial mode',
+    async status => {
+      const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
+      manifest.exercises[0].status = status
+      manifest.exercises[0].assets.posterSha256 = '0'.repeat(64)
+
+      await expect(validateCatalogV1AssetFiles(
+        manifest,
+        publicRoot,
+        artifactsRoot,
+        { complete: false },
+      )).resolves.toContain('poster digest mismatch: sentadilla-trasera-barra')
+    },
+  )
+
   it('reports missing files, root escapes, and oversized posters explicitly', async () => {
     const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
     const approved = manifest.exercises[0]

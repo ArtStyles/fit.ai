@@ -66,7 +66,7 @@ def validate_catalog_assets(manifest: dict[str, object], public_root: Path, arti
         if not isinstance(entry, dict):
             continue
         status = entry.get("status")
-        if not complete and status != "visual-approved":
+        if not complete and status == "draft":
             continue
         slug = entry.get("slug")
         assets = entry.get("assets")

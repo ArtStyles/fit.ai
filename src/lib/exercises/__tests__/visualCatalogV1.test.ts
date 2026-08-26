@@ -53,31 +53,6 @@ describe('validateCatalogV1Manifest', () => {
     ]))).toEqual({ pilot: 5, 1: 5, 2: 5, 3: 5, 4: 5 })
   })
 
-  it('does not claim technical approval in visual notes without a technique review', () => {
-    const manifest = JSON.parse(readFileSync(
-      path.resolve(process.cwd(), 'public/exercises/catalog/v1/manifest.json'),
-      'utf8',
-    )) as {
-      exercises: Array<{
-        slug: string
-        reviews?: {
-          visual?: { notes?: unknown }
-          technique?: unknown
-        }
-      }>
-    }
-    const technicalApprovalClaim = /(?:\b(?:aprobaci[oó]n|aprob(?:ado|ada)|validaci[oó]n|valid(?:ado|ada)|qa)\b[^.!?;]{0,80}\bt[eé]cnica\b|\bt[eé]cnica\b[^.!?;]{0,80}\b(?:aprobaci[oó]n|aprob(?:ado|ada)|validaci[oó]n|valid(?:ado|ada))\b)/i
-
-    const unsupportedClaims = manifest.exercises
-      .filter(exercise => exercise.reviews?.technique === undefined)
-      .filter(exercise => Array.isArray(exercise.reviews?.visual?.notes)
-        && exercise.reviews.visual.notes.some(note =>
-          typeof note === 'string' && technicalApprovalClaim.test(note)))
-      .map(exercise => exercise.slug)
-
-    expect(unsupportedClaims).toEqual([])
-  })
-
   it('accepts the exact V1 draft catalog', () => {
     expect(validateCatalogV1Manifest(valid)).toEqual([])
   })
@@ -119,5 +94,67 @@ describe('validateCatalogV1Manifest', () => {
       'exercises[5].reviews.visual is required for published',
       'exercises[5].reviews.technique is required for published',
     ]))
+  })
+
+  it('rejects a present but invalid technique review before an elevated state', () => {
+    const manifest = {
+      ...valid,
+      exercises: valid.exercises.map((exercise, index) => index === 5
+        ? { ...exercise, reviews: { technique: null } }
+        : exercise),
+    }
+
+    expect(validateCatalogV1Manifest(manifest)).toContain(
+      'exercises[5].reviews.technique must be an object',
+    )
+  })
+
+  it('rejects a technical approval claim in visual notes without a valid technique review', () => {
+    const manifest = {
+      ...valid,
+      exercises: valid.exercises.map((exercise, index) => index === 5
+        ? {
+            ...exercise,
+            reviews: {
+              visual: {
+                reviewer: 'Codex visual QA',
+                reviewedAt: '2026-08-26',
+                notes: ['Grupo 5 aprobado tras QA visual y técnica'],
+              },
+            },
+          }
+        : exercise),
+    }
+
+    expect(validateCatalogV1Manifest(manifest)).toContain(
+      'exercises[5].reviews.visual.notes cannot claim technical approval without a valid technique review',
+    )
+  })
+
+  it('allows a technical note only with a complete technique review', () => {
+    const manifest = {
+      ...valid,
+      exercises: valid.exercises.map((exercise, index) => index === 5
+        ? {
+            ...exercise,
+            reviews: {
+              visual: {
+                reviewer: 'Codex visual QA',
+                reviewedAt: '2026-08-26',
+                notes: ['Composición visual lista para revisión técnica'],
+              },
+              technique: {
+                reviewer: 'Revisor clínico',
+                reviewedAt: '2026-08-26',
+                notes: ['Trayectoria revisada'],
+                qualification: 'Fisioterapeuta colegiado',
+                references: ['Registro interno de revisión técnica'],
+              },
+            },
+          }
+        : exercise),
+    }
+
+    expect(validateCatalogV1Manifest(manifest)).toEqual([])
   })
 })

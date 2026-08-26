@@ -114,3 +114,34 @@ class ExerciseVisualAssetsTest(unittest.TestCase):
             poster.mkdir()
             errors = validate_catalog_assets(manifest, public_root, artifacts_root, False)
             self.assertIn(f"poster is not a regular file: {slug}", errors)
+
+    def test_partial_validation_checks_every_non_draft_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public_root = root / "public"
+            artifacts_root = root / "artifacts"
+            slug = "sentadilla-trasera-barra"
+            poster = public_root / "exercises" / "catalog" / "v1" / slug / "poster.webp"
+            source = artifacts_root / slug / "source.png"
+            poster.parent.mkdir(parents=True)
+            source.parent.mkdir(parents=True)
+            Image.new("RGB", (1024, 1024), "#f8f3eb").save(poster, "WEBP")
+            Image.new("RGB", (1254, 1254), "#f8f3eb").save(source, "PNG")
+            source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+
+            for status in ("technique-approved", "published"):
+                manifest = {"exercises": [{
+                    "slug": slug,
+                    "status": status,
+                    "assets": {
+                        "poster": f"/exercises/catalog/v1/{slug}/poster.webp",
+                        "posterSha256": "0" * 64,
+                        "sourceSha256": source_hash,
+                        "sourceObjectKey": f"v1/{slug}/{source_hash}.png",
+                    },
+                }]}
+                with self.subTest(status=status):
+                    self.assertIn(
+                        f"poster digest mismatch: {slug}",
+                        validate_catalog_assets(manifest, public_root, artifacts_root, False),
+                    )

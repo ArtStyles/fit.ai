@@ -93,6 +93,7 @@ const MOVEMENT_PATTERNS = new Set<CatalogV1MovementPattern>([
   'squat', 'hinge', 'horizontal_push', 'horizontal_pull', 'vertical_push', 'vertical_pull', 'core', 'isolation', 'locomotion',
 ])
 const SHA256 = /^[a-f0-9]{64}$/
+const TECHNICAL_APPROVAL_CLAIM = /(?:\b(?:aprobaci[oó]n|aprob(?:ado|ada)|validaci[oó]n|valid(?:ado|ada)|qa)\b[^.!?;]{0,80}\bt[eé]cnica\b|\bt[eé]cnica\b[^.!?;]{0,80}\b(?:aprobaci[oó]n|aprob(?:ado|ada)|validaci[oó]n|valid(?:ado|ada))\b)/i
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -122,6 +123,15 @@ function validateVisualReview(value: unknown, prefix: string, errors: string[]):
   if (!isNonEmptyString(value.reviewer)) errors.push(`${prefix}.reviewer must be a non-empty string`)
   if (!isNonEmptyString(value.reviewedAt)) errors.push(`${prefix}.reviewedAt must be a non-empty string`)
   if (!isNonEmptyStringArray(value.notes)) errors.push(`${prefix}.notes must be a non-empty string array`)
+}
+
+function validateTechniqueReview(value: unknown, prefix: string, errors: string[]): boolean {
+  const errorCount = errors.length
+  validateVisualReview(value, prefix, errors)
+  if (!isRecord(value)) return false
+  if (!isNonEmptyString(value.qualification)) errors.push(`${prefix}.qualification must be a non-empty string`)
+  if (!isNonEmptyStringArray(value.references)) errors.push(`${prefix}.references must be a non-empty string array`)
+  return errors.length === errorCount
 }
 
 function expectedBatch(index: number): CatalogV1Batch {
@@ -225,13 +235,32 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
       if (!isRecord(candidate.reviews) || !isRecord(candidate.reviews.visual)) errors.push(`${prefix}.reviews.visual is required for ${candidate.status}`)
       else validateVisualReview(candidate.reviews.visual, `${prefix}.reviews.visual`, errors)
     }
-    if (requiresTechniqueReview(candidate.status)) {
-      if (!isRecord(candidate.reviews) || !isRecord(candidate.reviews.technique)) errors.push(`${prefix}.reviews.technique is required for ${candidate.status}`)
-      else {
-        validateVisualReview(candidate.reviews.technique, `${prefix}.reviews.technique`, errors)
-        if (!isNonEmptyString(candidate.reviews.technique.qualification)) errors.push(`${prefix}.reviews.technique.qualification must be a non-empty string`)
-        if (!isNonEmptyStringArray(candidate.reviews.technique.references)) errors.push(`${prefix}.reviews.technique.references must be a non-empty string array`)
-      }
+    const techniqueValue = isRecord(candidate.reviews)
+      ? candidate.reviews.technique
+      : undefined
+    let validTechniqueReview = false
+
+    if (techniqueValue !== undefined) {
+      validTechniqueReview = validateTechniqueReview(
+        techniqueValue,
+        `${prefix}.reviews.technique`,
+        errors,
+      )
+    }
+
+    if (requiresTechniqueReview(candidate.status) && !validTechniqueReview) {
+      errors.push(`${prefix}.reviews.technique is required for ${candidate.status}`)
+    }
+
+    const visualNotes = isRecord(candidate.reviews) && isRecord(candidate.reviews.visual)
+      ? candidate.reviews.visual.notes
+      : undefined
+    if (
+      Array.isArray(visualNotes)
+      && visualNotes.some(note => typeof note === 'string' && TECHNICAL_APPROVAL_CLAIM.test(note))
+      && !validTechniqueReview
+    ) {
+      errors.push(`${prefix}.reviews.visual.notes cannot claim technical approval without a valid technique review`)
     }
   })
 

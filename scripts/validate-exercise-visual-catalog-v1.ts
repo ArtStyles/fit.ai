@@ -45,7 +45,7 @@ async function inspectFile(filePath: string): Promise<FileInspection> {
 }
 
 function requiresAssets(entry: CatalogV1ExerciseEntry, complete: boolean): boolean {
-  return complete || entry.status === 'visual-approved'
+  return complete || entry.status !== 'draft'
 }
 
 export async function validateCatalogV1AssetFiles(
