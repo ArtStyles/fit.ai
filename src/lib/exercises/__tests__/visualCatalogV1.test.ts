@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import {
+  CATALOG_V1_BATCHES,
   CATALOG_V1_EXERCISE_SLUGS,
   validateCatalogV1Manifest,
 } from '../visualCatalogV1'
@@ -61,7 +63,9 @@ describe('validateCatalogV1Manifest', () => {
     const exercises = valid.exercises.slice(1)
     exercises[0] = { ...exercises[0], assets: { poster: '/exercises/catalog/v1/wrong/poster.webp' } }
     const errors = validateCatalogV1Manifest({ ...valid, exercises })
-    expect(errors).toContain('exercises must contain exactly the 25 supported V1 slugs')
+    expect(errors).toContain(
+      `exercises must contain exactly the ${CATALOG_V1_EXERCISE_SLUGS.length} supported V1 slugs`,
+    )
     expect(errors).toContain(`exercises[0].assets.poster must belong to ${exercises[0].slug}`)
   })
 
@@ -73,6 +77,41 @@ describe('validateCatalogV1Manifest', () => {
     expect(validateCatalogV1Manifest({ ...valid, exercises })).toContain(
       'exercises[5].batch must be 1',
     )
+  })
+
+  it('derives the V1 order from five literal groups of five', () => {
+    expect(CATALOG_V1_BATCHES.map(group => group.batch)).toEqual(['pilot', 1, 2, 3, 4])
+    expect(CATALOG_V1_BATCHES.every(group => group.slugs.length === 5)).toBe(true)
+    expect(CATALOG_V1_BATCHES.flatMap(group => [...group.slugs])).toEqual(CATALOG_V1_EXERCISE_SLUGS)
+  })
+
+  it('preserves the immutable wave-1 asset and review contract', () => {
+    const manifest = JSON.parse(readFileSync(
+      path.resolve(process.cwd(), 'public/exercises/catalog/v1/manifest.json'),
+      'utf8',
+    ))
+    const projection = manifest.exercises.slice(0, 25).map(({
+      slug, batch, status, reviews, assets,
+    }: {
+      slug: string
+      batch: unknown
+      status: unknown
+      reviews: unknown
+      assets: unknown
+    }) => ({ slug, batch, status, reviews, assets }))
+    const digest = createHash('sha256').update(JSON.stringify(projection)).digest('hex')
+
+    expect(digest).toBe('829c098ec3690f56b9c9a3a404bf2f577dd74301bd757cb80a7077cead4ad63c')
+  })
+
+  it('rejects an out-of-order manifest even when membership is unchanged', () => {
+    const exercises = valid.exercises.map(exercise => ({ ...exercise }))
+    ;[exercises[0], exercises[1]] = [exercises[1], exercises[0]]
+
+    expect(validateCatalogV1Manifest({ ...valid, exercises })).toEqual(expect.arrayContaining([
+      'exercises[0].slug must be sentadilla-trasera-barra',
+      'exercises[1].slug must be press-banca-barra',
+    ]))
   })
 
   it('requires hashes and a private source key before visual approval', () => {

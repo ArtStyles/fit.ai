@@ -1,33 +1,45 @@
-export const CATALOG_V1_EXERCISE_SLUGS = [
-  'sentadilla-trasera-barra',
-  'press-banca-barra',
-  'jalon-pecho-polea',
-  'arnold-press-mancuernas',
-  'rueda-abdominal-rodillas',
-  'peso-muerto-rumano-barra',
-  'press-inclinado-mancuernas',
-  'remo-sentado-polea',
-  'elevacion-lateral-mancuernas',
-  'plancha-frontal',
-  'prensa-piernas-45',
-  'press-pecho-maquina',
-  'remo-mancuerna-un-brazo',
-  'curl-biceps-barra-ez',
-  'bicicleta-estatica',
-  'hip-thrust-barra',
-  'aperturas-pecho-polea',
-  'dominada-asistida-maquina',
-  'apertura-inversa-maquina',
-  'extension-triceps-cuerda',
-  'curl-femoral-tumbado-maquina',
-  'curl-martillo-mancuernas',
-  'extension-triceps-sobre-cabeza-polea',
-  'crunch-polea-rodillas',
-  'caminata-cinta',
+export const CATALOG_V1_BATCHES = [
+  { batch: 'pilot', slugs: [
+    'sentadilla-trasera-barra',
+    'press-banca-barra',
+    'jalon-pecho-polea',
+    'arnold-press-mancuernas',
+    'rueda-abdominal-rodillas',
+  ] },
+  { batch: 1, slugs: [
+    'peso-muerto-rumano-barra',
+    'press-inclinado-mancuernas',
+    'remo-sentado-polea',
+    'elevacion-lateral-mancuernas',
+    'plancha-frontal',
+  ] },
+  { batch: 2, slugs: [
+    'prensa-piernas-45',
+    'press-pecho-maquina',
+    'remo-mancuerna-un-brazo',
+    'curl-biceps-barra-ez',
+    'bicicleta-estatica',
+  ] },
+  { batch: 3, slugs: [
+    'hip-thrust-barra',
+    'aperturas-pecho-polea',
+    'dominada-asistida-maquina',
+    'apertura-inversa-maquina',
+    'extension-triceps-cuerda',
+  ] },
+  { batch: 4, slugs: [
+    'curl-femoral-tumbado-maquina',
+    'curl-martillo-mancuernas',
+    'extension-triceps-sobre-cabeza-polea',
+    'crunch-polea-rodillas',
+    'caminata-cinta',
+  ] },
 ] as const
 
-export type CatalogV1ExerciseSlug = (typeof CATALOG_V1_EXERCISE_SLUGS)[number]
-export type CatalogV1Batch = 'pilot' | 1 | 2 | 3 | 4
+export type CatalogV1Batch = (typeof CATALOG_V1_BATCHES)[number]['batch']
+export type CatalogV1ExerciseSlug = (typeof CATALOG_V1_BATCHES)[number]['slugs'][number]
+export const CATALOG_V1_EXERCISE_SLUGS: readonly CatalogV1ExerciseSlug[] =
+  CATALOG_V1_BATCHES.flatMap(group => [...group.slugs])
 export type CatalogV1ReviewStatus =
   | 'draft' | 'visual-approved' | 'technique-approved' | 'published'
 export type CatalogV1Difficulty = 'beginner' | 'intermediate'
@@ -85,7 +97,9 @@ export type CatalogV1Manifest = {
   exercises: CatalogV1ExerciseEntry[]
 }
 
-const BATCHES: CatalogV1Batch[] = ['pilot', 1, 2, 3, 4]
+const BATCH_BY_SLUG = new Map<CatalogV1ExerciseSlug, CatalogV1Batch>(
+  CATALOG_V1_BATCHES.flatMap(group => group.slugs.map(slug => [slug, group.batch] as const)),
+)
 const STATUSES = new Set<CatalogV1ReviewStatus>(['draft', 'visual-approved', 'technique-approved', 'published'])
 const REGIONS = new Set<CatalogV1Region>(['legs', 'chest', 'back', 'shoulders', 'arms', 'core', 'cardio'])
 const DIFFICULTIES = new Set<CatalogV1Difficulty>(['beginner', 'intermediate'])
@@ -134,10 +148,6 @@ function validateTechniqueReview(value: unknown, prefix: string, errors: string[
   return errors.length === errorCount
 }
 
-function expectedBatch(index: number): CatalogV1Batch {
-  return BATCHES[Math.floor(index / 5)]
-}
-
 export function validateCatalogV1Manifest(value: unknown): string[] {
   const errors: string[] = []
 
@@ -158,7 +168,7 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
     || suppliedSlugs.size !== CATALOG_V1_EXERCISE_SLUGS.length
     || CATALOG_V1_EXERCISE_SLUGS.some(slug => !suppliedSlugs.has(slug))
   ) {
-    errors.push('exercises must contain exactly the 25 supported V1 slugs')
+    errors.push(`exercises must contain exactly the ${CATALOG_V1_EXERCISE_SLUGS.length} supported V1 slugs`)
   }
 
   const seenSlugs = new Set<string>()
@@ -172,7 +182,10 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
     }
 
     const slug = candidate.slug
-    const validSlug = isNonEmptyString(slug) && CATALOG_V1_EXERCISE_SLUGS.includes(slug as CatalogV1ExerciseSlug)
+    const expectedSlug = CATALOG_V1_EXERCISE_SLUGS[index]
+    if (slug !== expectedSlug) errors.push(`${prefix}.slug must be ${expectedSlug}`)
+
+    const validSlug = isNonEmptyString(slug) && BATCH_BY_SLUG.has(slug as CatalogV1ExerciseSlug)
     if (!validSlug) errors.push(`${prefix}.slug must be a supported V1 exercise`)
     else if (seenSlugs.has(slug)) errors.push(`${prefix}.slug must be unique`)
     else seenSlugs.add(slug)
@@ -193,7 +206,10 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
       || !candidate.movementPatterns.every(pattern => MOVEMENT_PATTERNS.has(pattern as CatalogV1MovementPattern))
     ) errors.push(`${prefix}.movementPatterns must be a non-empty array of supported V1 movement patterns`)
 
-    if (candidate.batch !== expectedBatch(index)) errors.push(`${prefix}.batch must be ${expectedBatch(index)}`)
+    if (validSlug) {
+      const expectedBatch = BATCH_BY_SLUG.get(slug as CatalogV1ExerciseSlug)!
+      if (candidate.batch !== expectedBatch) errors.push(`${prefix}.batch must be ${expectedBatch}`)
+    }
     if (!STATUSES.has(candidate.status as CatalogV1ReviewStatus)) errors.push(`${prefix}.status must be a supported review status`)
 
     if (!isRecord(candidate.assets)) {
