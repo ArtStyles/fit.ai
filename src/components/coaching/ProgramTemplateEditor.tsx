@@ -229,7 +229,7 @@ export function ProgramTemplateEditor({
         onSave={saveTemplate}
       />
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-4">
       {orderedWorkouts.length ? (
         <>
@@ -303,14 +303,16 @@ export function ProgramTemplateEditor({
         </form>
       ) : null}
         </div>
-        <ProgramTemplateActions
-          template={template}
-          summary={routineSummary}
-          relationships={relationships}
-          assignments={assignments}
-          blocked={hasPendingDescriptions}
-          blockedMessage={PENDING_DESCRIPTION_MESSAGE}
-        />
+        <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start" aria-labelledby="routine-summary-title">
+          <ProgramTemplateActions
+            template={template}
+            summary={routineSummary}
+            relationships={relationships}
+            assignments={assignments}
+            blocked={hasPendingDescriptions}
+            blockedMessage={PENDING_DESCRIPTION_MESSAGE}
+          />
+        </aside>
       </div>
       {announcement ? <p role="status" aria-live="polite" className="sr-only">{announcement}</p> : null}
     </section>

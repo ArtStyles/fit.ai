@@ -180,22 +180,65 @@ function Surface() {
   return <ProgramTemplateEditor
     template={{
       id: '11111111-1111-4111-8111-111111111111',
-      name: 'Fuerza', goal: null, description: null, days_per_week: 2, status: 'draft',
+      name: 'Fuerza', goal: 'Fuerza general', description: 'Rutina progresiva de dos días.', days_per_week: 2, status: 'draft',
     }}
-    workouts={[{
-      id: '22222222-2222-4222-8222-222222222222',
-      name: 'Día A', day_of_week: 1, order_in_plan: 1,
-      exercises: [{
-        id: '33333333-3333-4333-8333-333333333333',
-        exercise_id: '44444444-4444-4444-8444-444444444444',
-        order_index: 1, sets: 3, reps: 10, weight_kg: null, target_rpe: null,
-        rest_seconds: 60, notes: null, exercise: { name: 'Sentadilla' },
-      }],
+    workouts={[
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        name: 'Día A', day_of_week: 1, order_in_plan: 1,
+        exercises: [
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            exercise_id: '44444444-4444-4444-8444-444444444444',
+            order_index: 1, sets: 3, reps: 10, weight_kg: null, target_rpe: 7,
+            rest_seconds: 60, notes: null,
+            exercise: { name: 'Sentadilla con barra', muscle_groups: ['Piernas'], equipment: ['Barra'] },
+          },
+          {
+            id: '55555555-5555-4555-8555-555555555555',
+            exercise_id: '66666666-6666-4666-8666-666666666666',
+            order_index: 2, sets: 4, reps: 8, weight_kg: null, target_rpe: 8,
+            rest_seconds: 90, notes: null,
+            exercise: { name: 'Peso muerto rumano', muscle_groups: ['Isquiotibiales'], equipment: ['Barra'] },
+          },
+        ],
+      },
+      {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        name: 'Día B', day_of_week: 4, order_in_plan: 2,
+        exercises: [{
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          exercise_id: '77777777-7777-4777-8777-777777777777',
+          order_index: 1, sets: 3, reps: 12, weight_kg: null, target_rpe: 7,
+          rest_seconds: 60, notes: null,
+          exercise: { name: 'Prensa inclinada', muscle_groups: ['Cuádriceps'], equipment: ['Máquina'] },
+        }],
+      },
+    ]}
+    options={[
+      {
+        id: '44444444-4444-4444-8444-444444444444', name: 'Sentadilla con barra',
+        muscle_groups: ['Piernas'], equipment: ['Barra'], difficulty: 'beginner',
+        exercise_type: 'strength', is_compound: true,
+      },
+      {
+        id: '66666666-6666-4666-8666-666666666666', name: 'Peso muerto rumano',
+        muscle_groups: ['Isquiotibiales'], equipment: ['Barra'], difficulty: 'intermediate',
+        exercise_type: 'strength', is_compound: true,
+      },
+      {
+        id: '77777777-7777-4777-8777-777777777777', name: 'Prensa inclinada',
+        muscle_groups: ['Cuádriceps'], equipment: ['Máquina'], difficulty: 'beginner',
+        exercise_type: 'strength', is_compound: true,
+      },
+    ]}
+    relationships={[{
+      id: 'relationship-a',
+      label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a',
     }]}
-    options={[{
-      id: '44444444-4444-4444-8444-444444444444', name: 'Sentadilla',
-      muscle_groups: ['piernas'], equipment: [], difficulty: 'beginner',
-      exercise_type: 'strength', is_compound: true,
+    assignments={[{
+      id: 'assignment-a',
+      label: 'Entrenamiento personal · asignación assignment-a',
     }]}
   />
 }

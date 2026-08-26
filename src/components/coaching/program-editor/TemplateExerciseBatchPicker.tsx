@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { ExerciseCatalogDialog, toExerciseCatalogOptions } from '@/components/plan/ExercisePicker'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
@@ -22,19 +22,30 @@ export function TemplateExerciseBatchPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const catalogOptions = useMemo(() => toExerciseCatalogOptions(options), [options])
+  const unavailable = pending || remainingCapacity <= 0 || options.length === 0
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen)
+    if (!nextOpen) {
+      window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }))
+    }
+  }
 
   return (
     <div className="mt-4">
       <button
+        ref={triggerRef}
         type="button"
-        disabled={pending || remainingCapacity <= 0 || options.length === 0}
+        aria-disabled={unavailable || undefined}
         aria-busy={pending || undefined}
         onClick={() => {
+          if (unavailable) return
           setError(null)
           setOpen(true)
         }}
-        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-4 text-sm font-semibold text-primary disabled:opacity-50"
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/60 bg-primary/10 px-4 text-sm font-semibold text-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
       >
         <Plus className="h-4 w-4" aria-hidden="true" />
         {remainingCapacity <= 0 ? 'Límite de 30 ejercicios alcanzado' : 'Agregar varios ejercicios'}
@@ -43,7 +54,7 @@ export function TemplateExerciseBatchPicker({
 
       <ExerciseCatalogDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={handleOpenChange}
         options={catalogOptions}
         selectionMode="multiple"
         maxSelections={remainingCapacity}

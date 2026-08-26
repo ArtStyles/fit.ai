@@ -184,7 +184,7 @@ export function ActiveTemplateWorkout({
           <h2 className="text-lg font-bold text-foreground">{workout.name}</h2>
           <p className="text-sm text-muted-foreground">{summary.sets} series · {summary.estimatedMinutes} min estimados</p>
         </div>
-        <button type="button" disabled={dayStructurePending} onClick={() => void deleteDay()} className="min-h-11 rounded-xl border border-destructive/40 px-3 text-sm font-semibold text-destructive disabled:opacity-50">Eliminar día</button>
+        <button type="button" disabled={dayStructurePending} onClick={() => void deleteDay()} className="min-h-11 rounded-xl border border-destructive/60 px-3 text-sm font-semibold text-foreground disabled:opacity-50">Eliminar día</button>
       </div>
 
       <details className="mt-3 rounded-xl border border-border/60 p-3">

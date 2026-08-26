@@ -69,25 +69,25 @@ export function TemplateExerciseCard({
 
   return (
     <li data-template-exercise-id={exercise.id} className="min-w-0 rounded-2xl border border-border/70 bg-background/60 p-3">
-      <div className="flex min-w-0 items-start justify-between gap-3">
+      <div className="grid min-w-0 gap-3 sm:flex sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-foreground">{index + 1}. {name}</p>
           <p className="truncate text-xs text-muted-foreground">
             {[...(exercise.exercise?.muscle_groups ?? []), ...(exercise.exercise?.equipment ?? [])].slice(0, 3).join(' · ') || 'Prescripción del día'}
           </p>
         </div>
-        <div className="flex shrink-0 gap-1">
-          <button type="button" aria-label={`Subir ${name}`} disabled={reorderPending || index === 0} onClick={() => onMove(-1)} className="min-h-11 min-w-11 rounded-lg border border-border text-xs disabled:opacity-30">↑</button>
-          <button type="button" aria-label={`Bajar ${name}`} disabled={reorderPending || index === count - 1} onClick={() => onMove(1)} className="min-h-11 min-w-11 rounded-lg border border-border text-xs disabled:opacity-30">↓</button>
-          <button type="button" aria-label={`Editar ${name}`} onClick={() => setEditing(value => !value)} className="min-h-11 min-w-11 rounded-lg border border-border px-2 text-xs">Editar</button>
-          <button type="button" aria-label={`Eliminar ${name}`} disabled={deletePending} onClick={onDelete} className="min-h-11 min-w-11 rounded-lg border border-destructive/40 px-2 text-xs text-destructive disabled:opacity-50">Eliminar</button>
+        <div className="grid min-w-0 grid-cols-4 gap-1 sm:flex sm:shrink-0">
+          <button type="button" aria-label={`Subir ${name}`} disabled={reorderPending || index === 0} onClick={() => onMove(-1)} className="min-h-11 min-w-0 rounded-lg border border-border text-xs disabled:opacity-30 sm:min-w-11">↑</button>
+          <button type="button" aria-label={`Bajar ${name}`} disabled={reorderPending || index === count - 1} onClick={() => onMove(1)} className="min-h-11 min-w-0 rounded-lg border border-border text-xs disabled:opacity-30 sm:min-w-11">↓</button>
+          <button type="button" aria-label={`Editar ${name}`} onClick={() => setEditing(value => !value)} className="min-h-11 min-w-0 overflow-hidden rounded-lg border border-border px-1 text-[10px] sm:min-w-11 sm:px-2 sm:text-xs">Editar</button>
+          <button type="button" aria-label={`Eliminar ${name}`} disabled={deletePending} onClick={onDelete} className="min-h-11 min-w-0 overflow-hidden rounded-lg border border-destructive/60 px-1 text-[10px] text-foreground disabled:opacity-50 sm:min-w-11 sm:px-2 sm:text-xs">Eliminar</button>
         </div>
       </div>
 
-      <dl className="mt-3 grid min-w-0 grid-cols-3 gap-2 text-center">
-        <div className="min-w-0 rounded-lg bg-muted/40 p-2"><dt className="truncate text-[11px] text-muted-foreground">Series × reps</dt><dd className="truncate text-sm font-semibold">{exercise.sets} × {exercise.reps}</dd></div>
-        <div className="min-w-0 rounded-lg bg-muted/40 p-2"><dt className="truncate text-[11px] text-muted-foreground">Intensidad</dt><dd className="truncate text-sm font-semibold">{exercise.target_rpe ? `RPE ${exercise.target_rpe}` : '—'}</dd></div>
-        <div className="min-w-0 rounded-lg bg-muted/40 p-2"><dt className="truncate text-[11px] text-muted-foreground">Descanso</dt><dd className="truncate text-sm font-semibold">{exercise.rest_seconds} s</dd></div>
+      <dl data-exercise-metrics className="mt-3 grid min-w-0 grid-cols-3 gap-2 text-center">
+        <div className="min-w-0 rounded-lg bg-muted/40 px-1.5 py-2"><dt className="text-[10px] leading-tight text-muted-foreground sm:text-[11px]">Series × reps</dt><dd className="truncate text-sm font-semibold">{exercise.sets} × {exercise.reps}</dd></div>
+        <div className="min-w-0 rounded-lg bg-muted/40 px-1.5 py-2"><dt className="text-[10px] leading-tight text-muted-foreground sm:text-[11px]">Intensidad</dt><dd className="truncate text-sm font-semibold">{exercise.target_rpe ? `RPE ${exercise.target_rpe}` : 'Libre'}</dd></div>
+        <div className="min-w-0 rounded-lg bg-muted/40 px-1.5 py-2"><dt className="text-[10px] leading-tight text-muted-foreground sm:text-[11px]">Descanso</dt><dd className="truncate text-sm font-semibold">{exercise.rest_seconds} s</dd></div>
       </dl>
 
       {editing ? (

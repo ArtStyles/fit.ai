@@ -57,7 +57,7 @@ export function ProgramTemplateSummary({
             Descripción
             <textarea aria-label="Descripción de la rutina" name="description" maxLength={2000} defaultValue={template.description ?? ''} rows={3} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 font-normal" />
           </label>
-            <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-fit">
+            <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-background disabled:opacity-50 sm:w-fit">
               {saveState === 'saving' ? 'Guardando…' : 'Guardar detalles'}
             </button>
           </fieldset>
