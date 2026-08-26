@@ -5,7 +5,6 @@ import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { PlanAdjustButton } from '@/components/plan/PlanAdjustButton'
 import { PlanDistribution } from '@/components/plan/PlanDistribution'
 import { PlanOverview } from '@/components/plan/PlanOverview'
-import { PlanRegenerateButton } from '@/components/plan/PlanRegenerateButton'
 import { PlanRetireButton } from '@/components/plan/PlanRetireButton'
 import { PlanWorkoutWorkspace } from '@/components/plan/PlanWorkoutWorkspace'
 import {
@@ -478,7 +477,6 @@ export default async function PlanPage() {
                 {t('Acciones del plan')}
               </p>
               <PlanAdjustButton planId={planRaw.id} options={adjustmentOptions} />
-              <PlanRegenerateButton />
               <Button asChild variant="outline" className="h-11 w-full border-border/60 bg-muted/10">
                 <PendingLink href="/history">
                   <History className="mr-2 h-4 w-4" />

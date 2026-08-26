@@ -21,10 +21,9 @@ describe('plan information hierarchy', () => {
     expect(readView).toContain("t('Editar estructura')")
   })
 
-  it('preserves all plan and workout actions', () => {
+  it('preserves the supported plan and workout actions', () => {
     for (const marker of [
       '<PlanAdjustButton',
-      '<PlanRegenerateButton',
       '<PlanRetireButton',
       '<ShareRoutineButton',
       '<PlanSwitcher',
@@ -34,6 +33,11 @@ describe('plan information hierarchy', () => {
     ]) {
       expect(`${page}\n${workspace}\n${readView}`).toContain(marker)
     }
+  })
+
+  it('keeps deterministic plan adjustment without exposing weekly regeneration', () => {
+    expect(page).toContain('<PlanAdjustButton')
+    expect(page).not.toContain('<PlanRegenerateButton')
   })
 
   it('lists only current family heads and confirms retirement accessibly', () => {

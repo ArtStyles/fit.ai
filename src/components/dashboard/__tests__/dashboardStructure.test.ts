@@ -35,10 +35,10 @@ describe('dashboard structure', () => {
     expect(header).not.toContain('aria-expanded')
   })
 
-  it('places the contextual coach link beside the recommendation', () => {
-    expect(recommendation).toContain('href={recommendation.chatHref}')
-    expect(viewModel).toContain("chatHref: '/chat'")
-    expect(page).not.toMatch(/fixed[^\n]+\/chat|\/chat[^\n]+fixed/)
+  it('keeps AI coach access out of the Home recommendation', () => {
+    expect(recommendation).not.toContain('href={recommendation.chatHref}')
+    expect(viewModel).not.toContain("chatHref: '/chat'")
+    expect(page).not.toContain('/chat')
   })
 
   it('uses a single server-rendered page H1 in the dashboard main content', () => {
