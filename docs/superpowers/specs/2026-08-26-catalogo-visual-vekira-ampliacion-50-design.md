@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-08-26
 
-**Estado:** diseño conversacional aprobado; especificación escrita pendiente de revisión del propietario
+**Estado:** diseño y especificación escrita aprobados por el propietario
 
 **Identidad visual:** `vekira-anatomical-3d-v1`
 
@@ -213,10 +213,10 @@ La plantilla conservará:
 - cámara, proporciones, materiales e iluminación coherentes;
 - ausencia de texto, flechas, logos, marcas de agua o ambiente de gimnasio.
 
-Las fuentes vivirán en `.artifacts/exercises/catalog-v1/<slug>/source.png`. Los pósteres
-versionados vivirán en `public/exercises/catalog/v1/<slug>/poster.webp`, serán WebP de
+Las fuentes vivirán en `.artifacts/exercises/catalog-v1/{slug}/source.png`. Los pósteres
+versionados vivirán en `public/exercises/catalog/v1/{slug}/poster.webp`, serán WebP de
 1024 × 1024 px y no superarán 100 KB. Las claves privadas conservarán el formato
-`v1/<slug>/<sourceSha256>.png`.
+`v1/{slug}/{sourceSha256}.png`.
 
 ## Revisión y manejo de fallos
 
@@ -237,12 +237,13 @@ versionados vivirán en `public/exercises/catalog/v1/<slug>/poster.webp`, serán
 Se producirán, como archivos ignorados:
 
 - una hoja de 512 px y otra de 80 px por cada grupo 5–9;
-- una hoja de los 25 ejercicios nuevos a ambos tamaños;
-- una hoja final de los 50 ejercicios a ambos tamaños.
+- una cuadrícula 5 × 5 de los 25 ejercicios nuevos a ambos tamaños;
+- una cuadrícula 10 × 5 de los 50 ejercicios a ambos tamaños.
 
-El orden de las hojas seguirá el manifiesto. La revisión final comprobará continuidad de la
-identidad, diversidad de equipo, ausencia de duplicados visuales y legibilidad de todos los
-ejercicios.
+Las cuadrículas evitan superar el límite dimensional de WebP que tendría una fila horizontal de
+50 activos. El orden de lectura seguirá el manifiesto, de izquierda a derecha y de arriba abajo.
+La revisión final comprobará continuidad de la identidad, diversidad de equipo, ausencia de
+duplicados visuales y legibilidad de todos los ejercicios.
 
 ## Estrategia de pruebas
 
