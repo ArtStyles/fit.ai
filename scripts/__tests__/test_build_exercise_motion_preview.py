@@ -79,6 +79,35 @@ class BuildExerciseMotionPreviewTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "opaque RGBA"):
             module.validate_decoded_frame(Image.new("RGBA", (1, 1), (248, 243, 235, 0)))
 
+    def test_validate_motion_preview_accepts_opaque_rgba_and_rejects_transparent_rgba(self):
+        module = self.load_builder_module()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            opaque_output = self.build_valid_preview(temporary)
+            transparent_output = temporary / "transparent-motion-preview.webp"
+            frames = []
+            for index in range(10):
+                frame = Image.new("RGBA", (512, 512), (248, 243, 235, 127))
+                ImageDraw.Draw(frame).rectangle(
+                    (index * 16, index * 16, index * 16 + 63, index * 16 + 63),
+                    fill=(index * 20, 48, 96, 127),
+                )
+                frames.append(frame)
+            frames[0].save(
+                transparent_output,
+                format="WEBP",
+                save_all=True,
+                append_images=frames[1:],
+                duration=180,
+                loop=0,
+                quality=20,
+                method=0,
+            )
+
+            module.validate_motion_preview(opaque_output)
+            with self.assertRaisesRegex(RuntimeError, "opaque RGBA"):
+                module.validate_motion_preview(transparent_output)
+
     def test_writes_rgb_frames_with_exact_timing_and_size_budget(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
