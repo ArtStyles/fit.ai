@@ -13,10 +13,10 @@ MAX_PREVIEW_BYTES = 500 * 1024
 
 
 def validate_source_sheet(sheet: Image.Image) -> None:
-    if sheet.width != sheet.height:
-        raise ValueError("source sheet must be square")
     if sheet.width % 3 != 0 or sheet.height % 2 != 0:
         raise ValueError("source sheet dimensions must be divisible by 3 and 2")
+    if sheet.width * 2 != sheet.height * 3:
+        raise ValueError("source sheet must use a 3:2 aspect ratio")
 
 
 def fit_on_canvas(frame: Image.Image) -> Image.Image:
@@ -43,6 +43,14 @@ def crop_six_frames(sheet: Image.Image) -> list[Image.Image]:
     return frames
 
 
+def validate_decoded_frame(frame: Image.Image) -> None:
+    if frame.mode == "RGB":
+        return
+    if frame.mode == "RGBA" and frame.getchannel("A").getextrema() == (255, 255):
+        return
+    raise RuntimeError("motion preview frames must be RGB or opaque RGBA")
+
+
 def validate_motion_preview(output: Path) -> None:
     if output.stat().st_size > MAX_PREVIEW_BYTES:
         raise RuntimeError("motion preview exceeds the size budget")
@@ -61,10 +69,7 @@ def validate_motion_preview(output: Path) -> None:
             raise RuntimeError("motion preview frames must use the configured duration")
         for index in range(animation.n_frames):
             animation.seek(index)
-            try:
-                animation.convert("RGB")
-            except (OSError, ValueError) as error:
-                raise RuntimeError("motion preview frames must be convertible to RGB") from error
+            validate_decoded_frame(animation)
 
 
 def build_contact_sheet(frames: list[Image.Image], output: Path) -> None:

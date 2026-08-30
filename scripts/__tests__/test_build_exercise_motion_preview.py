@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -16,14 +17,14 @@ class BuildExerciseMotionPreviewTest(unittest.TestCase):
             temporary = Path(temporary_directory)
             source = temporary / "motion-source.png"
             output = temporary / "motion-preview.webp"
-            sheet = Image.new("RGB", (300, 300), "#f8f3eb")
+            sheet = Image.new("RGB", (300, 200), "#f8f3eb")
             draw = ImageDraw.Draw(sheet)
             colors = ["#ef6351", "#d94f4f", "#bd3f52", "#8d3f55", "#68435a", "#46465a"]
             for index, color in enumerate(colors):
                 column = index % 3
                 row = index // 3
                 draw.rectangle(
-                    (column * 100, row * 150, column * 100 + 99, row * 150 + 149),
+                    (column * 100, row * 100, column * 100 + 99, row * 100 + 99),
                     fill=color,
                 )
             sheet.save(source)
@@ -58,17 +59,25 @@ class BuildExerciseMotionPreviewTest(unittest.TestCase):
                 self.assertEqual(actual_indexes, expected_indexes)
                 self.assertNotIn(5, actual_indexes)
 
-    def test_rejects_a_non_square_sheet(self):
-        result = self.run_builder_with_sheet((300, 180))
+    def test_rejects_a_sheet_without_three_to_two_aspect_ratio(self):
+        result = self.run_builder_with_sheet((300, 300))
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("source sheet must be square", result.stderr)
+        self.assertIn("source sheet must use a 3:2 aspect ratio", result.stderr)
 
     def test_rejects_a_sheet_that_cannot_form_a_three_by_two_grid(self):
         result = self.run_builder_with_sheet((302, 302))
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("source sheet dimensions must be divisible by 3 and 2", result.stderr)
+
+    def test_validate_decoded_frame_accepts_only_rgb_or_opaque_rgba(self):
+        module = self.load_builder_module()
+
+        module.validate_decoded_frame(Image.new("RGB", (1, 1), "#f8f3eb"))
+        module.validate_decoded_frame(Image.new("RGBA", (1, 1), (248, 243, 235, 255)))
+        with self.assertRaisesRegex(RuntimeError, "opaque RGBA"):
+            module.validate_decoded_frame(Image.new("RGBA", (1, 1), (248, 243, 235, 0)))
 
     def test_writes_rgb_frames_with_exact_timing_and_size_budget(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -144,13 +153,13 @@ class BuildExerciseMotionPreviewTest(unittest.TestCase):
 
     def create_valid_sheet(self, temporary: Path) -> Path:
         source = temporary / "motion-source.png"
-        sheet = Image.new("RGB", (300, 300), "#f8f3eb")
+        sheet = Image.new("RGB", (300, 200), "#f8f3eb")
         draw = ImageDraw.Draw(sheet)
         for index, color in enumerate(("#ef6351", "#d94f4f", "#bd3f52", "#8d3f55", "#68435a", "#46465a")):
             column = index % 3
             row = index // 3
             draw.rectangle(
-                (column * 100, row * 150, column * 100 + 99, row * 150 + 149),
+                (column * 100, row * 100, column * 100 + 99, row * 100 + 99),
                 fill=color,
             )
         sheet.save(source)
@@ -170,6 +179,14 @@ class BuildExerciseMotionPreviewTest(unittest.TestCase):
                 check=False,
                 text=True,
             )
+
+    def load_builder_module(self):
+        script = Path(__file__).resolve().parents[1] / "build-exercise-motion-preview.py"
+        spec = importlib.util.spec_from_file_location("build_exercise_motion_preview", script)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
 
 
 if __name__ == "__main__":
