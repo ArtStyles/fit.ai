@@ -6,12 +6,14 @@ import android.os.Bundle;
 
 import androidx.core.view.WindowCompat;
 
+import com.fitai.app.music.MusicSessionPlugin;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(MusicSessionPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Let the WebView draw behind both system bars. Capacitor 8's bundled
