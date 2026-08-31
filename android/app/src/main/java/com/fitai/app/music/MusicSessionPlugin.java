@@ -8,7 +8,6 @@ import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -16,68 +15,61 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "MusicSession")
 public final class MusicSessionPlugin extends Plugin {
     private static final String EVENT_SESSION_CHANGED = "sessionChanged";
+    private static final String UNAVAILABLE_ERROR_CODE = "MUSIC_SESSION_UNAVAILABLE";
+    private static final String UNAVAILABLE_ERROR_MESSAGE =
+        "Music session integration is no longer available";
 
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private MediaSessionManager mediaSessionManager;
-    private ComponentName listenerComponent;
-    private MusicSessionAccess sessionAccess;
-    private boolean activeSessionsListenerRegistered;
-    private boolean destroyed;
-    private MediaController selectedController;
-    private MusicSessionPayload selectedPayload;
-
-    private final MediaSessionManager.OnActiveSessionsChangedListener activeSessionsListener =
-        this::handleActiveSessionsChanged;
-
-    private final MediaController.Callback controllerCallback = new MediaController.Callback() {
-        @Override
-        public void onMetadataChanged(MediaMetadata metadata) {
-            refreshFromSystem(true);
-        }
-
-        @Override
-        public void onPlaybackStateChanged(PlaybackState state) {
-            refreshFromSystem(true);
-        }
-
-        @Override
-        public void onSessionDestroyed() {
-            refreshFromSystem(true);
-        }
-    };
+    private final AtomicReference<MusicSessionCoordinator> coordinatorRef =
+        new AtomicReference<>();
 
     @Override
     public void load() {
-        destroyed = false;
         Context context = getContext();
-        mediaSessionManager = (MediaSessionManager) context.getSystemService(
-            Context.MEDIA_SESSION_SERVICE
-        );
-        listenerComponent = new ComponentName(
+        MusicSessionHandlerThreadDispatcher dispatcher =
+            new MusicSessionHandlerThreadDispatcher();
+        AndroidRuntime runtime = new AndroidRuntime(
             context,
-            VekiraNotificationListenerService.class
+            dispatcher.getHandler()
         );
-        sessionAccess = new MusicSessionAccess(context);
-        synchronizeAuthorization(false);
+        MusicSessionCoordinator coordinator = new MusicSessionCoordinator(
+            dispatcher,
+            runtime,
+            context.getPackageName()
+        );
+        MusicSessionCoordinator previous = coordinatorRef.getAndSet(coordinator);
+        if (previous != null) {
+            previous.destroy();
+        }
+        coordinator.start();
     }
 
     @PluginMethod
     public void getAuthorizationStatus(PluginCall call) {
-        boolean authorized = sessionAccess != null && sessionAccess.isAuthorized();
-        if (!authorized) {
-            unregisterActiveSessionsListener();
-            clearUnavailableSession(false);
+        MusicSessionCoordinator coordinator = coordinatorRef.get();
+        if (coordinator == null || !coordinator.getAuthorizationStatus(
+            new MusicSessionCoordinator.Result<String>() {
+                @Override
+                public void resolve(String status) {
+                    JSObject result = new JSObject();
+                    result.put("status", status);
+                    call.resolve(result);
+                }
+
+                @Override
+                public void reject(String code, String message) {
+                    call.reject(message, code);
+                }
+            }
+        )) {
+            rejectUnavailable(call);
         }
-        JSObject result = new JSObject();
-        result.put("status", authorized ? "granted" : "not_granted");
-        call.resolve(result);
     }
 
     @PluginMethod
@@ -100,184 +92,235 @@ public final class MusicSessionPlugin extends Plugin {
 
     @PluginMethod
     public void getCurrentSession(PluginCall call) {
-        synchronizeAuthorization(false);
-        call.resolve(wrapSnapshot(selectedPayload));
+        MusicSessionCoordinator coordinator = coordinatorRef.get();
+        if (coordinator == null || !coordinator.getCurrentSession(
+            new MusicSessionCoordinator.Result<MusicSessionSnapshotEnvelope>() {
+                @Override
+                public void resolve(MusicSessionSnapshotEnvelope envelope) {
+                    call.resolve(serialize(envelope));
+                }
+
+                @Override
+                public void reject(String code, String message) {
+                    call.reject(message, code);
+                }
+            }
+        )) {
+            rejectUnavailable(call);
+        }
     }
 
     @PluginMethod
     public void play(PluginCall call) {
-        synchronizeAuthorization(false);
-        if (selectedController != null && selectedPayload != null && selectedPayload.canPlay()) {
-            try {
-                selectedController.getTransportControls().play();
-            } catch (RuntimeException ignored) {
-                clearUnavailableSession(true);
-            }
-        }
-        call.resolve();
+        dispatchControl(call, true);
     }
 
     @PluginMethod
     public void pause(PluginCall call) {
-        synchronizeAuthorization(false);
-        if (selectedController != null && selectedPayload != null && selectedPayload.canPause()) {
-            try {
-                selectedController.getTransportControls().pause();
-            } catch (RuntimeException ignored) {
-                clearUnavailableSession(true);
-            }
-        }
-        call.resolve();
+        dispatchControl(call, false);
     }
 
     @Override
     protected void handleOnResume() {
         super.handleOnResume();
-        synchronizeAuthorization(true);
+        MusicSessionCoordinator coordinator = coordinatorRef.get();
+        if (coordinator != null) {
+            coordinator.resume();
+        }
     }
 
     @Override
     protected void handleOnDestroy() {
-        destroyed = true;
-        unregisterActiveSessionsListener();
-        selectController(null, null, false);
+        MusicSessionCoordinator coordinator = coordinatorRef.getAndSet(null);
+        if (coordinator != null) {
+            coordinator.destroy();
+        }
         super.handleOnDestroy();
     }
 
-    private void synchronizeAuthorization(boolean emitChange) {
-        if (destroyed) {
+    private void dispatchControl(PluginCall call, boolean play) {
+        MusicSessionCoordinator coordinator = coordinatorRef.get();
+        if (coordinator == null) {
+            rejectUnavailable(call);
             return;
         }
-        if (sessionAccess == null || mediaSessionManager == null || listenerComponent == null) {
-            clearUnavailableSession(emitChange);
-            return;
-        }
-        if (!sessionAccess.isAuthorized()) {
-            unregisterActiveSessionsListener();
-            clearUnavailableSession(emitChange);
-            return;
-        }
-        if (!activeSessionsListenerRegistered) {
-            activeSessionsListenerRegistered = sessionAccess.addActiveSessionsChangedListener(
-                mediaSessionManager,
-                activeSessionsListener,
-                listenerComponent
-            );
-            if (!activeSessionsListenerRegistered) {
-                clearUnavailableSession(emitChange);
-                return;
-            }
-        }
-        refreshFromSystem(emitChange);
-    }
-
-    private void refreshFromSystem(boolean emitChange) {
-        if (destroyed) {
-            return;
-        }
-        if (sessionAccess == null || !sessionAccess.isAuthorized()) {
-            unregisterActiveSessionsListener();
-            clearUnavailableSession(emitChange);
-            return;
-        }
-        selectFromControllers(
-            sessionAccess.getActiveSessions(mediaSessionManager, listenerComponent),
-            emitChange
-        );
-    }
-
-    private void handleActiveSessionsChanged(List<MediaController> controllers) {
-        if (destroyed) {
-            return;
-        }
-        if (sessionAccess == null || !sessionAccess.isAuthorized()) {
-            unregisterActiveSessionsListener();
-            clearUnavailableSession(true);
-            return;
-        }
-        selectFromControllers(
-            controllers == null ? Collections.emptyList() : controllers,
-            true
-        );
-    }
-
-    private void selectFromControllers(
-        List<MediaController> controllers,
-        boolean emitChange
-    ) {
-        List<MusicSessionPayload> candidates = new ArrayList<>();
-        List<MediaController> mappedControllers = new ArrayList<>();
-        for (MediaController controller : controllers) {
-            MusicSessionPayload payload = MusicSessionMapper.map(getContext(), controller);
-            if (payload != null) {
-                candidates.add(payload);
-                mappedControllers.add(controller);
-            }
-        }
-
-        MusicSessionPayload nextPayload = MusicSessionPolicy.selectFirst(
-            candidates,
-            getContext().getPackageName()
-        );
-        MediaController nextController = null;
-        if (nextPayload != null) {
-            nextController = mappedControllers.get(candidates.indexOf(nextPayload));
-        }
-        selectController(nextController, nextPayload, emitChange);
-    }
-
-    private void selectController(
-        MediaController nextController,
-        MusicSessionPayload nextPayload,
-        boolean emitChange
-    ) {
-        if (selectedController != nextController) {
-            if (selectedController != null) {
-                try {
-                    selectedController.unregisterCallback(controllerCallback);
-                } catch (RuntimeException ignored) {
-                    // The old session may already be gone.
+        MusicSessionCoordinator.Completion completion =
+            new MusicSessionCoordinator.Completion() {
+                @Override
+                public void resolve() {
+                    call.resolve();
                 }
-            }
-            selectedController = nextController;
-            selectedPayload = nextPayload;
-            if (selectedController != null) {
-                try {
-                    selectedController.registerCallback(controllerCallback, mainHandler);
-                } catch (RuntimeException unavailable) {
-                    selectedController = null;
-                    selectedPayload = null;
+
+                @Override
+                public void reject(String code, String message) {
+                    call.reject(message, code);
                 }
-            }
-        } else {
-            selectedPayload = nextPayload;
-        }
-        if (emitChange) {
-            notifyListeners(EVENT_SESSION_CHANGED, wrapSnapshot(selectedPayload));
+            };
+        boolean dispatched = play
+            ? coordinator.play(completion)
+            : coordinator.pause(completion);
+        if (!dispatched) {
+            rejectUnavailable(call);
         }
     }
 
-    private void clearUnavailableSession(boolean emitChange) {
-        selectController(null, null, emitChange);
+    private static void rejectUnavailable(PluginCall call) {
+        call.reject(UNAVAILABLE_ERROR_MESSAGE, UNAVAILABLE_ERROR_CODE);
     }
 
-    private void unregisterActiveSessionsListener() {
-        if (!activeSessionsListenerRegistered || sessionAccess == null) {
-            return;
-        }
-        sessionAccess.removeActiveSessionsChangedListener(
-            mediaSessionManager,
-            activeSessionsListener
-        );
-        activeSessionsListenerRegistered = false;
-    }
-
-    private static JSObject wrapSnapshot(MusicSessionPayload snapshot) {
+    private static JSObject serialize(MusicSessionSnapshotEnvelope envelope) {
         JSObject event = new JSObject();
+        MusicSessionPayload snapshot = envelope.getSnapshot();
         event.put(
-            "snapshot",
+            MusicSessionSnapshotEnvelope.SNAPSHOT_KEY,
             snapshot == null ? JSONObject.NULL : snapshot.toJSObject()
         );
         return event;
+    }
+
+    private final class AndroidRuntime implements MusicSessionCoordinator.Runtime {
+        private final Context context;
+        private final Handler ownerHandler;
+        private final MediaSessionManager mediaSessionManager;
+        private final ComponentName listenerComponent;
+        private final MusicSessionAccess sessionAccess;
+        private Runnable sessionsChanged;
+
+        private final MediaSessionManager.OnActiveSessionsChangedListener androidListener =
+            controllers -> {
+                Runnable callback = sessionsChanged;
+                if (callback != null) {
+                    callback.run();
+                }
+            };
+
+        private AndroidRuntime(Context context, Handler ownerHandler) {
+            Context applicationContext = context.getApplicationContext();
+            this.context = applicationContext == null ? context : applicationContext;
+            this.ownerHandler = ownerHandler;
+            this.mediaSessionManager = (MediaSessionManager) this.context.getSystemService(
+                Context.MEDIA_SESSION_SERVICE
+            );
+            this.listenerComponent = new ComponentName(
+                this.context,
+                VekiraNotificationListenerService.class
+            );
+            this.sessionAccess = new MusicSessionAccess(this.context);
+        }
+
+        @Override
+        public boolean isAuthorized() {
+            return mediaSessionManager != null && sessionAccess.isAuthorized();
+        }
+
+        @Override
+        public boolean registerActiveSessionsListener(Runnable listener) {
+            sessionsChanged = listener;
+            boolean registered = sessionAccess.addActiveSessionsChangedListener(
+                mediaSessionManager,
+                androidListener,
+                listenerComponent,
+                ownerHandler
+            );
+            if (!registered) {
+                sessionsChanged = null;
+            }
+            return registered;
+        }
+
+        @Override
+        public void unregisterActiveSessionsListener() {
+            sessionsChanged = null;
+            sessionAccess.removeActiveSessionsChangedListener(
+                mediaSessionManager,
+                androidListener
+            );
+        }
+
+        @Override
+        public List<MusicSessionCoordinator.Session> getActiveSessions() {
+            List<MediaController> controllers = sessionAccess.getActiveSessions(
+                mediaSessionManager,
+                listenerComponent
+            );
+            List<MusicSessionCoordinator.Session> sessions = new ArrayList<>(
+                controllers.size()
+            );
+            for (MediaController controller : controllers) {
+                sessions.add(new AndroidSession(controller));
+            }
+            return sessions;
+        }
+
+        @Override
+        public void emitSnapshot(MusicSessionSnapshotEnvelope envelope) {
+            notifyListeners(EVENT_SESSION_CHANGED, serialize(envelope));
+        }
+
+        private final class AndroidSession implements MusicSessionCoordinator.Session {
+            private final MediaController controller;
+            private Runnable changed;
+
+            private final MediaController.Callback androidCallback =
+                new MediaController.Callback() {
+                    @Override
+                    public void onMetadataChanged(MediaMetadata metadata) {
+                        notifyChanged();
+                    }
+
+                    @Override
+                    public void onPlaybackStateChanged(PlaybackState state) {
+                        notifyChanged();
+                    }
+
+                    @Override
+                    public void onSessionDestroyed() {
+                        notifyChanged();
+                    }
+                };
+
+            private AndroidSession(MediaController controller) {
+                this.controller = controller;
+            }
+
+            @Override
+            public MusicSessionPayload getSnapshot() {
+                return MusicSessionMapper.map(context, controller);
+            }
+
+            @Override
+            public void registerChangedListener(Runnable listener) {
+                changed = listener;
+                try {
+                    controller.registerCallback(androidCallback, ownerHandler);
+                } catch (RuntimeException failure) {
+                    changed = null;
+                    throw failure;
+                }
+            }
+
+            @Override
+            public void unregisterChangedListener() {
+                changed = null;
+                controller.unregisterCallback(androidCallback);
+            }
+
+            @Override
+            public void play() {
+                controller.getTransportControls().play();
+            }
+
+            @Override
+            public void pause() {
+                controller.getTransportControls().pause();
+            }
+
+            private void notifyChanged() {
+                Runnable callback = changed;
+                if (callback != null) {
+                    callback.run();
+                }
+            }
+        }
     }
 }

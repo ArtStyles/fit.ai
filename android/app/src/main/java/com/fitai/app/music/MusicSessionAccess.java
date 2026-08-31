@@ -22,7 +22,8 @@ public final class MusicSessionAccess {
         void addActiveSessionsChangedListener(
             MediaSessionManager manager,
             MediaSessionManager.OnActiveSessionsChangedListener listener,
-            ComponentName listenerComponent
+            ComponentName listenerComponent,
+            Handler callbackHandler
         );
 
         void removeActiveSessionsChangedListener(
@@ -75,7 +76,8 @@ public final class MusicSessionAccess {
     public boolean addActiveSessionsChangedListener(
         MediaSessionManager manager,
         MediaSessionManager.OnActiveSessionsChangedListener listener,
-        ComponentName listenerComponent
+        ComponentName listenerComponent,
+        Handler callbackHandler
     ) {
         if (!isAuthorized()) {
             return false;
@@ -84,7 +86,8 @@ public final class MusicSessionAccess {
             systemAccess.addActiveSessionsChangedListener(
                 manager,
                 listener,
-                listenerComponent
+                listenerComponent,
+                callbackHandler
             );
             return true;
         } catch (SecurityException denied) {
@@ -105,11 +108,9 @@ public final class MusicSessionAccess {
 
     private static final class AndroidSystemAccess implements SystemAccess {
         private final Context context;
-        private final Handler callbackHandler;
 
         private AndroidSystemAccess(Context context) {
             this.context = context;
-            this.callbackHandler = new Handler(context.getMainLooper());
         }
 
         @Override
@@ -129,7 +130,8 @@ public final class MusicSessionAccess {
         public void addActiveSessionsChangedListener(
             MediaSessionManager manager,
             MediaSessionManager.OnActiveSessionsChangedListener listener,
-            ComponentName listenerComponent
+            ComponentName listenerComponent,
+            Handler callbackHandler
         ) {
             manager.addOnActiveSessionsChangedListener(
                 listener,

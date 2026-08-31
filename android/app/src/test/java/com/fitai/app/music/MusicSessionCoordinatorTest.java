@@ -1,0 +1,476 @@
+package com.fitai.app.music;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.List;
+import org.junit.Test;
+
+public class MusicSessionCoordinatorTest {
+    @Test
+    public void repeatedResumeRegistersTheActiveSessionListenerOnce() {
+        Fixture fixture = new Fixture();
+
+        fixture.coordinator.start();
+        fixture.coordinator.resume();
+        fixture.dispatcher.runAll();
+
+        assertEquals(1, fixture.runtime.registerCount);
+    }
+
+    @Test
+    public void revocationRemovesBothListenersAndEmitsAnExplicitNullSnapshot() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "playing", true, true);
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+
+        fixture.runtime.authorized = false;
+        fixture.coordinator.resume();
+        fixture.dispatcher.runAll();
+
+        assertEquals(1, fixture.runtime.unregisterCount);
+        assertEquals(1, selected.unregisterCount);
+        assertEquals(1, fixture.runtime.emitted.size());
+        assertTrue(fixture.runtime.emitted.get(0).asMap().containsKey("snapshot"));
+        assertNull(fixture.runtime.emitted.get(0).asMap().get("snapshot"));
+    }
+
+    @Test
+    public void activeSessionRegistrationFailureDoesNotQueryOrSelectSessions() {
+        Fixture fixture = new Fixture();
+        fixture.runtime.registrationSucceeds = false;
+        fixture.runtime.sessions = Collections.singletonList(
+            session("selected", "player", "Track", "playing", true, true)
+        );
+
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+
+        assertEquals(1, fixture.runtime.registerCount);
+        assertEquals(0, fixture.runtime.activeSessionQueryCount);
+    }
+
+    @Test
+    public void destroyInvalidatesQueuedWorkAndPreventsStateRevivalOrEvents() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "playing", true, true);
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        fixture.runtime.emitted.clear();
+
+        selected.fireChanged();
+        fixture.coordinator.resume();
+        fixture.coordinator.destroy();
+        selected.fireChanged();
+        fixture.dispatcher.runAll();
+
+        assertEquals(1, fixture.runtime.registerCount);
+        assertEquals(1, fixture.runtime.unregisterCount);
+        assertEquals(1, selected.unregisterCount);
+        assertTrue(fixture.runtime.emitted.isEmpty());
+        assertFalse(fixture.coordinator.resume());
+    }
+
+    @Test
+    public void controllerReplacementUnregistersBeforeRegisteringTheNextController() {
+        Fixture fixture = new Fixture();
+        FakeSession first = session("first", "player.one", "First", "playing", true, true);
+        FakeSession second = session("second", "player.two", "Second", "playing", true, true);
+        first.operations = fixture.runtime.operations;
+        second.operations = fixture.runtime.operations;
+        fixture.runtime.sessions = Collections.singletonList(first);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        fixture.runtime.operations.clear();
+
+        fixture.runtime.sessions = Collections.singletonList(second);
+        fixture.runtime.fireActiveSessionsChanged();
+        fixture.dispatcher.runAll();
+
+        assertEquals(
+            Arrays.asList("unregister:first", "register:second"),
+            fixture.runtime.operations
+        );
+    }
+
+    @Test
+    public void nullSnapshotEnvelopeKeepsTheKeyForBothEventsAndCurrentReads() {
+        Fixture fixture = new Fixture();
+        TestResult<MusicSessionSnapshotEnvelope> current = new TestResult<>();
+
+        fixture.coordinator.resume();
+        fixture.coordinator.getCurrentSession(current);
+        fixture.dispatcher.runAll();
+
+        assertEquals(1, fixture.runtime.emitted.size());
+        assertTrue(fixture.runtime.emitted.get(0).asMap().containsKey("snapshot"));
+        assertNull(fixture.runtime.emitted.get(0).asMap().get("snapshot"));
+        assertTrue(current.value.asMap().containsKey("snapshot"));
+        assertNull(current.value.asMap().get("snapshot"));
+    }
+
+    @Test
+    public void selectionPreservesAndroidOrderWhileApplyingEligibilityPolicy() {
+        Fixture fixture = new Fixture();
+        FakeSession own = session("own", "com.fitai.app", "Own", "playing", true, true);
+        FakeSession firstEligible = session(
+            "paused",
+            "player.first",
+            "First external",
+            "paused",
+            true,
+            true
+        );
+        FakeSession secondEligible = session(
+            "playing",
+            "player.second",
+            "Second external",
+            "playing",
+            true,
+            true
+        );
+        fixture.runtime.sessions = Arrays.asList(own, firstEligible, secondEligible);
+        TestResult<MusicSessionSnapshotEnvelope> current = new TestResult<>();
+
+        fixture.coordinator.start();
+        fixture.coordinator.getCurrentSession(current);
+        fixture.dispatcher.runAll();
+
+        assertEquals("paused", current.value.getSnapshot().getSessionId());
+        assertEquals(0, own.registerCount);
+        assertEquals(1, firstEligible.registerCount);
+        assertEquals(0, secondEligible.registerCount);
+    }
+
+    @Test
+    public void unsupportedCapabilitiesResolveWithoutInvokingControls() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "paused", false, false);
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        TestCompletion play = new TestCompletion();
+        TestCompletion pause = new TestCompletion();
+
+        fixture.coordinator.play(play);
+        fixture.coordinator.pause(pause);
+        fixture.dispatcher.runAll();
+
+        assertTrue(play.resolved);
+        assertTrue(pause.resolved);
+        assertEquals(0, selected.playCount);
+        assertEquals(0, selected.pauseCount);
+    }
+
+    @Test
+    public void supportedControlsInvokeTheSelectedSessionAndResolve() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "playing", true, true);
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        TestCompletion play = new TestCompletion();
+        TestCompletion pause = new TestCompletion();
+
+        fixture.coordinator.play(play);
+        fixture.coordinator.pause(pause);
+        fixture.dispatcher.runAll();
+
+        assertTrue(play.resolved);
+        assertTrue(pause.resolved);
+        assertEquals(1, selected.playCount);
+        assertEquals(1, selected.pauseCount);
+    }
+
+    @Test
+    public void transportRuntimeFailureRejectsAndEmitsTheConfirmedSnapshot() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "paused", true, true);
+        selected.playFailure = new IllegalStateException("player process died");
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        fixture.runtime.emitted.clear();
+        TestCompletion completion = new TestCompletion();
+
+        fixture.coordinator.play(completion);
+        fixture.dispatcher.runAll();
+
+        assertFalse(completion.resolved);
+        assertEquals("MUSIC_TRANSPORT_FAILED", completion.rejectionCode);
+        assertEquals("Unable to control the selected music session", completion.rejectionMessage);
+        assertEquals(1, fixture.runtime.emitted.size());
+        assertEquals("selected", fixture.runtime.emitted.get(0).getSnapshot().getSessionId());
+    }
+
+    @Test
+    public void refreshFailureCannotHideTheOriginalTransportRejection() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "paused", true, true);
+        selected.playFailure = new IllegalStateException("player process died");
+        selected.beforePlay = () -> fixture.runtime.activeSessionsFailure =
+            new IllegalStateException("manager unavailable");
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        fixture.runtime.emitted.clear();
+        TestCompletion completion = new TestCompletion();
+
+        fixture.coordinator.play(completion);
+        fixture.dispatcher.runAll();
+
+        assertFalse(completion.resolved);
+        assertEquals("MUSIC_TRANSPORT_FAILED", completion.rejectionCode);
+        assertEquals(1, fixture.runtime.emitted.size());
+        assertNull(fixture.runtime.emitted.get(0).getSnapshot());
+    }
+
+    @Test
+    public void transportSecurityRevocationClearsStateAndResolvesAsNoOp() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "paused", true, true);
+        selected.beforePlay = () -> fixture.runtime.authorized = false;
+        selected.playFailure = new SecurityException("listener access revoked");
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        fixture.runtime.emitted.clear();
+        TestCompletion completion = new TestCompletion();
+
+        fixture.coordinator.play(completion);
+        fixture.dispatcher.runAll();
+
+        assertTrue(completion.resolved);
+        assertNull(completion.rejectionCode);
+        assertEquals(1, fixture.runtime.unregisterCount);
+        assertEquals(1, fixture.runtime.emitted.size());
+        assertNull(fixture.runtime.emitted.get(0).getSnapshot());
+    }
+
+    private static FakeSession session(
+        String id,
+        String packageName,
+        String title,
+        String state,
+        boolean canPlay,
+        boolean canPause
+    ) {
+        return new FakeSession(
+            new MusicSessionPayload(
+                id,
+                packageName,
+                packageName,
+                title,
+                null,
+                null,
+                null,
+                state,
+                0L,
+                180_000L,
+                1f,
+                1_000L,
+                canPlay,
+                canPause
+            )
+        );
+    }
+
+    private static final class Fixture {
+        private final FakeDispatcher dispatcher = new FakeDispatcher();
+        private final FakeRuntime runtime = new FakeRuntime();
+        private final MusicSessionCoordinator coordinator = new MusicSessionCoordinator(
+            dispatcher,
+            runtime,
+            "com.fitai.app"
+        );
+    }
+
+    private static final class FakeDispatcher implements MusicSessionCoordinator.Dispatcher {
+        private final Deque<Runnable> tasks = new ArrayDeque<>();
+        private boolean accepting = true;
+
+        @Override
+        public boolean dispatch(Runnable task) {
+            if (!accepting) {
+                return false;
+            }
+            tasks.addLast(task);
+            return true;
+        }
+
+        @Override
+        public void shutdown(Runnable cleanup) {
+            if (!accepting) {
+                return;
+            }
+            accepting = false;
+            tasks.clear();
+            tasks.addLast(cleanup);
+        }
+
+        @Override
+        public boolean isAccepting() {
+            return accepting;
+        }
+
+        private void runAll() {
+            while (!tasks.isEmpty()) {
+                tasks.removeFirst().run();
+            }
+        }
+    }
+
+    private static final class FakeRuntime implements MusicSessionCoordinator.Runtime {
+        private boolean authorized = true;
+        private boolean registrationSucceeds = true;
+        private int registerCount;
+        private int unregisterCount;
+        private int activeSessionQueryCount;
+        private RuntimeException activeSessionsFailure;
+        private Runnable activeSessionsChanged;
+        private List<MusicSessionCoordinator.Session> sessions = Collections.emptyList();
+        private final List<MusicSessionSnapshotEnvelope> emitted = new ArrayList<>();
+        private final List<String> operations = new ArrayList<>();
+
+        @Override
+        public boolean isAuthorized() {
+            return authorized;
+        }
+
+        @Override
+        public boolean registerActiveSessionsListener(Runnable listener) {
+            registerCount++;
+            if (registrationSucceeds) {
+                activeSessionsChanged = listener;
+            }
+            return registrationSucceeds;
+        }
+
+        @Override
+        public void unregisterActiveSessionsListener() {
+            unregisterCount++;
+            activeSessionsChanged = null;
+        }
+
+        @Override
+        public List<MusicSessionCoordinator.Session> getActiveSessions() {
+            activeSessionQueryCount++;
+            if (activeSessionsFailure != null) {
+                throw activeSessionsFailure;
+            }
+            return sessions;
+        }
+
+        @Override
+        public void emitSnapshot(MusicSessionSnapshotEnvelope envelope) {
+            emitted.add(envelope);
+        }
+
+        private void fireActiveSessionsChanged() {
+            if (activeSessionsChanged != null) {
+                activeSessionsChanged.run();
+            }
+        }
+    }
+
+    private static final class FakeSession implements MusicSessionCoordinator.Session {
+        private final MusicSessionPayload snapshot;
+        private Runnable changed;
+        private Runnable beforePlay = () -> {};
+        private RuntimeException playFailure;
+        private RuntimeException pauseFailure;
+        private int registerCount;
+        private int unregisterCount;
+        private int playCount;
+        private int pauseCount;
+        private List<String> operations = new ArrayList<>();
+
+        private FakeSession(MusicSessionPayload snapshot) {
+            this.snapshot = snapshot;
+        }
+
+        @Override
+        public MusicSessionPayload getSnapshot() {
+            return snapshot;
+        }
+
+        @Override
+        public void registerChangedListener(Runnable listener) {
+            registerCount++;
+            changed = listener;
+            operations.add("register:" + snapshot.getSessionId());
+        }
+
+        @Override
+        public void unregisterChangedListener() {
+            unregisterCount++;
+            changed = null;
+            operations.add("unregister:" + snapshot.getSessionId());
+        }
+
+        @Override
+        public void play() {
+            playCount++;
+            beforePlay.run();
+            if (playFailure != null) {
+                throw playFailure;
+            }
+        }
+
+        @Override
+        public void pause() {
+            pauseCount++;
+            if (pauseFailure != null) {
+                throw pauseFailure;
+            }
+        }
+
+        private void fireChanged() {
+            if (changed != null) {
+                changed.run();
+            }
+        }
+    }
+
+    private static final class TestResult<T> implements MusicSessionCoordinator.Result<T> {
+        private T value;
+        private String rejectionCode;
+
+        @Override
+        public void resolve(T value) {
+            this.value = value;
+        }
+
+        @Override
+        public void reject(String code, String message) {
+            this.rejectionCode = code;
+        }
+    }
+
+    private static final class TestCompletion implements MusicSessionCoordinator.Completion {
+        private boolean resolved;
+        private String rejectionCode;
+        private String rejectionMessage;
+
+        @Override
+        public void resolve() {
+            resolved = true;
+        }
+
+        @Override
+        public void reject(String code, String message) {
+            rejectionCode = code;
+            rejectionMessage = message;
+        }
+    }
+}

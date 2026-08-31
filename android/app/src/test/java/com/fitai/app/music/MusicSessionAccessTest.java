@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import android.content.ComponentName;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
+import android.os.Handler;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -108,7 +109,8 @@ public class MusicSessionAccessTest {
                 public void addActiveSessionsChangedListener(
                     MediaSessionManager manager,
                     MediaSessionManager.OnActiveSessionsChangedListener listener,
-                    ComponentName listenerComponent
+                    ComponentName listenerComponent,
+                    Handler callbackHandler
                 ) {
                     throw new SecurityException("revoked while adding");
                 }
@@ -123,7 +125,7 @@ public class MusicSessionAccessTest {
             }
         );
 
-        assertFalse(access.addActiveSessionsChangedListener(null, null, null));
+        assertFalse(access.addActiveSessionsChangedListener(null, null, null, null));
         access.removeActiveSessionsChangedListener(null, null);
     }
 
@@ -168,7 +170,8 @@ public class MusicSessionAccessTest {
         public void addActiveSessionsChangedListener(
             MediaSessionManager manager,
             MediaSessionManager.OnActiveSessionsChangedListener listener,
-            ComponentName listenerComponent
+            ComponentName listenerComponent,
+            Handler callbackHandler
         ) {}
 
         @Override
