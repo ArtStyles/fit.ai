@@ -3,7 +3,7 @@ import { ArrowDown, Dumbbell, Info, PlayCircle, Target, Trophy } from 'lucide-re
 import { DisclosureSection } from '@/components/evidence/DisclosureSection'
 import { EvidenceInsight } from '@/components/evidence/EvidenceInsight'
 import { MetricStrip } from '@/components/evidence/MetricStrip'
-import { ExerciseImage } from '@/components/exercises/ExerciseImage'
+import { ExerciseMotionPreview } from '@/components/exercises/ExerciseMotionPreview'
 import { ExerciseProgressChart } from '@/components/exercises/ExerciseProgressChart'
 import { buildExerciseDetailView } from '@/components/exercises/exerciseDetailViewModel'
 import { SessionSummaryRow } from '@/components/evidence/SessionSummaryRow'
@@ -36,6 +36,7 @@ type ExerciseRow = {
   instructions_es?: string | null
   video_url: string | null
   image_url: string | null
+  motion_preview_url: string | null
 }
 
 type EmbeddedProgressLog = {
@@ -106,7 +107,7 @@ async function loadExerciseDetailPayloadFallback(
 ): Promise<ExerciseDetailPayloadResult> {
   const { data: exercise, error: exerciseError } = await supabase
     .from('exercises')
-    .select('id, name, name_es, description, description_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound, instructions, instructions_es, video_url, image_url')
+    .select('id, name, name_es, description, description_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound, instructions, instructions_es, video_url, image_url, motion_preview_url')
     .eq('id', exerciseId)
     .eq('is_public', true)
     .maybeSingle() as unknown as { data: ExerciseRow | null; error: { message?: string } | null }
@@ -254,7 +255,13 @@ export default async function ExerciseDetailPage({ params }: PageProps) {
               <ArrowDown className="h-4 w-4" aria-hidden="true" />
             </a>
           </div>
-          <ExerciseImage src={exercise.image_url} alt={exercise.name} variant="hero" zoomable className="h-full min-h-56 w-full border-t border-border/50 md:border-l md:border-t-0" />
+          <ExerciseMotionPreview
+            posterSrc={exercise.image_url}
+            motionSrc={exercise.motion_preview_url}
+            alt={exercise.name}
+            language={language}
+            className="h-full min-h-56 w-full border-t border-border/50 md:border-l md:border-t-0"
+          />
         </section>
 
         <MetricStrip
