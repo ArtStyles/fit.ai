@@ -9,6 +9,7 @@ public final class MusicSessionHandlerThreadDispatcher
     private final HandlerThread worker;
     private final Handler handler;
     private boolean accepting = true;
+    private long generation;
 
     public MusicSessionHandlerThreadDispatcher() {
         worker = new HandlerThread("VekiraMusicSession");
@@ -37,6 +38,7 @@ public final class MusicSessionHandlerThreadDispatcher
                 return;
             }
             accepting = false;
+            generation++;
             handler.post(() -> {
                 try {
                     cleanup.run();
@@ -55,13 +57,19 @@ public final class MusicSessionHandlerThreadDispatcher
     }
 
     @Override
-    public boolean runIfAccepting(Runnable action) {
+    public long claimIfAccepting() {
         synchronized (lifecycleLock) {
             if (!accepting) {
-                return false;
+                return CLOSED_CLAIM;
             }
-            action.run();
-            return true;
+            return generation;
+        }
+    }
+
+    @Override
+    public boolean isClaimCurrent(long claim) {
+        synchronized (lifecycleLock) {
+            return accepting && generation == claim;
         }
     }
 }

@@ -13,13 +13,17 @@ public final class MusicSessionCoordinator {
         "Unable to control the selected music session";
 
     public interface Dispatcher {
+        long CLOSED_CLAIM = -1L;
+
         boolean dispatch(Runnable task);
 
         void shutdown(Runnable cleanup);
 
         boolean isAccepting();
 
-        boolean runIfAccepting(Runnable action);
+        long claimIfAccepting();
+
+        boolean isClaimCurrent(long claim);
     }
 
     public interface Runtime {
@@ -81,19 +85,39 @@ public final class MusicSessionCoordinator {
     }
 
     public boolean start() {
-        return dispatcher.dispatch(() -> synchronizeOwned(false));
+        return dispatcher.dispatch(() -> {
+            long claim = dispatcher.claimIfAccepting();
+            if (claim != Dispatcher.CLOSED_CLAIM) {
+                synchronizeOwned(claim, false);
+            }
+        });
     }
 
     public boolean resume() {
-        return dispatcher.dispatch(() -> synchronizeOwned(true));
+        return dispatcher.dispatch(() -> {
+            long claim = dispatcher.claimIfAccepting();
+            if (claim != Dispatcher.CLOSED_CLAIM) {
+                synchronizeOwned(claim, true);
+            }
+        });
     }
 
     public boolean sessionsChanged() {
-        return dispatcher.dispatch(() -> refreshOwned(true));
+        return dispatcher.dispatch(() -> {
+            long claim = dispatcher.claimIfAccepting();
+            if (claim != Dispatcher.CLOSED_CLAIM) {
+                refreshOwned(claim, true);
+            }
+        });
     }
 
     public boolean getAuthorizationStatus(Result<String> result) {
         return dispatcher.dispatch(() -> {
+            long claim = dispatcher.claimIfAccepting();
+            if (claim == Dispatcher.CLOSED_CLAIM) {
+                rejectUnavailable(result);
+                return;
+            }
             final boolean authorized;
             try {
                 authorized = runtime.isAuthorized();
@@ -101,13 +125,17 @@ public final class MusicSessionCoordinator {
                 rejectUnavailable(result);
                 return;
             }
-            if (!dispatcher.runIfAccepting(() -> {
-                if (!authorized) {
-                    unregisterActiveSessionsListenerOwned();
-                    selectOwnedWhileAccepting(null, null, false);
-                }
+            if (!dispatcher.isClaimCurrent(claim)) {
+                rejectUnavailable(result);
+                return;
+            }
+            if (!authorized) {
+                clearOwned(claim, false);
+            }
+            if (dispatcher.isClaimCurrent(claim)) {
+                // Successful validation is the completion linearization point.
                 result.resolve(authorized ? "granted" : "not_granted");
-            })) {
+            } else {
                 rejectUnavailable(result);
             }
         });
@@ -115,15 +143,21 @@ public final class MusicSessionCoordinator {
 
     public boolean getCurrentSession(Result<MusicSessionSnapshotEnvelope> result) {
         return dispatcher.dispatch(() -> {
+            long claim = dispatcher.claimIfAccepting();
+            if (claim == Dispatcher.CLOSED_CLAIM) {
+                rejectUnavailable(result);
+                return;
+            }
             try {
-                synchronizeOwned(false);
+                synchronizeOwned(claim, false);
             } catch (RuntimeException unavailable) {
                 rejectUnavailable(result);
                 return;
             }
-            if (!dispatcher.runIfAccepting(() -> result.resolve(
-                MusicSessionSnapshotEnvelope.of(selectedSnapshot)
-            ))) {
+            if (dispatcher.isClaimCurrent(claim)) {
+                // PluginCall completion is external and therefore runs outside the lock.
+                result.resolve(MusicSessionSnapshotEnvelope.of(selectedSnapshot));
+            } else {
                 rejectUnavailable(result);
             }
         });
@@ -142,112 +176,133 @@ public final class MusicSessionCoordinator {
     }
 
     private boolean control(boolean play, Completion completion) {
-        return dispatcher.dispatch(() -> controlOwned(play, completion));
+        return dispatcher.dispatch(() -> {
+            long claim = dispatcher.claimIfAccepting();
+            if (claim == Dispatcher.CLOSED_CLAIM) {
+                rejectUnavailable(completion);
+                return;
+            }
+            controlOwned(claim, play, completion);
+        });
     }
 
-    private void controlOwned(boolean play, Completion completion) {
+    private void controlOwned(long claim, boolean play, Completion completion) {
         try {
-            synchronizeOwned(false);
+            synchronizeOwned(claim, false);
         } catch (RuntimeException unavailable) {
             rejectUnavailable(completion);
             return;
         }
 
-        RuntimeException[] transportFailure = new RuntimeException[1];
-        boolean ran = dispatcher.runIfAccepting(() -> {
-            if (destroyed || selectedSession == null) {
-                completion.resolve();
-                return;
-            }
-            boolean capable = play
-                ? selectedSnapshot != null && selectedSnapshot.canPlay()
-                : selectedSnapshot != null && selectedSnapshot.canPause();
-            if (!capable) {
-                completion.resolve();
-                return;
-            }
+        if (!dispatcher.isClaimCurrent(claim)) {
+            rejectUnavailable(completion);
+            return;
+        }
+        if (destroyed || selectedSession == null) {
+            completion.resolve();
+            return;
+        }
+        boolean capable = play
+            ? selectedSnapshot != null && selectedSnapshot.canPlay()
+            : selectedSnapshot != null && selectedSnapshot.canPause();
+        if (!capable) {
+            completion.resolve();
+            return;
+        }
 
+        Session target = selectedSession;
+        // This validation is the transport linearization point. Shutdown may close and
+        // return while the already-claimed Binder call remains in flight.
+        if (!dispatcher.isClaimCurrent(claim)) {
+            rejectUnavailable(completion);
+            return;
+        }
+        try {
+            if (play) {
+                target.play();
+            } else {
+                target.pause();
+            }
+        } catch (SecurityException revoked) {
             try {
-                if (play) {
-                    selectedSession.play();
-                } else {
-                    selectedSession.pause();
-                }
-            } catch (SecurityException revoked) {
-                try {
-                    unregisterActiveSessionsListenerOwned();
-                    selectOwnedWhileAccepting(null, null, true);
-                } catch (RuntimeException ignored) {
-                    // Revocation remains a resolved no-op even if event delivery fails.
-                }
-                completion.resolve();
-                return;
-            } catch (RuntimeException failure) {
-                transportFailure[0] = failure;
-                return;
+                clearOwned(claim, true);
+            } catch (RuntimeException ignored) {
+                // Revocation remains a resolved no-op even if event delivery fails.
             }
             completion.resolve();
-        });
-        if (!ran) {
-            rejectUnavailable(completion);
-        } else if (transportFailure[0] != null) {
-            refreshAfterTransportFailureOwned();
+            return;
+        } catch (RuntimeException failure) {
+            refreshAfterTransportFailureOwned(claim);
             completion.reject(TRANSPORT_ERROR_CODE, TRANSPORT_ERROR_MESSAGE);
+            return;
         }
+        completion.resolve();
     }
 
-    private void refreshAfterTransportFailureOwned() {
+    private void refreshAfterTransportFailureOwned(long claim) {
         try {
-            refreshOwned(true);
+            refreshOwned(claim, true);
         } catch (RuntimeException unavailable) {
             try {
-                dispatcher.runIfAccepting(() -> {
-                    unregisterActiveSessionsListenerOwned();
-                    selectOwnedWhileAccepting(null, null, true);
-                });
+                clearOwned(claim, true);
             } catch (RuntimeException ignored) {
                 // State confirmation cannot replace the original transport rejection.
             }
         }
     }
 
-    private void synchronizeOwned(boolean emitChange) {
-        if (destroyed || !dispatcher.isAccepting()) {
-            return;
+    private boolean synchronizeOwned(long claim, boolean emitChange) {
+        if (destroyed || !dispatcher.isClaimCurrent(claim)) {
+            return false;
         }
         if (!runtime.isAuthorized()) {
-            dispatcher.runIfAccepting(() -> {
-                unregisterActiveSessionsListenerOwned();
-                selectOwnedWhileAccepting(null, null, emitChange);
-            });
-            return;
+            clearOwned(claim, emitChange);
+            return dispatcher.isClaimCurrent(claim);
         }
-        if (!activeSessionsListenerRegistered) {
-            boolean registered = dispatcher.runIfAccepting(() -> {
-                activeSessionsListenerRegistered = runtime.registerActiveSessionsListener(
-                    activeSessionsChanged
-                );
-                if (!activeSessionsListenerRegistered) {
-                    selectOwnedWhileAccepting(null, null, emitChange);
-                }
-            });
-            if (!registered || !activeSessionsListenerRegistered) {
-                return;
+        if (!activeSessionsListenerRegistered && !registerActiveListenerOwned(claim)) {
+            if (dispatcher.isClaimCurrent(claim)) {
+                selectOwned(claim, null, null, emitChange);
             }
+            return false;
         }
-        refreshOwned(emitChange);
+        return refreshOwned(claim, emitChange);
     }
 
-    private void refreshOwned(boolean emitChange) {
-        if (destroyed || !dispatcher.isAccepting()) {
-            return;
+    private boolean registerActiveListenerOwned(long claim) {
+        if (!dispatcher.isClaimCurrent(claim)) {
+            return false;
+        }
+        final boolean registered;
+        try {
+            // External registration is outside the lifecycle monitor.
+            registered = runtime.registerActiveSessionsListener(activeSessionsChanged);
+        } catch (RuntimeException failure) {
+            safeUnregisterActiveListener();
+            throw failure;
+        }
+        if (!registered) {
+            return false;
+        }
+        if (!dispatcher.isClaimCurrent(claim)) {
+            safeUnregisterActiveListener();
+            return false;
+        }
+        activeSessionsListenerRegistered = true;
+        if (!dispatcher.isClaimCurrent(claim)) {
+            safeUnregisterActiveListener();
+            activeSessionsListenerRegistered = false;
+            return false;
+        }
+        return true;
+    }
+
+    private boolean refreshOwned(long claim, boolean emitChange) {
+        if (destroyed || !dispatcher.isClaimCurrent(claim)) {
+            return false;
         }
         if (!runtime.isAuthorized()) {
-            dispatcher.runIfAccepting(() -> {
-                unregisterActiveSessionsListenerOwned();
-                selectOwnedWhileAccepting(null, null, emitChange);
-            });
-            return;
+            clearOwned(claim, emitChange);
+            return dispatcher.isClaimCurrent(claim);
         }
 
         List<Session> sessions = runtime.getActiveSessions();
@@ -258,6 +313,7 @@ public final class MusicSessionCoordinator {
         List<Session> mappedSessions = new ArrayList<>();
         for (Session session : sessions) {
             try {
+                // Snapshot and artwork mapping always remain outside the lifecycle monitor.
                 MusicSessionPayload snapshot = session.getSnapshot();
                 if (snapshot != null) {
                     candidates.add(snapshot);
@@ -276,64 +332,122 @@ public final class MusicSessionCoordinator {
         if (nextSnapshot != null) {
             nextSession = mappedSessions.get(candidates.indexOf(nextSnapshot));
         }
-        Session selected = nextSession;
-        MusicSessionPayload snapshot = nextSnapshot;
-        dispatcher.runIfAccepting(() ->
-            selectOwnedWhileAccepting(selected, snapshot, emitChange)
-        );
+        return selectOwned(claim, nextSession, nextSnapshot, emitChange);
     }
 
-    private void selectOwnedWhileAccepting(
+    private boolean selectOwned(
+        long claim,
         Session nextSession,
         MusicSessionPayload nextSnapshot,
         boolean emitChange
     ) {
+        if (!dispatcher.isClaimCurrent(claim)) {
+            return false;
+        }
         boolean sameSession = selectedSnapshot != null
             && nextSnapshot != null
             && selectedSnapshot.getSessionId().equals(nextSnapshot.getSessionId());
         if (!sameSession) {
-            if (selectedSession != null) {
+            Session previous = selectedSession;
+            if (previous != null) {
+                safeUnregisterController(previous);
+            }
+            if (!dispatcher.isClaimCurrent(claim)) {
+                return false;
+            }
+
+            Session registeredSession = nextSession;
+            MusicSessionPayload registeredSnapshot = nextSnapshot;
+            if (registeredSession != null) {
                 try {
-                    selectedSession.unregisterChangedListener();
-                } catch (RuntimeException ignored) {
-                    // The old Android session may already be gone.
+                    // External controller registration is outside the lifecycle monitor.
+                    registeredSession.registerChangedListener(selectedSessionChanged);
+                } catch (RuntimeException unavailable) {
+                    safeUnregisterController(registeredSession);
+                    registeredSession = null;
+                    registeredSnapshot = null;
+                }
+                if (!dispatcher.isClaimCurrent(claim)) {
+                    if (registeredSession != null) {
+                        safeUnregisterController(registeredSession);
+                    }
+                    return false;
                 }
             }
-            selectedSession = nextSession;
-            selectedSnapshot = nextSnapshot;
-            if (selectedSession != null) {
-                try {
-                    selectedSession.registerChangedListener(selectedSessionChanged);
-                } catch (RuntimeException unavailable) {
-                    selectedSession = null;
-                    selectedSnapshot = null;
+            selectedSession = registeredSession;
+            selectedSnapshot = registeredSnapshot;
+            if (!dispatcher.isClaimCurrent(claim)) {
+                if (selectedSession != null) {
+                    safeUnregisterController(selectedSession);
                 }
+                selectedSession = null;
+                selectedSnapshot = null;
+                return false;
             }
         } else {
             selectedSnapshot = nextSnapshot;
+            if (!dispatcher.isClaimCurrent(claim)) {
+                return false;
+            }
         }
 
         if (emitChange) {
-            runtime.emitSnapshot(MusicSessionSnapshotEnvelope.of(selectedSnapshot));
+            return emitSnapshotOwned(claim);
         }
+        return true;
     }
 
-    private void unregisterActiveSessionsListenerOwned() {
-        if (!activeSessionsListenerRegistered) {
+    private boolean emitSnapshotOwned(long claim) {
+        // A successful validation is the event linearization point. The call itself may
+        // finish after shutdown, but shutdown never waits for event delivery.
+        if (!dispatcher.isClaimCurrent(claim)) {
+            return false;
+        }
+        runtime.emitSnapshot(MusicSessionSnapshotEnvelope.of(selectedSnapshot));
+        return true;
+    }
+
+    private void clearOwned(long claim, boolean emitChange) {
+        if (!dispatcher.isClaimCurrent(claim)) {
             return;
         }
+        if (activeSessionsListenerRegistered) {
+            safeUnregisterActiveListener();
+            if (!dispatcher.isClaimCurrent(claim)) {
+                return;
+            }
+            activeSessionsListenerRegistered = false;
+        }
+        selectOwned(claim, null, null, emitChange);
+    }
+
+    private void safeUnregisterActiveListener() {
         try {
             runtime.unregisterActiveSessionsListener();
         } catch (RuntimeException ignored) {
             // Authorization can be revoked before cleanup reaches Android.
         }
-        activeSessionsListenerRegistered = false;
+    }
+
+    private static void safeUnregisterController(Session session) {
+        try {
+            session.unregisterChangedListener();
+        } catch (RuntimeException ignored) {
+            // The Android session may already be gone or already unwound.
+        }
     }
 
     private void destroyOwned() {
         destroyed = true;
-        unregisterActiveSessionsListenerOwned();
-        selectOwnedWhileAccepting(null, null, false);
+        if (activeSessionsListenerRegistered) {
+            safeUnregisterActiveListener();
+            activeSessionsListenerRegistered = false;
+        }
+        if (selectedSession != null) {
+            safeUnregisterController(selectedSession);
+        }
+        selectedSession = null;
+        selectedSnapshot = null;
     }
 
     private static void rejectUnavailable(Result<?> result) {

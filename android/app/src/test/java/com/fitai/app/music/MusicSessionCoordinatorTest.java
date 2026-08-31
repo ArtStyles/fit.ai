@@ -14,7 +14,9 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.Test;
 
 public class MusicSessionCoordinatorTest {
@@ -86,22 +88,26 @@ public class MusicSessionCoordinatorTest {
     }
 
     @Test
-    public void acceptedCurrentPlayAndPauseEachRejectExactlyOnceWhenDestroyedBeforeExecution() {
+    public void acceptedAuthorizationCurrentAndControlsRejectExactlyOnceAfterDestroy() {
         Fixture fixture = new Fixture();
         FakeSession selected = session("selected", "player", "Track", "playing", true, true);
         fixture.runtime.sessions = Collections.singletonList(selected);
         fixture.coordinator.start();
         fixture.dispatcher.runAll();
+        TestResult<String> authorization = new TestResult<>();
         TestResult<MusicSessionSnapshotEnvelope> current = new TestResult<>();
         TestCompletion play = new TestCompletion();
         TestCompletion pause = new TestCompletion();
 
+        assertTrue(fixture.coordinator.getAuthorizationStatus(authorization));
         assertTrue(fixture.coordinator.getCurrentSession(current));
         assertTrue(fixture.coordinator.play(play));
         assertTrue(fixture.coordinator.pause(pause));
         fixture.coordinator.destroy();
         fixture.dispatcher.runAll();
 
+        assertEquals(1, authorization.completionCount);
+        assertEquals("MUSIC_SESSION_UNAVAILABLE", authorization.rejectionCode);
         assertEquals(1, current.completionCount);
         assertEquals("MUSIC_SESSION_UNAVAILABLE", current.rejectionCode);
         assertEquals(1, play.completionCount);
@@ -110,6 +116,29 @@ public class MusicSessionCoordinatorTest {
         assertEquals("MUSIC_SESSION_UNAVAILABLE", pause.rejectionCode);
         assertEquals(0, selected.playCount);
         assertEquals(0, selected.pauseCount);
+    }
+
+    @Test
+    public void callsSubmittedAfterDestroyAreRejectedAtAdmission() {
+        Fixture fixture = new Fixture();
+        TestResult<String> authorization = new TestResult<>();
+        TestResult<MusicSessionSnapshotEnvelope> current = new TestResult<>();
+        TestCompletion play = new TestCompletion();
+        TestCompletion pause = new TestCompletion();
+
+        fixture.coordinator.destroy();
+
+        assertFalse(fixture.coordinator.start());
+        assertFalse(fixture.coordinator.resume());
+        assertFalse(fixture.coordinator.sessionsChanged());
+        assertFalse(fixture.coordinator.getAuthorizationStatus(authorization));
+        assertFalse(fixture.coordinator.getCurrentSession(current));
+        assertFalse(fixture.coordinator.play(play));
+        assertFalse(fixture.coordinator.pause(pause));
+        assertEquals(0, authorization.completionCount);
+        assertEquals(0, current.completionCount);
+        assertEquals(0, play.completionCount);
+        assertEquals(0, pause.completionCount);
     }
 
     @Test
@@ -165,6 +194,140 @@ public class MusicSessionCoordinatorTest {
         assertEquals(0, selected.unregisterCount);
         assertEquals(1, runtime.unregisterCount);
         assertTrue(runtime.emitted.isEmpty());
+    }
+
+    @Test
+    public void blockedActiveListenerRegistrationCannotDelayDestroyOrLeakRegistration()
+        throws Exception {
+        ThreadedDispatcher dispatcher = new ThreadedDispatcher();
+        FakeRuntime runtime = new FakeRuntime();
+        MusicSessionCoordinator coordinator = new MusicSessionCoordinator(
+            dispatcher,
+            runtime,
+            "com.fitai.app"
+        );
+        runtime.registrationEntered = new CountDownLatch(1);
+        CountDownLatch registrationRelease = new CountDownLatch(1);
+        runtime.registrationRelease = registrationRelease;
+
+        coordinator.start();
+        assertTrue(runtime.registrationEntered.await(5, TimeUnit.SECONDS));
+        boolean destroyReturnedPromptly = destroyWhileBlocked(
+            coordinator,
+            registrationRelease,
+            dispatcher
+        );
+
+        assertTrue("destroy must not wait for listener registration", destroyReturnedPromptly);
+        assertEquals(1, runtime.registerCount);
+        assertEquals(1, runtime.unregisterCount);
+        assertNull(runtime.activeSessionsChanged);
+    }
+
+    @Test
+    public void blockedControllerRegistrationCannotDelayDestroyOrReviveSelection()
+        throws Exception {
+        ThreadedDispatcher dispatcher = new ThreadedDispatcher();
+        FakeRuntime runtime = new FakeRuntime();
+        MusicSessionCoordinator coordinator = new MusicSessionCoordinator(
+            dispatcher,
+            runtime,
+            "com.fitai.app"
+        );
+        coordinator.start();
+        dispatcher.awaitIdle();
+        FakeSession selected = session("selected", "player", "Track", "playing", true, true);
+        selected.registrationEntered = new CountDownLatch(1);
+        CountDownLatch registrationRelease = new CountDownLatch(1);
+        selected.registrationRelease = registrationRelease;
+        runtime.sessions = Collections.singletonList(selected);
+
+        coordinator.resume();
+        assertTrue(selected.registrationEntered.await(5, TimeUnit.SECONDS));
+        boolean destroyReturnedPromptly = destroyWhileBlocked(
+            coordinator,
+            registrationRelease,
+            dispatcher
+        );
+
+        assertTrue("destroy must not wait for controller registration", destroyReturnedPromptly);
+        assertEquals(1, selected.registerCount);
+        assertEquals(1, selected.unregisterCount);
+        assertNull(selected.changed);
+        assertEquals(1, runtime.unregisterCount);
+        assertTrue(runtime.emitted.isEmpty());
+        assertFalse(coordinator.resume());
+    }
+
+    @Test
+    public void claimedBlockedEventDoesNotDelayDestroyOrReviveState() throws Exception {
+        ThreadedDispatcher dispatcher = new ThreadedDispatcher();
+        FakeRuntime runtime = new FakeRuntime();
+        FakeSession selected = session("selected", "player", "Track", "playing", true, true);
+        runtime.sessions = Collections.singletonList(selected);
+        MusicSessionCoordinator coordinator = new MusicSessionCoordinator(
+            dispatcher,
+            runtime,
+            "com.fitai.app"
+        );
+        coordinator.start();
+        dispatcher.awaitIdle();
+        runtime.emissionEntered = new CountDownLatch(1);
+        CountDownLatch emissionRelease = new CountDownLatch(1);
+        runtime.emissionRelease = emissionRelease;
+        TestResult<MusicSessionSnapshotEnvelope> acceptedCurrent = new TestResult<>();
+
+        coordinator.resume();
+        assertTrue(runtime.emissionEntered.await(5, TimeUnit.SECONDS));
+        assertTrue(coordinator.getCurrentSession(acceptedCurrent));
+        boolean destroyReturnedPromptly = destroyWhileBlocked(
+            coordinator,
+            emissionRelease,
+            dispatcher
+        );
+
+        assertTrue("destroy must not wait for an already-claimed event", destroyReturnedPromptly);
+        assertEquals(1, runtime.emitted.size());
+        assertEquals(1, selected.unregisterCount);
+        assertNull(selected.changed);
+        assertEquals(1, acceptedCurrent.completionCount);
+        assertEquals("MUSIC_SESSION_UNAVAILABLE", acceptedCurrent.rejectionCode);
+        assertFalse(coordinator.resume());
+    }
+
+    @Test
+    public void claimedBlockedTransportDoesNotDelayDestroyAndCompletesOnce() throws Exception {
+        ThreadedDispatcher dispatcher = new ThreadedDispatcher();
+        FakeRuntime runtime = new FakeRuntime();
+        FakeSession selected = session("selected", "player", "Track", "playing", true, true);
+        runtime.sessions = Collections.singletonList(selected);
+        MusicSessionCoordinator coordinator = new MusicSessionCoordinator(
+            dispatcher,
+            runtime,
+            "com.fitai.app"
+        );
+        coordinator.start();
+        dispatcher.awaitIdle();
+        selected.playEntered = new CountDownLatch(1);
+        CountDownLatch playRelease = new CountDownLatch(1);
+        selected.playRelease = playRelease;
+        TestCompletion completion = new TestCompletion();
+
+        assertTrue(coordinator.play(completion));
+        assertTrue(selected.playEntered.await(5, TimeUnit.SECONDS));
+        boolean destroyReturnedPromptly = destroyWhileBlocked(
+            coordinator,
+            playRelease,
+            dispatcher
+        );
+
+        assertTrue("destroy must not wait for an already-claimed transport", destroyReturnedPromptly);
+        assertEquals(1, selected.playCount);
+        assertEquals(1, completion.completionCount);
+        assertTrue(completion.resolved);
+        assertNull(completion.rejectionCode);
+        assertEquals(1, selected.unregisterCount);
+        assertNull(selected.changed);
     }
 
     @Test
@@ -384,6 +547,7 @@ public class MusicSessionCoordinatorTest {
     private static final class FakeDispatcher implements MusicSessionCoordinator.Dispatcher {
         private final Deque<Runnable> tasks = new ArrayDeque<>();
         private boolean accepting = true;
+        private long generation;
 
         @Override
         public boolean dispatch(Runnable task) {
@@ -400,6 +564,7 @@ public class MusicSessionCoordinatorTest {
                 return;
             }
             accepting = false;
+            generation++;
             tasks.addLast(cleanup);
         }
 
@@ -409,12 +574,16 @@ public class MusicSessionCoordinatorTest {
         }
 
         @Override
-        public boolean runIfAccepting(Runnable action) {
+        public long claimIfAccepting() {
             if (!accepting) {
-                return false;
+                return CLOSED_CLAIM;
             }
-            action.run();
-            return true;
+            return generation;
+        }
+
+        @Override
+        public boolean isClaimCurrent(long claim) {
+            return accepting && generation == claim;
         }
 
         private void runAll() {
@@ -429,6 +598,7 @@ public class MusicSessionCoordinatorTest {
         private final ExecutorService executor = Executors.newSingleThreadExecutor();
         private final CountDownLatch cleanupComplete = new CountDownLatch(1);
         private boolean accepting = true;
+        private long generation;
 
         @Override
         public synchronized boolean dispatch(Runnable task) {
@@ -445,6 +615,7 @@ public class MusicSessionCoordinatorTest {
                 return;
             }
             accepting = false;
+            generation++;
             executor.execute(() -> {
                 try {
                     cleanup.run();
@@ -461,12 +632,16 @@ public class MusicSessionCoordinatorTest {
         }
 
         @Override
-        public synchronized boolean runIfAccepting(Runnable action) {
+        public synchronized long claimIfAccepting() {
             if (!accepting) {
-                return false;
+                return CLOSED_CLAIM;
             }
-            action.run();
-            return true;
+            return generation;
+        }
+
+        @Override
+        public synchronized boolean isClaimCurrent(long claim) {
+            return accepting && generation == claim;
         }
 
         private void awaitIdle() throws Exception {
@@ -490,6 +665,10 @@ public class MusicSessionCoordinatorTest {
         private RuntimeException activeSessionsFailure;
         private CountDownLatch authorizationEntered;
         private CountDownLatch authorizationRelease;
+        private CountDownLatch registrationEntered;
+        private CountDownLatch registrationRelease;
+        private CountDownLatch emissionEntered;
+        private CountDownLatch emissionRelease;
         private Runnable activeSessionsChanged;
         private List<MusicSessionCoordinator.Session> sessions = Collections.emptyList();
         private final List<MusicSessionSnapshotEnvelope> emitted = new ArrayList<>();
@@ -511,6 +690,7 @@ public class MusicSessionCoordinatorTest {
         @Override
         public boolean registerActiveSessionsListener(Runnable listener) {
             registerCount++;
+            awaitBarrier(registrationEntered, registrationRelease);
             if (registrationSucceeds) {
                 activeSessionsChanged = listener;
             }
@@ -534,6 +714,7 @@ public class MusicSessionCoordinatorTest {
 
         @Override
         public void emitSnapshot(MusicSessionSnapshotEnvelope envelope) {
+            awaitBarrier(emissionEntered, emissionRelease);
             emitted.add(envelope);
         }
 
@@ -557,6 +738,10 @@ public class MusicSessionCoordinatorTest {
         private List<String> operations = new ArrayList<>();
         private CountDownLatch snapshotEntered;
         private CountDownLatch snapshotRelease;
+        private CountDownLatch registrationEntered;
+        private CountDownLatch registrationRelease;
+        private CountDownLatch playEntered;
+        private CountDownLatch playRelease;
 
         private FakeSession(MusicSessionPayload snapshot) {
             this.snapshot = snapshot;
@@ -578,6 +763,7 @@ public class MusicSessionCoordinatorTest {
         @Override
         public void registerChangedListener(Runnable listener) {
             registerCount++;
+            awaitBarrier(registrationEntered, registrationRelease);
             changed = listener;
             operations.add("register:" + snapshot.getSessionId());
         }
@@ -592,6 +778,7 @@ public class MusicSessionCoordinatorTest {
         @Override
         public void play() {
             playCount++;
+            awaitBarrier(playEntered, playRelease);
             beforePlay.run();
             if (playFailure != null) {
                 throw playFailure;
@@ -660,5 +847,36 @@ public class MusicSessionCoordinatorTest {
             Thread.currentThread().interrupt();
             throw new AssertionError("interrupted while waiting for test barrier", interrupted);
         }
+    }
+
+    private static void awaitBarrier(CountDownLatch entered, CountDownLatch release) {
+        if (entered == null || release == null) {
+            return;
+        }
+        entered.countDown();
+        await(release);
+    }
+
+    private static boolean destroyWhileBlocked(
+        MusicSessionCoordinator coordinator,
+        CountDownLatch release,
+        ThreadedDispatcher dispatcher
+    ) throws Exception {
+        ExecutorService destroyExecutor = Executors.newSingleThreadExecutor();
+        Future<?> destroyFuture = destroyExecutor.submit(coordinator::destroy);
+        boolean returnedPromptly;
+        try {
+            destroyFuture.get(500, TimeUnit.MILLISECONDS);
+            returnedPromptly = true;
+        } catch (TimeoutException blocked) {
+            returnedPromptly = false;
+        } finally {
+            release.countDown();
+            destroyFuture.get(5, TimeUnit.SECONDS);
+            destroyExecutor.shutdown();
+            assertTrue(destroyExecutor.awaitTermination(5, TimeUnit.SECONDS));
+            dispatcher.awaitCleanup();
+        }
+        return returnedPromptly;
     }
 }
