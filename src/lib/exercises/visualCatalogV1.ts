@@ -399,9 +399,17 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
 export function validateCatalogV1MotionPilot(manifest: CatalogV1Manifest): string[] {
   const errors: string[] = []
   const selected = new Set<string>(CATALOG_V1_MOTION_PILOT_SLUGS)
+  const suppliedSlugs = new Set(manifest.exercises.map(exercise => exercise.slug))
   const withMotion = manifest.exercises.filter(exercise => exercise.motion !== undefined)
   const motionSlugs = new Set(withMotion.map(exercise => exercise.slug))
 
+  if (
+    manifest.exercises.length !== CATALOG_V1_EXERCISE_SLUGS.length
+    || suppliedSlugs.size !== CATALOG_V1_EXERCISE_SLUGS.length
+    || CATALOG_V1_EXERCISE_SLUGS.some(slug => !suppliedSlugs.has(slug))
+  ) {
+    errors.push(`motion pilot manifest must contain exactly the ${CATALOG_V1_EXERCISE_SLUGS.length} supported V1 slugs`)
+  }
   if (
     withMotion.length !== CATALOG_V1_MOTION_PILOT_SLUGS.length
     || motionSlugs.size !== CATALOG_V1_MOTION_PILOT_SLUGS.length

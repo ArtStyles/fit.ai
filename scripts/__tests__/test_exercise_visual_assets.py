@@ -7,10 +7,13 @@ from PIL import Image
 
 from scripts.exercise_visual_assets import build_contact_sheet, build_poster
 from scripts.validate_exercise_visual_assets import (
+    CATALOG_V1_EXERCISE_SLUGS,
     MOTION_MAX_BYTES,
+    MOTION_PILOT_SLUGS,
     validate_catalog_assets,
     validate_image_file,
     validate_motion_file,
+    validate_motion_pilot_manifest,
 )
 
 
@@ -23,8 +26,9 @@ class ExerciseVisualAssetsTest(unittest.TestCase):
         frames: int = 10,
         duration: int = 180,
         mode: str = "RGB",
+        alpha: int = 255,
     ) -> None:
-        images = [Image.new(mode, size, (index * 20, 40, 80, 255) if mode == "RGBA" else (index * 20, 40, 80)) for index in range(frames)]
+        images = [Image.new(mode, size, (index * 20, 40, 80, alpha) if mode == "RGBA" else (index * 20, 40, 80)) for index in range(frames)]
         images[0].save(
             path,
             "WEBP",
@@ -43,6 +47,42 @@ class ExerciseVisualAssetsTest(unittest.TestCase):
             self.write_motion_preview(preview)
 
             self.assertEqual(validate_motion_file(preview), [])
+
+    def test_rejects_transparent_rgba_motion_frames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            preview = Path(directory) / "transparent-motion.webp"
+            self.write_motion_preview(preview, mode="RGBA", alpha=127)
+
+            self.assertEqual(
+                validate_motion_file(preview),
+                ["motion preview frames must be RGB or opaque RGBA: transparent-motion.webp"],
+            )
+
+    def motion_pilot_entries(self, motion_count: int = 10) -> list[dict[str, object]]:
+        motion_slugs = set(MOTION_PILOT_SLUGS[:motion_count])
+        return [
+            {
+                "slug": slug,
+                "status": "visual-approved",
+                "reviews": {},
+                **({"motion": {"status": "visual-approved"}} if slug in motion_slugs else {}),
+            }
+            for slug in CATALOG_V1_EXERCISE_SLUGS
+        ]
+
+    def test_motion_pilot_gate_requires_the_full_catalog_and_exact_ten(self):
+        all_ten = self.motion_pilot_entries()
+        self.assertEqual(validate_motion_pilot_manifest(all_ten), [])
+
+        reduced = [entry for entry in all_ten if entry["slug"] in MOTION_PILOT_SLUGS]
+        self.assertIn(
+            "motion pilot manifest must contain exactly the 50 supported V1 slugs",
+            validate_motion_pilot_manifest(reduced),
+        )
+        self.assertIn(
+            "motion pilot must contain exactly the 10 selected slugs",
+            validate_motion_pilot_manifest(self.motion_pilot_entries(9)),
+        )
 
     def test_accepts_opaque_rgba_motion_frames_without_converting_before_validation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -108,6 +148,41 @@ class ExerciseVisualAssetsTest(unittest.TestCase):
                 f"motion preview digest mismatch: {slug}",
                 validate_catalog_assets(manifest, public_root, artifacts_root, False, motion_artifacts_root),
             )
+
+            manifest["exercises"][0]["motion"]["previewSha256"] = hashlib.sha256(motion_path.read_bytes()).hexdigest()
+            manifest["exercises"][0]["motion"]["sourceSha256"] = "0" * 64
+            self.assertIn(
+                f"motion source digest mismatch: {slug}",
+                validate_catalog_assets(manifest, public_root, artifacts_root, False, motion_artifacts_root),
+            )
+
+    def test_rejects_non_regular_motion_preview_and_source_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public_root = root / "public"
+            artifacts_root = root / "catalog-v1"
+            motion_artifacts_root = root / "catalog-v1-motion"
+            slug = "sentadilla-trasera-barra"
+            preview = public_root / "exercises" / "catalog" / "v1" / slug / "motion-preview.webp"
+            source = motion_artifacts_root / slug / "motion-source.png"
+            preview.parent.mkdir(parents=True)
+            source.parent.mkdir(parents=True)
+            preview.mkdir()
+            source.mkdir()
+            manifest = {"exercises": [{
+                "slug": slug,
+                "status": "draft",
+                "motion": {
+                    "preview": f"/exercises/catalog/v1/{slug}/motion-preview.webp",
+                    "previewSha256": "0" * 64,
+                    "previewBytes": 1,
+                    "sourceSha256": "0" * 64,
+                },
+            }]}
+
+            errors = validate_catalog_assets(manifest, public_root, artifacts_root, False, motion_artifacts_root)
+            self.assertIn(f"motion preview is not a regular file: {slug}", errors)
+            self.assertIn(f"motion source is not a regular file: {slug}", errors)
     def test_builds_bounded_square_webp(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

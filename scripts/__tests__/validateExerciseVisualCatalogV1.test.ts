@@ -64,6 +64,31 @@ async function fixtureWithOneApprovedEntry() {
   return { artifactsRoot, manifest, publicRoot }
 }
 
+async function fixtureWithMotionEntry() {
+  const fixture = await fixtureWithOneApprovedEntry()
+  const entry = fixture.manifest.exercises[0]
+  const preview = Buffer.from('motion preview')
+  const motionSource = Buffer.from('motion source')
+  const motionArtifactsRoot = path.join(path.dirname(fixture.artifactsRoot), 'catalog-v1-motion')
+  const previewPath = path.join(fixture.publicRoot, 'exercises', 'catalog', 'v1', entry.slug, 'motion-preview.webp')
+  const sourcePath = path.join(motionArtifactsRoot, entry.slug, 'motion-source.png')
+  await mkdir(path.dirname(sourcePath), { recursive: true })
+  await Promise.all([writeFile(previewPath, preview), writeFile(sourcePath, motionSource)])
+  entry.motion = {
+    status: 'visual-approved',
+    preview: `/exercises/catalog/v1/${entry.slug}/motion-preview.webp`,
+    previewSha256: sha256(preview),
+    previewBytes: preview.length,
+    sourceSha256: sha256(motionSource),
+    frameCount: 10,
+    frameDurationMs: 180,
+    sequence: [0, 1, 2, 3, 4, 3, 2, 1, 0, 1],
+    review: { reviewer: 'Motion QA', reviewedAt: '2026-08-30', notes: ['Approved.'] },
+  }
+
+  return { ...fixture, entry, motionArtifactsRoot, previewPath, sourcePath }
+}
+
 describe('validateCatalogV1AssetFiles', () => {
   it('accepts matching approved poster and real staged source paths and hashes', async () => {
     const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
@@ -178,43 +203,69 @@ describe('validateCatalogV1AssetFiles', () => {
   })
 
   it('validates present motion files and their local motion source in partial mode', async () => {
-    const { artifactsRoot, manifest, publicRoot } = await fixtureWithOneApprovedEntry()
-    const entry = manifest.exercises[0]
-    const preview = Buffer.from('motion preview')
-    const motionSource = Buffer.from('motion source')
-    const motionArtifactsRoot = path.join(path.dirname(artifactsRoot), 'catalog-v1-motion')
-    const previewPath = path.join(publicRoot, 'exercises', 'catalog', 'v1', entry.slug, 'motion-preview.webp')
-    const sourcePath = path.join(motionArtifactsRoot, entry.slug, 'motion-source.png')
-    await mkdir(path.dirname(sourcePath), { recursive: true })
-    await Promise.all([writeFile(previewPath, preview), writeFile(sourcePath, motionSource)])
-    ;(entry as CatalogV1Manifest['exercises'][number] & { motion?: unknown }).motion = {
-      status: 'visual-approved',
-      preview: `/exercises/catalog/v1/${entry.slug}/motion-preview.webp`,
-      previewSha256: sha256(preview),
-      previewBytes: preview.length,
-      sourceSha256: sha256(motionSource),
-      frameCount: 10,
-      frameDurationMs: 180,
-      sequence: [0, 1, 2, 3, 4, 3, 2, 1, 0, 1],
-      review: { reviewer: 'Motion QA', reviewedAt: '2026-08-30', notes: ['Approved.'] },
-    }
-
+    const { artifactsRoot, manifest, publicRoot, motionArtifactsRoot } = await fixtureWithMotionEntry()
     await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot, {
       motionArtifactsRoot,
     })).resolves.toEqual([])
+  })
 
-    ;(entry as CatalogV1Manifest['exercises'][number] & { motion: { preview: string; previewSha256: string; previewBytes: number; sourceSha256: string } }).motion.preview = '/../escape.webp'
-    ;(entry as CatalogV1Manifest['exercises'][number] & { motion: { preview: string; previewSha256: string; previewBytes: number; sourceSha256: string } }).motion.previewSha256 = '0'.repeat(64)
-    ;(entry as CatalogV1Manifest['exercises'][number] & { motion: { preview: string; previewSha256: string; previewBytes: number; sourceSha256: string } }).motion.previewBytes = 512001
-    ;(entry as CatalogV1Manifest['exercises'][number] & { motion: { preview: string; previewSha256: string; previewBytes: number; sourceSha256: string } }).motion.sourceSha256 = '0'.repeat(64)
+  it('rejects a motion preview path outside the public root', async () => {
+    const { artifactsRoot, entry, manifest, motionArtifactsRoot, publicRoot } = await fixtureWithMotionEntry()
+    entry.motion!.preview = '/../escape.webp'
 
     await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot, {
       motionArtifactsRoot,
-    })).resolves.toEqual(expect.arrayContaining([
-      `motion preview path escapes public root: ${entry.slug}`,
-      `motion preview exceeds 512000 bytes: ${entry.slug}`,
-      `motion source digest mismatch: ${entry.slug}`,
-    ]))
+    })).resolves.toContain(`motion preview path escapes public root: ${entry.slug}`)
+  })
+
+  it.each([
+    ['preview', 'motion preview is not a regular file'],
+    ['source', 'motion source is not a regular file'],
+  ] as const)('rejects a non-regular motion %s file', async (kind, expected) => {
+    const { artifactsRoot, manifest, motionArtifactsRoot, previewPath, publicRoot, sourcePath, entry } = await fixtureWithMotionEntry()
+    const target = kind === 'preview' ? previewPath : sourcePath
+    await rm(target)
+    await mkdir(target)
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot, {
+      motionArtifactsRoot,
+    })).resolves.toContain(`${expected}: ${entry.slug}`)
+  })
+
+  it('compares the actual motion preview size with the declared bytes', async () => {
+    const { artifactsRoot, entry, manifest, motionArtifactsRoot, publicRoot } = await fixtureWithMotionEntry()
+    entry.motion!.previewBytes += 1
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot, {
+      motionArtifactsRoot,
+    })).resolves.toContain(`motion preview size mismatch: ${entry.slug}`)
+  })
+
+  it('rejects a declared motion preview size over the fixed limit', async () => {
+    const { artifactsRoot, entry, manifest, motionArtifactsRoot, publicRoot } = await fixtureWithMotionEntry()
+    entry.motion!.previewBytes = 512001
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot, {
+      motionArtifactsRoot,
+    })).resolves.toContain(`motion preview exceeds 512000 bytes: ${entry.slug}`)
+  })
+
+  it('rejects a mismatched motion preview digest', async () => {
+    const { artifactsRoot, entry, manifest, motionArtifactsRoot, publicRoot } = await fixtureWithMotionEntry()
+    entry.motion!.previewSha256 = '0'.repeat(64)
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot, {
+      motionArtifactsRoot,
+    })).resolves.toContain(`motion preview digest mismatch: ${entry.slug}`)
+  })
+
+  it('rejects a mismatched local motion source digest', async () => {
+    const { artifactsRoot, entry, manifest, motionArtifactsRoot, publicRoot } = await fixtureWithMotionEntry()
+    entry.motion!.sourceSha256 = '0'.repeat(64)
+
+    await expect(validateCatalogV1AssetFiles(manifest, publicRoot, artifactsRoot, {
+      motionArtifactsRoot,
+    })).resolves.toContain(`motion source digest mismatch: ${entry.slug}`)
   })
 
   it('makes the motion-pilot CLI reject nine previews and accept the exact ten', async () => {

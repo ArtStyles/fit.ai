@@ -164,6 +164,14 @@ describe('validateCatalogV1Manifest', () => {
     const manifest = motionPilotManifest()
     expect(validateCatalogV1MotionPilot(manifest as never)).toEqual([])
 
+    const reducedToMotionEntries = {
+      ...manifest,
+      exercises: manifest.exercises.filter(exercise => exercise.motion),
+    }
+    expect(validateCatalogV1MotionPilot(reducedToMotionEntries as never)).toContain(
+      'motion pilot manifest must contain exactly the 50 supported V1 slugs',
+    )
+
     const withoutOne = {
       ...manifest,
       exercises: manifest.exercises.map(exercise => exercise.slug === CATALOG_V1_MOTION_PILOT_SLUGS[0]

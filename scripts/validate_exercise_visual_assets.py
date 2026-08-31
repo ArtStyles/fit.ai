@@ -28,6 +28,58 @@ MOTION_PILOT_SLUGS = (
     "extension-triceps-cuerda",
     "rueda-abdominal-rodillas",
 )
+CATALOG_V1_EXERCISE_SLUGS = (
+    "sentadilla-trasera-barra",
+    "press-banca-barra",
+    "jalon-pecho-polea",
+    "arnold-press-mancuernas",
+    "rueda-abdominal-rodillas",
+    "peso-muerto-rumano-barra",
+    "press-inclinado-mancuernas",
+    "remo-sentado-polea",
+    "elevacion-lateral-mancuernas",
+    "plancha-frontal",
+    "prensa-piernas-45",
+    "press-pecho-maquina",
+    "remo-mancuerna-un-brazo",
+    "curl-biceps-barra-ez",
+    "bicicleta-estatica",
+    "hip-thrust-barra",
+    "aperturas-pecho-polea",
+    "dominada-asistida-maquina",
+    "apertura-inversa-maquina",
+    "extension-triceps-cuerda",
+    "curl-femoral-tumbado-maquina",
+    "curl-martillo-mancuernas",
+    "extension-triceps-sobre-cabeza-polea",
+    "crunch-polea-rodillas",
+    "caminata-cinta",
+    "peso-muerto-convencional-barra",
+    "press-plano-mancuernas",
+    "flexiones-pecho",
+    "dominadas-pronas",
+    "press-militar-pie-barra",
+    "sentadilla-goblet-kettlebell",
+    "sentadilla-bulgara-mancuernas",
+    "zancadas-caminando-mancuernas",
+    "extension-cuadriceps-maquina",
+    "elevacion-gemelos-pie-maquina",
+    "aperturas-pecho-maquina",
+    "fondos-paralelas-pecho",
+    "remo-inclinado-barra",
+    "remo-t-agarre",
+    "jalon-brazos-rectos-polea",
+    "face-pull-polea",
+    "elevacion-frontal-mancuernas",
+    "curl-biceps-barra-recta",
+    "curl-predicador-barra-ez",
+    "curl-biceps-polea-pie",
+    "press-frances-tumbado-barra-ez",
+    "elevacion-rodillas-colgado",
+    "plancha-lateral",
+    "eliptica",
+    "remo-estacionario",
+)
 AssetKind = Literal["poster", "source"]
 
 
@@ -101,6 +153,46 @@ def _path_within(root: Path, value: str) -> Path | None:
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def validate_motion_pilot_manifest(exercises: list[object]) -> list[str]:
+    """Validate the complete V1 catalog and exact motion-pilot membership."""
+    errors: list[str] = []
+    supplied_slugs = {
+        entry.get("slug")
+        for entry in exercises
+        if isinstance(entry, dict) and isinstance(entry.get("slug"), str)
+    }
+    if len(exercises) != len(CATALOG_V1_EXERCISE_SLUGS) or supplied_slugs != set(CATALOG_V1_EXERCISE_SLUGS):
+        errors.append(
+            f"motion pilot manifest must contain exactly the {len(CATALOG_V1_EXERCISE_SLUGS)} supported V1 slugs"
+        )
+
+    motion_slugs = {
+        entry.get("slug")
+        for entry in exercises
+        if isinstance(entry, dict) and isinstance(entry.get("motion"), dict)
+    }
+    if motion_slugs != set(MOTION_PILOT_SLUGS):
+        errors.append("motion pilot must contain exactly the 10 selected slugs")
+
+    for entry in exercises:
+        if not isinstance(entry, dict) or not isinstance(entry.get("slug"), str):
+            continue
+        slug = entry["slug"]
+        if entry.get("status") != "visual-approved":
+            errors.append(f"motion pilot exercise must be visual-approved: {slug}")
+        reviews = entry.get("reviews")
+        if isinstance(reviews, dict) and "technique" in reviews:
+            errors.append(f"motion pilot exercise must not include a technique review: {slug}")
+        motion = entry.get("motion")
+        if slug not in MOTION_PILOT_SLUGS and isinstance(motion, dict):
+            errors.append(f"motion is not selected for pilot: {slug}")
+        if slug in MOTION_PILOT_SLUGS and (
+            not isinstance(motion, dict) or motion.get("status") != "visual-approved"
+        ):
+            errors.append(f"motion pilot motion must be visual-approved: {slug}")
+    return errors
 
 
 def validate_catalog_assets(
@@ -214,29 +306,7 @@ def validate_catalog_assets(
                 errors.append(f"source digest mismatch: {slug}")
 
     if motion_pilot:
-        motion_slugs = {
-            entry.get("slug")
-            for entry in exercises
-            if isinstance(entry, dict) and isinstance(entry.get("motion"), dict)
-        }
-        if motion_slugs != set(MOTION_PILOT_SLUGS):
-            errors.append("motion pilot must contain exactly the 10 selected slugs")
-        for entry in exercises:
-            if not isinstance(entry, dict) or not isinstance(entry.get("slug"), str):
-                continue
-            slug = entry["slug"]
-            if entry.get("status") != "visual-approved":
-                errors.append(f"motion pilot exercise must be visual-approved: {slug}")
-            reviews = entry.get("reviews")
-            if isinstance(reviews, dict) and "technique" in reviews:
-                errors.append(f"motion pilot exercise must not include a technique review: {slug}")
-            motion = entry.get("motion")
-            if slug not in MOTION_PILOT_SLUGS and isinstance(motion, dict):
-                errors.append(f"motion is not selected for pilot: {slug}")
-            if slug in MOTION_PILOT_SLUGS and (
-                not isinstance(motion, dict) or motion.get("status") != "visual-approved"
-            ):
-                errors.append(f"motion pilot motion must be visual-approved: {slug}")
+        errors.extend(validate_motion_pilot_manifest(exercises))
 
     return errors
 
