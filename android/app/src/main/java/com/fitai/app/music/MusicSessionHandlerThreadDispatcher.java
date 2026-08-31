@@ -26,12 +26,7 @@ public final class MusicSessionHandlerThreadDispatcher
             if (!accepting) {
                 return false;
             }
-            return handler.post(() -> {
-                if (!isAccepting()) {
-                    return;
-                }
-                task.run();
-            });
+            return handler.post(task);
         }
     }
 
@@ -42,7 +37,6 @@ public final class MusicSessionHandlerThreadDispatcher
                 return;
             }
             accepting = false;
-            handler.removeCallbacksAndMessages(null);
             handler.post(() -> {
                 try {
                     cleanup.run();
@@ -57,6 +51,17 @@ public final class MusicSessionHandlerThreadDispatcher
     public boolean isAccepting() {
         synchronized (lifecycleLock) {
             return accepting;
+        }
+    }
+
+    @Override
+    public boolean runIfAccepting(Runnable action) {
+        synchronized (lifecycleLock) {
+            if (!accepting) {
+                return false;
+            }
+            action.run();
+            return true;
         }
     }
 }

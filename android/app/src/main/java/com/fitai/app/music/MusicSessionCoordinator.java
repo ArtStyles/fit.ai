@@ -5,6 +5,9 @@ import java.util.Collections;
 import java.util.List;
 
 public final class MusicSessionCoordinator {
+    public static final String UNAVAILABLE_ERROR_CODE = "MUSIC_SESSION_UNAVAILABLE";
+    public static final String UNAVAILABLE_ERROR_MESSAGE =
+        "Music session integration is no longer available";
     public static final String TRANSPORT_ERROR_CODE = "MUSIC_TRANSPORT_FAILED";
     public static final String TRANSPORT_ERROR_MESSAGE =
         "Unable to control the selected music session";
@@ -15,6 +18,8 @@ public final class MusicSessionCoordinator {
         void shutdown(Runnable cleanup);
 
         boolean isAccepting();
+
+        boolean runIfAccepting(Runnable action);
     }
 
     public interface Runtime {
@@ -89,19 +94,38 @@ public final class MusicSessionCoordinator {
 
     public boolean getAuthorizationStatus(Result<String> result) {
         return dispatcher.dispatch(() -> {
-            boolean authorized = runtime.isAuthorized();
-            if (!authorized) {
-                unregisterActiveSessionsListenerOwned();
-                selectOwned(null, null, false);
+            final boolean authorized;
+            try {
+                authorized = runtime.isAuthorized();
+            } catch (RuntimeException unavailable) {
+                rejectUnavailable(result);
+                return;
             }
-            result.resolve(authorized ? "granted" : "not_granted");
+            if (!dispatcher.runIfAccepting(() -> {
+                if (!authorized) {
+                    unregisterActiveSessionsListenerOwned();
+                    selectOwnedWhileAccepting(null, null, false);
+                }
+                result.resolve(authorized ? "granted" : "not_granted");
+            })) {
+                rejectUnavailable(result);
+            }
         });
     }
 
     public boolean getCurrentSession(Result<MusicSessionSnapshotEnvelope> result) {
         return dispatcher.dispatch(() -> {
-            synchronizeOwned(false);
-            result.resolve(MusicSessionSnapshotEnvelope.of(selectedSnapshot));
+            try {
+                synchronizeOwned(false);
+            } catch (RuntimeException unavailable) {
+                rejectUnavailable(result);
+                return;
+            }
+            if (!dispatcher.runIfAccepting(() -> result.resolve(
+                MusicSessionSnapshotEnvelope.of(selectedSnapshot)
+            ))) {
+                rejectUnavailable(result);
+            }
         });
     }
 
@@ -122,31 +146,51 @@ public final class MusicSessionCoordinator {
     }
 
     private void controlOwned(boolean play, Completion completion) {
-        synchronizeOwned(false);
-        if (destroyed || !runtime.isAuthorized() || selectedSession == null) {
-            completion.resolve();
-            return;
-        }
-        boolean capable = play
-            ? selectedSnapshot != null && selectedSnapshot.canPlay()
-            : selectedSnapshot != null && selectedSnapshot.canPause();
-        if (!capable) {
-            completion.resolve();
+        try {
+            synchronizeOwned(false);
+        } catch (RuntimeException unavailable) {
+            rejectUnavailable(completion);
             return;
         }
 
-        try {
-            if (play) {
-                selectedSession.play();
-            } else {
-                selectedSession.pause();
+        RuntimeException[] transportFailure = new RuntimeException[1];
+        boolean ran = dispatcher.runIfAccepting(() -> {
+            if (destroyed || selectedSession == null) {
+                completion.resolve();
+                return;
+            }
+            boolean capable = play
+                ? selectedSnapshot != null && selectedSnapshot.canPlay()
+                : selectedSnapshot != null && selectedSnapshot.canPause();
+            if (!capable) {
+                completion.resolve();
+                return;
+            }
+
+            try {
+                if (play) {
+                    selectedSession.play();
+                } else {
+                    selectedSession.pause();
+                }
+            } catch (SecurityException revoked) {
+                try {
+                    unregisterActiveSessionsListenerOwned();
+                    selectOwnedWhileAccepting(null, null, true);
+                } catch (RuntimeException ignored) {
+                    // Revocation remains a resolved no-op even if event delivery fails.
+                }
+                completion.resolve();
+                return;
+            } catch (RuntimeException failure) {
+                transportFailure[0] = failure;
+                return;
             }
             completion.resolve();
-        } catch (SecurityException revoked) {
-            unregisterActiveSessionsListenerOwned();
-            selectOwned(null, null, true);
-            completion.resolve();
-        } catch (RuntimeException failure) {
+        });
+        if (!ran) {
+            rejectUnavailable(completion);
+        } else if (transportFailure[0] != null) {
             refreshAfterTransportFailureOwned();
             completion.reject(TRANSPORT_ERROR_CODE, TRANSPORT_ERROR_MESSAGE);
         }
@@ -156,26 +200,38 @@ public final class MusicSessionCoordinator {
         try {
             refreshOwned(true);
         } catch (RuntimeException unavailable) {
-            unregisterActiveSessionsListenerOwned();
-            selectOwned(null, null, true);
+            try {
+                dispatcher.runIfAccepting(() -> {
+                    unregisterActiveSessionsListenerOwned();
+                    selectOwnedWhileAccepting(null, null, true);
+                });
+            } catch (RuntimeException ignored) {
+                // State confirmation cannot replace the original transport rejection.
+            }
         }
     }
 
     private void synchronizeOwned(boolean emitChange) {
-        if (destroyed) {
+        if (destroyed || !dispatcher.isAccepting()) {
             return;
         }
         if (!runtime.isAuthorized()) {
-            unregisterActiveSessionsListenerOwned();
-            selectOwned(null, null, emitChange);
+            dispatcher.runIfAccepting(() -> {
+                unregisterActiveSessionsListenerOwned();
+                selectOwnedWhileAccepting(null, null, emitChange);
+            });
             return;
         }
         if (!activeSessionsListenerRegistered) {
-            activeSessionsListenerRegistered = runtime.registerActiveSessionsListener(
-                activeSessionsChanged
-            );
-            if (!activeSessionsListenerRegistered) {
-                selectOwned(null, null, emitChange);
+            boolean registered = dispatcher.runIfAccepting(() -> {
+                activeSessionsListenerRegistered = runtime.registerActiveSessionsListener(
+                    activeSessionsChanged
+                );
+                if (!activeSessionsListenerRegistered) {
+                    selectOwnedWhileAccepting(null, null, emitChange);
+                }
+            });
+            if (!registered || !activeSessionsListenerRegistered) {
                 return;
             }
         }
@@ -183,12 +239,14 @@ public final class MusicSessionCoordinator {
     }
 
     private void refreshOwned(boolean emitChange) {
-        if (destroyed) {
+        if (destroyed || !dispatcher.isAccepting()) {
             return;
         }
         if (!runtime.isAuthorized()) {
-            unregisterActiveSessionsListenerOwned();
-            selectOwned(null, null, emitChange);
+            dispatcher.runIfAccepting(() -> {
+                unregisterActiveSessionsListenerOwned();
+                selectOwnedWhileAccepting(null, null, emitChange);
+            });
             return;
         }
 
@@ -218,10 +276,14 @@ public final class MusicSessionCoordinator {
         if (nextSnapshot != null) {
             nextSession = mappedSessions.get(candidates.indexOf(nextSnapshot));
         }
-        selectOwned(nextSession, nextSnapshot, emitChange);
+        Session selected = nextSession;
+        MusicSessionPayload snapshot = nextSnapshot;
+        dispatcher.runIfAccepting(() ->
+            selectOwnedWhileAccepting(selected, snapshot, emitChange)
+        );
     }
 
-    private void selectOwned(
+    private void selectOwnedWhileAccepting(
         Session nextSession,
         MusicSessionPayload nextSnapshot,
         boolean emitChange
@@ -251,7 +313,7 @@ public final class MusicSessionCoordinator {
             selectedSnapshot = nextSnapshot;
         }
 
-        if (emitChange && dispatcher.isAccepting()) {
+        if (emitChange) {
             runtime.emitSnapshot(MusicSessionSnapshotEnvelope.of(selectedSnapshot));
         }
     }
@@ -271,6 +333,14 @@ public final class MusicSessionCoordinator {
     private void destroyOwned() {
         destroyed = true;
         unregisterActiveSessionsListenerOwned();
-        selectOwned(null, null, false);
+        selectOwnedWhileAccepting(null, null, false);
+    }
+
+    private static void rejectUnavailable(Result<?> result) {
+        result.reject(UNAVAILABLE_ERROR_CODE, UNAVAILABLE_ERROR_MESSAGE);
+    }
+
+    private static void rejectUnavailable(Completion completion) {
+        completion.reject(UNAVAILABLE_ERROR_CODE, UNAVAILABLE_ERROR_MESSAGE);
     }
 }

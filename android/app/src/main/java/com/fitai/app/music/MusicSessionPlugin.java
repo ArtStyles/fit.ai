@@ -22,9 +22,10 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "MusicSession")
 public final class MusicSessionPlugin extends Plugin {
     private static final String EVENT_SESSION_CHANGED = "sessionChanged";
-    private static final String UNAVAILABLE_ERROR_CODE = "MUSIC_SESSION_UNAVAILABLE";
+    private static final String UNAVAILABLE_ERROR_CODE =
+        MusicSessionCoordinator.UNAVAILABLE_ERROR_CODE;
     private static final String UNAVAILABLE_ERROR_MESSAGE =
-        "Music session integration is no longer available";
+        MusicSessionCoordinator.UNAVAILABLE_ERROR_MESSAGE;
 
     private final AtomicReference<MusicSessionCoordinator> coordinatorRef =
         new AtomicReference<>();
