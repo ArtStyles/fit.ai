@@ -42,7 +42,7 @@ export function ExerciseMotionPreview({
   const isCurrentMotionPlaying = isPlaying && activeMotionSrc === motionSrc
 
   if (!motionSrc) {
-    return <ExerciseImage src={posterSrc} alt={alt} variant="hero" zoomable />
+    return <ExerciseImage src={posterSrc} alt={alt} variant="hero" zoomable className={className} />
   }
 
   function playMotion() {

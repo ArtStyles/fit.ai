@@ -28,7 +28,11 @@ type BrowserHarness = Window & typeof globalThis & {
   __firstMotionPreview?: Element
   __motionLoadCount?: number
   __motionReady?: boolean
-  __renderMotionPreview?: (options: { motionSrc: string | null; language?: 'es' | 'en' }) => void
+  __renderMotionPreview?: (options: {
+    motionSrc: string | null
+    language?: 'es' | 'en'
+    className?: string
+  }) => void
 }
 
 const motionUrl = 'https://exercise.test/motion-preview.webp'
@@ -66,13 +70,14 @@ async function buildBrowserFixture(): Promise<string> {
         import { ExerciseMotionPreview } from ${JSON.stringify(componentPath)}
 
         const root = createRoot(document.getElementById('root'))
-        window.__renderMotionPreview = ({ motionSrc, language = 'es' }) => {
+        window.__renderMotionPreview = ({ motionSrc, language = 'es', className }) => {
           root.render(
             <ExerciseMotionPreview
               posterSrc="https://exercise.test/poster.webp"
               motionSrc={motionSrc}
               alt="Sentadilla con peso corporal"
               language={language}
+              className={className}
             />,
           )
         }
@@ -86,12 +91,13 @@ async function buildBrowserFixture(): Promise<string> {
         const mocks = new Map<string, string>([
           ['./ExerciseImage', `
             import React from 'react'
-            export const ExerciseImage = ({ src, alt, variant, zoomable }) => (
+            export const ExerciseImage = ({ src, alt, variant, zoomable, className }) => (
               <div
                 data-poster-preview
                 data-src={src || ''}
                 data-variant={variant}
                 data-zoomable={String(zoomable)}
+                data-class-name={className || ''}
                 aria-label={alt}
               />
             )
@@ -179,11 +185,15 @@ afterAll(async () => {
 
 describe('ExerciseMotionPreview mounted interaction', () => {
   it('keeps only the poster when no motion source is available', async () => {
-    await page.evaluate(() => (window as BrowserHarness).__renderMotionPreview?.({ motionSrc: null }))
+    await page.evaluate(() => (window as BrowserHarness).__renderMotionPreview?.({
+      motionSrc: null,
+      className: 'exercise-detail-motion-layout',
+    }))
 
     await page.locator('[data-poster-preview]').waitFor({ state: 'attached' })
     expect(await page.locator('[data-poster-preview]').getAttribute('data-variant')).toBe('hero')
     expect(await page.locator('[data-poster-preview]').getAttribute('data-zoomable')).toBe('true')
+    expect(await page.locator('[data-poster-preview]').getAttribute('data-class-name')).toBe('exercise-detail-motion-layout')
     expect(await page.getByRole('button', { name: 'Ver movimiento' }).count()).toBe(0)
     expect(await page.locator('[data-motion-preview]').count()).toBe(0)
   })
