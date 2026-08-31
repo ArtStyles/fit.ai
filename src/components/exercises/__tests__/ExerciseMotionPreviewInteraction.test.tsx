@@ -1,0 +1,239 @@
+import { createRequire } from 'node:module'
+import path from 'node:path'
+import { chromium, type Browser, type Page } from '@playwright/test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+
+type FixtureResolveArgs = { path: string }
+type FixtureBuildApi = {
+  onResolve: (
+    options: { filter: RegExp },
+    callback: (args: FixtureResolveArgs) => { path: string; namespace: string } | null,
+  ) => void
+  onLoad: (
+    options: { filter: RegExp; namespace: string },
+    callback: (args: FixtureResolveArgs) => {
+      contents: string | undefined
+      loader: 'js' | 'tsx'
+      resolveDir: string
+    },
+  ) => void
+}
+type Esbuild = {
+  build: (options: Record<string, unknown>) => Promise<{
+    outputFiles: Array<{ text: string }>
+  }>
+}
+
+type BrowserHarness = Window & typeof globalThis & {
+  __firstMotionPreview?: Element
+  __motionReady?: boolean
+  __renderMotionPreview?: (options: { motionSrc: string | null; language?: 'es' | 'en' }) => void
+}
+
+const motionUrl = 'https://exercise.test/motion-preview.webp'
+
+let browser: Browser
+let bundle = ''
+let page: Page
+
+async function loadEsbuild(): Promise<Esbuild> {
+  const require = createRequire(import.meta.url)
+  const vitestEntry = require.resolve('vitest')
+  const viteEntry = createRequire(vitestEntry).resolve('vite')
+  const esbuildEntry = createRequire(viteEntry).resolve('esbuild')
+  return import(esbuildEntry) as unknown as Promise<Esbuild>
+}
+
+async function buildBrowserFixture(): Promise<string> {
+  const { build } = await loadEsbuild()
+  const componentPath = path.join(process.cwd(), 'src/components/exercises/ExerciseMotionPreview.tsx')
+
+  const result = await build({
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    write: false,
+    jsx: 'automatic',
+    stdin: {
+      loader: 'tsx',
+      resolveDir: process.cwd(),
+      contents: `
+        import React from 'react'
+        import { createRoot } from 'react-dom/client'
+        import { ExerciseMotionPreview } from ${JSON.stringify(componentPath)}
+
+        const root = createRoot(document.getElementById('root'))
+        window.__renderMotionPreview = ({ motionSrc, language = 'es' }) => {
+          root.render(
+            <ExerciseMotionPreview
+              posterSrc="https://exercise.test/poster.webp"
+              motionSrc={motionSrc}
+              alt="Sentadilla con peso corporal"
+              language={language}
+            />,
+          )
+        }
+        window.__renderMotionPreview({ motionSrc: ${JSON.stringify(motionUrl)} })
+        requestAnimationFrame(() => { window.__motionReady = true })
+      `,
+    },
+    plugins: [{
+      name: 'exercise-motion-preview-browser-fixture-mocks',
+      setup(buildApi: FixtureBuildApi) {
+        const mocks = new Map<string, string>([
+          ['./ExerciseImage', `
+            import React from 'react'
+            export const ExerciseImage = ({ src, alt, variant, zoomable }) => (
+              <div
+                data-poster-preview
+                data-src={src || ''}
+                data-variant={variant}
+                data-zoomable={String(zoomable)}
+                aria-label={alt}
+              />
+            )
+          `],
+          ['@/lib/utils', 'export const cn = (...classes) => classes.filter(Boolean).join(" ")'],
+        ])
+
+        buildApi.onResolve({ filter: /.*/ }, args => {
+          if (mocks.has(args.path)) return { path: args.path, namespace: 'motion-preview-mock' }
+          return null
+        })
+        buildApi.onLoad({ filter: /.*/, namespace: 'motion-preview-mock' }, args => ({
+          contents: mocks.get(args.path),
+          loader: 'tsx',
+          resolveDir: process.cwd(),
+        }))
+      },
+    }],
+  })
+
+  return result.outputFiles[0]?.text ?? ''
+}
+
+async function preparePage(options?: { reducedMotion?: boolean; saveData?: boolean }) {
+  page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true })
+  await page.route(motionUrl, route => route.fulfill({
+    path: path.join(process.cwd(), 'public/exercises/pilot/arnold-press-mancuernas/motion-preview.webp'),
+  }))
+  await page.addInitScript(({ reducedMotion, saveData }) => {
+    window.matchMedia = query => ({
+      matches: query === '(prefers-reduced-motion: reduce)' && Boolean(reducedMotion),
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    })
+    Object.defineProperty(navigator, 'connection', {
+      configurable: true,
+      value: { saveData },
+    })
+  }, options ?? {})
+  await page.setContent('<main><div id="root"></div></main>')
+  await page.addScriptTag({ content: bundle })
+  await page.waitForFunction(() => Boolean((window as BrowserHarness).__motionReady))
+}
+
+beforeAll(async () => {
+  bundle = await buildBrowserFixture()
+  browser = await chromium.launch({ headless: true })
+}, 30_000)
+
+beforeEach(async () => {
+  await preparePage()
+})
+
+afterEach(async () => {
+  await page?.close()
+})
+
+afterAll(async () => {
+  await browser?.close()
+})
+
+describe('ExerciseMotionPreview mounted interaction', () => {
+  it('keeps only the poster when no motion source is available', async () => {
+    await page.evaluate(() => (window as BrowserHarness).__renderMotionPreview?.({ motionSrc: null }))
+
+    await page.locator('[data-poster-preview]').waitFor({ state: 'attached' })
+    expect(await page.locator('[data-poster-preview]').getAttribute('data-variant')).toBe('hero')
+    expect(await page.locator('[data-poster-preview]').getAttribute('data-zoomable')).toBe('true')
+    expect(await page.getByRole('button', { name: 'Ver movimiento' }).count()).toBe(0)
+    expect(await page.locator('[data-motion-preview]').count()).toBe(0)
+  })
+
+  it('does not mount or request motion before the deliberate play action', async () => {
+    const motionRequests: string[] = []
+    page.on('request', request => {
+      if (request.url().includes('motion-preview.webp')) motionRequests.push(request.url())
+    })
+
+    await page.waitForTimeout(100)
+
+    expect(await page.locator('[data-poster-preview]').count()).toBe(1)
+    expect(await page.locator('[data-motion-preview]').count()).toBe(0)
+    expect(motionRequests).toEqual([])
+  })
+
+  it('mounts the animated WebP after play and restores the poster after pause', async () => {
+    await page.getByRole('button', { name: 'Ver movimiento' }).click()
+
+    await page.locator('[data-motion-preview]').waitFor()
+    expect(await page.getByRole('button', { name: 'Pausar movimiento' }).getAttribute('aria-pressed')).toBe('true')
+    expect(await page.getByText('Demostraci\u00f3n visual').count()).toBe(1)
+    expect(await page.locator('[data-poster-preview]').count()).toBe(0)
+
+    await page.getByRole('button', { name: 'Pausar movimiento' }).click()
+    await page.locator('[data-poster-preview]').waitFor({ state: 'attached' })
+    expect(await page.locator('[data-motion-preview]').count()).toBe(0)
+    expect(await page.getByRole('button', { name: 'Ver movimiento' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('creates a fresh motion node when replaying', async () => {
+    await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await page.locator('[data-motion-preview]').waitFor()
+    await page.locator('[data-motion-preview]').evaluate(element => {
+      const harness = window as BrowserHarness
+      harness.__firstMotionPreview = element
+    })
+
+    await page.getByRole('button', { name: 'Pausar movimiento' }).click()
+    await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await page.locator('[data-motion-preview]').waitFor()
+
+    expect(await page.locator('[data-motion-preview]').evaluate(element => (
+      element === (window as BrowserHarness).__firstMotionPreview
+    ))).toBe(false)
+  })
+
+  it('restores the poster and announces a motion loading error', async () => {
+    await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await page.locator('[data-motion-preview]').dispatchEvent('error')
+
+    await page.locator('[data-poster-preview]').waitFor({ state: 'attached' })
+    expect(await page.locator('[data-motion-preview]').count()).toBe(0)
+    expect(await page.locator('[aria-live="polite"]').textContent()).toContain(
+      'No se pudo cargar la demostraci\u00f3n visual.',
+    )
+  })
+
+  it('keeps motion idle with reduced motion and Save-Data until the user plays it', async () => {
+    await page.close()
+    await preparePage({ reducedMotion: true, saveData: true })
+    const motionRequests: string[] = []
+    page.on('request', request => {
+      if (request.url().includes('motion-preview.webp')) motionRequests.push(request.url())
+    })
+
+    await page.waitForTimeout(100)
+    expect(motionRequests).toEqual([])
+    expect(await page.getByRole('button', { name: 'Ver movimiento' }).count()).toBe(1)
+
+    await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await page.locator('[data-motion-preview]').waitFor()
+  })
+})
