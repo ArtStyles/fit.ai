@@ -6,10 +6,108 @@ from pathlib import Path
 from PIL import Image
 
 from scripts.exercise_visual_assets import build_contact_sheet, build_poster
-from scripts.validate_exercise_visual_assets import validate_catalog_assets, validate_image_file
+from scripts.validate_exercise_visual_assets import (
+    MOTION_MAX_BYTES,
+    validate_catalog_assets,
+    validate_image_file,
+    validate_motion_file,
+)
 
 
 class ExerciseVisualAssetsTest(unittest.TestCase):
+    def write_motion_preview(
+        self,
+        path: Path,
+        *,
+        size: tuple[int, int] = (512, 512),
+        frames: int = 10,
+        duration: int = 180,
+        mode: str = "RGB",
+    ) -> None:
+        images = [Image.new(mode, size, (index * 20, 40, 80, 255) if mode == "RGBA" else (index * 20, 40, 80)) for index in range(frames)]
+        images[0].save(
+            path,
+            "WEBP",
+            save_all=True,
+            append_images=images[1:],
+            duration=[duration] * frames,
+            loop=0,
+            quality=80,
+            method=0,
+        )
+
+    def test_validates_the_fixed_animated_motion_webp_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            preview = root / "motion-preview.webp"
+            self.write_motion_preview(preview)
+
+            self.assertEqual(validate_motion_file(preview), [])
+
+    def test_accepts_opaque_rgba_motion_frames_without_converting_before_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            preview = Path(directory) / "motion-preview.webp"
+            self.write_motion_preview(preview, mode="RGBA")
+
+            self.assertEqual(validate_motion_file(preview), [])
+
+    def test_rejects_invalid_motion_preview_format_geometry_frames_timing_size_and_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            wrong_format = root / "motion-preview.png"
+            wrong_size = root / "wrong-size.webp"
+            wrong_frames = root / "wrong-frames.webp"
+            wrong_duration = root / "wrong-duration.webp"
+            too_large = root / "too-large.webp"
+            Image.new("RGB", (512, 512), "#f8f3eb").save(wrong_format, "PNG")
+            self.write_motion_preview(wrong_size, size=(511, 512))
+            self.write_motion_preview(wrong_frames, frames=9)
+            self.write_motion_preview(wrong_duration, duration=200)
+            self.write_motion_preview(too_large)
+            too_large.write_bytes(too_large.read_bytes() + b"x" * (MOTION_MAX_BYTES + 1))
+
+            self.assertEqual(validate_motion_file(wrong_format), ["motion preview must be WebP: motion-preview.png"])
+            self.assertEqual(validate_motion_file(wrong_size), ["motion preview must be 512 x 512: wrong-size.webp"])
+            self.assertEqual(validate_motion_file(wrong_frames), ["motion preview must contain exactly 10 animated frames: wrong-frames.webp"])
+            self.assertEqual(validate_motion_file(wrong_duration), ["motion preview frames must use 180 ms: wrong-duration.webp"])
+            self.assertEqual(validate_motion_file(too_large), [f"motion preview exceeds {MOTION_MAX_BYTES} bytes: too-large.webp"])
+
+            public_root = root / "public"
+            artifacts_root = root / "catalog-v1"
+            motion_artifacts_root = root / "catalog-v1-motion"
+            slug = "sentadilla-trasera-barra"
+            poster = public_root / "exercises" / "catalog" / "v1" / slug / "poster.webp"
+            source = artifacts_root / slug / "source.png"
+            motion_path = public_root / "exercises" / "catalog" / "v1" / slug / "motion-preview.webp"
+            motion_source = motion_artifacts_root / slug / "motion-source.png"
+            poster.parent.mkdir(parents=True)
+            source.parent.mkdir(parents=True)
+            motion_source.parent.mkdir(parents=True)
+            Image.new("RGB", (1024, 1024), "#f8f3eb").save(poster, "WEBP")
+            Image.new("RGB", (1254, 1254), "#f8f3eb").save(source, "PNG")
+            self.write_motion_preview(motion_path)
+            Image.new("RGB", (300, 200), "#f8f3eb").save(motion_source, "PNG")
+            manifest = {"exercises": [{
+                "slug": slug,
+                "status": "visual-approved",
+                "assets": {
+                    "poster": f"/exercises/catalog/v1/{slug}/poster.webp",
+                    "posterSha256": hashlib.sha256(poster.read_bytes()).hexdigest(),
+                    "sourceObjectKey": "v1/archive/remote-identity.png",
+                    "sourceSha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                },
+                "motion": {
+                    "preview": f"/exercises/catalog/v1/{slug}/motion-preview.webp",
+                    "previewSha256": "0" * 64,
+                    "previewBytes": motion_path.stat().st_size,
+                    "sourceSha256": hashlib.sha256(motion_source.read_bytes()).hexdigest(),
+                },
+            }]}
+
+            self.assertIn(
+                f"motion preview digest mismatch: {slug}",
+                validate_catalog_assets(manifest, public_root, artifacts_root, False, motion_artifacts_root),
+            )
     def test_builds_bounded_square_webp(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

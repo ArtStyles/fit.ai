@@ -4,11 +4,19 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   validateCatalogV1Manifest,
+  validateCatalogV1MotionPilot,
+  CATALOG_V1_MOTION_MAX_BYTES,
+  type CatalogV1Motion,
   type CatalogV1ExerciseEntry,
   type CatalogV1Manifest,
 } from '../src/lib/exercises/visualCatalogV1'
 
 const POSTER_MAX_BYTES = 102400
+type ValidationOptions = {
+  complete?: boolean
+  motionPilot?: boolean
+  motionArtifactsRoot?: string
+}
 type FileInspection = { kind: 'missing' } | { kind: 'non-regular' } | { kind: 'file', size: number }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -52,46 +60,85 @@ export async function validateCatalogV1AssetFiles(
   manifest: CatalogV1Manifest,
   publicRoot: string,
   artifactsRoot: string,
-  options: { complete?: boolean } = {},
+  options: ValidationOptions = {},
 ): Promise<string[]> {
   const errors: string[] = []
   const complete = options.complete === true
+  const motionArtifactsRoot = options.motionArtifactsRoot
+    ?? path.resolve(artifactsRoot, '..', 'catalog-v1-motion')
 
   for (const entry of manifest.exercises) {
-    if (!requiresAssets(entry, complete)) continue
     const { assets, slug } = entry
-    if (!assets.posterSha256) errors.push(`missing poster digest: ${slug}`)
-    if (!assets.sourceSha256) errors.push(`missing source digest: ${slug}`)
+    if (requiresAssets(entry, complete)) {
+      if (!assets.posterSha256) errors.push(`missing poster digest: ${slug}`)
+      if (!assets.sourceSha256) errors.push(`missing source digest: ${slug}`)
 
-    const posterPath = await resolveWithin(publicRoot, assets.poster)
+      const posterPath = await resolveWithin(publicRoot, assets.poster)
 
-    if (!posterPath) {
-      errors.push(`poster path escapes public root: ${slug}`)
-    } else {
-      const poster = await inspectFile(posterPath)
-      if (poster.kind === 'missing') errors.push(`missing poster: ${slug}`)
-      else if (poster.kind === 'non-regular') errors.push(`poster is not a regular file: ${slug}`)
-      else if (poster.size > POSTER_MAX_BYTES) errors.push(`poster exceeds ${POSTER_MAX_BYTES} bytes: ${slug}`)
-      if (poster.kind === 'file' && assets.posterSha256 && await fileDigest(posterPath) !== assets.posterSha256) {
-        errors.push(`poster digest mismatch: ${slug}`)
+      if (!posterPath) {
+        errors.push(`poster path escapes public root: ${slug}`)
+      } else {
+        const poster = await inspectFile(posterPath)
+        if (poster.kind === 'missing') errors.push(`missing poster: ${slug}`)
+        else if (poster.kind === 'non-regular') errors.push(`poster is not a regular file: ${slug}`)
+        else if (poster.size > POSTER_MAX_BYTES) errors.push(`poster exceeds ${POSTER_MAX_BYTES} bytes: ${slug}`)
+        if (poster.kind === 'file' && assets.posterSha256 && await fileDigest(posterPath) !== assets.posterSha256) {
+          errors.push(`poster digest mismatch: ${slug}`)
+        }
+      }
+
+      if (!assets.sourceObjectKey) {
+        errors.push(`missing source metadata: ${slug}`)
+      }
+      const sourcePath = await resolveWithin(artifactsRoot, path.join(slug, 'source.png'))
+      if (!sourcePath) {
+        errors.push(`source path escapes artifacts root: ${slug}`)
+      } else {
+        const source = await inspectFile(sourcePath)
+        if (source.kind === 'missing') errors.push(`missing source: ${slug}`)
+        else if (source.kind === 'non-regular') errors.push(`source is not a regular file: ${slug}`)
+        else if (assets.sourceSha256 && await fileDigest(sourcePath) !== assets.sourceSha256) {
+          errors.push(`source digest mismatch: ${slug}`)
+        }
       }
     }
 
-    if (!assets.sourceObjectKey) {
-      errors.push(`missing source metadata: ${slug}`)
+    const motion = entry.motion as CatalogV1Motion | undefined
+    if (!motion) continue
+    if (!motion.previewSha256) errors.push(`missing motion preview digest: ${slug}`)
+    if (!motion.sourceSha256) errors.push(`missing motion source digest: ${slug}`)
+    if (motion.previewBytes > CATALOG_V1_MOTION_MAX_BYTES) {
+      errors.push(`motion preview exceeds ${CATALOG_V1_MOTION_MAX_BYTES} bytes: ${slug}`)
     }
-    const sourcePath = await resolveWithin(artifactsRoot, path.join(slug, 'source.png'))
-    if (!sourcePath) {
-      errors.push(`source path escapes artifacts root: ${slug}`)
+
+    const previewPath = await resolveWithin(publicRoot, motion.preview)
+    if (!previewPath) {
+      errors.push(`motion preview path escapes public root: ${slug}`)
     } else {
-      const source = await inspectFile(sourcePath)
-      if (source.kind === 'missing') errors.push(`missing source: ${slug}`)
-      else if (source.kind === 'non-regular') errors.push(`source is not a regular file: ${slug}`)
-      else if (assets.sourceSha256 && await fileDigest(sourcePath) !== assets.sourceSha256) {
-        errors.push(`source digest mismatch: ${slug}`)
+      const preview = await inspectFile(previewPath)
+      if (preview.kind === 'missing') errors.push(`missing motion preview: ${slug}`)
+      else if (preview.kind === 'non-regular') errors.push(`motion preview is not a regular file: ${slug}`)
+      else {
+        if (preview.size > CATALOG_V1_MOTION_MAX_BYTES) errors.push(`motion preview exceeds ${CATALOG_V1_MOTION_MAX_BYTES} bytes: ${slug}`)
+        if (preview.size !== motion.previewBytes) errors.push(`motion preview size mismatch: ${slug}`)
+        if (motion.previewSha256 && await fileDigest(previewPath) !== motion.previewSha256) errors.push(`motion preview digest mismatch: ${slug}`)
+      }
+    }
+
+    const motionSourcePath = await resolveWithin(motionArtifactsRoot, path.join(slug, 'motion-source.png'))
+    if (!motionSourcePath) {
+      errors.push(`motion source path escapes artifacts root: ${slug}`)
+    } else {
+      const source = await inspectFile(motionSourcePath)
+      if (source.kind === 'missing') errors.push(`missing motion source: ${slug}`)
+      else if (source.kind === 'non-regular') errors.push(`motion source is not a regular file: ${slug}`)
+      else if (motion.sourceSha256 && await fileDigest(motionSourcePath) !== motion.sourceSha256) {
+        errors.push(`motion source digest mismatch: ${slug}`)
       }
     }
   }
+
+  if (options.motionPilot) errors.push(...validateCatalogV1MotionPilot(manifest))
 
   return errors
 }
@@ -114,7 +161,11 @@ async function main() {
       value as CatalogV1Manifest,
       path.resolve(root, 'public'),
       path.resolve(root, '.artifacts', 'exercises', 'catalog-v1'),
-      { complete: process.argv.includes('--complete') },
+      {
+        complete: process.argv.includes('--complete'),
+        motionPilot: process.argv.includes('--motion-pilot'),
+        motionArtifactsRoot: path.resolve(root, '.artifacts', 'exercises', 'catalog-v1-motion'),
+      },
     ))
   }
   if (errors.length > 0) {

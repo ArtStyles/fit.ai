@@ -61,6 +61,23 @@ export type CatalogV1Batch = (typeof CATALOG_V1_BATCHES)[number]['batch']
 export type CatalogV1ExerciseSlug = (typeof CATALOG_V1_BATCHES)[number]['slugs'][number]
 export const CATALOG_V1_EXERCISE_SLUGS: readonly CatalogV1ExerciseSlug[] =
   CATALOG_V1_BATCHES.flatMap(group => [...group.slugs])
+export const CATALOG_V1_MOTION_PILOT_SLUGS = [
+  'arnold-press-mancuernas',
+  'sentadilla-trasera-barra',
+  'press-banca-barra',
+  'peso-muerto-rumano-barra',
+  'jalon-pecho-polea',
+  'remo-sentado-polea',
+  'elevacion-lateral-mancuernas',
+  'curl-biceps-barra-ez',
+  'extension-triceps-cuerda',
+  'rueda-abdominal-rodillas',
+] as const
+export type CatalogV1MotionPilotSlug = (typeof CATALOG_V1_MOTION_PILOT_SLUGS)[number]
+export const CATALOG_V1_MOTION_SEQUENCE = [0, 1, 2, 3, 4, 3, 2, 1, 0, 1] as const
+export const CATALOG_V1_MOTION_FRAME_COUNT = 10 as const
+export const CATALOG_V1_MOTION_FRAME_DURATION_MS = 180 as const
+export const CATALOG_V1_MOTION_MAX_BYTES = 500 * 1024
 export type CatalogV1ReviewStatus =
   | 'draft' | 'visual-approved' | 'technique-approved' | 'published'
 export type CatalogV1Difficulty = 'beginner' | 'intermediate'
@@ -87,6 +104,18 @@ export type CatalogV1TechniqueReview = CatalogV1VisualReview & {
   references: string[]
 }
 
+export type CatalogV1Motion = {
+  status: 'visual-approved'
+  preview: string
+  previewSha256: string
+  previewBytes: number
+  sourceSha256: string
+  frameCount: typeof CATALOG_V1_MOTION_FRAME_COUNT
+  frameDurationMs: typeof CATALOG_V1_MOTION_FRAME_DURATION_MS
+  sequence: typeof CATALOG_V1_MOTION_SEQUENCE
+  review: CatalogV1VisualReview
+}
+
 export type CatalogV1ExerciseEntry = {
   slug: CatalogV1ExerciseSlug
   nameEs: string
@@ -111,6 +140,7 @@ export type CatalogV1ExerciseEntry = {
     technique?: CatalogV1TechniqueReview
   }
   assets: CatalogV1Assets
+  motion?: CatalogV1Motion
 }
 
 export type CatalogV1Manifest = {
@@ -169,6 +199,46 @@ function validateTechniqueReview(value: unknown, prefix: string, errors: string[
   if (!isNonEmptyString(value.qualification)) errors.push(`${prefix}.qualification must be a non-empty string`)
   if (!isNonEmptyStringArray(value.references)) errors.push(`${prefix}.references must be a non-empty string array`)
   return errors.length === errorCount
+}
+
+function isFixedMotionSequence(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length === CATALOG_V1_MOTION_SEQUENCE.length
+    && value.every((frame, index) => frame === CATALOG_V1_MOTION_SEQUENCE[index])
+}
+
+function validateMotion(value: unknown, slug: unknown, prefix: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${prefix} must be an object`)
+    return
+  }
+  if (value.status !== 'visual-approved') errors.push(`${prefix}.status must be visual-approved`)
+  const expectedPreview = isNonEmptyString(slug)
+    ? `/exercises/catalog/v1/${slug}/motion-preview.webp`
+    : undefined
+  if (!isNonEmptyString(value.preview) || (expectedPreview && value.preview !== expectedPreview)) {
+    errors.push(`${prefix}.preview must be ${expectedPreview ?? 'a non-empty string'}`)
+  }
+  for (const field of ['previewSha256', 'sourceSha256'] as const) {
+    if (!isNonEmptyString(value[field]) || !SHA256.test(value[field])) {
+      errors.push(`${prefix}.${field} must be a 64-character lowercase hex SHA-256`)
+    }
+  }
+  if (typeof value.previewBytes !== 'number' || !Number.isInteger(value.previewBytes) || value.previewBytes < 1) {
+    errors.push(`${prefix}.previewBytes must be a positive integer`)
+  } else if (value.previewBytes > CATALOG_V1_MOTION_MAX_BYTES) {
+    errors.push(`${prefix}.previewBytes must be at most ${CATALOG_V1_MOTION_MAX_BYTES}`)
+  }
+  if (value.frameCount !== CATALOG_V1_MOTION_FRAME_COUNT) {
+    errors.push(`${prefix}.frameCount must be ${CATALOG_V1_MOTION_FRAME_COUNT}`)
+  }
+  if (value.frameDurationMs !== CATALOG_V1_MOTION_FRAME_DURATION_MS) {
+    errors.push(`${prefix}.frameDurationMs must be ${CATALOG_V1_MOTION_FRAME_DURATION_MS}`)
+  }
+  if (!isFixedMotionSequence(value.sequence)) {
+    errors.push(`${prefix}.sequence must be the fixed V1 motion sequence`)
+  }
+  validateVisualReview(value.review, `${prefix}.review`, errors)
 }
 
 export function validateCatalogV1Manifest(value: unknown): string[] {
@@ -282,6 +352,7 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
     }
 
     if (!isRecord(candidate.reviews)) errors.push(`${prefix}.reviews must be an object`)
+    if (candidate.motion !== undefined) validateMotion(candidate.motion, slug, `${prefix}.motion`, errors)
     if (isElevated(candidate.status)) {
       if (!isRecord(candidate.assets)) {
         for (const field of ['posterSha256', 'sourceSha256', 'sourceObjectKey']) errors.push(`${prefix}.assets.${field} is required for ${candidate.status}`)
@@ -321,6 +392,38 @@ export function validateCatalogV1Manifest(value: unknown): string[] {
       errors.push(`${prefix}.reviews.visual.notes cannot claim technical approval without a valid technique review`)
     }
   })
+
+  return errors
+}
+
+export function validateCatalogV1MotionPilot(manifest: CatalogV1Manifest): string[] {
+  const errors: string[] = []
+  const selected = new Set<string>(CATALOG_V1_MOTION_PILOT_SLUGS)
+  const withMotion = manifest.exercises.filter(exercise => exercise.motion !== undefined)
+  const motionSlugs = new Set(withMotion.map(exercise => exercise.slug))
+
+  if (
+    withMotion.length !== CATALOG_V1_MOTION_PILOT_SLUGS.length
+    || motionSlugs.size !== CATALOG_V1_MOTION_PILOT_SLUGS.length
+    || CATALOG_V1_MOTION_PILOT_SLUGS.some(slug => !motionSlugs.has(slug))
+  ) {
+    errors.push(`motion pilot must contain exactly the ${CATALOG_V1_MOTION_PILOT_SLUGS.length} selected slugs`)
+  }
+
+  for (const exercise of manifest.exercises) {
+    if (!selected.has(exercise.slug) && exercise.motion !== undefined) {
+      errors.push(`motion is not selected for pilot: ${exercise.slug}`)
+    }
+    if (exercise.status !== 'visual-approved') {
+      errors.push(`motion pilot exercise must be visual-approved: ${exercise.slug}`)
+    }
+    if (exercise.reviews.technique !== undefined) {
+      errors.push(`motion pilot exercise must not include a technique review: ${exercise.slug}`)
+    }
+    if (selected.has(exercise.slug) && exercise.motion?.status !== 'visual-approved') {
+      errors.push(`motion pilot motion must be visual-approved: ${exercise.slug}`)
+    }
+  }
 
   return errors
 }

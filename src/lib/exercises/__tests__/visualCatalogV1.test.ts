@@ -5,7 +5,11 @@ import path from 'node:path'
 import {
   CATALOG_V1_BATCHES,
   CATALOG_V1_EXERCISE_SLUGS,
+  CATALOG_V1_MOTION_MAX_BYTES,
+  CATALOG_V1_MOTION_PILOT_SLUGS,
+  CATALOG_V1_MOTION_SEQUENCE,
   validateCatalogV1Manifest,
+  validateCatalogV1MotionPilot,
 } from '../visualCatalogV1'
 
 const NEW_WAVE_SLUGS = [
@@ -68,7 +72,132 @@ const valid = {
   exercises: CATALOG_V1_EXERCISE_SLUGS.map(entry),
 }
 
+const motion = (slug: (typeof CATALOG_V1_EXERCISE_SLUGS)[number]) => ({
+  status: 'visual-approved',
+  preview: `/exercises/catalog/v1/${slug}/motion-preview.webp`,
+  previewSha256: 'a'.repeat(64),
+  previewBytes: CATALOG_V1_MOTION_MAX_BYTES,
+  sourceSha256: 'b'.repeat(64),
+  frameCount: 10,
+  frameDurationMs: 180,
+  sequence: CATALOG_V1_MOTION_SEQUENCE,
+  review: {
+    reviewer: 'Motion QA',
+    reviewedAt: '2026-08-30',
+    notes: ['Loop and visual continuity approved.'],
+  },
+})
+
+const motionPilotManifest = () => ({
+  ...valid,
+  exercises: valid.exercises.map(exercise => ({
+    ...exercise,
+    status: 'visual-approved',
+    assets: {
+      ...exercise.assets,
+      posterSha256: 'c'.repeat(64),
+      sourceSha256: 'd'.repeat(64),
+      sourceObjectKey: `v1/${exercise.slug}/${'d'.repeat(64)}.png`,
+    },
+    reviews: {
+      visual: {
+        reviewer: 'Visual QA',
+        reviewedAt: '2026-08-30',
+        notes: ['Visual asset approved.'],
+      },
+    },
+    ...(CATALOG_V1_MOTION_PILOT_SLUGS.includes(exercise.slug as never)
+      ? { motion: motion(exercise.slug) }
+      : {}),
+  })),
+})
+
 describe('validateCatalogV1Manifest', () => {
+  it('keeps motion optional while validating its fixed contract when present', () => {
+    expect(validateCatalogV1Manifest(valid)).toEqual([])
+
+    const manifest = motionPilotManifest()
+    expect(validateCatalogV1Manifest(manifest)).toEqual([])
+
+    const invalid = {
+      ...manifest,
+      exercises: manifest.exercises.map((exercise, index) => index === 0
+        ? {
+            ...exercise,
+            motion: {
+              ...motion(exercise.slug),
+              status: 'draft',
+              preview: '/exercises/catalog/v1/other/motion-preview.webp',
+              previewSha256: 'A'.repeat(64),
+              previewBytes: 512001,
+              sourceSha256: 'short',
+              frameCount: 9,
+              frameDurationMs: 200,
+              sequence: [0, 1],
+              review: { reviewer: '', reviewedAt: '', notes: [] },
+            },
+          }
+        : exercise),
+    }
+
+    expect(validateCatalogV1Manifest(invalid)).toEqual(expect.arrayContaining([
+      'exercises[0].motion.status must be visual-approved',
+      `exercises[0].motion.preview must be /exercises/catalog/v1/${invalid.exercises[0].slug}/motion-preview.webp`,
+      'exercises[0].motion.previewSha256 must be a 64-character lowercase hex SHA-256',
+      `exercises[0].motion.previewBytes must be at most ${CATALOG_V1_MOTION_MAX_BYTES}`,
+      'exercises[0].motion.sourceSha256 must be a 64-character lowercase hex SHA-256',
+      'exercises[0].motion.frameCount must be 10',
+      'exercises[0].motion.frameDurationMs must be 180',
+      'exercises[0].motion.sequence must be the fixed V1 motion sequence',
+      'exercises[0].motion.review.reviewer must be a non-empty string',
+      'exercises[0].motion.review.reviewedAt must be a non-empty string',
+      'exercises[0].motion.review.notes must be a non-empty string array',
+    ]))
+  })
+
+  it('allows the maximum declared motion preview size', () => {
+    const manifest = motionPilotManifest()
+    expect(validateCatalogV1Manifest(manifest)).toEqual([])
+  })
+
+  it('enforces the exact visual-only motion pilot set', () => {
+    const manifest = motionPilotManifest()
+    expect(validateCatalogV1MotionPilot(manifest as never)).toEqual([])
+
+    const withoutOne = {
+      ...manifest,
+      exercises: manifest.exercises.map(exercise => exercise.slug === CATALOG_V1_MOTION_PILOT_SLUGS[0]
+        ? { ...exercise, motion: undefined }
+        : exercise),
+    }
+    expect(validateCatalogV1MotionPilot(withoutOne as never)).toContain(
+      'motion pilot must contain exactly the 10 selected slugs',
+    )
+
+    const withExtra = {
+      ...manifest,
+      exercises: manifest.exercises.map((exercise, index) => index === 49
+        ? { ...exercise, motion: motion(exercise.slug) }
+        : exercise),
+    }
+    expect(validateCatalogV1MotionPilot(withExtra as never)).toEqual(expect.arrayContaining([
+      'motion pilot must contain exactly the 10 selected slugs',
+      `motion is not selected for pilot: ${withExtra.exercises[49].slug}`,
+    ]))
+
+    const nonVisual = {
+      ...manifest,
+      exercises: manifest.exercises.map((exercise, index) => index === 0
+        ? { ...exercise, status: 'draft' }
+        : index === 1
+          ? { ...exercise, reviews: { ...exercise.reviews, technique: {} } }
+          : exercise),
+    }
+    expect(validateCatalogV1MotionPilot(nonVisual as never)).toEqual(expect.arrayContaining([
+      `motion pilot exercise must be visual-approved: ${nonVisual.exercises[0].slug}`,
+      `motion pilot exercise must not include a technique review: ${nonVisual.exercises[1].slug}`,
+    ]))
+  })
   it('accepts the committed 50-entry V1 manifest', () => {
     const manifest = JSON.parse(readFileSync(
       path.resolve(process.cwd(), 'public/exercises/catalog/v1/manifest.json'),
