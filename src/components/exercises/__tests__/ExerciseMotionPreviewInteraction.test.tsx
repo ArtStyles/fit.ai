@@ -26,14 +26,17 @@ type Esbuild = {
 
 type BrowserHarness = Window & typeof globalThis & {
   __firstMotionPreview?: Element
+  __motionLoadCount?: number
   __motionReady?: boolean
   __renderMotionPreview?: (options: { motionSrc: string | null; language?: 'es' | 'en' }) => void
 }
 
 const motionUrl = 'https://exercise.test/motion-preview.webp'
+const replacementMotionUrl = 'https://exercise.test/motion-preview-replacement.webp'
 
 let browser: Browser
 let bundle = ''
+let motionRequests: string[] = []
 let page: Page
 
 async function loadEsbuild(): Promise<Esbuild> {
@@ -114,7 +117,11 @@ async function buildBrowserFixture(): Promise<string> {
 
 async function preparePage(options?: { reducedMotion?: boolean; saveData?: boolean }) {
   page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true })
-  await page.route(motionUrl, route => route.fulfill({
+  motionRequests = []
+  page.on('request', request => {
+    if (request.url().includes('motion-preview')) motionRequests.push(request.url())
+  })
+  await page.route(/motion-preview.*\.webp$/, route => route.fulfill({
     path: path.join(process.cwd(), 'public/exercises/pilot/arnold-press-mancuernas/motion-preview.webp'),
   }))
   await page.addInitScript(({ reducedMotion, saveData }) => {
@@ -134,8 +141,23 @@ async function preparePage(options?: { reducedMotion?: boolean; saveData?: boole
     })
   }, options ?? {})
   await page.setContent('<main><div id="root"></div></main>')
+  await page.evaluate(() => {
+    const harness = window as BrowserHarness
+    harness.__motionLoadCount = 0
+    document.addEventListener('load', event => {
+      if (event.target instanceof HTMLImageElement && event.target.matches('[data-motion-preview]')) {
+        harness.__motionLoadCount = (harness.__motionLoadCount ?? 0) + 1
+      }
+    }, true)
+  })
   await page.addScriptTag({ content: bundle })
   await page.waitForFunction(() => Boolean((window as BrowserHarness).__motionReady))
+}
+
+async function waitForMotionLoad(count: number) {
+  await page.waitForFunction(expectedCount => (
+    ((window as BrowserHarness).__motionLoadCount ?? 0) === expectedCount
+  ), count)
 }
 
 beforeAll(async () => {
@@ -167,11 +189,6 @@ describe('ExerciseMotionPreview mounted interaction', () => {
   })
 
   it('does not mount or request motion before the deliberate play action', async () => {
-    const motionRequests: string[] = []
-    page.on('request', request => {
-      if (request.url().includes('motion-preview.webp')) motionRequests.push(request.url())
-    })
-
     await page.waitForTimeout(100)
 
     expect(await page.locator('[data-poster-preview]').count()).toBe(1)
@@ -180,9 +197,13 @@ describe('ExerciseMotionPreview mounted interaction', () => {
   })
 
   it('mounts the animated WebP after play and restores the poster after pause', async () => {
+    const firstRequest = page.waitForEvent('request', request => request.url() === motionUrl)
     await page.getByRole('button', { name: 'Ver movimiento' }).click()
 
+    await firstRequest
     await page.locator('[data-motion-preview]').waitFor()
+    await waitForMotionLoad(1)
+    expect(motionRequests).toEqual([motionUrl])
     expect(await page.getByRole('button', { name: 'Pausar movimiento' }).getAttribute('aria-pressed')).toBe('true')
     expect(await page.getByText('Demostraci\u00f3n visual').count()).toBe(1)
     expect(await page.locator('[data-poster-preview]').count()).toBe(0)
@@ -194,8 +215,14 @@ describe('ExerciseMotionPreview mounted interaction', () => {
   })
 
   it('creates a fresh motion node when replaying', async () => {
+    expect(motionRequests).toEqual([])
+    expect(await page.evaluate(() => (window as BrowserHarness).__motionLoadCount)).toBe(0)
+    const firstRequest = page.waitForEvent('request', request => request.url() === motionUrl)
     await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await firstRequest
     await page.locator('[data-motion-preview]').waitFor()
+    await waitForMotionLoad(1)
+    const firstRevision = await page.locator('[data-motion-preview]').getAttribute('data-motion-revision')
     await page.locator('[data-motion-preview]').evaluate(element => {
       const harness = window as BrowserHarness
       harness.__firstMotionPreview = element
@@ -204,10 +231,12 @@ describe('ExerciseMotionPreview mounted interaction', () => {
     await page.getByRole('button', { name: 'Pausar movimiento' }).click()
     await page.getByRole('button', { name: 'Ver movimiento' }).click()
     await page.locator('[data-motion-preview]').waitFor()
+    await waitForMotionLoad(2)
 
     expect(await page.locator('[data-motion-preview]').evaluate(element => (
       element === (window as BrowserHarness).__firstMotionPreview
     ))).toBe(false)
+    expect(await page.locator('[data-motion-preview]').getAttribute('data-motion-revision')).not.toBe(firstRevision)
   })
 
   it('restores the poster and announces a motion loading error', async () => {
@@ -224,16 +253,40 @@ describe('ExerciseMotionPreview mounted interaction', () => {
   it('keeps motion idle with reduced motion and Save-Data until the user plays it', async () => {
     await page.close()
     await preparePage({ reducedMotion: true, saveData: true })
-    const motionRequests: string[] = []
-    page.on('request', request => {
-      if (request.url().includes('motion-preview.webp')) motionRequests.push(request.url())
-    })
 
     await page.waitForTimeout(100)
     expect(motionRequests).toEqual([])
     expect(await page.getByRole('button', { name: 'Ver movimiento' }).count()).toBe(1)
 
+    const deliberateRequest = page.waitForEvent('request', request => request.url() === motionUrl)
     await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await deliberateRequest
     await page.locator('[data-motion-preview]').waitFor()
+    await waitForMotionLoad(1)
+    expect(motionRequests).toEqual([motionUrl])
+  })
+
+  it('requires a new click after the active motion source changes through null', async () => {
+    const firstRequest = page.waitForEvent('request', request => request.url() === motionUrl)
+    await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await firstRequest
+    await waitForMotionLoad(1)
+
+    await page.evaluate(() => (window as BrowserHarness).__renderMotionPreview?.({ motionSrc: null }))
+    await page.locator('[data-poster-preview]').waitFor({ state: 'attached' })
+    await page.evaluate(replacement => (
+      (window as BrowserHarness).__renderMotionPreview?.({ motionSrc: replacement })
+    ), replacementMotionUrl)
+
+    await page.locator('[data-poster-preview]').waitFor({ state: 'attached' })
+    await page.waitForTimeout(100)
+    expect(await page.locator('[data-motion-preview]').count()).toBe(0)
+    expect(motionRequests).toEqual([motionUrl])
+    expect(await page.getByRole('button', { name: 'Ver movimiento' }).getAttribute('aria-pressed')).toBe('false')
+
+    const replacementRequest = page.waitForEvent('request', request => request.url() === replacementMotionUrl)
+    await page.getByRole('button', { name: 'Ver movimiento' }).click()
+    await replacementRequest
+    await waitForMotionLoad(2)
   })
 })
