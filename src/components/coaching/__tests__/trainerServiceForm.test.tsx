@@ -62,6 +62,14 @@ describe('TrainerServiceForm', () => {
       announcement: 'Revisa los campos del servicio.',
     })
   })
+
+  it('renders save feedback in a visible live region', () => {
+    const html = renderToStaticMarkup(<TrainerServiceForm />)
+
+    expect(html).toContain('aria-live="polite"')
+    expect(html).toContain('role="status"')
+    expect(html).not.toContain('class="sr-only"')
+  })
 })
 
 describe('TrainerServiceForm accessibility', () => {

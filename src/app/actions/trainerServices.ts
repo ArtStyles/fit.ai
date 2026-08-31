@@ -13,13 +13,6 @@ type ActiveServiceActionResult =
   | { ok: true; serviceId: string; isActive: boolean }
   | ServiceFailure
 
-const COMMERCIAL_FIELDS = {
-  billing_mode: 'free_preview' as const,
-  price_minor: null,
-  currency: null,
-  billing_interval: null,
-}
-
 function formString(formData: FormData, name: string): string {
   const value = formData.get(name)
   return typeof value === 'string' ? value.trim() : ''
@@ -33,7 +26,6 @@ function servicePayload(value: TrainerServiceValue) {
     duration_minutes: value.durationMinutes,
     content: value.content,
     capacity: value.capacity,
-    ...COMMERCIAL_FIELDS,
   }
 }
 
@@ -120,7 +112,7 @@ export async function setTrainerServiceActive(formData: FormData): Promise<Activ
   const isActive = isActiveValue === 'true'
   const services = ownership.context.supabase.from('trainer_service_offerings') as any
   const { error } = await services
-    .update({ is_active: isActive, ...COMMERCIAL_FIELDS })
+    .update({ is_active: isActive })
     .eq('id', ownership.serviceId)
     .eq('trainer_profile_id', ownership.context.trainerProfile.id)
     .select('id')

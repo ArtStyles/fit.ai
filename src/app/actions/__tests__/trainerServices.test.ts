@@ -51,7 +51,7 @@ describe('trainer service actions', () => {
     vi.clearAllMocks()
   })
 
-  it('creates a free preview offering for the active server-owned trainer profile', async () => {
+  it('creates an offering using only columns granted to the authenticated trainer', async () => {
     const supabase = servicesSupabase({})
     requireActiveTrainerContext.mockResolvedValue({
       user: { id: 'trainer-user-1' },
@@ -73,10 +73,6 @@ describe('trainer service actions', () => {
       duration_minutes: 60,
       content: 'Evaluación inicial, rutina y seguimiento.',
       capacity: 12,
-      billing_mode: 'free_preview',
-      price_minor: null,
-      currency: null,
-      billing_interval: null,
     })
     expect(JSON.stringify(supabase.insert.mock.calls)).not.toContain('attacker')
   })
@@ -107,7 +103,7 @@ describe('trainer service actions', () => {
     expect(requireActiveTrainerContext).toHaveBeenCalledTimes(1)
   })
 
-  it('updates only an offering owned by the active trainer and keeps its id stable', async () => {
+  it('updates only granted columns on an offering owned by the active trainer', async () => {
     const supabase = servicesSupabase({ existing: { id: 'service-1' } })
     requireActiveTrainerContext.mockResolvedValue({ trainerProfile: { id: 'trainer-profile-1' }, supabase })
     const formData = validServiceForm()
@@ -125,10 +121,6 @@ describe('trainer service actions', () => {
       duration_minutes: 60,
       content: 'Evaluación inicial, rutina y seguimiento.',
       capacity: 12,
-      billing_mode: 'free_preview',
-      price_minor: null,
-      currency: null,
-      billing_interval: null,
     })
     expect(JSON.stringify(supabase.update.mock.calls)).not.toContain('attacker-service')
   })
@@ -183,7 +175,7 @@ describe('trainer service actions', () => {
     })
   })
 
-  it('changes active state only for an owned service while keeping it free preview', async () => {
+  it('changes only the granted active-state column on an owned service', async () => {
     const supabase = servicesSupabase({ existing: { id: 'service-1' } })
     requireActiveTrainerContext.mockResolvedValue({ trainerProfile: { id: 'trainer-profile-1' }, supabase })
     const formData = new FormData()
@@ -192,13 +184,7 @@ describe('trainer service actions', () => {
     const { setTrainerServiceActive } = await import('../trainerServices')
 
     await expect(setTrainerServiceActive(formData)).resolves.toEqual({ ok: true, serviceId: 'service-1', isActive: false })
-    expect(supabase.update).toHaveBeenCalledWith({
-      is_active: false,
-      billing_mode: 'free_preview',
-      price_minor: null,
-      currency: null,
-      billing_interval: null,
-    })
+    expect(supabase.update).toHaveBeenCalledWith({ is_active: false })
     expect(revalidatePath).toHaveBeenCalledWith('/coach/services')
   })
 
