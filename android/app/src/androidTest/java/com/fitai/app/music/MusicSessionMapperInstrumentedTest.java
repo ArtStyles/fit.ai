@@ -1,6 +1,7 @@
 package com.fitai.app.music;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -12,9 +13,12 @@ import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.net.Uri;
 import android.util.Base64;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import java.io.File;
+import java.io.FileOutputStream;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -53,6 +57,7 @@ public class MusicSessionMapperInstrumentedTest {
             );
 
             assertNotNull(payload);
+            assertFalse(sourceArtwork.isRecycled());
             assertEquals("Blinding Lights", payload.getTitle());
             assertEquals("The Weeknd", payload.getArtist());
             assertEquals("After Hours", payload.getAlbum());
@@ -87,6 +92,67 @@ public class MusicSessionMapperInstrumentedTest {
             }
             session.release();
             sourceArtwork.recycle();
+        }
+    }
+
+    @Test
+    public void map_samplesLocalUriArtworkAndReturnsExactBoundedDimensions() throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        MediaSession session = new MediaSession(context, "music-mapper-local-uri");
+        Bitmap sourceArtwork = Bitmap.createBitmap(640, 320, Bitmap.Config.ARGB_8888);
+        Bitmap decodedArtwork = null;
+        File artworkFile = File.createTempFile("music-artwork-", ".png", context.getCacheDir());
+
+        try {
+            sourceArtwork.eraseColor(0xff2563eb);
+            try (FileOutputStream output = new FileOutputStream(artworkFile)) {
+                assertTrue(sourceArtwork.compress(Bitmap.CompressFormat.PNG, 100, output));
+            }
+            session.setMetadata(
+                new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Local artwork")
+                    .putString(
+                        MediaMetadata.METADATA_KEY_ART_URI,
+                        Uri.fromFile(artworkFile).toString()
+                    )
+                    .build()
+            );
+            session.setPlaybackState(
+                new PlaybackState.Builder()
+                    .setState(PlaybackState.STATE_PLAYING, 0L, 1.0f)
+                    .build()
+            );
+            session.setActive(true);
+
+            MusicSessionPayload payload = MusicSessionMapper.map(
+                context,
+                new MediaController(context, session.getSessionToken())
+            );
+
+            assertNotNull(payload);
+            String artworkDataUrl = payload.getArtworkDataUrl();
+            assertNotNull(artworkDataUrl);
+            String prefix = "data:image/webp;base64,";
+            assertTrue(artworkDataUrl.startsWith(prefix));
+            byte[] encodedArtwork = Base64.decode(
+                artworkDataUrl.substring(prefix.length()),
+                Base64.DEFAULT
+            );
+            decodedArtwork = BitmapFactory.decodeByteArray(
+                encodedArtwork,
+                0,
+                encodedArtwork.length
+            );
+            assertNotNull(decodedArtwork);
+            assertEquals(160, decodedArtwork.getWidth());
+            assertEquals(80, decodedArtwork.getHeight());
+        } finally {
+            if (decodedArtwork != null) {
+                decodedArtwork.recycle();
+            }
+            session.release();
+            sourceArtwork.recycle();
+            artworkFile.delete();
         }
     }
 

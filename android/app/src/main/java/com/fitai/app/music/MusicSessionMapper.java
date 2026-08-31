@@ -202,17 +202,35 @@ public final class MusicSessionMapper {
         }
         Uri uri = Uri.parse(uriValue);
         String scheme = uri.getScheme();
-        if (!(ContentResolver.SCHEME_CONTENT.equals(scheme)
-            || ContentResolver.SCHEME_FILE.equals(scheme)
-            || ContentResolver.SCHEME_ANDROID_RESOURCE.equals(scheme))) {
+        if (!MusicSessionArtworkPolicy.isProvablyLocalScheme(scheme)) {
             return null;
         }
 
-        try (InputStream stream = contentResolver.openInputStream(uri)) {
-            if (stream == null) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream boundsStream = contentResolver.openInputStream(uri)) {
+            if (boundsStream == null) {
                 return null;
             }
-            Bitmap decoded = BitmapFactory.decodeStream(stream);
+            BitmapFactory.decodeStream(boundsStream, null, bounds);
+        } catch (IOException | RuntimeException exception) {
+            return null;
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+
+        BitmapFactory.Options decodeOptions = new BitmapFactory.Options();
+        decodeOptions.inSampleSize = MusicSessionArtworkPolicy.calculateInSampleSize(
+            bounds.outWidth,
+            bounds.outHeight,
+            MAX_ARTWORK_DIMENSION_PX
+        );
+        try (InputStream decodeStream = contentResolver.openInputStream(uri)) {
+            if (decodeStream == null) {
+                return null;
+            }
+            Bitmap decoded = BitmapFactory.decodeStream(decodeStream, null, decodeOptions);
             return decoded == null ? null : new OwnedBitmap(decoded, true);
         } catch (IOException | RuntimeException exception) {
             return null;
