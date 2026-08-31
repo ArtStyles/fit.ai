@@ -20,6 +20,7 @@
     "validate:exercise-catalog-v1:complete": "tsx scripts/validate-exercise-visual-catalog-v1.ts --complete && python scripts/validate_exercise_visual_assets.py --complete",
     "validate:exercise-catalog-v1:motion-pilot": "tsx scripts/validate-exercise-visual-catalog-v1.ts --complete --motion-pilot && python scripts/validate_exercise_visual_assets.py --complete --motion-pilot",
     "archive:exercise-catalog-v1": "tsx --env-file-if-exists=.env.local scripts/archive-exercise-visual-sources.ts",
+    "map:exercise-motion-previews": "tsx --env-file-if-exists=.env.local scripts/map-exercise-motion-previews.ts",
     "test": "vitest run",
     "test:db": "node scripts/test-trainer-foundations-db.mjs",
     "test:db:verification": "node scripts/test-trainer-verification-db.mjs",

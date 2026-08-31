@@ -896,6 +896,7 @@ export interface Database {
           instructions_es: string | null
           video_url: string | null
           image_url: string | null
+          motion_preview_url: string | null
           is_public: boolean
           source: string | null
           external_id: string | null
@@ -923,6 +924,7 @@ export interface Database {
           instructions_es?: string | null
           video_url?: string | null
           image_url?: string | null
+          motion_preview_url?: string | null
           is_public?: boolean
           source?: string | null
           external_id?: string | null
@@ -948,6 +950,7 @@ export interface Database {
           instructions_es?: string | null
           video_url?: string | null
           image_url?: string | null
+          motion_preview_url?: string | null
           is_public?: boolean
           source?: string | null
           external_id?: string | null
@@ -2000,6 +2003,7 @@ export interface Database {
             instructions: string | null
             video_url: string | null
             image_url: string | null
+            motion_preview_url: string | null
           } | null
           logs: {
             id: string
