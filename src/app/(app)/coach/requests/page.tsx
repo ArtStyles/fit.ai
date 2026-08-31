@@ -14,17 +14,32 @@ export default async function CoachRequestsPage() {
   </div>
   const { data, error } = await (supabase as any)
     .from('coaching_requests')
-    .select('id, message, created_at, trainer_service_offerings!inner(name)')
+    .select('id, client_user_id, message, created_at, trainer_service_offerings!inner(name)')
     .eq('trainer_user_id', user.id)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
 
-  const requests = !error ? (data ?? []).map((request: any) => ({
-    id: request.id,
-    message: request.message,
-    createdAt: request.created_at,
-    serviceName: request.trainer_service_offerings?.name ?? 'Servicio de acompañamiento',
-  })) : []
+  const requestRows = !error ? data ?? [] : []
+  const clientIds = Array.from(new Set(requestRows.map((request: any) => request.client_user_id)))
+  const { data: clientProfiles } = clientIds.length
+    ? await (supabase as any)
+      .from('public_profiles')
+      .select('id, username, full_name, avatar_url')
+      .in('id', clientIds)
+    : { data: [] }
+  const profilesById = new Map((clientProfiles ?? []).map((profile: any) => [profile.id, profile]))
+
+  const requests = requestRows.map((request: any) => {
+    const profile = profilesById.get(request.client_user_id) as any
+    return {
+      id: request.id,
+      message: request.message,
+      createdAt: request.created_at,
+      serviceName: request.trainer_service_offerings?.name ?? 'Servicio de acompañamiento',
+      clientName: profile?.full_name?.trim() || profile?.username?.trim() || 'Usuario',
+      clientAvatarUrl: profile?.avatar_url || null,
+    }
+  })
   const { data: relationships, error: relationshipsError } = await (supabase as any)
     .from('coaching_relationships')
     .select('id, status')

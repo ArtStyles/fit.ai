@@ -3,9 +3,17 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { dateLocale } from '@/lib/i18n'
 
-type CoachRequest = { id: string; message: string; createdAt: string; serviceName: string }
+type CoachRequest = {
+  id: string
+  message: string
+  createdAt: string
+  serviceName: string
+  clientName: string
+  clientAvatarUrl: string | null
+}
 
 function CoachingActionAnnouncement({ message, isError }: { message: string; isError: boolean }) {
   return <p {...(isError ? { role: 'alert' } : { 'aria-live': 'polite' })} className="mt-3 text-sm text-muted-foreground">{message}</p>
@@ -80,7 +88,16 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
     <ul className="space-y-3">{visibleRequests.map(request => {
       const busy = busyId === request.id
       return <li key={request.id} className="rounded-2xl border border-border/70 p-4">
-        <h2 className="font-semibold text-foreground">{request.serviceName}</h2>
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar className="h-12 w-12 border border-border/70">
+            {request.clientAvatarUrl ? <AvatarImage className="object-cover" src={request.clientAvatarUrl} alt="" /> : null}
+            <AvatarFallback className="font-semibold text-foreground">{request.clientName.slice(0, 1).toUpperCase()}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <h2 className="truncate font-semibold text-foreground">{request.clientName}</h2>
+            <p className="truncate text-sm text-muted-foreground">Solicita: {request.serviceName}</p>
+          </div>
+        </div>
         {request.message ? <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{request.message}</p> : <p className="mt-2 text-sm text-muted-foreground">Sin mensaje adicional.</p>}
         <p className="mt-2 text-xs text-muted-foreground">Recibida el {new Intl.DateTimeFormat(dateLocale(language), { dateStyle: 'medium', timeZone }).format(new Date(request.createdAt))}</p>
         <div className="mt-4 flex gap-2">

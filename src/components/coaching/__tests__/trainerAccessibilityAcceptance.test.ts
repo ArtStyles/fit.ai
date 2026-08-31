@@ -434,6 +434,24 @@ describe('trainer accessibility acceptance in a local browser', () => {
     }
   }, 15_000)
 
+  it('shows the requesting client photo and name with the existing request details', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=requests`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+
+      await pwExpect(page.locator('img[alt=""]')).toBeVisible()
+      await pwExpect(page.getByRole('img')).toHaveCount(0)
+      await pwExpect(page.getByRole('heading', { level: 2, name: 'Ana Pérez' })).toBeVisible()
+      await pwExpect(page.getByText('Solicita: Servicio de fuerza', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText('Quiero mejorar mi técnica.', { exact: true })).toBeVisible()
+      await expectResponsiveGeometry(page)
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
   it('honors reduced motion and Capacitor safe-area variables', async () => {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 }, reducedMotion: 'reduce' })
     const page = await context.newPage()

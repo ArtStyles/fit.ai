@@ -113,7 +113,10 @@ describe('coaching request browser interactions', () => {
       appType: 'spa',
       cacheDir: path.join(repoRoot, 'node_modules', '.vite-coaching-request-test'),
       oxc: { jsx: { runtime: 'automatic' } },
-      resolve: { alias: [
+      optimizeDeps: {
+        include: ['react', 'react-dom', 'react-dom/client', '@radix-ui/react-avatar'],
+      },
+      resolve: { dedupe: ['react', 'react-dom'], alias: [
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
         { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
         { find: '@', replacement: path.join(repoRoot, 'src') },

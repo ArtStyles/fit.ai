@@ -128,6 +128,8 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
       serviceName: 'Servicio de fuerza',
       message: 'Quiero mejorar mi técnica.',
       createdAt: '2026-08-08T12:00:00.000Z',
+      clientName: 'Ana Pérez',
+      clientAvatarUrl: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2248%22 height=%2248%22%3E%3Crect width=%2248%22 height=%2248%22 fill=%22%237c3aed%22/%3E%3C/svg%3E',
     }]} />
   }
   if (surface === 'assignment') {
