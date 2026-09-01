@@ -28,12 +28,22 @@ export function subscribeToForegroundAppState(
   const removeListener = (nextListener: AppStateListenerHandle) => {
     if (removed) return
     removed = true
-    void nextListener.remove()
+    try {
+      void nextListener.remove().catch(() => undefined)
+    } catch {
+      // A native listener can fail synchronously during teardown; cleanup must stay idempotent.
+    }
   }
-  const registration = registerListener('appStateChange', ({ isActive }) => {
-    if (isActive) onForeground()
-  })
+  let registration: Promise<AppStateListenerHandle | null>
+  try {
+    registration = registerListener('appStateChange', ({ isActive }) => {
+      if (isActive) onForeground()
+    }).catch(() => null)
+  } catch {
+    registration = Promise.resolve(null)
+  }
   void registration.then(nextListener => {
+    if (!nextListener) return
     if (disposed) removeListener(nextListener)
     else listener = nextListener
   })
@@ -41,7 +51,9 @@ export function subscribeToForegroundAppState(
   return () => {
     disposed = true
     if (listener) removeListener(listener)
-    else void registration.then(removeListener)
+    else void registration.then(nextListener => {
+      if (nextListener) removeListener(nextListener)
+    })
   }
 }
 
@@ -91,6 +103,7 @@ export function useNowPlayingSession(adapter: MusicSessionAdapter = musicSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [adapter],
   )
+  const shouldSubscribeToForeground = state.status !== 'checking' && state.status !== 'unsupported'
 
   useEffect(() => {
     void controller.start()
@@ -100,11 +113,12 @@ export function useNowPlayingSession(adapter: MusicSessionAdapter = musicSession
   }, [controller])
 
   useEffect(() => {
+    if (!shouldSubscribeToForeground) return
     return subscribeToForegroundAppState(
       (eventName, listener) => App.addListener(eventName, listener),
       () => void refresh(),
     )
-  }, [refresh])
+  }, [refresh, shouldSubscribeToForeground])
 
   useEffect(() => () => controlTracker.dispose(), [controlTracker])
 

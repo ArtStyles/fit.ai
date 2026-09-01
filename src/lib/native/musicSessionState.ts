@@ -30,6 +30,8 @@ export type NowPlayingSessionController = {
   stop(): Promise<void>
 }
 
+type MusicSnapshotIdentity = Pick<MusicPlaybackSnapshot, 'sessionId' | 'updatedAtMs'>
+
 const systemClock: MusicSessionClock = {
   now: () => Date.now(),
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
@@ -72,14 +74,17 @@ export function createNowPlayingSessionController(
   let listener: PluginListenerHandle | null = null
   let pauseTimeout: ReturnType<typeof setTimeout> | null = null
   let pauseDeadlineMs: number | null = null
-  let pausedSnapshotUpdatedAtMs: number | null = null
-  let latestSnapshotUpdatedAtMs: number | null = null
-  let state: NowPlayingState = { status: 'checking', snapshot: null, error: null }
+  let pausedSnapshotIdentity: MusicSnapshotIdentity | null = null
+  const latestSnapshotUpdatedAtMsBySessionId = new Map<string, number>()
 
   const publish = (nextState: NowPlayingState) => {
-    state = nextState
     onState(nextState)
   }
+
+  const isSameSnapshot = (
+    identity: MusicSnapshotIdentity | null,
+    snapshot: MusicSnapshotIdentity,
+  ) => identity?.sessionId === snapshot.sessionId && identity.updatedAtMs === snapshot.updatedAtMs
 
   const clearPauseTimeout = () => {
     if (pauseTimeout === null) return
@@ -90,7 +95,7 @@ export function createNowPlayingSessionController(
   const resetPauseGrace = () => {
     clearPauseTimeout()
     pauseDeadlineMs = null
-    pausedSnapshotUpdatedAtMs = null
+    pausedSnapshotIdentity = null
   }
 
   const removeListener = async () => {
@@ -105,14 +110,14 @@ export function createNowPlayingSessionController(
   }
 
   const clearAuthorizationResources = async () => {
-    latestSnapshotUpdatedAtMs = null
+    latestSnapshotUpdatedAtMsBySessionId.clear()
     await clearResources()
   }
 
   const schedulePausedExit = (snapshot: MusicPlaybackSnapshot) => {
-    if (pausedSnapshotUpdatedAtMs !== snapshot.updatedAtMs) {
+    if (!isSameSnapshot(pausedSnapshotIdentity, snapshot)) {
       clearPauseTimeout()
-      pausedSnapshotUpdatedAtMs = snapshot.updatedAtMs
+      pausedSnapshotIdentity = { sessionId: snapshot.sessionId, updatedAtMs: snapshot.updatedAtMs }
       pauseDeadlineMs = clock.now() + PAUSED_SESSION_GRACE_MS
     }
 
@@ -126,14 +131,17 @@ export function createNowPlayingSessionController(
     if (pauseTimeout !== null) return
     pauseTimeout = clock.setTimeout(() => {
       pauseTimeout = null
-      if (!active || pauseDeadlineMs !== deadline) return
+      if (!active || pauseDeadlineMs !== deadline || !isSameSnapshot(pausedSnapshotIdentity, snapshot)) return
       publish(idleState())
     }, remainingMs)
   }
 
   const applySnapshot = (snapshot: MusicPlaybackSnapshot | null) => {
-    if (snapshot && latestSnapshotUpdatedAtMs !== null && snapshot.updatedAtMs < latestSnapshotUpdatedAtMs) return
-    if (snapshot) latestSnapshotUpdatedAtMs = snapshot.updatedAtMs
+    if (snapshot) {
+      const latestUpdatedAtMs = latestSnapshotUpdatedAtMsBySessionId.get(snapshot.sessionId)
+      if (latestUpdatedAtMs !== undefined && snapshot.updatedAtMs < latestUpdatedAtMs) return
+      latestSnapshotUpdatedAtMsBySessionId.set(snapshot.sessionId, snapshot.updatedAtMs)
+    }
 
     if (!snapshot || !snapshot.title.trim() || snapshot.state === 'stopped') {
       resetPauseGrace()
@@ -148,7 +156,7 @@ export function createNowPlayingSessionController(
     }
 
     if (pauseDeadlineMs !== null && pauseDeadlineMs <= clock.now()
-      && pausedSnapshotUpdatedAtMs === snapshot.updatedAtMs) {
+      && isSameSnapshot(pausedSnapshotIdentity, snapshot)) {
       publish(idleState())
       return
     }

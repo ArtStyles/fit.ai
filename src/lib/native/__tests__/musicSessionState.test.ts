@@ -97,15 +97,17 @@ function createHarness(options: HarnessOptions = {}) {
     },
     advanceBy(durationMs: number) {
       const target = now + durationMs
-      while (true) {
-        const due = Array.from(timers.entries())
-          .filter(([, timer]) => timer.at <= target)
-          .sort(([, first], [, second]) => first.at - second.at)[0]
-        if (!due) break
+      let due = Array.from(timers.entries())
+        .filter(([, timer]) => timer.at <= target)
+        .sort(([, first], [, second]) => first.at - second.at)[0]
+      while (due) {
         const [timerId, timer] = due
         now = timer.at
         timers.delete(timerId)
         timer.callback()
+        due = Array.from(timers.entries())
+          .filter(([, nextTimer]) => nextTimer.at <= target)
+          .sort(([, first], [, second]) => first.at - second.at)[0]
       }
       now = target
     },
@@ -141,6 +143,46 @@ describe('now playing session controller', () => {
     expect(harness.latest()).toEqual({ status: 'active', snapshot: newerSnapshot, error: null })
   })
 
+  it('accepts a lower timestamp when Android selects a different session', async () => {
+    const sessionA = { ...PLAYING_SNAPSHOT, sessionId: 'session-a', title: 'Session A', updatedAtMs: 5_000 }
+    const sessionB = { ...PLAYING_SNAPSHOT, sessionId: 'session-b', title: 'Session B', updatedAtMs: 4_000 }
+    const harness = createHarness({ authorization: 'granted', current: sessionA })
+    const controller = createNowPlayingSessionController(harness.adapter, harness.onState, harness.clock)
+    await controller.start()
+
+    harness.emit(sessionB)
+
+    expect(harness.latest()).toEqual({ status: 'active', snapshot: sessionB, error: null })
+  })
+
+  it('rejects an older event from a known session after another session becomes active', async () => {
+    const sessionA = { ...PLAYING_SNAPSHOT, sessionId: 'session-a', title: 'Session A', updatedAtMs: 5_000 }
+    const sessionB = { ...PLAYING_SNAPSHOT, sessionId: 'session-b', title: 'Session B', updatedAtMs: 4_000 }
+    const staleSessionA = { ...sessionA, title: 'Stale session A', updatedAtMs: 4_500 }
+    const harness = createHarness({ authorization: 'granted', current: sessionA })
+    const controller = createNowPlayingSessionController(harness.adapter, harness.onState, harness.clock)
+    await controller.start()
+
+    harness.emit(sessionB)
+    harness.emit(staleSessionA)
+
+    expect(harness.latest()).toEqual({ status: 'active', snapshot: sessionB, error: null })
+  })
+
+  it('accepts a newer reappearance even when its timestamp is below the other session', async () => {
+    const sessionA = { ...PLAYING_SNAPSHOT, sessionId: 'session-a', title: 'Session A', updatedAtMs: 5_000 }
+    const sessionB = { ...PLAYING_SNAPSHOT, sessionId: 'session-b', title: 'Session B', updatedAtMs: 7_000 }
+    const reappearingSessionA = { ...sessionA, title: 'Session A again', updatedAtMs: 6_000 }
+    const harness = createHarness({ authorization: 'granted', current: sessionA })
+    const controller = createNowPlayingSessionController(harness.adapter, harness.onState, harness.clock)
+    await controller.start()
+
+    harness.emit(sessionB)
+    harness.emit(reappearingSessionA)
+
+    expect(harness.latest()).toEqual({ status: 'active', snapshot: reappearingSessionA, error: null })
+  })
+
   it('keeps a paused session for exactly twelve seconds', async () => {
     const harness = createHarness({ authorization: 'granted', current: PLAYING_SNAPSHOT })
     const states: NowPlayingState[] = []
@@ -154,6 +196,32 @@ describe('now playing session controller', () => {
     expect(states.at(-1)?.status).toBe('active')
     harness.advanceBy(1)
     expect(states.at(-1)).toEqual({ status: 'granted_idle', snapshot: null, error: null })
+  })
+
+  it('restarts paused grace for a different session with the same timestamp', async () => {
+    const pausedSessionA = {
+      ...PAUSED_SNAPSHOT,
+      sessionId: 'session-a',
+      title: 'Paused A',
+      updatedAtMs: 2_000,
+    }
+    const pausedSessionB = {
+      ...PAUSED_SNAPSHOT,
+      sessionId: 'session-b',
+      title: 'Paused B',
+      updatedAtMs: 2_000,
+    }
+    const harness = createHarness({ authorization: 'granted', current: pausedSessionA })
+    const controller = createNowPlayingSessionController(harness.adapter, harness.onState, harness.clock)
+    await controller.start()
+
+    harness.advanceBy(6_000)
+    harness.emit(pausedSessionB)
+    harness.advanceBy(11_999)
+
+    expect(harness.latest()).toEqual({ status: 'active', snapshot: pausedSessionB, error: null })
+    harness.advanceBy(1)
+    expect(harness.latest()).toEqual({ status: 'granted_idle', snapshot: null, error: null })
   })
 
   it('cancels paused exit when playback resumes and ignores older events', async () => {

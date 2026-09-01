@@ -20,6 +20,7 @@ const browserFixtureTests = [
   'src/components/dashboard/__tests__/SecondaryMetricsResponsive.test.tsx',
   'src/components/dashboard/__tests__/MusicNowPlayingResponsive.test.tsx',
   'src/components/settings/__tests__/MusicIntegrationSettingsInteraction.test.tsx',
+  'src/lib/native/__tests__/useNowPlayingSessionInteraction.test.tsx',
   'src/components/plan/__tests__/planInteractions.test.tsx',
   'src/components/notifications/__tests__/dismissibleAttentionNoticeInteraction.test.tsx',
   'src/components/notifications/__tests__/notificationCenterInteraction.test.tsx',

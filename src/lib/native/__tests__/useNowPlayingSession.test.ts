@@ -48,6 +48,15 @@ describe('now playing hook lifecycles', () => {
     expect(remove).toHaveBeenCalledOnce()
   })
 
+  it('contains a synchronous app-state registration failure', () => {
+    const registrationError = new Error('registration failed synchronously')
+
+    expect(() => subscribeToForegroundAppState(
+      () => { throw registrationError },
+      vi.fn(),
+    )).not.toThrow()
+  })
+
   it('keeps pending true until all overlapping controls complete and ignores an old lifecycle', () => {
     const oldPending: boolean[] = []
     const nextPending: boolean[] = []
