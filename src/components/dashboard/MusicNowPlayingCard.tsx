@@ -57,7 +57,7 @@ export function MusicNowPlayingCard({
       data-music-card="true"
       className="relative h-[90px] w-full overflow-hidden rounded-[19px] bg-[linear-gradient(135deg,hsl(var(--surface-2)),hsl(var(--surface-1))_60%,rgb(38_20_65))] px-3 py-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.05)]"
     >
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex h-full min-w-0 items-center gap-2.5">
           {snapshot.artworkDataUrl ? (
             <Image
               src={snapshot.artworkDataUrl}

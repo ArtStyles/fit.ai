@@ -1,6 +1,8 @@
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
+import { DashboardPrimaryFlow } from '@/components/dashboard/DashboardPrimaryFlow'
 import { DashboardMainNotice } from '@/components/dashboard/DashboardNotice'
 import { DashboardWeekJourney } from '@/components/dashboard/DashboardWeekJourney'
+import { MusicNowPlayingSlot } from '@/components/dashboard/MusicNowPlayingSlot'
 import { buildDashboardViewModel } from '@/components/dashboard/dashboardViewModel'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
@@ -580,21 +582,25 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <DashboardHeader
-        greeting={getDashboardGreeting(language, referenceNow, tz)}
-        firstName={firstName}
-        dateLabel={dateLabel}
-        avatarUrl={profile?.avatar_url ?? null}
-        profileHref={resolveDashboardProfileHref({
-          communityEnabled,
-          username: profile.username,
-        })}
-        hasNotificationAttention={dashboard.noticePlacement === 'hub'}
-      />
-
-      <main aria-label={t('Dashboard')} data-marketing-capture="dashboard" className="mx-auto max-w-6xl space-y-6 px-4 pt-5 sm:px-6">
-        <h1 className="sr-only">{t('Dashboard')}</h1>
-        {dashboard.noticePlacement !== 'hub' && (
+      <DashboardPrimaryFlow
+        header={(
+          <DashboardHeader
+            greeting={getDashboardGreeting(language, referenceNow, tz)}
+            firstName={firstName}
+            dateLabel={dateLabel}
+            avatarUrl={profile?.avatar_url ?? null}
+            profileHref={resolveDashboardProfileHref({
+              communityEnabled,
+              username: profile.username,
+            })}
+            hasNotificationAttention={dashboard.noticePlacement === 'hub'}
+          />
+        )}
+        mainLabel={t('Dashboard')}
+        mainClassName="mx-auto max-w-6xl space-y-6 px-4 pt-5 sm:px-6"
+        title={<h1 className="sr-only">{t('Dashboard')}</h1>}
+        music={<MusicNowPlayingSlot />}
+        notice={dashboard.noticePlacement !== 'hub' ? (
           <DashboardMainNotice
             notice={dashboard.notice}
             aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}
@@ -603,9 +609,9 @@ export default async function DashboardPage() {
             promo={dashboardBanner}
             placement={dashboard.noticePlacement ?? 'inline'}
           />
-        )}
-        <DashboardWeekJourney dashboard={dashboard} />
-      </main>
+        ) : null}
+        journey={<DashboardWeekJourney dashboard={dashboard} />}
+      />
     </div>
   )
 }

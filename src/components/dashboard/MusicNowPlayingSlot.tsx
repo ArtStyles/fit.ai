@@ -1,0 +1,195 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+import type { NowPlayingState } from '@/lib/native/musicSessionState'
+import {
+  createMusicVisualSeed,
+  reconcilePositionMs,
+} from '@/lib/native/musicSessionState'
+import { useNowPlayingSession } from '@/lib/native/useNowPlayingSession'
+
+import { MusicNowPlayingCard } from './MusicNowPlayingCard'
+import { MusicWebHalo } from './MusicWebHalo'
+
+type MusicNowPlayingSlotViewProps = {
+  state: NowPlayingState
+  positionMs: number | null
+  controlPending: boolean
+  controlAnnouncement?: string | null
+  onPlay(): void
+  onPause(): void
+}
+
+type MusicNowPlayingSession = ReturnType<typeof useNowPlayingSession>
+
+export type MusicPositionClock = {
+  now(): number
+  setInterval(callback: () => void, delayMs: number): ReturnType<typeof setInterval>
+  clearInterval(handle: ReturnType<typeof setInterval>): void
+}
+
+const CONTROL_ANNOUNCEMENT_MS = 3_000
+const CONTROL_ERROR_MESSAGE = 'No se pudo controlar la reproducción.'
+const SESSION_ERROR_MESSAGE = 'No se pudo detectar la reproducción actual.'
+const POSITION_UPDATE_MS = 1_000
+const SYSTEM_POSITION_CLOCK: MusicPositionClock = {
+  now: () => Date.now(),
+  setInterval: (callback, delayMs) => setInterval(callback, delayMs),
+  clearInterval: handle => clearInterval(handle),
+}
+
+export function MusicNowPlayingSlotView({
+  state,
+  positionMs,
+  controlPending,
+  controlAnnouncement = null,
+  onPlay,
+  onPause,
+}: MusicNowPlayingSlotViewProps) {
+  if (state.status === 'error') {
+    return (
+      <span className="sr-only" aria-live="polite">
+        {SESSION_ERROR_MESSAGE}
+      </span>
+    )
+  }
+
+  if (state.status !== 'active' || !state.snapshot) return null
+
+  const seed = createMusicVisualSeed(state.snapshot)
+  return (
+    <section
+      data-music-now-playing-slot="true"
+      className="relative isolate mx-auto h-[143px] w-full max-w-3xl overflow-hidden"
+    >
+      <MusicWebHalo seed={seed} />
+      <div
+        data-music-card-layer="true"
+        className="absolute inset-0 z-10 flex items-center px-3 sm:px-4"
+      >
+        <MusicNowPlayingCard
+          snapshot={state.snapshot}
+          positionMs={positionMs}
+          controlPending={controlPending}
+          onPlay={onPlay}
+          onPause={onPause}
+        />
+      </div>
+      {controlAnnouncement ? (
+        <span className="sr-only" aria-live="polite">{controlAnnouncement}</span>
+      ) : null}
+    </section>
+  )
+}
+
+export function subscribeToReconciledMusicPosition(
+  state: NowPlayingState,
+  onPosition: (positionMs: number | null) => void,
+  clock: MusicPositionClock,
+): () => void {
+  const snapshot = state.status === 'active' ? state.snapshot : null
+  if (!snapshot) {
+    onPosition(null)
+    return () => undefined
+  }
+
+  const publish = () => onPosition(reconcilePositionMs(snapshot, clock.now()))
+  publish()
+  if (snapshot.state !== 'playing') return () => undefined
+
+  const interval = clock.setInterval(publish, POSITION_UPDATE_MS)
+  let cleaned = false
+  return () => {
+    if (cleaned) return
+    cleaned = true
+    clock.clearInterval(interval)
+  }
+}
+
+function useReconciledMusicPosition(
+  state: NowPlayingState,
+  clock: MusicPositionClock,
+): number | null {
+  const visibleSnapshot = state.status === 'active' ? state.snapshot : null
+  const [sample, setSample] = useState(() => ({
+    snapshot: visibleSnapshot,
+    positionMs: visibleSnapshot ? reconcilePositionMs(visibleSnapshot, clock.now()) : null,
+  }))
+
+  useEffect(() => subscribeToReconciledMusicPosition(
+    state,
+    positionMs => setSample({ snapshot: visibleSnapshot, positionMs }),
+    clock,
+  ), [clock, state, visibleSnapshot])
+
+  return sample.snapshot === visibleSnapshot
+    ? sample.positionMs
+    : visibleSnapshot
+      ? reconcilePositionMs(visibleSnapshot, clock.now())
+      : null
+}
+
+export function MusicNowPlayingSlotController({
+  session,
+  positionClock = SYSTEM_POSITION_CLOCK,
+}: {
+  session: MusicNowPlayingSession
+  positionClock?: MusicPositionClock
+}) {
+  const [controlAnnouncement, setControlAnnouncement] = useState<string | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const operationRef = useRef(0)
+  const disposedRef = useRef(false)
+  const positionMs = useReconciledMusicPosition(session, positionClock)
+
+  const clearAnnouncement = useCallback(() => {
+    if (timeoutRef.current !== null) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    setControlAnnouncement(null)
+  }, [])
+
+  useEffect(() => {
+    disposedRef.current = false
+    return () => {
+      disposedRef.current = true
+      operationRef.current += 1
+      if (timeoutRef.current !== null) clearTimeout(timeoutRef.current)
+    }
+  }, [])
+
+  const runControl = useCallback(async (action: () => Promise<void>) => {
+    const operation = ++operationRef.current
+    clearAnnouncement()
+    try {
+      await action()
+    } catch {
+      if (disposedRef.current || operationRef.current !== operation) return
+      setControlAnnouncement(CONTROL_ERROR_MESSAGE)
+      timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = null
+        if (!disposedRef.current && operationRef.current === operation) {
+          setControlAnnouncement(null)
+        }
+      }, CONTROL_ANNOUNCEMENT_MS)
+    }
+  }, [clearAnnouncement])
+
+  return (
+    <MusicNowPlayingSlotView
+      state={session}
+      positionMs={positionMs}
+      controlPending={session.controlPending}
+      controlAnnouncement={controlAnnouncement}
+      onPlay={() => { void runControl(session.play) }}
+      onPause={() => { void runControl(session.pause) }}
+    />
+  )
+}
+
+export function MusicNowPlayingSlot() {
+  const session = useNowPlayingSession()
+  return <MusicNowPlayingSlotController session={session} />
+}
