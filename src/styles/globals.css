@@ -512,3 +512,38 @@
 .vekira-ptr-indicator[data-reduced-motion="true"] .vekira-ptr-wave {
   display: none;
 }
+
+@layer utilities {
+  .vekira-music-bar {
+    transform: scaleY(var(--vekira-music-bar-level));
+    will-change: transform;
+  }
+
+  .vekira-music-bar[data-playing="true"] {
+    animation: vekira-music-bar 760ms ease-in-out infinite;
+    animation-delay: var(--vekira-music-bar-delay);
+  }
+
+  .vekira-music-web-accent {
+    animation: vekira-web-thread 4.6s ease-in-out infinite;
+    transform-origin: center;
+  }
+}
+
+@keyframes vekira-music-bar {
+  0%, 100% { transform: scaleY(0.28); }
+  36% { transform: scaleY(0.92); }
+  68% { transform: scaleY(0.48); }
+}
+
+@keyframes vekira-web-thread {
+  0%, 100% { opacity: 0.08; }
+  50% { opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vekira-music-bar,
+  .vekira-music-web-accent {
+    animation: none !important;
+  }
+}
