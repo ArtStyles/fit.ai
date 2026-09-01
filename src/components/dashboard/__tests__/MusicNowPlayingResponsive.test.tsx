@@ -263,6 +263,35 @@ describe('MusicNowPlaying responsive composition', () => {
     }
   }, 40_000)
 
+  it('keeps the committed session eligible when a replacement render suspends', async () => {
+    const page = await openFixture(390)
+    try {
+      await page.evaluate(() => { window.__deferNextMusicControl = true })
+      const committedPlay = page.getByRole('button', { name: /Reproducir/ })
+      await committedPlay.click()
+      expect(await page.evaluate(() => window.__musicControlCalls)).toEqual({ play: 1, pause: 0 })
+
+      await page.evaluate(() => window.__startSuspendedMusicSessionTransition?.({
+        sessionId: 'fixture-session-suspended-b',
+        title: 'Canción suspendida B',
+      }))
+      await page.waitForFunction(() => window.__musicSuspendedGateReached)
+
+      await pwExpect(committedPlay).toBeVisible()
+      await pwExpect(page.locator('[data-music-card="true"]')).not.toContainText('Canción suspendida B')
+
+      await page.evaluate(() => window.__rejectDeferredMusicControl?.())
+      await page.waitForFunction(() => window.__deferredMusicControlSettled)
+
+      await pwExpect(page.locator('[aria-live="polite"]'))
+        .toHaveText('No se pudo controlar la reproducción.')
+      await pwExpect(committedPlay).toBeVisible()
+      expect(await page.evaluate(() => window.__unhandledMusicRejections)).toBe(0)
+    } finally {
+      await page.close()
+    }
+  }, 40_000)
+
   it('announces a deferred control failure while its confirmed session remains current', async () => {
     const page = await openFixture(390)
     try {
@@ -285,9 +314,13 @@ declare global {
     __deferNextMusicControl: boolean
     __deferredMusicControlSettled: boolean
     __musicControlCalls: { play: number; pause: number }
+    __musicSuspendedGateReached: boolean
     __rejectDeferredMusicControl?: () => void
     __rejectNextMusicControl: boolean
     __setMusicFixture?: (patch: Partial<MusicPlaybackSnapshot> & {
+      controlPending?: boolean
+    }) => void
+    __startSuspendedMusicSessionTransition?: (patch: Partial<MusicPlaybackSnapshot> & {
       controlPending?: boolean
     }) => void
     __unhandledMusicRejections: number

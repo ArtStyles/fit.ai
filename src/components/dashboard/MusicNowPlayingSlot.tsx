@@ -166,7 +166,6 @@ export function MusicNowPlayingSlotController({
   const operationRef = useRef(0)
   const disposedRef = useRef(false)
   const confirmedSessionIdRef = useRef(confirmedSessionId)
-  confirmedSessionIdRef.current = confirmedSessionId
   const positionMs = useReconciledMusicPosition(session, positionClock)
 
   const clearAnnouncement = useCallback(() => {
@@ -187,6 +186,7 @@ export function MusicNowPlayingSlotController({
   }, [])
 
   useEffect(() => {
+    confirmedSessionIdRef.current = confirmedSessionId
     clearAnnouncement()
   }, [clearAnnouncement, confirmedSessionId])
 

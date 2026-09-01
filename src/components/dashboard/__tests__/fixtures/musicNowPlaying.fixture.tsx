@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import { useEffect, useState } from 'react'
+import { startTransition, Suspense, useEffect, useState } from 'react'
 
 import '@/styles/globals.css'
 import type { MusicPlaybackSnapshot } from '@/lib/native/musicSession'
@@ -40,11 +40,21 @@ const FIXTURE_POSITION_CLOCK: MusicPositionClock = {
   clearInterval: handle => clearInterval(handle),
 }
 
+const SUSPENDED_TRANSITION = new Promise<void>(() => undefined)
+
+function SuspendedMusicSessionGate({ suspend }: { suspend: boolean }) {
+  if (!suspend) return null
+
+  window.__musicSuspendedGateReached = true
+  throw SUSPENDED_TRANSITION
+}
+
 function MusicFixture() {
   const [fixture, setFixture] = useState<FixtureState>({
     snapshot: LONG_SNAPSHOT,
     controlPending: false,
   })
+  const [suspendTransition, setSuspendTransition] = useState(false)
 
   useEffect(() => {
     window.__setMusicFixture = patch => {
@@ -52,6 +62,16 @@ function MusicFixture() {
         snapshot: { ...current.snapshot, ...patch },
         controlPending: patch.controlPending ?? current.controlPending,
       }))
+    }
+    window.__startSuspendedMusicSessionTransition = patch => {
+      window.__musicSuspendedGateReached = false
+      startTransition(() => {
+        setFixture(current => ({
+          snapshot: { ...current.snapshot, ...patch },
+          controlPending: patch.controlPending ?? current.controlPending,
+        }))
+        setSuspendTransition(true)
+      })
     }
     requestAnimationFrame(() => { window.__MUSIC_NOW_PLAYING_READY__ = true })
   }, [])
@@ -79,17 +99,20 @@ function MusicFixture() {
   }
 
   return (
-    <MusicNowPlayingSlotController
-      positionClock={FIXTURE_POSITION_CLOCK}
-      session={{
-        status: 'active',
-        snapshot: fixture.snapshot,
-        error: null,
-        controlPending: fixture.controlPending,
-        play: () => runControl('play'),
-        pause: () => runControl('pause'),
-      }}
-    />
+    <Suspense fallback={null}>
+      <MusicNowPlayingSlotController
+        positionClock={FIXTURE_POSITION_CLOCK}
+        session={{
+          status: 'active',
+          snapshot: fixture.snapshot,
+          error: null,
+          controlPending: fixture.controlPending,
+          play: () => runControl('play'),
+          pause: () => runControl('pause'),
+        }}
+      />
+      <SuspendedMusicSessionGate suspend={suspendTransition} />
+    </Suspense>
   )
 }
 
@@ -99,6 +122,7 @@ if (!root) throw new Error('Music now playing fixture root is missing.')
 window.__musicControlCalls = { play: 0, pause: 0 }
 window.__deferNextMusicControl = false
 window.__deferredMusicControlSettled = false
+window.__musicSuspendedGateReached = false
 window.__rejectNextMusicControl = false
 window.__unhandledMusicRejections = 0
 window.addEventListener('unhandledrejection', event => {
@@ -114,9 +138,11 @@ declare global {
     __deferNextMusicControl: boolean
     __deferredMusicControlSettled: boolean
     __musicControlCalls: { play: number; pause: number }
+    __musicSuspendedGateReached: boolean
     __rejectDeferredMusicControl?: () => void
     __rejectNextMusicControl: boolean
     __setMusicFixture?: (patch: FixturePatch) => void
+    __startSuspendedMusicSessionTransition?: (patch: FixturePatch) => void
     __unhandledMusicRejections: number
   }
 }
