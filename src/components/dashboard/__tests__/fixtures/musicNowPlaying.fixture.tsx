@@ -58,6 +58,20 @@ function MusicFixture() {
 
   const runControl = async (action: 'play' | 'pause') => {
     window.__musicControlCalls[action] += 1
+    if (window.__deferNextMusicControl) {
+      window.__deferNextMusicControl = false
+      try {
+        await new Promise<void>((_resolve, reject) => {
+          window.__rejectDeferredMusicControl = () => {
+            window.__rejectDeferredMusicControl = undefined
+            reject(new Error('deferred fixture control failure'))
+          }
+        })
+      } finally {
+        window.__deferredMusicControlSettled = true
+      }
+      return
+    }
     if (window.__rejectNextMusicControl) {
       window.__rejectNextMusicControl = false
       throw new Error('fixture control failure')
@@ -83,6 +97,8 @@ const root = document.getElementById('root')
 if (!root) throw new Error('Music now playing fixture root is missing.')
 
 window.__musicControlCalls = { play: 0, pause: 0 }
+window.__deferNextMusicControl = false
+window.__deferredMusicControlSettled = false
 window.__rejectNextMusicControl = false
 window.__unhandledMusicRejections = 0
 window.addEventListener('unhandledrejection', event => {
@@ -95,7 +111,10 @@ createRoot(root).render(<MusicFixture />)
 declare global {
   interface Window {
     __MUSIC_NOW_PLAYING_READY__?: boolean
+    __deferNextMusicControl: boolean
+    __deferredMusicControlSettled: boolean
     __musicControlCalls: { play: number; pause: number }
+    __rejectDeferredMusicControl?: () => void
     __rejectNextMusicControl: boolean
     __setMusicFixture?: (patch: FixturePatch) => void
     __unhandledMusicRejections: number

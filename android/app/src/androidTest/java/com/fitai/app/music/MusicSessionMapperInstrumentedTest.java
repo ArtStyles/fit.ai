@@ -14,6 +14,7 @@ import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.net.Uri;
+import android.os.SystemClock;
 import android.util.Base64;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -31,6 +32,7 @@ public class MusicSessionMapperInstrumentedTest {
         MediaSession session = new MediaSession(context, "music-mapper-complete");
         Bitmap sourceArtwork = Bitmap.createBitmap(640, 320, Bitmap.Config.ARGB_8888);
         Bitmap decodedArtwork = null;
+        long updateElapsedMs = Math.max(1L, SystemClock.elapsedRealtime() - 2_500L);
 
         try {
             sourceArtwork.eraseColor(0xff7c3aed);
@@ -46,7 +48,7 @@ public class MusicSessionMapperInstrumentedTest {
             session.setPlaybackState(
                 new PlaybackState.Builder()
                     .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE)
-                    .setState(PlaybackState.STATE_PLAYING, 12_345L, 1.25f, 67_890L)
+                    .setState(PlaybackState.STATE_PLAYING, 12_345L, 1.25f, updateElapsedMs)
                     .build()
             );
             session.setActive(true);
@@ -64,7 +66,9 @@ public class MusicSessionMapperInstrumentedTest {
             assertEquals(Long.valueOf(245_000L), payload.getDurationMs());
             assertEquals(Long.valueOf(12_345L), payload.getPositionMs());
             assertEquals(1.25f, payload.getPlaybackSpeed(), 0.0f);
-            assertEquals(67_890L, payload.getUpdatedAtMs());
+            long mappedAgeMs = System.currentTimeMillis() - payload.getUpdatedAtMs();
+            assertTrue(mappedAgeMs >= 2_000L);
+            assertTrue(mappedAgeMs <= 5_000L);
             assertEquals("playing", payload.getState());
             assertTrue(payload.canPlay());
             assertTrue(payload.canPause());

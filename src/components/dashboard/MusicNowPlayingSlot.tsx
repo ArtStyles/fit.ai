@@ -29,6 +29,16 @@ export type MusicPositionClock = {
   clearInterval(handle: ReturnType<typeof setInterval>): void
 }
 
+type MusicControlRequest = {
+  operation: number
+  sessionId: string
+}
+
+type MusicControlAnnouncement = {
+  sessionId: string
+  message: string
+}
+
 const CONTROL_ANNOUNCEMENT_MS = 3_000
 const CONTROL_ERROR_MESSAGE = 'No se pudo controlar la reproducción.'
 const SESSION_ERROR_MESSAGE = 'No se pudo detectar la reproducción actual.'
@@ -37,6 +47,17 @@ const SYSTEM_POSITION_CLOCK: MusicPositionClock = {
   now: () => Date.now(),
   setInterval: (callback, delayMs) => setInterval(callback, delayMs),
   clearInterval: handle => clearInterval(handle),
+}
+
+export function isMusicControlRequestCurrent(
+  request: MusicControlRequest,
+  currentOperation: number,
+  currentSessionId: string | null,
+  disposed: boolean,
+): boolean {
+  return !disposed
+    && request.operation === currentOperation
+    && request.sessionId === currentSessionId
 }
 
 export function MusicNowPlayingSlotView({
@@ -137,10 +158,15 @@ export function MusicNowPlayingSlotController({
   session: MusicNowPlayingSession
   positionClock?: MusicPositionClock
 }) {
-  const [controlAnnouncement, setControlAnnouncement] = useState<string | null>(null)
+  const confirmedSessionId = session.status === 'active'
+    ? session.snapshot?.sessionId ?? null
+    : null
+  const [controlAnnouncement, setControlAnnouncement] = useState<MusicControlAnnouncement | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const operationRef = useRef(0)
   const disposedRef = useRef(false)
+  const confirmedSessionIdRef = useRef(confirmedSessionId)
+  confirmedSessionIdRef.current = confirmedSessionId
   const positionMs = useReconciledMusicPosition(session, positionClock)
 
   const clearAnnouncement = useCallback(() => {
@@ -160,17 +186,34 @@ export function MusicNowPlayingSlotController({
     }
   }, [])
 
-  const runControl = useCallback(async (action: () => Promise<void>) => {
-    const operation = ++operationRef.current
+  useEffect(() => {
+    clearAnnouncement()
+  }, [clearAnnouncement, confirmedSessionId])
+
+  const runControl = useCallback(async (
+    action: () => Promise<void>,
+    sessionId: string,
+  ) => {
+    const request = { operation: ++operationRef.current, sessionId }
     clearAnnouncement()
     try {
       await action()
     } catch {
-      if (disposedRef.current || operationRef.current !== operation) return
-      setControlAnnouncement(CONTROL_ERROR_MESSAGE)
+      if (!isMusicControlRequestCurrent(
+        request,
+        operationRef.current,
+        confirmedSessionIdRef.current,
+        disposedRef.current,
+      )) return
+      setControlAnnouncement({ sessionId, message: CONTROL_ERROR_MESSAGE })
       timeoutRef.current = setTimeout(() => {
         timeoutRef.current = null
-        if (!disposedRef.current && operationRef.current === operation) {
+        if (isMusicControlRequestCurrent(
+          request,
+          operationRef.current,
+          confirmedSessionIdRef.current,
+          disposedRef.current,
+        )) {
           setControlAnnouncement(null)
         }
       }, CONTROL_ANNOUNCEMENT_MS)
@@ -182,9 +225,15 @@ export function MusicNowPlayingSlotController({
       state={session}
       positionMs={positionMs}
       controlPending={session.controlPending}
-      controlAnnouncement={controlAnnouncement}
-      onPlay={() => { void runControl(session.play) }}
-      onPause={() => { void runControl(session.pause) }}
+      controlAnnouncement={controlAnnouncement?.sessionId === confirmedSessionId
+        ? controlAnnouncement.message
+        : null}
+      onPlay={() => {
+        if (confirmedSessionId) void runControl(session.play, confirmedSessionId)
+      }}
+      onPause={() => {
+        if (confirmedSessionId) void runControl(session.pause, confirmedSessionId)
+      }}
     />
   )
 }

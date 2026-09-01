@@ -59,6 +59,17 @@ describe('MusicNowPlayingSlotView', () => {
     expect(slotModule.subscribeToReconciledMusicPosition).toBeTypeOf('function')
   })
 
+  it('invalidates a control request when its confirmed session is replaced', async () => {
+    const slotModule = await import('../MusicNowPlayingSlot')
+    const isCurrent = slotModule.isMusicControlRequestCurrent
+    const request = { operation: 4, sessionId: 'session-a' }
+
+    expect(isCurrent?.(request, 4, 'session-a', false)).toBe(true)
+    expect(isCurrent?.(request, 4, 'session-b', false)).toBe(false)
+    expect(isCurrent?.(request, 5, 'session-a', false)).toBe(false)
+    expect(isCurrent?.(request, 4, 'session-a', true)).toBe(false)
+  })
+
   it.each(['checking', 'unsupported', 'not_granted', 'granted_idle'] as const)(
     'leaves zero DOM and zero layout space while the session is %s',
     status => {

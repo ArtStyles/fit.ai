@@ -10,6 +10,7 @@ import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.PlaybackState;
 import android.net.Uri;
+import android.os.SystemClock;
 import android.util.Base64;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -84,6 +85,11 @@ public final class MusicSessionMapper {
         String sessionId = packageName + ":" + Integer.toHexString(
             controller.getSessionToken().hashCode()
         );
+        long updatedAtMs = MusicSessionTimestampPolicy.toEpochMs(
+            playbackState.getLastPositionUpdateTime(),
+            System.currentTimeMillis(),
+            SystemClock.elapsedRealtime()
+        );
 
         return new MusicSessionPayload(
             sessionId,
@@ -97,7 +103,7 @@ public final class MusicSessionMapper {
             positionMs,
             durationMs,
             playbackState.getPlaybackSpeed(),
-            playbackState.getLastPositionUpdateTime(),
+            updatedAtMs,
             canPlay,
             canPause
         );

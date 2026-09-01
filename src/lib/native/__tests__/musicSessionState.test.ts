@@ -389,6 +389,18 @@ describe('music session helpers', () => {
     expect(reconcilePositionMs({ ...PLAYING_SNAPSHOT, positionMs: 179_000, playbackSpeed: 1.25 }, 5_000)).toBe(180_000)
   })
 
+  it('advances from a representative epoch timestamp without clamping to duration', () => {
+    const epochSnapshot = {
+      ...PLAYING_SNAPSHOT,
+      updatedAtMs: 1_726_000_000_000,
+      positionMs: 10_000,
+      durationMs: 180_000,
+    }
+
+    expect(reconcilePositionMs(epochSnapshot, 1_726_000_003_000)).toBe(13_000)
+    expect(reconcilePositionMs(epochSnapshot, 1_726_000_003_000)).not.toBe(epochSnapshot.durationMs)
+  })
+
   it('creates an identical visual seed from identical stable metadata', () => {
     expect(createMusicVisualSeed(PLAYING_SNAPSHOT)).toBe(createMusicVisualSeed({
       ...PLAYING_SNAPSHOT,

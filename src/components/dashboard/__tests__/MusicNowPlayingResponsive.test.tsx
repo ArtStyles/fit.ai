@@ -235,12 +235,57 @@ describe('MusicNowPlaying responsive composition', () => {
       await page.close()
     }
   }, 40_000)
+
+  it('does not announce a late control failure after the confirmed session changes', async () => {
+    const page = await openFixture(390)
+    try {
+      await page.evaluate(() => { window.__deferNextMusicControl = true })
+      await page.getByRole('button', { name: /Reproducir/ }).click()
+      expect(await page.evaluate(() => window.__musicControlCalls)).toEqual({ play: 1, pause: 0 })
+
+      await page.evaluate(() => window.__setMusicFixture?.({
+        sessionId: 'fixture-session-b',
+        title: 'Canción confirmada B',
+      }))
+      await pwExpect(page.getByRole('button', { name: 'Reproducir Canción confirmada B' })).toBeVisible()
+
+      await page.evaluate(() => window.__rejectDeferredMusicControl?.())
+      await page.waitForFunction(() => window.__deferredMusicControlSettled)
+      await page.evaluate(() => new Promise<void>(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      }))
+
+      await pwExpect(page.locator('[aria-live="polite"]')).toHaveCount(0)
+      await pwExpect(page.locator('[data-music-card="true"]')).toContainText('Canción confirmada B')
+      expect(await page.evaluate(() => window.__unhandledMusicRejections)).toBe(0)
+    } finally {
+      await page.close()
+    }
+  }, 40_000)
+
+  it('announces a deferred control failure while its confirmed session remains current', async () => {
+    const page = await openFixture(390)
+    try {
+      await page.evaluate(() => { window.__deferNextMusicControl = true })
+      await page.getByRole('button', { name: /Reproducir/ }).click()
+      await page.evaluate(() => window.__rejectDeferredMusicControl?.())
+      await page.waitForFunction(() => window.__deferredMusicControlSettled)
+
+      await pwExpect(page.locator('[aria-live="polite"]'))
+        .toHaveText('No se pudo controlar la reproducción.')
+    } finally {
+      await page.close()
+    }
+  }, 40_000)
 })
 
 declare global {
   interface Window {
     __MUSIC_NOW_PLAYING_READY__?: boolean
+    __deferNextMusicControl: boolean
+    __deferredMusicControlSettled: boolean
     __musicControlCalls: { play: number; pause: number }
+    __rejectDeferredMusicControl?: () => void
     __rejectNextMusicControl: boolean
     __setMusicFixture?: (patch: Partial<MusicPlaybackSnapshot> & {
       controlPending?: boolean
