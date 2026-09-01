@@ -55,12 +55,49 @@ describe('MusicNowPlayingCard', () => {
 
   it('exposes clamped playback progress as semantic values', () => {
     const middle = renderCard()
+    const beforeStart = renderCard(PLAYING_SNAPSHOT, { positionMs: -1_000 })
     const beyondDuration = renderCard(PLAYING_SNAPSHOT, { positionMs: 250_000 })
 
     expect(middle).toContain('data-position-ms="90000"')
     expect(middle).toContain('data-duration-ms="180000"')
     expect(middle).toContain('data-progress-value="0.5"')
+    expect(beforeStart).toContain('data-position-ms="0"')
+    expect(beforeStart).toContain('data-progress-value="0"')
     expect(beyondDuration).toContain('data-progress-value="1"')
+  })
+
+  it('omits progress and invalid numeric output when position or duration is not finite and valid', () => {
+    const invalidPositions = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, null]
+    const invalidDurations = [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      null,
+      0,
+      -1,
+    ]
+
+    for (const positionMs of invalidPositions) {
+      const html = renderCard(PLAYING_SNAPSHOT, { positionMs })
+      expect(html).not.toContain('data-music-progress="true"')
+      expect(html).not.toMatch(/NaN|Infinity/)
+    }
+
+    for (const durationMs of invalidDurations) {
+      const html = renderCard({ ...PLAYING_SNAPSHOT, durationMs })
+      expect(html).not.toContain('data-music-progress="true"')
+      expect(html).not.toMatch(/NaN|Infinity/)
+    }
+  })
+
+  it('exports only the standalone music surface and leaves halo composition to its owner', () => {
+    const html = renderCard()
+
+    expect(html).toMatch(/^<article[^>]*data-music-card="true"/)
+    expect(html).not.toContain('data-music-now-playing')
+    expect(html).not.toContain('data-music-web-spoke')
+    expect(html).not.toContain('data-music-web-ring')
+    expect(html).not.toContain('viewBox="0 0 760 143"')
   })
 
   it('uses decorative session artwork when supplied and a provider-neutral Vekira fallback otherwise', () => {
@@ -115,5 +152,19 @@ describe('music card decoration', () => {
     expect(first).toBe(same)
     expect(first.match(/data-music-bar="true"/g)).toHaveLength(4)
     expect(first).not.toBe(later)
+  })
+
+  it('normalizes null, negative and non-finite positions before deriving bar output', () => {
+    const atZero = renderToStaticMarkup(
+      <MusicPulseVisualizer playing positionMs={0} seed={8_137} />,
+    )
+
+    for (const positionMs of [null, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const html = renderToStaticMarkup(
+        <MusicPulseVisualizer playing positionMs={positionMs} seed={8_137} />,
+      )
+      expect(html).toBe(atZero)
+      expect(html).not.toMatch(/NaN|Infinity/)
+    }
   })
 })

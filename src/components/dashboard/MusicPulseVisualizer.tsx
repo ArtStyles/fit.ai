@@ -18,9 +18,15 @@ function pausedBarLevel(phase: number, positionMs: number): number {
   return Number((0.24 + wave * 0.7).toFixed(3))
 }
 
+function finitePositionMs(positionMs: number | null): number {
+  return positionMs !== null && Number.isFinite(positionMs)
+    ? Math.max(0, positionMs)
+    : 0
+}
+
 export function MusicPulseVisualizer({ playing, positionMs, seed }: MusicPulseVisualizerProps) {
   const phases = buildMusicBarPhases(seed)
-  const safePositionMs = Math.max(0, positionMs ?? 0)
+  const safePositionMs = finitePositionMs(positionMs)
 
   return (
     <div

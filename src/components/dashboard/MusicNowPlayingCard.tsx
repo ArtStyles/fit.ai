@@ -7,7 +7,6 @@ import type { MusicPlaybackSnapshot } from '@/lib/native/musicSession'
 import { createMusicVisualSeed } from '@/lib/native/musicSessionState'
 
 import { MusicPulseVisualizer } from './MusicPulseVisualizer'
-import { MusicWebHalo } from './MusicWebHalo'
 
 export type MusicNowPlayingCardProps = {
   snapshot: MusicPlaybackSnapshot
@@ -17,9 +16,27 @@ export type MusicNowPlayingCardProps = {
   onPause(): void
 }
 
-function playbackProgress(positionMs: number | null, durationMs: number | null): number | null {
-  if (positionMs === null || durationMs === null || durationMs <= 0) return null
-  return Math.min(1, Math.max(0, positionMs / durationMs))
+type PlaybackProgress = {
+  positionMs: number
+  durationMs: number
+  value: number
+}
+
+function playbackProgress(positionMs: number | null, durationMs: number | null): PlaybackProgress | null {
+  if (
+    positionMs === null
+    || durationMs === null
+    || !Number.isFinite(positionMs)
+    || !Number.isFinite(durationMs)
+    || durationMs <= 0
+  ) return null
+
+  const safePositionMs = Math.max(0, positionMs)
+  return {
+    positionMs: safePositionMs,
+    durationMs,
+    value: Math.min(1, safePositionMs / durationMs),
+  }
 }
 
 export function MusicNowPlayingCard({
@@ -36,13 +53,10 @@ export function MusicNowPlayingCard({
   const progress = playbackProgress(positionMs, snapshot.durationMs)
 
   return (
-    <div data-music-now-playing="true" className="relative h-[143px] w-full overflow-hidden">
-      <MusicWebHalo seed={seed} />
-
-      <article
-        data-music-card="true"
-        className="absolute inset-x-3 top-1/2 z-10 h-[90px] -translate-y-1/2 overflow-hidden rounded-[19px] bg-[linear-gradient(135deg,hsl(var(--surface-2)),hsl(var(--surface-1))_60%,rgb(38_20_65))] px-3 py-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.05)] sm:inset-x-4"
-      >
+    <article
+      data-music-card="true"
+      className="relative h-[90px] w-full overflow-hidden rounded-[19px] bg-[linear-gradient(135deg,hsl(var(--surface-2)),hsl(var(--surface-1))_60%,rgb(38_20_65))] px-3 py-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.05)]"
+    >
         <div className="flex min-w-0 items-center gap-2.5">
           {snapshot.artworkDataUrl ? (
             <Image
@@ -111,18 +125,17 @@ export function MusicNowPlayingCard({
           <div
             aria-hidden="true"
             data-music-progress="true"
-            data-position-ms={positionMs}
-            data-duration-ms={snapshot.durationMs}
-            data-progress-value={progress}
+            data-position-ms={progress.positionMs}
+            data-duration-ms={progress.durationMs}
+            data-progress-value={progress.value}
             className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-white/[0.055]"
           >
             <span
               className="block h-full bg-gradient-to-r from-violet-600 via-violet-400 to-fuchsia-300"
-              style={{ width: `${progress * 100}%` }}
+              style={{ width: `${progress.value * 100}%` }}
             />
           </div>
         ) : null}
-      </article>
-    </div>
+    </article>
   )
 }
