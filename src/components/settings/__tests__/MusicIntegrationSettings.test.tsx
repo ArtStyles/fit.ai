@@ -162,6 +162,9 @@ describe('Android settings interaction', () => {
       onBusyChange: value => busyChanges.push(value),
       onFailureChange: value => failureChanges.push(value),
     })
+    controller.activate()
+    busyChanges.length = 0
+    failureChanges.length = 0
 
     const first = controller.open()
     const second = controller.open()
@@ -186,6 +189,28 @@ describe('Android settings interaction', () => {
       onBusyChange: value => busyChanges.push(value),
       onFailureChange: value => failureChanges.push(value),
     })
+    controller.activate()
+    busyChanges.length = 0
+    failureChanges.length = 0
+
+    await expect(controller.open()).resolves.toBeUndefined()
+
+    expect(controller.isBusy()).toBe(false)
+    expect(busyChanges).toEqual([true, false])
+    expect(failureChanges).toEqual([false, true])
+  })
+
+  it('contains a synchronous Android launch failure in the active generation', async () => {
+    const busyChanges: boolean[] = []
+    const failureChanges: boolean[] = []
+    const controller = createAndroidSettingsOpenController({
+      openSettings: () => { throw new Error('synchronous platform failure') },
+      onBusyChange: value => busyChanges.push(value),
+      onFailureChange: value => failureChanges.push(value),
+    })
+    controller.activate()
+    busyChanges.length = 0
+    failureChanges.length = 0
 
     await expect(controller.open()).resolves.toBeUndefined()
 
@@ -203,6 +228,9 @@ describe('Android settings interaction', () => {
       onBusyChange: value => busyChanges.push(value),
       onFailureChange: value => failureChanges.push(value),
     })
+    controller.activate()
+    busyChanges.length = 0
+    failureChanges.length = 0
 
     const opening = controller.open()
     controller.dispose()
@@ -211,6 +239,58 @@ describe('Android settings interaction', () => {
 
     expect(busyChanges).toEqual([true])
     expect(failureChanges).toEqual([false])
+  })
+
+  it('reactivates after cleanup so the next lifecycle can open Android settings', async () => {
+    const openSettings = vi.fn(async () => undefined)
+    const controller = createAndroidSettingsOpenController({
+      openSettings,
+      onBusyChange: vi.fn(),
+      onFailureChange: vi.fn(),
+    })
+
+    controller.activate()
+    controller.dispose()
+    controller.activate()
+    await controller.open()
+
+    expect(openSettings).toHaveBeenCalledOnce()
+  })
+
+  it('isolates an old pending launch from the next active generation', async () => {
+    let rejectOld: (error: Error) => void = () => undefined
+    let resolveCurrent: () => void = () => undefined
+    const oldLaunch = new Promise<void>((_resolve, reject) => { rejectOld = reject })
+    const currentLaunch = new Promise<void>(resolve => { resolveCurrent = resolve })
+    const openSettings = vi.fn()
+      .mockReturnValueOnce(oldLaunch)
+      .mockReturnValueOnce(currentLaunch)
+    const busyChanges: boolean[] = []
+    const failureChanges: boolean[] = []
+    const controller = createAndroidSettingsOpenController({
+      openSettings,
+      onBusyChange: value => busyChanges.push(value),
+      onFailureChange: value => failureChanges.push(value),
+    })
+
+    controller.activate()
+    const oldOpening = controller.open()
+    controller.dispose()
+    controller.activate()
+    const currentOpening = controller.open()
+    rejectOld(new Error('old lifecycle failure'))
+    await oldOpening
+
+    expect(openSettings).toHaveBeenCalledTimes(2)
+    expect(controller.isBusy()).toBe(true)
+    expect(failureChanges.at(-1)).toBe(false)
+
+    resolveCurrent()
+    await currentOpening
+
+    expect(controller.isBusy()).toBe(false)
+    expect(busyChanges.at(-1)).toBe(false)
+    expect(failureChanges.at(-1)).toBe(false)
   })
 
   it('routes retry to the real session refresh action', async () => {

@@ -11,6 +11,7 @@ import { SettingsSection } from './SettingsSection'
 import { SettingsStatus } from './SettingsStatus'
 
 type AndroidSettingsOpenController = {
+  activate(): void
   open(): Promise<void>
   isBusy(): boolean
   dispose(): void
@@ -25,14 +26,27 @@ export function createAndroidSettingsOpenController({
   onBusyChange(busy: boolean): void
   onFailureChange(failed: boolean): void
 }): AndroidSettingsOpenController {
-  let disposed = false
-  let pending: Promise<void> | null = null
+  let active = false
+  let generation = 0
+  let pending: { generation: number; promise: Promise<void> } | null = null
+
+  const isCurrent = (operationGeneration: number) => (
+    active && generation === operationGeneration
+  )
 
   return {
+    activate() {
+      generation += 1
+      active = true
+      pending = null
+      onBusyChange(false)
+      onFailureChange(false)
+    },
     open() {
-      if (disposed) return Promise.resolve()
-      if (pending) return pending
+      if (!active) return Promise.resolve()
+      if (pending?.generation === generation) return pending.promise
 
+      const operationGeneration = generation
       onFailureChange(false)
       onBusyChange(true)
       let openResult: Promise<void>
@@ -43,18 +57,23 @@ export function createAndroidSettingsOpenController({
       }
       const operation = openResult
         .catch(() => {
-          if (!disposed) onFailureChange(true)
+          if (isCurrent(operationGeneration)) onFailureChange(true)
         })
         .finally(() => {
-          if (pending === operation) pending = null
-          if (!disposed) onBusyChange(false)
+          if (!isCurrent(operationGeneration)) return
+          if (pending?.generation === operationGeneration && pending.promise === operation) {
+            pending = null
+          }
+          onBusyChange(false)
         })
-      pending = operation
+      pending = { generation: operationGeneration, promise: operation }
       return operation
     },
-    isBusy: () => pending !== null,
+    isBusy: () => active && pending?.generation === generation,
     dispose() {
-      disposed = true
+      active = false
+      generation += 1
+      pending = null
     },
   }
 }
@@ -195,7 +214,10 @@ export function MusicIntegrationSettings() {
     onFailureChange: setOpenFailed,
   }), [])
 
-  useEffect(() => () => openController.dispose(), [openController])
+  useEffect(() => {
+    openController.activate()
+    return () => openController.dispose()
+  }, [openController])
 
   return (
     <MusicIntegrationSettingsView
