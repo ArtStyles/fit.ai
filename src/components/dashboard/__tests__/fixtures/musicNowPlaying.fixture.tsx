@@ -2,6 +2,8 @@ import { createRoot } from 'react-dom/client'
 import { startTransition, Suspense, useEffect, useState } from 'react'
 
 import '@/styles/globals.css'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
+import type { AppLanguage } from '@/lib/i18n'
 import type { MusicPlaybackSnapshot } from '@/lib/native/musicSession'
 import {
   MusicNowPlayingSlotController,
@@ -107,12 +109,27 @@ function MusicFixture() {
           snapshot: fixture.snapshot,
           error: null,
           controlPending: fixture.controlPending,
+          refresh: async () => undefined,
           play: () => runControl('play'),
           pause: () => runControl('pause'),
         }}
       />
       <SuspendedMusicSessionGate suspend={suspendTransition} />
     </Suspense>
+  )
+}
+
+function LocalizedMusicFixture() {
+  const [language, setLanguage] = useState<AppLanguage>('es')
+
+  useEffect(() => {
+    window.__setMusicFixtureLanguage = setLanguage
+  }, [])
+
+  return (
+    <I18nProvider language={language} syncDocumentLanguage={false}>
+      <MusicFixture />
+    </I18nProvider>
   )
 }
 
@@ -130,7 +147,7 @@ window.addEventListener('unhandledrejection', event => {
   event.preventDefault()
 })
 
-createRoot(root).render(<MusicFixture />)
+createRoot(root).render(<LocalizedMusicFixture />)
 
 declare global {
   interface Window {
@@ -142,6 +159,7 @@ declare global {
     __rejectDeferredMusicControl?: () => void
     __rejectNextMusicControl: boolean
     __setMusicFixture?: (patch: FixturePatch) => void
+    __setMusicFixtureLanguage?: (language: AppLanguage) => void
     __startSuspendedMusicSessionTransition?: (patch: FixturePatch) => void
     __unhandledMusicRejections: number
   }

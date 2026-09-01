@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
+import { I18nProvider } from '@/components/i18n/I18nProvider'
 import type { MusicPlaybackSnapshot } from '@/lib/native/musicSession'
 import type { NowPlayingState } from '@/lib/native/musicSessionState'
 
@@ -32,16 +33,19 @@ function renderSlot(state: NowPlayingState, overrides: {
   controlPending?: boolean
   controlAnnouncement?: string | null
   positionMs?: number | null
+  language?: 'es' | 'en'
 } = {}) {
   return renderToStaticMarkup(
-    <MusicNowPlayingSlotView
-      state={state}
-      positionMs={overrides.positionMs === undefined ? state.snapshot?.positionMs ?? null : overrides.positionMs}
-      controlPending={overrides.controlPending ?? false}
-      controlAnnouncement={overrides.controlAnnouncement ?? null}
-      onPlay={vi.fn()}
-      onPause={vi.fn()}
-    />,
+    <I18nProvider language={overrides.language ?? 'es'} syncDocumentLanguage={false}>
+      <MusicNowPlayingSlotView
+        state={state}
+        positionMs={overrides.positionMs === undefined ? state.snapshot?.positionMs ?? null : overrides.positionMs}
+        controlPending={overrides.controlPending ?? false}
+        controlAnnouncement={overrides.controlAnnouncement ?? null}
+        onPlay={vi.fn()}
+        onPause={vi.fn()}
+      />
+    </I18nProvider>,
   )
 }
 
@@ -117,6 +121,21 @@ describe('MusicNowPlayingSlotView', () => {
 
   it('fails closed when active status has no confirmed snapshot', () => {
     expect(renderSlot({ status: 'active', snapshot: null, error: null })).toBe('')
+  })
+
+  it('localizes the assistive session error and active card controls in English', () => {
+    const error = renderSlot(
+      { status: 'error', snapshot: null, error: 'native details' },
+      { language: 'en' },
+    )
+    const active = renderSlot(
+      { status: 'active', snapshot: SNAPSHOT, error: null },
+      { language: 'en' },
+    )
+
+    expect(error).toContain('Could not detect current playback.')
+    expect(active).toContain('aria-label="Play Una canción real"')
+    expect(`${error}${active}`).not.toMatch(/No se pudo detectar|Reproducir Una canción real/)
   })
 })
 

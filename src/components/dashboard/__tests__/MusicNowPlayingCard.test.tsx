@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
+import { I18nProvider } from '@/components/i18n/I18nProvider'
 import type { MusicPlaybackSnapshot } from '@/lib/native/musicSession'
 
 import { MusicNowPlayingCard } from '../MusicNowPlayingCard'
@@ -27,15 +28,18 @@ const PLAYING_SNAPSHOT: MusicPlaybackSnapshot = {
 function renderCard(snapshot: MusicPlaybackSnapshot = PLAYING_SNAPSHOT, overrides: {
   positionMs?: number | null
   controlPending?: boolean
+  language?: 'es' | 'en'
 } = {}) {
   return renderToStaticMarkup(
-    <MusicNowPlayingCard
-      snapshot={snapshot}
-      positionMs={overrides.positionMs === undefined ? 90_000 : overrides.positionMs}
-      controlPending={overrides.controlPending ?? false}
-      onPlay={() => undefined}
-      onPause={() => undefined}
-    />,
+    <I18nProvider language={overrides.language ?? 'es'} syncDocumentLanguage={false}>
+      <MusicNowPlayingCard
+        snapshot={snapshot}
+        positionMs={overrides.positionMs === undefined ? 90_000 : overrides.positionMs}
+        controlPending={overrides.controlPending ?? false}
+        onPlay={() => undefined}
+        onPause={() => undefined}
+      />
+    </I18nProvider>,
   )
 }
 
@@ -123,6 +127,20 @@ describe('MusicNowPlayingCard', () => {
     expect(paused).not.toContain('disabled=""')
     expect(pending).toContain('aria-busy="true"')
     expect(pending).toContain('disabled=""')
+  })
+
+  it('localizes fallback artist and play or pause labels through the app provider', () => {
+    const unknownArtist = renderCard({
+      ...PLAYING_SNAPSHOT,
+      artist: null,
+      album: null,
+    }, { language: 'en' })
+    const paused = renderCard({ ...PLAYING_SNAPSHOT, state: 'paused' }, { language: 'en' })
+
+    expect(unknownArtist).toContain('Unknown artist')
+    expect(unknownArtist).toContain('aria-label="Pause Blinding Lights"')
+    expect(paused).toContain('aria-label="Play Blinding Lights"')
+    expect(`${unknownArtist}${paused}`).not.toMatch(/Artista desconocido|Pausar Blinding Lights|Reproducir Blinding Lights/)
   })
 })
 

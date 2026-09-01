@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { Music2, Pause, Play } from 'lucide-react'
 
+import { useI18n } from '@/components/i18n/I18nProvider'
 import type { MusicPlaybackSnapshot } from '@/lib/native/musicSession'
 import { createMusicVisualSeed } from '@/lib/native/musicSessionState'
 
@@ -46,9 +47,10 @@ export function MusicNowPlayingCard({
   onPlay,
   onPause,
 }: MusicNowPlayingCardProps) {
+  const { t } = useI18n()
   const playing = snapshot.state === 'playing'
   const controlAvailable = playing ? snapshot.canPause : snapshot.canPlay
-  const controlLabel = `${playing ? 'Pausar' : 'Reproducir'} ${snapshot.title}`
+  const controlLabel = t(playing ? 'Pausar {title}' : 'Reproducir {title}', { title: snapshot.title })
   const seed = createMusicVisualSeed(snapshot)
   const progress = playbackProgress(positionMs, snapshot.durationMs)
 
@@ -84,7 +86,7 @@ export function MusicNowPlayingCard({
               {snapshot.title}
             </p>
             <p className="mt-0.5 truncate text-[10px] leading-3.5 text-white/66">
-              {snapshot.artist ?? snapshot.album ?? 'Artista desconocido'}
+              {snapshot.artist ?? snapshot.album ?? t('Artista desconocido')}
             </p>
             <div className="mt-1.5 flex min-w-0 items-center gap-2">
               <MusicPulseVisualizer playing={playing} positionMs={positionMs} seed={seed} />

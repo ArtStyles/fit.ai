@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { musicSessionAdapter, type MusicSessionAdapter } from './musicSession'
 import {
   createNowPlayingSessionController,
+  type NowPlayingSessionController,
   type NowPlayingState,
 } from './musicSessionState'
 
@@ -70,6 +71,12 @@ export function createControlPendingTracker(onPendingChange: (pending: boolean) 
   }
 }
 
+export function createNowPlayingRefreshAction(
+  controller: Pick<NowPlayingSessionController, 'refresh'>,
+): () => Promise<void> {
+  return () => controller.refresh()
+}
+
 export function useNowPlayingSession(adapter: MusicSessionAdapter = musicSessionAdapter) {
   const [state, setState] = useState<NowPlayingState>(INITIAL_STATE)
   const [controlPending, setControlPending] = useState(false)
@@ -77,8 +84,11 @@ export function useNowPlayingSession(adapter: MusicSessionAdapter = musicSession
     () => createNowPlayingSessionController(adapter, setState),
     [adapter],
   )
+  const refresh = useMemo(() => createNowPlayingRefreshAction(controller), [controller])
   const controlTracker = useMemo(
     () => createControlPendingTracker(setControlPending),
+    // Pending controls belong to one adapter lifecycle, even though the tracker does not call it directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [adapter],
   )
 
@@ -92,9 +102,9 @@ export function useNowPlayingSession(adapter: MusicSessionAdapter = musicSession
   useEffect(() => {
     return subscribeToForegroundAppState(
       (eventName, listener) => App.addListener(eventName, listener),
-      () => void controller.refresh(),
+      () => void refresh(),
     )
-  }, [controller])
+  }, [refresh])
 
   useEffect(() => () => controlTracker.dispose(), [controlTracker])
 
@@ -110,6 +120,7 @@ export function useNowPlayingSession(adapter: MusicSessionAdapter = musicSession
   return {
     ...state,
     controlPending,
+    refresh,
     play: () => control('play'),
     pause: () => control('pause'),
   }

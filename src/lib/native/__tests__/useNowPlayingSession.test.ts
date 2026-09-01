@@ -13,11 +13,21 @@ vi.mock('../musicSession', () => ({
 }))
 
 import {
+  createNowPlayingRefreshAction,
   createControlPendingTracker,
   subscribeToForegroundAppState,
 } from '../useNowPlayingSession'
 
 describe('now playing hook lifecycles', () => {
+  it('exposes a retry action backed by the real coordinator refresh', async () => {
+    const refresh = vi.fn(async () => undefined)
+    const action = createNowPlayingRefreshAction({ refresh })
+
+    await action()
+
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
   it('removes a delayed app-state listener exactly once after cleanup', async () => {
     let resolveRegistration: (handle: { remove(): Promise<void> }) => void = () => undefined
     const registration = new Promise<{ remove(): Promise<void> }>(resolve => {

@@ -306,6 +306,30 @@ describe('MusicNowPlaying responsive composition', () => {
       await page.close()
     }
   }, 40_000)
+
+  it('consumes English music copy for fallback, controls and rejected-control announcements', async () => {
+    const page = await openFixture(390)
+    try {
+      await page.evaluate(() => {
+        window.__setMusicFixtureLanguage?.('en')
+        window.__setMusicFixture?.({ artist: null, album: null })
+      })
+
+      const play = page.getByRole('button', { name: 'Play CanciónConUnTítuloExtremadamenteLargoSinEspaciosQueDebeQuedarRecortado' })
+      await pwExpect(play).toBeVisible()
+      await pwExpect(page.locator('[data-music-card="true"]')).toContainText('Unknown artist')
+
+      await page.evaluate(() => { window.__rejectNextMusicControl = true })
+      await play.click()
+      await pwExpect(page.locator('[aria-live="polite"]')).toHaveText('Could not control playback.')
+
+      await page.evaluate(() => window.__setMusicFixture?.({ state: 'playing' }))
+      await pwExpect(page.getByRole('button', { name: 'Pause CanciónConUnTítuloExtremadamenteLargoSinEspaciosQueDebeQuedarRecortado' })).toBeVisible()
+      expect(await page.locator('[data-music-now-playing-slot="true"]').innerText()).not.toMatch(/Artista desconocido|Pausar|Reproducir|No se pudo controlar/)
+    } finally {
+      await page.close()
+    }
+  }, 40_000)
 })
 
 declare global {
@@ -320,6 +344,7 @@ declare global {
     __setMusicFixture?: (patch: Partial<MusicPlaybackSnapshot> & {
       controlPending?: boolean
     }) => void
+    __setMusicFixtureLanguage?: (language: 'es' | 'en') => void
     __startSuspendedMusicSessionTransition?: (patch: Partial<MusicPlaybackSnapshot> & {
       controlPending?: boolean
     }) => void

@@ -173,6 +173,34 @@ describe('UI translations', () => {
   })
 
   it.each([
+    ['Integración musical', 'Music integration'],
+    ['Reproductor del sistema Android', 'Android system player'],
+    ['Acceso del sistema', 'System access'],
+    ['Controla la sesión multimedia activa de Android desde Vekira.', 'Control the active Android media session from Vekira.'],
+    ['Consultando Android…', 'Checking Android…'],
+    ['Disponible solo en la app Android', 'Available only in the Android app'],
+    ['Esta integración necesita la aplicación de Vekira para Android.', 'This integration requires the Vekira Android app.'],
+    ['Acceso pendiente en Android', 'Access pending in Android'],
+    ['Android concede acceso amplio a las notificaciones.', 'Android grants broad notification access.'],
+    ['Vekira solo consulta sesiones multimedia y no lee ni almacena el contenido de tus notificaciones.', 'Vekira only checks media sessions and does not read or store the content of your notifications.'],
+    ['Habilitar en Android', 'Enable in Android'],
+    ['Conectado · esperando música', 'Connected · waiting for music'],
+    ['Integración activa', 'Integration active'],
+    ['Gestionar en Android', 'Manage in Android'],
+    ['No se pudo consultar Android', 'Could not check Android'],
+    ['Abrir ajustes de Android', 'Open Android settings'],
+    ['Abriendo Android…', 'Opening Android…'],
+    ['No se pudieron abrir los ajustes de Android.', 'Could not open Android settings.'],
+    ['Artista desconocido', 'Unknown artist'],
+    ['Pausar {title}', 'Pause {title}'],
+    ['Reproducir {title}', 'Play {title}'],
+    ['No se pudo controlar la reproducción.', 'Could not control playback.'],
+    ['No se pudo detectar la reproducción actual.', 'Could not detect current playback.'],
+  ])('translates Android music integration copy: %s', (source, expected) => {
+    expect(translate('en', source)).toBe(expected)
+  })
+
+  it.each([
     ['Recordatorios de entrenamiento', 'Workout reminders'],
     ['Notificación local en tus días preferidos', 'Local notifications on your preferred days'],
     ['Avisos de Vekira', 'Vekira alerts'],

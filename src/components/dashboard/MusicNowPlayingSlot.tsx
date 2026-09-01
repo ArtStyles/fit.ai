@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { useI18n } from '@/components/i18n/I18nProvider'
 import type { NowPlayingState } from '@/lib/native/musicSessionState'
 import {
   createMusicVisualSeed,
@@ -68,10 +69,11 @@ export function MusicNowPlayingSlotView({
   onPlay,
   onPause,
 }: MusicNowPlayingSlotViewProps) {
+  const { t } = useI18n()
   if (state.status === 'error') {
     return (
       <span className="sr-only" aria-live="polite">
-        {SESSION_ERROR_MESSAGE}
+        {t(SESSION_ERROR_MESSAGE)}
       </span>
     )
   }
@@ -158,6 +160,7 @@ export function MusicNowPlayingSlotController({
   session: MusicNowPlayingSession
   positionClock?: MusicPositionClock
 }) {
+  const { t } = useI18n()
   const confirmedSessionId = session.status === 'active'
     ? session.snapshot?.sessionId ?? null
     : null
@@ -205,7 +208,7 @@ export function MusicNowPlayingSlotController({
         confirmedSessionIdRef.current,
         disposedRef.current,
       )) return
-      setControlAnnouncement({ sessionId, message: CONTROL_ERROR_MESSAGE })
+      setControlAnnouncement({ sessionId, message: t(CONTROL_ERROR_MESSAGE) })
       timeoutRef.current = setTimeout(() => {
         timeoutRef.current = null
         if (isMusicControlRequestCurrent(
@@ -218,7 +221,7 @@ export function MusicNowPlayingSlotController({
         }
       }, CONTROL_ANNOUNCEMENT_MS)
     }
-  }, [clearAnnouncement])
+  }, [clearAnnouncement, t])
 
   return (
     <MusicNowPlayingSlotView
