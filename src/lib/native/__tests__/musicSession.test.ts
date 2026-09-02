@@ -12,6 +12,9 @@ const nativeMocks = vi.hoisted(() => ({
   getCurrentSession: vi.fn(),
   play: vi.fn(),
   pause: vi.fn(),
+  previous: vi.fn(),
+  next: vi.fn(),
+  seekTo: vi.fn(),
   addListener: vi.fn(),
 }))
 
@@ -37,6 +40,9 @@ const PLAYING_SNAPSHOT = {
   updatedAtMs: 1_726_000_000_000,
   canPlay: false,
   canPause: true,
+  canSkipPrevious: true,
+  canSkipNext: true,
+  canSeek: true,
 }
 
 describe('music session adapter', () => {
@@ -52,7 +58,13 @@ describe('music session adapter', () => {
 
     await expect(musicSessionAdapter.getAuthorizationStatus()).resolves.toBe('unsupported')
     await expect(musicSessionAdapter.getCurrentSession()).resolves.toBeNull()
+    await expect(musicSessionAdapter.previous('session-1')).resolves.toBeUndefined()
+    await expect(musicSessionAdapter.next('session-1')).resolves.toBeUndefined()
+    await expect(musicSessionAdapter.seekTo('session-1', 42_000)).resolves.toBeUndefined()
     expect(nativeMocks.getAuthorizationStatus).not.toHaveBeenCalled()
+    expect(nativeMocks.previous).not.toHaveBeenCalled()
+    expect(nativeMocks.next).not.toHaveBeenCalled()
+    expect(nativeMocks.seekTo).not.toHaveBeenCalled()
   })
 
   it('unwraps native snapshots and listener events on supported Android', async () => {
@@ -66,5 +78,19 @@ describe('music session adapter', () => {
     await expect(musicSessionAdapter.getCurrentSession()).resolves.toEqual(PLAYING_SNAPSHOT)
     await musicSessionAdapter.addListener('sessionChanged', listener)
     expect(listener).toHaveBeenCalledWith(PLAYING_SNAPSHOT)
+  })
+
+  it('forwards previous, next and seek controls to the supported Android plugin', async () => {
+    await musicSessionAdapter.play('session-1')
+    await musicSessionAdapter.pause('session-1')
+    await musicSessionAdapter.previous('session-1')
+    await musicSessionAdapter.next('session-1')
+    await musicSessionAdapter.seekTo('session-1', 42_000)
+
+    expect(nativeMocks.play).toHaveBeenCalledWith({ sessionId: 'session-1' })
+    expect(nativeMocks.pause).toHaveBeenCalledWith({ sessionId: 'session-1' })
+    expect(nativeMocks.previous).toHaveBeenCalledWith({ sessionId: 'session-1' })
+    expect(nativeMocks.next).toHaveBeenCalledWith({ sessionId: 'session-1' })
+    expect(nativeMocks.seekTo).toHaveBeenCalledWith({ sessionId: 'session-1', positionMs: 42_000 })
   })
 })

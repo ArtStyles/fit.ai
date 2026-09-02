@@ -53,6 +53,9 @@ public class MusicSessionPolicyTest {
             1.0f,
             updatedAtMs,
             true,
+            true,
+            true,
+            true,
             true
         );
     }

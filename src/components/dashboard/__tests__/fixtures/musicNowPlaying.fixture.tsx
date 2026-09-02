@@ -34,6 +34,9 @@ const LONG_SNAPSHOT: MusicPlaybackSnapshot = {
   updatedAtMs: 9_000,
   canPlay: true,
   canPause: true,
+  canSkipPrevious: true,
+  canSkipNext: true,
+  canSeek: true,
 }
 
 const FIXTURE_POSITION_CLOCK: MusicPositionClock = {
@@ -78,8 +81,12 @@ function MusicFixture() {
     requestAnimationFrame(() => { window.__MUSIC_NOW_PLAYING_READY__ = true })
   }, [])
 
-  const runControl = async (action: 'play' | 'pause') => {
+  const runControl = async (
+    action: 'play' | 'pause' | 'previous' | 'next',
+    sessionId: string,
+  ) => {
     window.__musicControlCalls[action] += 1
+    window.__musicControlSessionIds.push(sessionId)
     if (window.__deferNextMusicControl) {
       window.__deferNextMusicControl = false
       try {
@@ -110,8 +117,14 @@ function MusicFixture() {
           error: null,
           controlPending: fixture.controlPending,
           refresh: async () => undefined,
-          play: () => runControl('play'),
-          pause: () => runControl('pause'),
+          play: sessionId => runControl('play', sessionId),
+          pause: sessionId => runControl('pause', sessionId),
+          previous: sessionId => runControl('previous', sessionId),
+          next: sessionId => runControl('next', sessionId),
+          seekTo: async (sessionId, positionMs) => {
+            window.__musicControlSessionIds.push(sessionId)
+            window.__musicControlCalls.seekTo.push(positionMs)
+          },
         }}
       />
       <SuspendedMusicSessionGate suspend={suspendTransition} />
@@ -136,7 +149,8 @@ function LocalizedMusicFixture() {
 const root = document.getElementById('root')
 if (!root) throw new Error('Music now playing fixture root is missing.')
 
-window.__musicControlCalls = { play: 0, pause: 0 }
+window.__musicControlCalls = { play: 0, pause: 0, previous: 0, next: 0, seekTo: [] }
+window.__musicControlSessionIds = []
 window.__deferNextMusicControl = false
 window.__deferredMusicControlSettled = false
 window.__musicSuspendedGateReached = false
@@ -154,7 +168,14 @@ declare global {
     __MUSIC_NOW_PLAYING_READY__?: boolean
     __deferNextMusicControl: boolean
     __deferredMusicControlSettled: boolean
-    __musicControlCalls: { play: number; pause: number }
+    __musicControlCalls: {
+      play: number
+      pause: number
+      previous: number
+      next: number
+      seekTo: number[]
+    }
+    __musicControlSessionIds: string[]
     __musicSuspendedGateReached: boolean
     __rejectDeferredMusicControl?: () => void
     __rejectNextMusicControl: boolean

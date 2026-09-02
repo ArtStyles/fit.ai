@@ -32,6 +32,8 @@ const ENGLISH: Record<string, string> = {
   'Artista desconocido': 'Unknown artist',
   'Pausar {title}': 'Pause {title}',
   'Reproducir {title}': 'Play {title}',
+  'Posición de {title}': 'Position in {title}',
+  '{position} de {duration}': '{position} of {duration}',
   'No se pudo controlar la reproducción.': 'Could not control playback.',
   'No se pudo detectar la reproducción actual.': 'Could not detect current playback.',
   'Preferencias de tu cuenta': 'Your account preferences',

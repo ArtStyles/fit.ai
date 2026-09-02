@@ -18,6 +18,9 @@ public final class MusicSessionPayload {
     private final long updatedAtMs;
     private final boolean canPlay;
     private final boolean canPause;
+    private final boolean canSkipPrevious;
+    private final boolean canSkipNext;
+    private final boolean canSeek;
 
     public MusicSessionPayload(
         String sessionId,
@@ -33,7 +36,10 @@ public final class MusicSessionPayload {
         float playbackSpeed,
         long updatedAtMs,
         boolean canPlay,
-        boolean canPause
+        boolean canPause,
+        boolean canSkipPrevious,
+        boolean canSkipNext,
+        boolean canSeek
     ) {
         this.sessionId = sessionId;
         this.packageName = packageName;
@@ -49,6 +55,9 @@ public final class MusicSessionPayload {
         this.updatedAtMs = updatedAtMs;
         this.canPlay = canPlay;
         this.canPause = canPause;
+        this.canSkipPrevious = canSkipPrevious;
+        this.canSkipNext = canSkipNext;
+        this.canSeek = canSeek;
     }
 
     public String getSessionId() {
@@ -107,6 +116,18 @@ public final class MusicSessionPayload {
         return canPause;
     }
 
+    public boolean canSkipPrevious() {
+        return canSkipPrevious;
+    }
+
+    public boolean canSkipNext() {
+        return canSkipNext;
+    }
+
+    public boolean canSeek() {
+        return canSeek;
+    }
+
     public JSObject toJSObject() {
         JSObject object = new JSObject();
         object.put("sessionId", sessionId);
@@ -123,6 +144,9 @@ public final class MusicSessionPayload {
         object.put("updatedAtMs", updatedAtMs);
         object.put("canPlay", canPlay);
         object.put("canPause", canPause);
+        object.put("canSkipPrevious", canSkipPrevious);
+        object.put("canSkipNext", canSkipNext);
+        object.put("canSeek", canSeek);
         return object;
     }
 

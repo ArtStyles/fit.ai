@@ -36,6 +36,9 @@ const ACTIVE_SNAPSHOT = {
   updatedAtMs: 1_000,
   canPlay: true,
   canPause: true,
+  canSkipPrevious: true,
+  canSkipNext: true,
+  canSeek: true,
 }
 
 function state(status: NowPlayingState['status']): NowPlayingState {

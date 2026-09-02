@@ -113,12 +113,39 @@ public final class MusicSessionPlugin extends Plugin {
 
     @PluginMethod
     public void play(PluginCall call) {
-        dispatchControl(call, true);
+        dispatchSessionControl(call, MusicSessionCoordinator::play);
     }
 
     @PluginMethod
     public void pause(PluginCall call) {
-        dispatchControl(call, false);
+        dispatchSessionControl(call, MusicSessionCoordinator::pause);
+    }
+
+    @PluginMethod
+    public void previous(PluginCall call) {
+        dispatchSessionControl(call, MusicSessionCoordinator::previous);
+    }
+
+    @PluginMethod
+    public void next(PluginCall call) {
+        dispatchSessionControl(call, MusicSessionCoordinator::next);
+    }
+
+    @PluginMethod
+    public void seekTo(PluginCall call) {
+        String sessionId = expectedSessionId(call);
+        if (sessionId == null) {
+            return;
+        }
+        Long positionMs = call.getLong("positionMs");
+        if (positionMs == null || positionMs < 0L) {
+            call.reject("A non-negative seek position is required", "MUSIC_INVALID_SEEK");
+            return;
+        }
+        dispatchControl(
+            call,
+            (coordinator, completion) -> coordinator.seekTo(sessionId, positionMs, completion)
+        );
     }
 
     @Override
@@ -139,7 +166,42 @@ public final class MusicSessionPlugin extends Plugin {
         super.handleOnDestroy();
     }
 
-    private void dispatchControl(PluginCall call, boolean play) {
+    private interface CoordinatorControl {
+        boolean dispatch(
+            MusicSessionCoordinator coordinator,
+            MusicSessionCoordinator.Completion completion
+        );
+    }
+
+    private interface SessionCoordinatorControl {
+        boolean dispatch(
+            MusicSessionCoordinator coordinator,
+            String expectedSessionId,
+            MusicSessionCoordinator.Completion completion
+        );
+    }
+
+    private void dispatchSessionControl(PluginCall call, SessionCoordinatorControl control) {
+        String sessionId = expectedSessionId(call);
+        if (sessionId == null) {
+            return;
+        }
+        dispatchControl(
+            call,
+            (coordinator, completion) -> control.dispatch(coordinator, sessionId, completion)
+        );
+    }
+
+    private static String expectedSessionId(PluginCall call) {
+        String sessionId = call.getString("sessionId");
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            call.reject("A music session identifier is required", "MUSIC_INVALID_SESSION");
+            return null;
+        }
+        return sessionId;
+    }
+
+    private void dispatchControl(PluginCall call, CoordinatorControl control) {
         MusicSessionCoordinator coordinator = coordinatorRef.get();
         if (coordinator == null) {
             rejectUnavailable(call);
@@ -157,9 +219,7 @@ public final class MusicSessionPlugin extends Plugin {
                     call.reject(message, code);
                 }
             };
-        boolean dispatched = play
-            ? coordinator.play(completion)
-            : coordinator.pause(completion);
+        boolean dispatched = control.dispatch(coordinator, completion);
         if (!dispatched) {
             rejectUnavailable(call);
         }
@@ -314,6 +374,21 @@ public final class MusicSessionPlugin extends Plugin {
             @Override
             public void pause() {
                 controller.getTransportControls().pause();
+            }
+
+            @Override
+            public void previous() {
+                controller.getTransportControls().skipToPrevious();
+            }
+
+            @Override
+            public void next() {
+                controller.getTransportControls().skipToNext();
+            }
+
+            @Override
+            public void seekTo(long positionMs) {
+                controller.getTransportControls().seekTo(positionMs);
             }
 
             private void notifyChanged() {

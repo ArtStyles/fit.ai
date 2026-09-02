@@ -101,8 +101,8 @@ public class MusicSessionCoordinatorTest {
 
         assertTrue(fixture.coordinator.getAuthorizationStatus(authorization));
         assertTrue(fixture.coordinator.getCurrentSession(current));
-        assertTrue(fixture.coordinator.play(play));
-        assertTrue(fixture.coordinator.pause(pause));
+        assertTrue(fixture.coordinator.play("selected", play));
+        assertTrue(fixture.coordinator.pause("selected", pause));
         fixture.coordinator.destroy();
         fixture.dispatcher.runAll();
 
@@ -133,8 +133,8 @@ public class MusicSessionCoordinatorTest {
         assertFalse(fixture.coordinator.sessionsChanged());
         assertFalse(fixture.coordinator.getAuthorizationStatus(authorization));
         assertFalse(fixture.coordinator.getCurrentSession(current));
-        assertFalse(fixture.coordinator.play(play));
-        assertFalse(fixture.coordinator.pause(pause));
+        assertFalse(fixture.coordinator.play("selected", play));
+        assertFalse(fixture.coordinator.pause("selected", pause));
         assertEquals(0, authorization.completionCount);
         assertEquals(0, current.completionCount);
         assertEquals(0, play.completionCount);
@@ -313,7 +313,7 @@ public class MusicSessionCoordinatorTest {
         selected.playRelease = playRelease;
         TestCompletion completion = new TestCompletion();
 
-        assertTrue(coordinator.play(completion));
+        assertTrue(coordinator.play("selected", completion));
         assertTrue(selected.playEntered.await(5, TimeUnit.SECONDS));
         boolean destroyReturnedPromptly = destroyWhileBlocked(
             coordinator,
@@ -411,8 +411,8 @@ public class MusicSessionCoordinatorTest {
         TestCompletion play = new TestCompletion();
         TestCompletion pause = new TestCompletion();
 
-        fixture.coordinator.play(play);
-        fixture.coordinator.pause(pause);
+        fixture.coordinator.play("selected", play);
+        fixture.coordinator.pause("selected", pause);
         fixture.dispatcher.runAll();
 
         assertTrue(play.resolved);
@@ -431,14 +431,112 @@ public class MusicSessionCoordinatorTest {
         TestCompletion play = new TestCompletion();
         TestCompletion pause = new TestCompletion();
 
-        fixture.coordinator.play(play);
-        fixture.coordinator.pause(pause);
+        fixture.coordinator.play("selected", play);
+        fixture.coordinator.pause("selected", pause);
         fixture.dispatcher.runAll();
 
         assertTrue(play.resolved);
         assertTrue(pause.resolved);
         assertEquals(1, selected.playCount);
         assertEquals(1, selected.pauseCount);
+    }
+
+    @Test
+    public void supportedExtendedControlsInvokeTheSelectedSessionAndClampSeekToDuration() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session(
+            "selected",
+            "player",
+            "Track",
+            "playing",
+            true,
+            true,
+            true,
+            true,
+            true
+        );
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        TestCompletion previous = new TestCompletion();
+        TestCompletion next = new TestCompletion();
+        TestCompletion seek = new TestCompletion();
+
+        fixture.coordinator.previous("selected", previous);
+        fixture.coordinator.next("selected", next);
+        fixture.coordinator.seekTo("selected", 240_000L, seek);
+        fixture.dispatcher.runAll();
+
+        assertTrue(previous.resolved);
+        assertTrue(next.resolved);
+        assertTrue(seek.resolved);
+        assertEquals(1, selected.previousCount);
+        assertEquals(1, selected.nextCount);
+        assertEquals(1, selected.seekCount);
+        assertEquals(180_000L, selected.lastSeekPositionMs);
+    }
+
+    @Test
+    public void unsupportedExtendedControlsResolveWithoutInvokingTheSelectedSession() {
+        Fixture fixture = new Fixture();
+        FakeSession selected = session("selected", "player", "Track", "playing", true, true);
+        fixture.runtime.sessions = Collections.singletonList(selected);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        TestCompletion previous = new TestCompletion();
+        TestCompletion next = new TestCompletion();
+        TestCompletion seek = new TestCompletion();
+
+        fixture.coordinator.previous("selected", previous);
+        fixture.coordinator.next("selected", next);
+        fixture.coordinator.seekTo("selected", 60_000L, seek);
+        fixture.dispatcher.runAll();
+
+        assertTrue(previous.resolved);
+        assertTrue(next.resolved);
+        assertTrue(seek.resolved);
+        assertEquals(0, selected.previousCount);
+        assertEquals(0, selected.nextCount);
+        assertEquals(0, selected.seekCount);
+    }
+
+    @Test
+    public void transportForAReplacedSessionResolvesWithoutTouchingTheReplacement() {
+        Fixture fixture = new Fixture();
+        FakeSession original = session(
+            "original",
+            "player.a",
+            "Track A",
+            "playing",
+            true,
+            true,
+            true,
+            true,
+            true
+        );
+        FakeSession replacement = session(
+            "replacement",
+            "player.b",
+            "Track B",
+            "playing",
+            true,
+            true,
+            true,
+            true,
+            true
+        );
+        fixture.runtime.sessions = Collections.singletonList(original);
+        fixture.coordinator.start();
+        fixture.dispatcher.runAll();
+        TestCompletion completion = new TestCompletion();
+
+        fixture.coordinator.next("original", completion);
+        fixture.runtime.sessions = Collections.singletonList(replacement);
+        fixture.dispatcher.runAll();
+
+        assertTrue(completion.resolved);
+        assertEquals(0, original.nextCount);
+        assertEquals(0, replacement.nextCount);
     }
 
     @Test
@@ -452,7 +550,7 @@ public class MusicSessionCoordinatorTest {
         fixture.runtime.emitted.clear();
         TestCompletion completion = new TestCompletion();
 
-        fixture.coordinator.play(completion);
+        fixture.coordinator.play("selected", completion);
         fixture.dispatcher.runAll();
 
         assertFalse(completion.resolved);
@@ -475,7 +573,7 @@ public class MusicSessionCoordinatorTest {
         fixture.runtime.emitted.clear();
         TestCompletion completion = new TestCompletion();
 
-        fixture.coordinator.play(completion);
+        fixture.coordinator.play("selected", completion);
         fixture.dispatcher.runAll();
 
         assertFalse(completion.resolved);
@@ -496,7 +594,7 @@ public class MusicSessionCoordinatorTest {
         fixture.runtime.emitted.clear();
         TestCompletion completion = new TestCompletion();
 
-        fixture.coordinator.play(completion);
+        fixture.coordinator.play("selected", completion);
         fixture.dispatcher.runAll();
 
         assertTrue(completion.resolved);
@@ -514,6 +612,20 @@ public class MusicSessionCoordinatorTest {
         boolean canPlay,
         boolean canPause
     ) {
+        return session(id, packageName, title, state, canPlay, canPause, false, false, false);
+    }
+
+    private static FakeSession session(
+        String id,
+        String packageName,
+        String title,
+        String state,
+        boolean canPlay,
+        boolean canPause,
+        boolean canSkipPrevious,
+        boolean canSkipNext,
+        boolean canSeek
+    ) {
         return new FakeSession(
             new MusicSessionPayload(
                 id,
@@ -529,7 +641,10 @@ public class MusicSessionCoordinatorTest {
                 1f,
                 1_000L,
                 canPlay,
-                canPause
+                canPause,
+                canSkipPrevious,
+                canSkipNext,
+                canSeek
             )
         );
     }
@@ -735,6 +850,10 @@ public class MusicSessionCoordinatorTest {
         private int unregisterCount;
         private int playCount;
         private int pauseCount;
+        private int previousCount;
+        private int nextCount;
+        private int seekCount;
+        private long lastSeekPositionMs = -1L;
         private List<String> operations = new ArrayList<>();
         private CountDownLatch snapshotEntered;
         private CountDownLatch snapshotRelease;
@@ -791,6 +910,22 @@ public class MusicSessionCoordinatorTest {
             if (pauseFailure != null) {
                 throw pauseFailure;
             }
+        }
+
+        @Override
+        public void previous() {
+            previousCount++;
+        }
+
+        @Override
+        public void next() {
+            nextCount++;
+        }
+
+        @Override
+        public void seekTo(long positionMs) {
+            seekCount++;
+            lastSeekPositionMs = positionMs;
         }
 
         private void fireChanged() {

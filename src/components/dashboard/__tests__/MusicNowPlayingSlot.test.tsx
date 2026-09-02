@@ -27,6 +27,9 @@ const SNAPSHOT: MusicPlaybackSnapshot = {
   updatedAtMs: 9_000,
   canPlay: true,
   canPause: true,
+  canSkipPrevious: true,
+  canSkipNext: true,
+  canSeek: true,
 }
 
 function renderSlot(state: NowPlayingState, overrides: {
@@ -44,6 +47,9 @@ function renderSlot(state: NowPlayingState, overrides: {
         controlAnnouncement={overrides.controlAnnouncement ?? null}
         onPlay={vi.fn()}
         onPause={vi.fn()}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+        onSeek={vi.fn()}
       />
     </I18nProvider>,
   )

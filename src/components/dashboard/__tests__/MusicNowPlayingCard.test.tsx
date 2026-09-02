@@ -23,6 +23,9 @@ const PLAYING_SNAPSHOT: MusicPlaybackSnapshot = {
   updatedAtMs: 1_000,
   canPlay: true,
   canPause: true,
+  canSkipPrevious: true,
+  canSkipNext: true,
+  canSeek: true,
 }
 
 function renderCard(snapshot: MusicPlaybackSnapshot = PLAYING_SNAPSHOT, overrides: {
@@ -38,6 +41,9 @@ function renderCard(snapshot: MusicPlaybackSnapshot = PLAYING_SNAPSHOT, override
         controlPending={overrides.controlPending ?? false}
         onPlay={() => undefined}
         onPause={() => undefined}
+        onPrevious={() => undefined}
+        onNext={() => undefined}
+        onSeek={() => undefined}
       />
     </I18nProvider>,
   )
@@ -57,6 +63,16 @@ describe('MusicNowPlayingCard', () => {
     expect(html).not.toContain('disabled=""')
   })
 
+  it('renders a stable three-button transport cluster and an accessible seek slider', () => {
+    const html = renderCard()
+
+    expect(html).toContain('aria-label="Anterior"')
+    expect(html).toContain('aria-label="Pausar Blinding Lights"')
+    expect(html).toContain('aria-label="Siguiente"')
+    expect(html).toMatch(/<input(?=[^>]*type="range")(?=[^>]*aria-label="Posición de Blinding Lights")(?=[^>]*min="0")(?=[^>]*max="180000")(?=[^>]*value="90000")[^>]*>/)
+    expect(html).toContain('aria-valuetext="1:30 de 3:00"')
+  })
+
   it('exposes clamped playback progress as semantic values', () => {
     const middle = renderCard()
     const beforeStart = renderCard(PLAYING_SNAPSHOT, { positionMs: -1_000 })
@@ -67,6 +83,7 @@ describe('MusicNowPlayingCard', () => {
     expect(middle).toContain('data-progress-value="0.5"')
     expect(beforeStart).toContain('data-position-ms="0"')
     expect(beforeStart).toContain('data-progress-value="0"')
+    expect(beyondDuration).toContain('data-position-ms="180000"')
     expect(beyondDuration).toContain('data-progress-value="1"')
   })
 
@@ -129,6 +146,19 @@ describe('MusicNowPlayingCard', () => {
     expect(pending).toContain('disabled=""')
   })
 
+  it('keeps unsupported previous, next and seek controls visible but disabled', () => {
+    const html = renderCard({
+      ...PLAYING_SNAPSHOT,
+      canSkipPrevious: false,
+      canSkipNext: false,
+      canSeek: false,
+    })
+
+    expect(html).toMatch(/<button(?=[^>]*aria-label="Anterior")(?=[^>]*disabled="")[^>]*>/)
+    expect(html).toMatch(/<button(?=[^>]*aria-label="Siguiente")(?=[^>]*disabled="")[^>]*>/)
+    expect(html).toMatch(/<input(?=[^>]*type="range")(?=[^>]*disabled="")[^>]*>/)
+  })
+
   it('localizes fallback artist and play or pause labels through the app provider', () => {
     const unknownArtist = renderCard({
       ...PLAYING_SNAPSHOT,
@@ -139,6 +169,8 @@ describe('MusicNowPlayingCard', () => {
 
     expect(unknownArtist).toContain('Unknown artist')
     expect(unknownArtist).toContain('aria-label="Pause Blinding Lights"')
+    expect(unknownArtist).toContain('aria-label="Position in Blinding Lights"')
+    expect(unknownArtist).toContain('aria-valuetext="1:30 of 3:00"')
     expect(paused).toContain('aria-label="Play Blinding Lights"')
     expect(`${unknownArtist}${paused}`).not.toMatch(/Artista desconocido|Pausar Blinding Lights|Reproducir Blinding Lights/)
   })

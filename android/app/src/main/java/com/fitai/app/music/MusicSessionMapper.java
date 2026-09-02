@@ -67,14 +67,8 @@ public final class MusicSessionMapper {
         String album = text(metadata.getText(MediaMetadata.METADATA_KEY_ALBUM));
         String sourceLabel = resolveSourceLabel(context.getPackageManager(), packageName);
         String state = mapState(playbackState.getState());
-        long actions = playbackState.getActions();
-        boolean canPlay = hasAnyAction(
-            actions,
-            PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE
-        );
-        boolean canPause = hasAnyAction(
-            actions,
-            PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
+        MusicSessionCapabilities capabilities = MusicSessionCapabilities.fromActions(
+            playbackState.getActions()
         );
         long position = playbackState.getPosition();
         Long positionMs = position == PlaybackState.PLAYBACK_POSITION_UNKNOWN ? null : position;
@@ -104,8 +98,11 @@ public final class MusicSessionMapper {
             durationMs,
             playbackState.getPlaybackSpeed(),
             updatedAtMs,
-            canPlay,
-            canPause
+            capabilities.canPlay(),
+            capabilities.canPause(),
+            capabilities.canSkipPrevious(),
+            capabilities.canSkipNext(),
+            capabilities.canSeek()
         );
     }
 
@@ -131,10 +128,6 @@ public final class MusicSessionMapper {
             return "paused";
         }
         return "stopped";
-    }
-
-    private static boolean hasAnyAction(long actions, long acceptedActions) {
-        return (actions & acceptedActions) != 0;
     }
 
     private static String firstText(CharSequence primary, CharSequence fallback) {

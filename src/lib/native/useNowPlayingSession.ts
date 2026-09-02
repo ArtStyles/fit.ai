@@ -122,20 +122,23 @@ export function useNowPlayingSession(adapter: MusicSessionAdapter = musicSession
 
   useEffect(() => () => controlTracker.dispose(), [controlTracker])
 
-  const control = useCallback(async (action: 'play' | 'pause') => {
+  const control = useCallback(async (action: () => Promise<void>) => {
     const complete = controlTracker.begin()
     try {
-      await adapter[action]()
+      await action()
     } finally {
       complete()
     }
-  }, [adapter, controlTracker])
+  }, [controlTracker])
 
   return {
     ...state,
     controlPending,
     refresh,
-    play: () => control('play'),
-    pause: () => control('pause'),
+    play: (sessionId: string) => control(() => adapter.play(sessionId)),
+    pause: (sessionId: string) => control(() => adapter.pause(sessionId)),
+    previous: (sessionId: string) => control(() => adapter.previous(sessionId)),
+    next: (sessionId: string) => control(() => adapter.next(sessionId)),
+    seekTo: (sessionId: string, positionMs: number) => control(() => adapter.seekTo(sessionId, positionMs)),
   }
 }

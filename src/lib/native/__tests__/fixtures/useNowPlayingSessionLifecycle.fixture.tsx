@@ -53,6 +53,9 @@ const adapter: MusicSessionAdapter = {
   },
   async play() {},
   async pause() {},
+  async previous() {},
+  async next() {},
+  async seekTo() {},
   async addListener() {
     return { remove: async () => undefined }
   },

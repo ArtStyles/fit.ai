@@ -22,6 +22,9 @@ export type MusicPlaybackSnapshot = {
   updatedAtMs: number
   canPlay: boolean
   canPause: boolean
+  canSkipPrevious: boolean
+  canSkipNext: boolean
+  canSeek: boolean
 }
 
 type NativeSessionEvent = { snapshot: MusicPlaybackSnapshot | null }
@@ -30,8 +33,11 @@ interface NativeMusicSessionPlugin {
   getAuthorizationStatus(): Promise<{ status: MusicSessionAuthorization }>
   openNotificationListenerSettings(): Promise<void>
   getCurrentSession(): Promise<NativeSessionEvent>
-  play(): Promise<void>
-  pause(): Promise<void>
+  play(options: { sessionId: string }): Promise<void>
+  pause(options: { sessionId: string }): Promise<void>
+  previous(options: { sessionId: string }): Promise<void>
+  next(options: { sessionId: string }): Promise<void>
+  seekTo(options: { sessionId: string; positionMs: number }): Promise<void>
   addListener(
     eventName: 'sessionChanged',
     listener: (event: NativeSessionEvent) => void,
@@ -42,8 +48,11 @@ export interface MusicSessionAdapter {
   getAuthorizationStatus(): Promise<MusicSessionAuthorization>
   openNotificationListenerSettings(): Promise<void>
   getCurrentSession(): Promise<MusicPlaybackSnapshot | null>
-  play(): Promise<void>
-  pause(): Promise<void>
+  play(sessionId: string): Promise<void>
+  pause(sessionId: string): Promise<void>
+  previous(sessionId: string): Promise<void>
+  next(sessionId: string): Promise<void>
+  seekTo(sessionId: string, positionMs: number): Promise<void>
   addListener(
     eventName: 'sessionChanged',
     listener: (snapshot: MusicPlaybackSnapshot | null) => void,
@@ -77,14 +86,29 @@ export const musicSessionAdapter: MusicSessionAdapter = {
     return snapshot
   },
 
-  async play() {
+  async play(sessionId) {
     if (!isSupportedAndroid()) return
-    await NativeMusicSession.play()
+    await NativeMusicSession.play({ sessionId })
   },
 
-  async pause() {
+  async pause(sessionId) {
     if (!isSupportedAndroid()) return
-    await NativeMusicSession.pause()
+    await NativeMusicSession.pause({ sessionId })
+  },
+
+  async previous(sessionId) {
+    if (!isSupportedAndroid()) return
+    await NativeMusicSession.previous({ sessionId })
+  },
+
+  async next(sessionId) {
+    if (!isSupportedAndroid()) return
+    await NativeMusicSession.next({ sessionId })
+  },
+
+  async seekTo(sessionId, positionMs) {
+    if (!isSupportedAndroid()) return
+    await NativeMusicSession.seekTo({ sessionId, positionMs })
   },
 
   async addListener(eventName, listener) {

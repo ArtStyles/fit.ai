@@ -20,6 +20,9 @@ type MusicNowPlayingSlotViewProps = {
   controlAnnouncement?: string | null
   onPlay(): void
   onPause(): void
+  onPrevious(): void
+  onNext(): void
+  onSeek(positionMs: number): void
 }
 
 type MusicNowPlayingSession = ReturnType<typeof useNowPlayingSession>
@@ -68,6 +71,9 @@ export function MusicNowPlayingSlotView({
   controlAnnouncement = null,
   onPlay,
   onPause,
+  onPrevious,
+  onNext,
+  onSeek,
 }: MusicNowPlayingSlotViewProps) {
   const { t } = useI18n()
   if (state.status === 'error') {
@@ -92,11 +98,15 @@ export function MusicNowPlayingSlotView({
         className="absolute inset-0 z-10 flex items-center px-3 sm:px-4"
       >
         <MusicNowPlayingCard
+          key={state.snapshot.sessionId}
           snapshot={state.snapshot}
           positionMs={positionMs}
           controlPending={controlPending}
           onPlay={onPlay}
           onPause={onPause}
+          onPrevious={onPrevious}
+          onNext={onNext}
+          onSeek={onSeek}
         />
       </div>
       {controlAnnouncement ? (
@@ -232,10 +242,32 @@ export function MusicNowPlayingSlotController({
         ? controlAnnouncement.message
         : null}
       onPlay={() => {
-        if (confirmedSessionId) void runControl(session.play, confirmedSessionId)
+        if (confirmedSessionId) {
+          void runControl(() => session.play(confirmedSessionId), confirmedSessionId)
+        }
       }}
       onPause={() => {
-        if (confirmedSessionId) void runControl(session.pause, confirmedSessionId)
+        if (confirmedSessionId) {
+          void runControl(() => session.pause(confirmedSessionId), confirmedSessionId)
+        }
+      }}
+      onPrevious={() => {
+        if (confirmedSessionId) {
+          void runControl(() => session.previous(confirmedSessionId), confirmedSessionId)
+        }
+      }}
+      onNext={() => {
+        if (confirmedSessionId) {
+          void runControl(() => session.next(confirmedSessionId), confirmedSessionId)
+        }
+      }}
+      onSeek={nextPositionMs => {
+        if (confirmedSessionId) {
+          void runControl(
+            () => session.seekTo(confirmedSessionId, nextPositionMs),
+            confirmedSessionId,
+          )
+        }
       }}
     />
   )

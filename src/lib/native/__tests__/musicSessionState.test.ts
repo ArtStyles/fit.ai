@@ -28,6 +28,9 @@ const PLAYING_SNAPSHOT: MusicPlaybackSnapshot = {
   updatedAtMs: 1_000,
   canPlay: false,
   canPause: true,
+  canSkipPrevious: true,
+  canSkipNext: true,
+  canSeek: true,
 }
 
 const PAUSED_SNAPSHOT: MusicPlaybackSnapshot = {
@@ -70,6 +73,9 @@ function createHarness(options: HarnessOptions = {}) {
     getCurrentSession: async () => currentReads.shift() ?? options.current ?? null,
     play: async () => undefined,
     pause: async () => undefined,
+    previous: async () => undefined,
+    next: async () => undefined,
+    seekTo: async () => undefined,
     addListener: async (_eventName, nextListener) => {
       listenerCount += 1
       listener = nextListener
@@ -320,6 +326,9 @@ describe('now playing session controller', () => {
       },
       play: async () => undefined,
       pause: async () => undefined,
+      previous: async () => undefined,
+      next: async () => undefined,
+      seekTo: async () => undefined,
       addListener,
     }
     const states: NowPlayingState[] = []
@@ -369,6 +378,9 @@ describe('now playing session controller', () => {
       },
       play: async () => undefined,
       pause: async () => undefined,
+      previous: async () => undefined,
+      next: async () => undefined,
+      seekTo: async () => undefined,
       addListener: async () => ({ remove: vi.fn(async () => undefined) }),
     }
     const controller = createNowPlayingSessionController(adapter, harness.onState, harness.clock)
@@ -400,6 +412,9 @@ describe('now playing session controller', () => {
       }),
       play: async () => undefined,
       pause: async () => undefined,
+      previous: async () => undefined,
+      next: async () => undefined,
+      seekTo: async () => undefined,
       addListener: vi.fn(async () => ({ remove: vi.fn(async () => undefined) })),
     }
     const states: NowPlayingState[] = []
@@ -435,6 +450,9 @@ describe('now playing session controller', () => {
       },
       play: async () => undefined,
       pause: async () => undefined,
+      previous: async () => undefined,
+      next: async () => undefined,
+      seekTo: async () => undefined,
       addListener: async () => ({ remove: vi.fn(async () => undefined) }),
     }
     const states: NowPlayingState[] = []

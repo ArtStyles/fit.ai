@@ -48,6 +48,12 @@ public final class MusicSessionCoordinator {
         void play();
 
         void pause();
+
+        void previous();
+
+        void next();
+
+        void seekTo(long positionMs);
     }
 
     public interface Result<T> {
@@ -73,6 +79,14 @@ public final class MusicSessionCoordinator {
     private boolean destroyed;
     private Session selectedSession;
     private MusicSessionPayload selectedSnapshot;
+
+    private enum ControlAction {
+        PLAY,
+        PAUSE,
+        PREVIOUS,
+        NEXT,
+        SEEK
+    }
 
     public MusicSessionCoordinator(
         Dispatcher dispatcher,
@@ -163,30 +177,53 @@ public final class MusicSessionCoordinator {
         });
     }
 
-    public boolean play(Completion completion) {
-        return control(true, completion);
+    public boolean play(String expectedSessionId, Completion completion) {
+        return control(expectedSessionId, ControlAction.PLAY, 0L, completion);
     }
 
-    public boolean pause(Completion completion) {
-        return control(false, completion);
+    public boolean pause(String expectedSessionId, Completion completion) {
+        return control(expectedSessionId, ControlAction.PAUSE, 0L, completion);
+    }
+
+    public boolean previous(String expectedSessionId, Completion completion) {
+        return control(expectedSessionId, ControlAction.PREVIOUS, 0L, completion);
+    }
+
+    public boolean next(String expectedSessionId, Completion completion) {
+        return control(expectedSessionId, ControlAction.NEXT, 0L, completion);
+    }
+
+    public boolean seekTo(String expectedSessionId, long positionMs, Completion completion) {
+        return control(expectedSessionId, ControlAction.SEEK, positionMs, completion);
     }
 
     public void destroy() {
         dispatcher.shutdown(this::destroyOwned);
     }
 
-    private boolean control(boolean play, Completion completion) {
+    private boolean control(
+        String expectedSessionId,
+        ControlAction action,
+        long positionMs,
+        Completion completion
+    ) {
         return dispatcher.dispatch(() -> {
             long claim = dispatcher.claimIfAccepting();
             if (claim == Dispatcher.CLOSED_CLAIM) {
                 rejectUnavailable(completion);
                 return;
             }
-            controlOwned(claim, play, completion);
+            controlOwned(claim, expectedSessionId, action, positionMs, completion);
         });
     }
 
-    private void controlOwned(long claim, boolean play, Completion completion) {
+    private void controlOwned(
+        long claim,
+        String expectedSessionId,
+        ControlAction action,
+        long positionMs,
+        Completion completion
+    ) {
         try {
             synchronizeOwned(claim, false);
         } catch (RuntimeException unavailable) {
@@ -202,9 +239,15 @@ public final class MusicSessionCoordinator {
             completion.resolve();
             return;
         }
-        boolean capable = play
-            ? selectedSnapshot != null && selectedSnapshot.canPlay()
-            : selectedSnapshot != null && selectedSnapshot.canPause();
+        if (
+            selectedSnapshot == null
+                || expectedSessionId == null
+                || !expectedSessionId.equals(selectedSnapshot.getSessionId())
+        ) {
+            completion.resolve();
+            return;
+        }
+        boolean capable = isCapable(selectedSnapshot, action);
         if (!capable) {
             completion.resolve();
             return;
@@ -218,11 +261,7 @@ public final class MusicSessionCoordinator {
             return;
         }
         try {
-            if (play) {
-                target.play();
-            } else {
-                target.pause();
-            }
+            invokeControl(target, selectedSnapshot, action, positionMs);
         } catch (SecurityException revoked) {
             try {
                 clearOwned(claim, true);
@@ -237,6 +276,52 @@ public final class MusicSessionCoordinator {
             return;
         }
         completion.resolve();
+    }
+
+    private static boolean isCapable(MusicSessionPayload snapshot, ControlAction action) {
+        switch (action) {
+            case PLAY:
+                return snapshot.canPlay();
+            case PAUSE:
+                return snapshot.canPause();
+            case PREVIOUS:
+                return snapshot.canSkipPrevious();
+            case NEXT:
+                return snapshot.canSkipNext();
+            case SEEK:
+                return snapshot.canSeek();
+            default:
+                return false;
+        }
+    }
+
+    private static void invokeControl(
+        Session session,
+        MusicSessionPayload snapshot,
+        ControlAction action,
+        long positionMs
+    ) {
+        switch (action) {
+            case PLAY:
+                session.play();
+                return;
+            case PAUSE:
+                session.pause();
+                return;
+            case PREVIOUS:
+                session.previous();
+                return;
+            case NEXT:
+                session.next();
+                return;
+            case SEEK:
+                long boundedPositionMs = Math.max(0L, positionMs);
+                Long durationMs = snapshot.getDurationMs();
+                if (durationMs != null && durationMs > 0L) {
+                    boundedPositionMs = Math.min(boundedPositionMs, durationMs);
+                }
+                session.seekTo(boundedPositionMs);
+        }
     }
 
     private void refreshAfterTransportFailureOwned(long claim) {
