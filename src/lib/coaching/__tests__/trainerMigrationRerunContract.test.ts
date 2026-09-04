@@ -188,6 +188,31 @@ describe('trainer migration rerun contract', () => {
     expect(declineTap).toContain('downgraded audit allowlist')
   })
 
+  it('proves the elevated preflight keeps its fixed API boundary for authenticated and anonymous roles', () => {
+    const preflightAclLabel = "'preflight is postgres-owned SECURITY DEFINER with exact search path and least-privilege ACLs'"
+    const preflightAclEnd = declineTap.indexOf(preflightAclLabel)
+    const preflightAclStart = declineTap.lastIndexOf('SELECT ok(', preflightAclEnd)
+    const preflightAclAssertion = declineTap.slice(preflightAclStart, preflightAclEnd + preflightAclLabel.length)
+
+    expect(declineMigration).toMatch(/CREATE OR REPLACE FUNCTION public\.trainer_security_preflight\(\)[\s\S]+?SECURITY DEFINER[\s\S]+?SET search_path = public, pg_temp/i)
+    expect(declineMigration).toContain('ALTER FUNCTION public.trainer_security_preflight() OWNER TO postgres')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon')
+    expect(declineMigration).toContain('GRANT EXECUTE ON FUNCTION public.trainer_security_preflight() TO authenticated, service_role')
+
+    expect(preflightAclStart).toBeGreaterThan(-1)
+    expect(preflightAclAssertion).toContain("procedure.oid = 'public.trainer_security_preflight()'::REGPROCEDURE")
+    expect(preflightAclAssertion).toContain('procedure.prosecdef')
+    expect(preflightAclAssertion).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
+    expect(preflightAclAssertion).toContain("owner_role.rolname = 'postgres'")
+    expect(preflightAclAssertion).toContain('expanded_acl.grantee = 0')
+    expect(preflightAclAssertion).toContain("has_function_privilege('authenticated', 'public.trainer_security_preflight()', 'EXECUTE')")
+    expect(preflightAclAssertion).toContain("has_function_privilege('service_role', 'public.trainer_security_preflight()', 'EXECUTE')")
+    expect(preflightAclAssertion).toContain("NOT has_function_privilege('anon', 'public.trainer_security_preflight()', 'EXECUTE')")
+    expect(declineTap).toMatch(/SET LOCAL ROLE authenticated;\s*SELECT is\(\s*public\.trainer_security_preflight\(\),\s*57,[\s\S]+?\);\s*RESET ROLE;/i)
+    expect(declineTap).toMatch(/SET LOCAL ROLE anon;[\s\S]+?SELECT throws_ok\(\s*\$\$SELECT public\.trainer_security_preflight\(\)\$\$,[\s\S]+?'permission denied for function trainer_security_preflight'[\s\S]+?RESET ROLE;/i)
+    expect(declineTap).toMatch(/RESET ROLE;\s*SELECT set_config\('request.jwt.claim.sub', '', TRUE\);\s*SELECT set_config\('request.jwt.claim.role', '', TRUE\);/i)
+  })
+
   it('compares proposal and revision materializations to canonical snapshot order/day pairs', () => {
     for (const rpcPath of ['proposal', 'revision']) {
       const assertion = trainerProgrammingTest.match(

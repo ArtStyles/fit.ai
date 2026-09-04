@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(42);
+SELECT plan(45);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('57000000-0000-4000-8000-000000000001', 'decline-trainer@example.test', '{}'::JSONB),
@@ -414,6 +414,37 @@ SELECT is(
   'preflight recovers after restoring the decline audit allowlist'
 );
 
+SELECT ok(
+  (
+    SELECT procedure.prosecdef
+      AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
+      AND owner_role.rolname = 'postgres'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) expanded_acl
+        WHERE expanded_acl.grantee = 0
+          AND expanded_acl.privilege_type = 'EXECUTE'
+      )
+    FROM pg_proc procedure
+    JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+    WHERE procedure.oid = 'public.trainer_security_preflight()'::REGPROCEDURE
+  )
+  AND has_function_privilege('authenticated', 'public.trainer_security_preflight()', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.trainer_security_preflight()', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.trainer_security_preflight()', 'EXECUTE'),
+  'preflight is postgres-owned SECURITY DEFINER with exact search path and least-privilege ACLs'
+);
+
+SELECT set_config('request.jwt.claim.sub', '57000000-0000-4000-8000-000000000002', TRUE);
+SELECT set_config('request.jwt.claim.role', 'authenticated', TRUE);
+SET LOCAL ROLE authenticated;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'authenticated callers execute the postgres-owned preflight through its fixed boundary'
+);
+RESET ROLE;
+
 SELECT set_config('request.jwt.claim.sub', '', TRUE);
 SELECT set_config('request.jwt.claim.role', 'anon', TRUE);
 SET LOCAL ROLE anon;
@@ -423,7 +454,15 @@ SELECT throws_ok(
   'permission denied for function decline_trainer_assignment',
   'anonymous callers cannot execute the decline RPC'
 );
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  '42501',
+  'permission denied for function trainer_security_preflight',
+  'anonymous callers cannot execute the security preflight'
+);
 RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '', TRUE);
+SELECT set_config('request.jwt.claim.role', '', TRUE);
 
 SELECT ok(
   (
