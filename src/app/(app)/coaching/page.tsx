@@ -57,9 +57,19 @@ export default async function CoachingPage() {
       source_request_id: string | null
     }> | null | undefined)?.find(candidate => candidate.status === 'paused_by_platform')
 
+  const { data: proposedAssignments, error: proposalsError } = await (supabase as any)
+    .from('trainer_plan_assignments')
+    .select('id, relationship_id, trainer_user_id, status, created_at, trainer_assignment_versions(id, version_number, snapshot, status, change_summary)')
+    .eq('client_user_id', user.id)
+    .eq('status', 'proposed')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+  const assignment = selectLatestProposedAssignment(proposedAssignments as Array<any> | null | undefined)
+
   const trainerIds = Array.from(new Set([
     ...requestRows.map(request => request.trainer_user_id),
     ...(relationship ? [relationship.trainer_user_id] : []),
+    ...(assignment ? [assignment.trainer_user_id] : []),
   ]))
   const [{ data: profiles, error: profilesError }, { data: trainers, error: trainersError }] = trainerIds.length
     ? await Promise.all([
@@ -121,17 +131,6 @@ export default async function CoachingPage() {
       .eq('relationship_id', relationship.id)
     : { data: [], error: null }
 
-  const { data: proposedAssignments, error: proposalsError } = relationship
-    ? await (supabase as any)
-      .from('trainer_plan_assignments')
-      .select('id, trainer_user_id, status, created_at, trainer_assignment_versions(id, version_number, snapshot, status, change_summary)')
-      .eq('relationship_id', relationship.id)
-      .eq('client_user_id', user.id)
-      .eq('status', 'proposed')
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-    : { data: [], error: null }
-  const assignment = selectLatestProposedAssignment(proposedAssignments as Array<any> | null | undefined)
   const rawVersion = assignment?.trainer_assignment_versions
   const version = (Array.isArray(rawVersion) ? rawVersion : rawVersion ? [rawVersion] : [])
     .filter((candidate: any) => candidate.status === 'proposed')
@@ -141,15 +140,13 @@ export default async function CoachingPage() {
     try {
       const snapshot = parseTrainerProgramSnapshot(version.snapshot)
       const exerciseIds = snapshot.workouts.flatMap(workout => workout.exercises.map(exercise => exercise.exerciseId))
-      const [trainerResponse, exerciseResponse] = await Promise.all([
-        (supabase as any).from('active_trainer_directory').select('professional_name').eq('user_id', assignment.trainer_user_id).maybeSingle(),
-        (supabase as any).from('exercises').select('id, name').in('id', exerciseIds).eq('is_public', true),
-      ])
+      const exerciseResponse = await (supabase as any).from('exercises').select('id, name').in('id', exerciseIds).eq('is_public', true)
+      const proposalTrainer = profilesById.get(assignment.trainer_user_id) as { username?: string | null; full_name?: string | null } | undefined
       proposedProgram = {
         assignmentId: assignment.id,
         versionNumber: version.version_number,
         changeSummary: version.change_summary,
-        trainerName: trainerResponse.data?.professional_name ?? 'tu entrenador',
+        trainerName: proposalTrainer?.full_name?.trim() || proposalTrainer?.username?.trim() || 'tu entrenador',
         snapshot,
         exerciseNames: Object.fromEntries(((exerciseResponse.data ?? []) as Array<{ id: string; name: string }>).map(exercise => [exercise.id, exercise.name])),
       }

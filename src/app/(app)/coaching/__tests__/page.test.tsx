@@ -10,6 +10,9 @@ vi.mock('@/components/coaching/ClientCoachingStatus', () => ({
   ClientCoachingStatus: ({ requests, relationship }: { requests: Array<{ trainerName: string; serviceName: string }>; relationship?: { id: string; status: string; trainerName: string; serviceName: string } }) => <>{relationship ? <p>{`relationship:${relationship.status}:${relationship.trainerName}:${relationship.serviceName}`}</p> : null}<p>{requests.length ? requests.map(request => `${request.trainerName}:${request.serviceName}`).join(',') : !relationship ? 'No tienes solicitudes de acompañamiento.' : ''}</p></>,
 }))
 vi.mock('@/components/coaching/ConsentManager', () => ({ ConsentManager: ({ relationshipId }: { relationshipId: string }) => <p>consents:{relationshipId}</p> }))
+vi.mock('@/components/coaching/ProposedProgramReview', () => ({
+  ProposedProgramReview: ({ proposal }: { proposal: { trainerName: string; snapshot: { name: string } } }) => <section><h2>{proposal.snapshot.name}</h2><p>{`proposal-trainer:${proposal.trainerName}`}</p><button type="button">No aceptar rutina</button></section>,
+}))
 
 function requestQuery(
   result: { data: unknown; error: unknown },
@@ -19,6 +22,8 @@ function requestQuery(
   options: {
     errors?: { relationship?: unknown; profiles?: unknown; directory?: unknown }
     services?: Record<string, { data: unknown; error: unknown }>
+    proposals?: { data: unknown; error: unknown }
+    exercises?: { data: unknown; error: unknown }
   } = {},
 ) {
   const requestLimit = vi.fn(async () => result)
@@ -38,6 +43,17 @@ function requestQuery(
   const profileSelect = vi.fn(() => ({ in: profileIn }))
   const directoryIn = vi.fn(async () => ({ data: directory, error: options.errors?.directory ?? null }))
   const directorySelect = vi.fn(() => ({ in: directoryIn }))
+  const proposalResult = Promise.resolve(options.proposals ?? { data: [], error: null })
+  const proposalQuery: any = {}
+  const proposalEq = vi.fn(() => proposalQuery)
+  const proposalOrder = vi.fn(() => proposalQuery)
+  proposalQuery.eq = proposalEq
+  proposalQuery.order = proposalOrder
+  proposalQuery.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => proposalResult.then(resolve, reject)
+  const proposalSelect = vi.fn(() => proposalQuery)
+  const exercisePublicEq = vi.fn(async () => options.exercises ?? { data: [], error: null })
+  const exerciseIn = vi.fn(() => ({ eq: exercisePublicEq }))
+  const exerciseSelect = vi.fn(() => ({ in: exerciseIn }))
   const emptyQuery: any = {
     select: vi.fn(() => emptyQuery),
     eq: vi.fn(() => emptyQuery),
@@ -46,9 +62,9 @@ function requestQuery(
     maybeSingle: vi.fn(async () => ({ data: null, error: null })),
     then: (resolve: (value: unknown) => unknown) => resolve({ data: [], error: null }),
   }
-  const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : table === 'coaching_requests' ? requestSelect : table === 'public_profiles' ? profileSelect : table === 'active_trainer_directory' ? directorySelect : emptyQuery.select }))
+  const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : table === 'coaching_requests' ? requestSelect : table === 'public_profiles' ? profileSelect : table === 'active_trainer_directory' ? directorySelect : table === 'trainer_plan_assignments' ? proposalSelect : table === 'exercises' ? exerciseSelect : emptyQuery.select }))
   const rpc = vi.fn(async (_name: string, args: { trainer_slug: string }) => options.services?.[args.trainer_slug] ?? { data: [], error: null })
-  return { from, rpc, order, requestLimit, requestSelect, relationshipSelect, profileIn, directoryIn }
+  return { from, rpc, order, requestLimit, requestSelect, relationshipSelect, profileIn, directoryIn, proposalEq, proposalOrder }
 }
 
 describe('CoachingPage', () => {
@@ -167,5 +183,74 @@ describe('CoachingPage', () => {
     expect(html).toContain('Algunos servicios de acompañamiento no se pudieron cargar.')
     expect(html).not.toContain('Servicio de acompañamiento no disponible')
     expect(supabase.rpc).toHaveBeenCalledWith('get_requestable_trainer_services', { trainer_slug: 'marina-perez' })
+  })
+
+  it('renders an ended relationship proposal from the authenticated client scope without exposing relationship controls', async () => {
+    const supabase = requestQuery(
+      { data: [], error: null },
+      [],
+      [{ id: 'trainer-ended', username: 'ines', full_name: 'Inés Torres', avatar_url: null }],
+      [],
+      {
+        proposals: {
+          data: [{
+            id: '11111111-1111-4111-8111-111111111111',
+            relationship_id: 'ended-relationship',
+            trainer_user_id: 'trainer-ended',
+            status: 'proposed',
+            created_at: '2026-09-04T12:00:00.000Z',
+            trainer_assignment_versions: [{
+              id: '22222222-2222-4222-8222-222222222222',
+              version_number: 1,
+              status: 'proposed',
+              change_summary: 'Propuesta pendiente al cerrar la relación',
+              snapshot: {
+                schemaVersion: 1,
+                name: 'Rutina pendiente',
+                goal: 'Fuerza',
+                description: 'Revisión segura',
+                daysPerWeek: 1,
+                workouts: [{
+                  sourceTemplateWorkoutId: '33333333-3333-4333-8333-333333333333',
+                  name: 'Día uno',
+                  dayOfWeek: 1,
+                  orderInPlan: 1,
+                  exercises: [{
+                    sourceTemplateExerciseId: '44444444-4444-4444-8444-444444444444',
+                    exerciseId: '55555555-5555-4555-8555-555555555555',
+                    orderIndex: 1,
+                    sets: 3,
+                    reps: 8,
+                    weightKg: null,
+                    targetRpe: 7,
+                    restSeconds: 60,
+                    notes: null,
+                  }],
+                }],
+              },
+            }],
+          }],
+          error: null,
+        },
+        exercises: { data: [{ id: '55555555-5555-4555-8555-555555555555', name: 'Sentadilla' }], error: null },
+      },
+    )
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const { default: CoachingPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachingPage())
+
+    expect(supabase.proposalEq).toHaveBeenCalledWith('client_user_id', 'client-1')
+    expect(supabase.proposalEq).toHaveBeenCalledWith('status', 'proposed')
+    expect(supabase.proposalOrder.mock.calls).toEqual([
+      ['created_at', { ascending: false }],
+      ['id', { ascending: false }],
+    ])
+    expect(supabase.profileIn).toHaveBeenCalledWith('id', ['trainer-ended'])
+    expect(html).toContain('Rutina pendiente')
+    expect(html).toContain('proposal-trainer:Inés Torres')
+    expect(html).toContain('No aceptar rutina')
+    expect(html).not.toContain('relationship:')
+    expect(html).not.toContain('consents:')
   })
 })

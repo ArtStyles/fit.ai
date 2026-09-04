@@ -661,6 +661,74 @@ SELECT dblink_disconnect('same_key_decline_a');
 SELECT dblink_disconnect('same_key_decline_b');
 `
 
+const trainerDeclineRerunSnapshotSql = `
+DROP TABLE IF EXISTS public.trainer_decline_rerun_snapshot;
+CREATE TABLE public.trainer_decline_rerun_snapshot (snapshot JSONB NOT NULL);
+INSERT INTO public.trainer_decline_rerun_snapshot (snapshot)
+SELECT jsonb_build_object(
+  'assignment', (SELECT to_jsonb(assignment_row) FROM public.trainer_plan_assignments assignment_row
+    WHERE assignment_row.id = '57b00000-0000-4000-8000-000000000061'),
+  'version', (SELECT to_jsonb(version_row) FROM public.trainer_assignment_versions version_row
+    WHERE version_row.id = '57b00000-0000-4000-8000-000000000071'),
+  'plan', (SELECT to_jsonb(plan_row) FROM public.workout_plans plan_row
+    WHERE plan_row.id = '57b00000-0000-4000-8000-000000000081'),
+  'audits', (SELECT COALESCE(jsonb_agg(to_jsonb(audit_row) ORDER BY audit_row.id), '[]'::JSONB)
+    FROM public.professional_audit_logs audit_row
+    WHERE audit_row.entity_id = '57b00000-0000-4000-8000-000000000061'
+      AND audit_row.action = 'declined'),
+  'notifications', (SELECT COALESCE(jsonb_agg(to_jsonb(notification_row) ORDER BY notification_row.id), '[]'::JSONB)
+    FROM public.product_notifications notification_row
+    WHERE notification_row.dedupe_key = 'coaching-assignment-declined:57b00000-0000-4000-8000-000000000061'),
+  'marker', public.trainer_security_preflight()
+);
+DO $$
+DECLARE captured JSONB;
+BEGIN
+  SELECT snapshot INTO captured FROM public.trainer_decline_rerun_snapshot;
+  IF captured->'assignment'->>'status' <> 'cancelled'
+    OR captured->'version'->>'status' <> 'cancelled'
+    OR (captured->'plan'->>'is_active')::BOOLEAN
+    OR jsonb_array_length(captured->'audits') <> 1
+    OR jsonb_array_length(captured->'notifications') <> 1
+    OR (captured->>'marker')::INTEGER <> 57
+  THEN
+    RAISE EXCEPTION 'durable 057 decline snapshot is incomplete: %', captured;
+  END IF;
+END;
+$$;
+`
+
+const trainerDeclineRerunVerifySql = `
+DO $$
+DECLARE
+  before_snapshot JSONB;
+  after_snapshot JSONB;
+BEGIN
+  SELECT snapshot INTO before_snapshot FROM public.trainer_decline_rerun_snapshot;
+  SELECT jsonb_build_object(
+    'assignment', (SELECT to_jsonb(assignment_row) FROM public.trainer_plan_assignments assignment_row
+      WHERE assignment_row.id = '57b00000-0000-4000-8000-000000000061'),
+    'version', (SELECT to_jsonb(version_row) FROM public.trainer_assignment_versions version_row
+      WHERE version_row.id = '57b00000-0000-4000-8000-000000000071'),
+    'plan', (SELECT to_jsonb(plan_row) FROM public.workout_plans plan_row
+      WHERE plan_row.id = '57b00000-0000-4000-8000-000000000081'),
+    'audits', (SELECT COALESCE(jsonb_agg(to_jsonb(audit_row) ORDER BY audit_row.id), '[]'::JSONB)
+      FROM public.professional_audit_logs audit_row
+      WHERE audit_row.entity_id = '57b00000-0000-4000-8000-000000000061'
+        AND audit_row.action = 'declined'),
+    'notifications', (SELECT COALESCE(jsonb_agg(to_jsonb(notification_row) ORDER BY notification_row.id), '[]'::JSONB)
+      FROM public.product_notifications notification_row
+      WHERE notification_row.dedupe_key = 'coaching-assignment-declined:57b00000-0000-4000-8000-000000000061'),
+    'marker', public.trainer_security_preflight()
+  ) INTO after_snapshot;
+  IF before_snapshot IS DISTINCT FROM after_snapshot THEN
+    RAISE EXCEPTION 'migration 057 changed durable decline evidence: before=%, after=%', before_snapshot, after_snapshot;
+  END IF;
+END;
+$$;
+DROP TABLE public.trainer_decline_rerun_snapshot;
+`
+
 // Hold the relationship lock in the real revocation transaction, then dispatch
 // the measurements RPC in a second authenticated connection. The reader must
 // recheck after the revocation commits and return only the generic error.
@@ -1195,8 +1263,6 @@ try {
   runPsql(detailRevocationRaceSql, 'running committed concurrent detail revocation race')
   runPsql(summarySuspensionRaceSql, 'running committed concurrent summary suspension race')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
-  runPsql(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race')
-  runPsql(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race')
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
@@ -1204,6 +1270,11 @@ try {
     'reapplying trainer migrations 040-051, 053, 056, 057 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
+  runPsql(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race')
+  runPsql(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race')
+  runPsql(trainerDeclineRerunSnapshotSql, 'capturing durable 057 decline state')
+  runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 against durable decline evidence')
+  runPsql(trainerDeclineRerunVerifySql, 'verifying migration 057 rerun preserves declined evidence')
   runPsql(conversionFunnelRerunFixtureSql, 'seeding committed conversion rerun fixture')
   runPsql(readMigration('050_product_events_conversion_funnel.sql'), 'reapplying migration 050 against committed conversion rows')
   runPsql(conversionFunnelRerunVerifySql, 'verifying conversion rows after migration 050 rerun')

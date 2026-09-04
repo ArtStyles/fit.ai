@@ -52,7 +52,7 @@ Detener nuevas solicitudes y publicaciones, suspender al actor cuando correspond
 - consentimiento ausente o revocación que no surte efecto en la siguiente operación;
 - fuga de contacto, credenciales, notas, medidas o rutas de storage en analytics/logs.
 
-Rollback: conservar datos/migraciones 040–057 y corregir solo hacia delante; no restaurar la sustracción defectuosa de días, no borrar tablas, columnas, auditoría ni ejercicios anexados, ni reescribir el historial de migraciones. Seguir [Respuesta a incidentes y Rollback](./trainer-marketplace-runbook.md#respuesta-a-incidentes).
+Rollback: conservar datos/migraciones 040–057 y corregir solo hacia delante; en un entorno ya desplegado no repetir la 045 ni la secuencia histórica 040–057 sobre evidencia posterior a la 057. No restaurar la sustracción defectuosa de días, no borrar tablas, columnas, auditoría ni ejercicios anexados, ni reescribir el historial de migraciones. Seguir [Respuesta a incidentes y Rollback](./trainer-marketplace-runbook.md#respuesta-a-incidentes).
 
 ## Aprobación previa al lanzamiento (completar manualmente)
 

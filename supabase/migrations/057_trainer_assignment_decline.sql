@@ -242,6 +242,7 @@ CREATE OR REPLACE FUNCTION public.trainer_security_preflight()
 RETURNS INTEGER
 LANGUAGE plpgsql
 STABLE
+SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
@@ -277,6 +278,7 @@ BEGIN
     OR has_function_privilege('anon', 'public.decline_trainer_assignment(uuid,text,text)', 'EXECUTE')
     OR NOT has_function_privilege('authenticated', 'public.decline_trainer_assignment(uuid,text,text)', 'EXECUTE')
     OR NOT has_function_privilege('service_role', 'public.decline_trainer_assignment(uuid,text,text)', 'EXECUTE')
+    OR NOT public.is_professional_audit_event_allowed('trainer_plan_assignment', 'declined')
     OR NOT EXISTS (
       SELECT 1
       FROM pg_proc procedure
@@ -301,18 +303,37 @@ BEGIN
       WHERE constraint_row.conrelid = 'public.trainer_plan_assignments'::REGCLASS
         AND constraint_row.conname = 'trainer_plan_assignments_decline_idempotency_key_check'
         AND constraint_row.contype = 'c'
+        AND constraint_row.convalidated
+        AND pg_get_expr(constraint_row.conbin, constraint_row.conrelid) =
+          '((decline_idempotency_key IS NULL) OR ((char_length(btrim(decline_idempotency_key)) >= 1) AND (char_length(btrim(decline_idempotency_key)) <= 200)))'
     )
     OR NOT EXISTS (
       SELECT 1
       FROM pg_class index_row
       JOIN pg_namespace namespace_row ON namespace_row.oid = index_row.relnamespace
       JOIN pg_index index_definition ON index_definition.indexrelid = index_row.oid
+      JOIN pg_attribute client_column
+        ON client_column.attrelid = index_definition.indrelid
+       AND client_column.attname = 'client_user_id'
+       AND NOT client_column.attisdropped
+      JOIN pg_attribute decline_column
+        ON decline_column.attrelid = index_definition.indrelid
+       AND decline_column.attname = 'decline_idempotency_key'
+       AND NOT decline_column.attisdropped
       WHERE namespace_row.nspname = 'public'
         AND index_row.relname = 'trainer_plan_assignments_decline_idempotency_unique'
         AND index_definition.indrelid = 'public.trainer_plan_assignments'::REGCLASS
+        AND index_definition.indnkeyatts = 2
+        AND index_definition.indnatts = 2
+        AND index_definition.indexprs IS NULL
+        AND index_definition.indkey[0] = client_column.attnum
+        AND index_definition.indkey[1] = decline_column.attnum
         AND index_definition.indisunique
+        AND index_definition.indisvalid
+        AND index_definition.indisready
+        AND index_definition.indislive
         AND index_definition.indpred IS NOT NULL
-        AND pg_get_indexdef(index_row.oid) LIKE '%(client_user_id, decline_idempotency_key)%'
+        AND pg_get_expr(index_definition.indpred, index_definition.indrelid) = '(decline_idempotency_key IS NOT NULL)'
     )
   THEN
     RAISE EXCEPTION 'TRAINER_SECURITY_PREFLIGHT_FAILED';

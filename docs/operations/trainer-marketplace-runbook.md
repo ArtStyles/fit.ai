@@ -339,7 +339,13 @@ La retención futura requiere diseño y migración independiente con revisión l
 Las migraciones 040–057 son aditivas. Tras un despliegue exitoso de la 057,
 el rollback es solo hacia delante: no ejecutar una down migration destructiva,
 no eliminar tablas/columnas, no borrar auditoría, no eliminar ejercicios
-anexados y nunca restaurar la sustracción defectuosa de días.
+anexados y nunca restaurar la sustracción defectuosa de días. En un entorno ya
+desplegado tampoco se debe volver a ejecutar la migración histórica 045 ni la
+secuencia completa 040–057 sobre evidencia creada por la 057: la 045 contiene
+el dominio de auditoría anterior a `trainer_plan_assignment/declined`. Cualquier
+reparación posterior se entrega como una migración nueva, revisada y solo hacia
+delante; la reaplicación aislada de 057 se reserva para su prueba de
+rerunnabilidad documentada en una base descartable.
 
 Procedimiento posterior a la 057:
 

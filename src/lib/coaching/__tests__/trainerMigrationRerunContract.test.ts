@@ -21,6 +21,8 @@ const isoRepair = readFileSync(
 )
 const declineMigrationUrl = new URL('../../../../supabase/migrations/057_trainer_assignment_decline.sql', import.meta.url)
 const declineMigration = existsSync(declineMigrationUrl) ? readFileSync(declineMigrationUrl, 'utf8') : ''
+const declineTapUrl = new URL('../../../../supabase/tests/057_trainer_assignment_decline_test.sql', import.meta.url)
+const declineTap = existsSync(declineTapUrl) ? readFileSync(declineTapUrl, 'utf8') : ''
 const trainerRunner = readFileSync(
   new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url),
   'utf8',
@@ -142,6 +144,48 @@ describe('trainer migration rerun contract', () => {
     expect(declineMigration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS trainer_plan_assignments_decline_idempotency_unique')
     expect(trainerRunner).toMatch(/running 056 trainer template exercise batch append pgTAP suite[\s\S]+applying migration 057[\s\S]+reapplying migration 057[\s\S]+running 057 trainer assignment decline pgTAP suite/i)
     expect(trainerRunner).toMatch(/running 057 trainer assignment decline pgTAP suite[\s\S]+runPsql\(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race'\)[\s\S]+runPsql\(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race'\)/i)
+  })
+
+  it('replays whole history before decline evidence and reruns only 057 over the durable decline fixture', () => {
+    const execution = trainerRunner.slice(trainerRunner.indexOf('let started = false'))
+    const wholeHistoryReplay = execution.indexOf('trainerMigrationFiles.map(readMigration)')
+    const acceptVsDeclineRace = execution.indexOf('runPsql(acceptVsDeclineRaceSql')
+    const sameKeyDeclineRace = execution.indexOf('runPsql(sameKeyDeclineRaceSql')
+    const declineSnapshot = execution.indexOf("runPsql(trainerDeclineRerunSnapshotSql, 'capturing durable 057 decline state')")
+    const declineOnlyReplay = execution.indexOf("runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 against durable decline evidence')")
+    const declineVerification = execution.indexOf("runPsql(trainerDeclineRerunVerifySql, 'verifying migration 057 rerun preserves declined evidence')")
+
+    expect(wholeHistoryReplay).toBeGreaterThan(-1)
+    expect(wholeHistoryReplay).toBeLessThan(acceptVsDeclineRace)
+    expect(wholeHistoryReplay).toBeLessThan(sameKeyDeclineRace)
+    expect(declineSnapshot).toBeGreaterThan(sameKeyDeclineRace)
+    expect(declineOnlyReplay).toBeGreaterThan(declineSnapshot)
+    expect(declineVerification).toBeGreaterThan(declineOnlyReplay)
+    expect(execution.slice(sameKeyDeclineRace)).not.toContain('trainerMigrationFiles.map(readMigration)')
+  })
+
+  it('pins the exact decline check, index catalog identity, and audit allowlist in preflight and pgTAP tamper coverage', () => {
+    const expectedCheck = '((decline_idempotency_key IS NULL) OR ((char_length(btrim(decline_idempotency_key)) >= 1) AND (char_length(btrim(decline_idempotency_key)) <= 200)))'
+
+    expect(declineMigration).toContain('constraint_row.convalidated')
+    expect(declineMigration).toContain(expectedCheck)
+    expect(declineMigration).toContain('index_definition.indnkeyatts = 2')
+    expect(declineMigration).toContain('index_definition.indnatts = 2')
+    expect(declineMigration).toContain('index_definition.indexprs IS NULL')
+    expect(declineMigration).toContain('index_definition.indkey[0] = client_column.attnum')
+    expect(declineMigration).toContain('index_definition.indkey[1] = decline_column.attnum')
+    for (const flag of ['indisunique', 'indisvalid', 'indisready', 'indislive']) {
+      expect(declineMigration).toContain(`index_definition.${flag}`)
+    }
+    expect(declineMigration).toContain("pg_get_expr(index_definition.indpred, index_definition.indrelid) = '(decline_idempotency_key IS NOT NULL)'")
+    expect(declineMigration).toContain("is_professional_audit_event_allowed('trainer_plan_assignment', 'declined')")
+
+    expect(declineTap).toContain(expectedCheck)
+    expect(declineTap).toContain('AND convalidated')
+    expect(declineTap).toContain('index_definition.indexprs IS NULL')
+    expect(declineTap).toContain('CHECK (TRUE)')
+    expect(declineTap).toContain('decline_idempotency_key IS NULL')
+    expect(declineTap).toContain('downgraded audit allowlist')
   })
 
   it('compares proposal and revision materializations to canonical snapshot order/day pairs', () => {

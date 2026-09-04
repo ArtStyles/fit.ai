@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(36);
+SELECT plan(42);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('57000000-0000-4000-8000-000000000001', 'decline-trainer@example.test', '{}'::JSONB),
@@ -110,20 +110,40 @@ SELECT ok(
     WHERE conrelid = 'public.trainer_plan_assignments'::REGCLASS
       AND conname = 'trainer_plan_assignments_decline_idempotency_key_check'
       AND contype = 'c'
+      AND convalidated
+      AND pg_get_expr(conbin, conrelid) =
+        '((decline_idempotency_key IS NULL) OR ((char_length(btrim(decline_idempotency_key)) >= 1) AND (char_length(btrim(decline_idempotency_key)) <= 200)))'
   ),
-  'decline idempotency has a named check constraint'
+  'decline idempotency has the exact validated nullable trimmed-length check'
 );
 SELECT ok(
   EXISTS (
     SELECT 1
     FROM pg_class index_row
     JOIN pg_index index_definition ON index_definition.indexrelid = index_row.oid
+    JOIN pg_attribute client_column
+      ON client_column.attrelid = index_definition.indrelid
+     AND client_column.attname = 'client_user_id'
+     AND NOT client_column.attisdropped
+    JOIN pg_attribute decline_column
+      ON decline_column.attrelid = index_definition.indrelid
+     AND decline_column.attname = 'decline_idempotency_key'
+     AND NOT decline_column.attisdropped
     WHERE index_row.relname = 'trainer_plan_assignments_decline_idempotency_unique'
       AND index_definition.indrelid = 'public.trainer_plan_assignments'::REGCLASS
+      AND index_definition.indnkeyatts = 2
+      AND index_definition.indnatts = 2
+      AND index_definition.indexprs IS NULL
+      AND index_definition.indkey[0] = client_column.attnum
+      AND index_definition.indkey[1] = decline_column.attnum
       AND index_definition.indisunique
+      AND index_definition.indisvalid
+      AND index_definition.indisready
+      AND index_definition.indislive
       AND index_definition.indpred IS NOT NULL
+      AND pg_get_expr(index_definition.indpred, index_definition.indrelid) = '(decline_idempotency_key IS NOT NULL)'
   ),
-  'decline idempotency has an owner-scoped partial unique index'
+  'decline idempotency has the exact live owner-scoped partial unique index'
 );
 SELECT ok(
   public.is_professional_audit_event_allowed('trainer_plan_assignment', 'declined'),
@@ -319,6 +339,79 @@ SELECT is(
   (SELECT count(*) FROM public.professional_audit_logs WHERE action = 'declined'),
   3::BIGINT,
   'only successful first writes produce decline audit rows'
+);
+
+CREATE TEMP TABLE decline_catalog_restore (allowlist_ddl TEXT NOT NULL);
+INSERT INTO decline_catalog_restore (allowlist_ddl)
+SELECT pg_get_functiondef('public.is_professional_audit_event_allowed(text,text)'::REGPROCEDURE);
+
+ALTER TABLE public.trainer_plan_assignments
+  DROP CONSTRAINT trainer_plan_assignments_decline_idempotency_key_check;
+ALTER TABLE public.trainer_plan_assignments
+  ADD CONSTRAINT trainer_plan_assignments_decline_idempotency_key_check CHECK (TRUE);
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects a weakened decline idempotency check'
+);
+ALTER TABLE public.trainer_plan_assignments
+  DROP CONSTRAINT trainer_plan_assignments_decline_idempotency_key_check;
+ALTER TABLE public.trainer_plan_assignments
+  ADD CONSTRAINT trainer_plan_assignments_decline_idempotency_key_check
+  CHECK (
+    decline_idempotency_key IS NULL
+    OR char_length(btrim(decline_idempotency_key)) BETWEEN 1 AND 200
+  );
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring the exact decline idempotency check'
+);
+
+DROP INDEX public.trainer_plan_assignments_decline_idempotency_unique;
+CREATE UNIQUE INDEX trainer_plan_assignments_decline_idempotency_unique
+  ON public.trainer_plan_assignments (client_user_id, decline_idempotency_key)
+  WHERE decline_idempotency_key IS NULL;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects the wrong decline index predicate'
+);
+DROP INDEX public.trainer_plan_assignments_decline_idempotency_unique;
+CREATE UNIQUE INDEX trainer_plan_assignments_decline_idempotency_unique
+  ON public.trainer_plan_assignments (client_user_id, decline_idempotency_key)
+  WHERE decline_idempotency_key IS NOT NULL;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring the exact decline index'
+);
+
+CREATE OR REPLACE FUNCTION public.is_professional_audit_event_allowed(
+  p_entity_type TEXT,
+  p_action TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$ SELECT FALSE $$;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects a downgraded audit allowlist'
+);
+DO $restore$
+DECLARE definition TEXT;
+BEGIN
+  SELECT allowlist_ddl INTO definition FROM decline_catalog_restore;
+  EXECUTE definition;
+END;
+$restore$;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring the decline audit allowlist'
 );
 
 SELECT set_config('request.jwt.claim.sub', '', TRUE);
