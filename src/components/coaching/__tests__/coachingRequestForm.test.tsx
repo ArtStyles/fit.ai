@@ -237,6 +237,23 @@ describe('coaching request browser interactions', () => {
     }
   })
 
+  it('removes sibling requests cancelled atomically when accepting the same client', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=success&sameClient=1`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      const acceptButtons = page.getByRole('button', { name: 'Aceptar' })
+      expect(await acceptButtons.count()).toBe(2)
+      await acceptButtons.first().click()
+      await page.getByRole('status').filter({ hasText: 'Ana Pérez ya forma parte de tu acompañamiento.' }).waitFor({ state: 'visible' })
+      expect(await page.getByText('Servicio alternativo').count()).toBe(0)
+      expect(await acceptButtons.count()).toBe(0)
+    } finally {
+      await page.close()
+    }
+  })
+
   it('removes a terminal coach request and refreshes for both acceptance success and a refreshed race conflict', async () => {
     for (const mode of ['success', 'conflict'] as const) {
       const page = await browser.newPage()

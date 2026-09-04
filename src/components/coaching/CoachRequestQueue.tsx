@@ -39,9 +39,10 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
   const [acceptedClient, setAcceptedClient] = useState<Pick<CoachRequest, 'clientId' | 'clientName'> | null>(null)
   const attemptKeys = useRef(new Map<string, string>())
 
-  function finishTerminalRequest(requestId: string) {
-    attemptKeys.current.delete(requestId)
-    setVisibleRequests(current => current.filter(request => request.id !== requestId))
+  function finishTerminalRequest(requestId: string, additionallyRemovedIds: string[] = []) {
+    const removedIds = new Set([requestId, ...additionallyRemovedIds])
+    removedIds.forEach(removedId => attemptKeys.current.delete(removedId))
+    setVisibleRequests(current => current.filter(request => !removedIds.has(request.id)))
     router.refresh()
   }
 
@@ -60,7 +61,7 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
       if (result.ok || result.refreshed) {
         const request = visibleRequests.find(item => item.id === requestId)
         if (result.ok && request) setAcceptedClient({ clientId: request.clientId, clientName: request.clientName })
-        finishTerminalRequest(requestId)
+        finishTerminalRequest(requestId, result.ok ? result.cancelledRequestIds : [])
       }
     } catch {
       setMessage({ text: 'No se pudo aceptar la solicitud.', isError: true })

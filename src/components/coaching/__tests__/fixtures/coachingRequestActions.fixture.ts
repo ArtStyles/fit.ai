@@ -17,9 +17,10 @@ export async function cancelCoachingRequest() {
 
 export async function acceptCoachingRequest() {
   const mode = new URLSearchParams(window.location.search).get('accept')
+  const sameClient = new URLSearchParams(window.location.search).has('sameClient')
   return mode === 'conflict'
     ? { ok: false as const, error: 'La solicitud se actualizó. Recarga la bandeja.', refreshed: true }
-    : { ok: true as const, relationshipId: 'relationship-1', acceptedRequestId: 'request-1', cancelledRequestIds: [] }
+    : { ok: true as const, relationshipId: 'relationship-1', acceptedRequestId: 'request-1', cancelledRequestIds: sameClient ? ['request-2'] : [] }
 }
 
 export async function declineCoachingRequest() {

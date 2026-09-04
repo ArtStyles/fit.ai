@@ -10,6 +10,9 @@ createRoot(document.getElementById('root')!).render(
     }, ...(new URLSearchParams(window.location.search).has('two') ? [{
       id: 'request-2', clientId: '22222222-2222-4222-8222-222222222222', message: 'Segundo mensaje', createdAt: '2026-08-09T12:00:00.000Z', serviceName: 'Servicio restante',
       clientName: 'Beatriz Núñez', clientAvatarUrl: null,
+    }] : []), ...(new URLSearchParams(window.location.search).has('sameClient') ? [{
+      id: 'request-2', clientId: '11111111-1111-4111-8111-111111111111', message: 'Otra solicitud de Ana', createdAt: '2026-08-09T12:00:00.000Z', serviceName: 'Servicio alternativo',
+      clientName: 'Ana Pérez', clientAvatarUrl: null,
     }] : [])]} /></main>
   </I18nProvider>,
 )
