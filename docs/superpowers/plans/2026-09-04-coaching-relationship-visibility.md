@@ -123,25 +123,39 @@
 - Add: `supabase/migrations/057_trainer_assignment_decline.sql`
 - Add: `supabase/tests/057_trainer_assignment_decline_test.sql`
 - Modify: `scripts/test-trainer-programming-db.mjs`
+- Modify: `src/types/database.ts`
 - Modify: `src/app/actions/trainerAssignments.ts`
 - Modify: `src/app/actions/__tests__/trainerAssignments.test.ts`
 - Modify: `src/components/coaching/ProposedProgramReview.tsx`
 - Modify: `src/components/coaching/__tests__/trainerAssignmentUi.test.tsx`
+- Modify: `src/components/coaching/__tests__/fixtures/trainerAssignments.fixture.ts`
+- Modify: `src/lib/coaching/__tests__/auditCoverage.test.ts`
+- Modify: `src/lib/coaching/__tests__/trainerMigrationRerunContract.test.ts`
+- Modify: `tests/e2e/helpers/trainer-marketplace.ts`
+- Modify: `scripts/__tests__/trainer-security-preflight.test.ts`
+- Modify: `supabase/tests/trainer_security_test.sql`
+- Modify: `README.md`
+- Modify: `docs/operations/trainer-marketplace-runbook.md`
+- Modify: `docs/operations/trainer-pilot-checklist.md`
 
 **Behavior:**
 
 - Add `decline_trainer_assignment(p_assignment_id UUID, p_reason TEXT, p_idempotency_key TEXT)` returning the declined assignment ID and a `changed` flag.
 - Validate authenticated ownership, proposed state, optional trimmed reason of at most 500 characters, and idempotency key of at most 200 characters. Lock the assignment row before transition. A retry by the same client/key returns success without duplicating audit entries or notifications; foreign, active, or otherwise terminal assignments fail without leaking tenant existence.
 - Persist decline idempotency on the assignment (nullable column plus owner/key unique index), set the assignment and proposed version to `cancelled`, ensure its materialized plan remains inactive, add a professional audit record, and create one trainer notification linking to the relevant client/program workflow.
+- Reuse the existing client advisory-lock namespace and then lock assignment, version 1, and materialized plan in canonical order so decline serializes with acceptance. Set both existing plan-mutation guards before the defensive plan update. Decline remains available to the owning client even if the relationship later becomes inactive.
+- Extend the final professional-audit allowlist with assignment action `declined`; store no free-text reason in audit metadata. A trimmed optional reason may appear only in the deduplicated trainer notification body.
+- Advance `trainer_security_preflight()` to marker 57 only after validating the new function, ACL, column, constraint, and unique index, and synchronize the runner, remote E2E preflight consumers, and release documentation with that boundary. Historical 045/049/056 boundary tests remain unchanged.
+- Update generated database contracts for the new column/RPC and the already-existing assignment acceptance/revision contracts discovered to be missing from the local type file.
 - Expose a validated `declineTrainerAssignment` server action that revalidates `/coaching` and `/coach/programs`.
 - In `ProposedProgramReview`, add a confirmation-based `No aceptar rutina` action with an optional reason field, visible progress/error/success states, and one in-flight mutation at a time. Acceptance remains the primary action.
 
 **TDD sequence:**
 
-1. Write pgTAP coverage for owner success, state/version/plan invariants, notification/audit exactly once, idempotent retry, reason length, foreign principal, and non-proposed assignment; run the trainer DB test command and confirm the new tests fail because the RPC is absent.
-2. Add server-action validation/RPC-payload tests and component interaction tests; observe failures.
-3. Add migration, action, and UI implementation.
-4. Rerun focused Vitest tests and `pnpm test:db:trainers` when the local Supabase test environment is available; otherwise report that boundary explicitly.
+1. Write pgTAP coverage for owner success, state/version/plan invariants, notification/audit exactly once, idempotent retry, reason/key boundaries, foreign/random IDs, non-proposed states, ACLs, rerunnability, and marker 57; run the trainer DB test command and confirm the new tests fail because the RPC is absent.
+2. Add a committed DB-runner race for accept versus decline (and same-key concurrent decline if practical), plus server-action validation/RPC-payload tests, real component interaction tests, audit coverage, rerun-contract, and preflight-consumer tests; observe failures.
+3. Add migration, types, action, UI, runner, preflight consumer, and release-documentation implementation.
+4. Rerun focused Vitest tests, `pnpm type-check`, `pnpm lint`, `git diff --check`, and `pnpm test:db:trainers` when Docker is available; otherwise report that boundary explicitly.
 
 ## Task 5: Cross-flow regression and visual verification
 
