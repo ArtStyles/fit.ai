@@ -18,6 +18,7 @@ const VIEWPORTS = [
   { width: 1440, height: 900 },
 ] as const
 const EDITOR_MOBILE_VIEWPORTS = [320, 360, 390, 430, 450] as const
+const NARROW_PERSONAL_NAV_VIEWPORTS = [320, 360] as const
 const EDITOR_AXE_CASES = [
   { theme: 'dark', editorState: 'metadata editor' },
   { theme: 'dark', editorState: 'batch dialog' },
@@ -300,6 +301,46 @@ describe('trainer accessibility acceptance in a local browser', () => {
       expect(geometry.safeInset).toBe('24px')
       expect(geometry.appSafeInset).toBe('24px')
       expect(geometry.panelPaddingBottom).toBeGreaterThanOrEqual(24)
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it.each(NARROW_PERSONAL_NAV_VIEWPORTS)('keeps six personal destinations and the workspace switcher usable at %i px', async width => {
+    const context = await browser.newContext({ viewport: { width, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=personal-shell`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+
+      const navigation = page.locator('nav.fitai-safe-bottom')
+      const expectedDestinations = ['Inicio', 'Plan', 'Entrenar', 'Progreso', 'Mi entrenador', 'Comunidad']
+      await pwExpect(navigation.getByRole('link')).toHaveCount(expectedDestinations.length)
+      for (const destination of expectedDestinations) {
+        await pwExpect(navigation.getByRole('link', { name: destination, exact: true })).toBeVisible()
+      }
+      await pwExpect(navigation.getByRole('button', { name: 'Cambiar al espacio Entrenador' })).toBeVisible()
+
+      await expectResponsiveGeometry(page)
+      await expectActionTargetsAtLeast44(page)
+
+      const geometry = await navigation.evaluate(element => {
+        const targets = Array.from(element.querySelectorAll<HTMLElement>('a, button'))
+        const iconBoxes = Array.from(element.querySelectorAll<HTMLElement>('[data-bottom-nav-icon]'))
+          .map(icon => icon.getBoundingClientRect())
+        return {
+          targetBounds: targets.map(target => {
+            const rect = target.getBoundingClientRect()
+            return { left: rect.left, right: rect.right }
+          }),
+          iconBounds: iconBoxes.map(rect => ({ left: rect.left, right: rect.right })),
+        }
+      })
+
+      expect(geometry.iconBounds).toHaveLength(expectedDestinations.length + 1)
+      expect(geometry.targetBounds.every(({ left, right }) => left >= -0.5 && right <= width + 0.5)).toBe(true)
+      expect(geometry.targetBounds.every((target, index, targets) => index === 0 || target.left >= targets[index - 1].right - 0.5)).toBe(true)
+      expect(geometry.iconBounds.every((icon, index, icons) => index === 0 || icon.left >= icons[index - 1].right - 0.5)).toBe(true)
     } finally {
       await context.close()
     }

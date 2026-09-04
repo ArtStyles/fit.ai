@@ -12,7 +12,7 @@ import { TrainerPublicProfile } from '../../TrainerPublicProfile'
 import { WorkspaceSwitcher } from '../../../navigation/WorkspaceSwitcher'
 import { ActiveWorkoutDockView } from '../../../navigation/BottomNav'
 import { AppShell } from '../../../navigation/AppShell'
-import { getCoachNavItems } from '../../../navigation/appNavigation'
+import { getCoachNavItems, getPersonalNavItems } from '../../../navigation/appNavigation'
 import { ExerciseCatalogDialog } from '../../../plan/ExercisePicker'
 import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
@@ -69,6 +69,15 @@ function DirectoryFixture() {
 }
 
 function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
+  if (!routeEditorOnly && surface === 'personal-shell') {
+    return <AppShell navItems={getPersonalNavItems({ communityEnabled: true })} workspace="personal">
+      <div className="min-h-screen bg-background pb-28">
+        <main className="mx-auto max-w-6xl space-y-6 px-4 py-8" aria-label="Espacio personal con entrenador">
+          <h1 className="text-2xl font-bold">Mi entrenamiento</h1>
+        </main>
+      </div>
+    </AppShell>
+  }
   if (!routeEditorOnly && surface === 'editor-shell') {
     return <AppShell navItems={getCoachNavItems()} workspace="coach">
       <div className="min-h-screen bg-background pb-28">
@@ -279,7 +288,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
 }
 
 function FixtureRoot() {
-  if (surface === 'editor-shell') return <Surface />
+  if (surface === 'editor-shell' || surface === 'personal-shell') return <Surface />
   return <main id="main-content" aria-label="Superficie profesional" className="mx-auto max-w-5xl px-4 py-6">
     <Surface />
   </main>

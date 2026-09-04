@@ -229,7 +229,7 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
       aria-label={t('Navegación principal')}
       className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-[hsl(var(--surface-1)/0.95)] backdrop-blur lg:hidden"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center px-2">
+      <div className="mx-auto flex h-16 max-w-lg items-center px-1 min-[380px]:px-2">
         {navItems.map(({ href, label }) => {
           const Icon = getAppNavIcon(href)
           const isActive = isAppNavItemActive(pathname, href)
@@ -243,13 +243,14 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
               aria-label={t(label)}
               aria-current={isActive ? 'page' : undefined}
               onClick={() => { void hapticImpact('light') }}
-              className="group relative flex min-w-0 flex-1 cursor-pointer touch-manipulation flex-col items-center justify-center px-1 py-1.5 outline-none [aria-busy=true]:opacity-100"
+              className="group relative flex w-11 min-w-11 flex-1 cursor-pointer touch-manipulation flex-col items-center justify-center px-0.5 py-1.5 outline-none [aria-busy=true]:opacity-100"
             >
               <span
+                data-bottom-nav-icon
                 className={cn(
                   'flex items-center justify-center transition-[color,background-color,transform,box-shadow] duration-200 ease-out group-active:scale-90 group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background',
                   isTrainAction
-                    ? '-translate-y-2 h-14 w-14 rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/30 group-hover:bg-primary/90'
+                    ? '-translate-y-1 h-11 w-11 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30 group-hover:bg-primary/90 min-[480px]:-translate-y-2 min-[480px]:h-14 min-[480px]:w-14 min-[480px]:rounded-2xl'
                     : 'h-10 w-10 rounded-xl',
                   !isTrainAction && isActive
                     ? 'fitai-nav-selected text-primary'
