@@ -1,13 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-const { requireAppUserContext, getRequestableTrainerServicesBySlug } = vi.hoisted(() => ({
+const { requireAppUserContext } = vi.hoisted(() => ({
   requireAppUserContext: vi.fn(),
-  getRequestableTrainerServicesBySlug: vi.fn(async (): Promise<any[]> => []),
 }))
 
 vi.mock('@/lib/auth/server', () => ({ requireAppUserContext }))
-vi.mock('@/lib/coaching/directory', () => ({ getRequestableTrainerServicesBySlug }))
 vi.mock('@/components/coaching/ClientCoachingStatus', () => ({
   ClientCoachingStatus: ({ requests, relationship }: { requests: Array<{ trainerName: string; serviceName: string }>; relationship?: { id: string; status: string; trainerName: string; serviceName: string } }) => <>{relationship ? <p>{`relationship:${relationship.status}:${relationship.trainerName}:${relationship.serviceName}`}</p> : null}<p>{requests.length ? requests.map(request => `${request.trainerName}:${request.serviceName}`).join(',') : !relationship ? 'No tienes solicitudes de acompañamiento.' : ''}</p></>,
 }))
@@ -18,18 +16,27 @@ function requestQuery(
   relationships = [] as Array<{ id: string; status: 'active' | 'paused_by_platform'; trainer_user_id: string; service_id: string; started_at: string; source_request_id: string | null }>,
   profiles = [] as Array<{ id: string; username: string | null; full_name: string | null; avatar_url: string | null }>,
   directory = [] as Array<{ user_id: string; slug: string }>,
+  options: {
+    errors?: { relationship?: unknown; profiles?: unknown; directory?: unknown }
+    services?: Record<string, { data: unknown; error: unknown }>
+  } = {},
 ) {
-  const order = vi.fn(async () => result)
+  const requestLimit = vi.fn(async () => result)
+  const requestOrder = {
+    limit: requestLimit,
+    then: (resolve: (value: unknown) => unknown) => resolve(result),
+  }
+  const order = vi.fn(() => requestOrder)
   const requestEq = vi.fn(() => ({ order }))
   const requestSelect = vi.fn(() => ({ eq: requestEq }))
-  const relationshipResult = Promise.resolve({ data: relationships, error: null })
+  const relationshipResult = Promise.resolve({ data: relationships, error: options.errors?.relationship ?? null })
   const relationshipOrder = vi.fn(() => relationshipResult)
   const relationshipStatusIn = vi.fn(() => ({ order: relationshipOrder }))
   const relationshipClientEq = vi.fn(() => ({ in: relationshipStatusIn }))
   const relationshipSelect = vi.fn(() => ({ eq: relationshipClientEq }))
-  const profileIn = vi.fn(async () => ({ data: profiles, error: null }))
+  const profileIn = vi.fn(async () => ({ data: profiles, error: options.errors?.profiles ?? null }))
   const profileSelect = vi.fn(() => ({ in: profileIn }))
-  const directoryIn = vi.fn(async () => ({ data: directory, error: null }))
+  const directoryIn = vi.fn(async () => ({ data: directory, error: options.errors?.directory ?? null }))
   const directorySelect = vi.fn(() => ({ in: directoryIn }))
   const emptyQuery: any = {
     select: vi.fn(() => emptyQuery),
@@ -40,7 +47,8 @@ function requestQuery(
     then: (resolve: (value: unknown) => unknown) => resolve({ data: [], error: null }),
   }
   const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : table === 'coaching_requests' ? requestSelect : table === 'public_profiles' ? profileSelect : table === 'active_trainer_directory' ? directorySelect : emptyQuery.select }))
-  return { from, order, requestSelect, relationshipSelect, profileIn, directoryIn }
+  const rpc = vi.fn(async (_name: string, args: { trainer_slug: string }) => options.services?.[args.trainer_slug] ?? { data: [], error: null })
+  return { from, rpc, order, requestLimit, requestSelect, relationshipSelect, profileIn, directoryIn }
 }
 
 describe('CoachingPage', () => {
@@ -61,6 +69,35 @@ describe('CoachingPage', () => {
     const { default: CoachingPage } = await import('../page')
 
     expect(renderToStaticMarkup(await CoachingPage())).toContain('No tienes solicitudes de acompañamiento.')
+  })
+
+  it('renders a relationship-specific unavailable state instead of treating a relationship query failure as no trainer', async () => {
+    const supabase = requestQuery({ data: [], error: null }, [], [], [], { errors: { relationship: { message: 'read failed' } } })
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const { default: CoachingPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachingPage())
+
+    expect(html).toContain('No se pudo cargar tu acompañamiento.')
+    expect(html).not.toContain('No tienes solicitudes de acompañamiento.')
+    expect(html).not.toContain('No se pudieron cargar tus consentimientos.')
+  })
+
+  it('renders a public projection warning instead of disguising an identity lookup failure as unavailable data', async () => {
+    const supabase = requestQuery(
+      { data: [{ id: 'request-1', status: 'pending', created_at: '2026-08-01T12:00:00.000Z', trainer_user_id: 'trainer-1', service_id: 'service-1' }], error: null },
+      [],
+      [],
+      [],
+      { errors: { profiles: { message: 'read failed' } } },
+    )
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const { default: CoachingPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachingPage())
+
+    expect(html).toContain('No se pudieron cargar los datos públicos de tu entrenador.')
+    expect(html).not.toContain('Entrenador no disponible')
   })
 
   it('prioritizes an active relationship over a paused history row regardless of returned row order', async () => {
@@ -92,19 +129,43 @@ describe('CoachingPage', () => {
         { id: 'trainer-current', username: 'marina', full_name: 'Marina PÃ©rez', avatar_url: 'https://example.test/marina.jpg' },
       ],
       [{ user_id: 'trainer-current', slug: 'marina-perez' }],
+      {
+        services: {
+          'marina-perez': { data: [{ service_id: 'service-current', name: 'Fuerza guiada' }], error: null },
+        },
+      },
     )
-    getRequestableTrainerServicesBySlug.mockResolvedValueOnce([{ id: 'service-current', name: 'Fuerza guiada', description: '', content: '', durationMinutes: 60, modality: 'online' }])
     requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
     const { default: CoachingPage } = await import('../page')
 
     const html = renderToStaticMarkup(await CoachingPage())
 
     expect(supabase.requestSelect).toHaveBeenCalledWith('id, status, created_at, trainer_user_id, service_id')
+    expect(supabase.requestLimit).toHaveBeenCalledWith(20)
     expect(supabase.relationshipSelect).toHaveBeenCalledWith('id, status, trainer_user_id, service_id, started_at, source_request_id')
     expect(supabase.profileIn).toHaveBeenCalledWith('id', ['trainer-old', 'trainer-current'])
     expect(supabase.directoryIn).toHaveBeenCalledWith('user_id', ['trainer-old', 'trainer-current'])
-    expect(getRequestableTrainerServicesBySlug).toHaveBeenCalledWith('marina-perez')
+    expect(supabase.rpc).toHaveBeenCalledWith('get_requestable_trainer_services', { trainer_slug: 'marina-perez' })
     expect(html).toContain('relationship:active:Marina PÃ©rez:Fuerza guiada')
     expect(html).toContain('Luis Sosa:Servicio de acompañamiento no disponible')
+  })
+
+  it('keeps other hub data visible when one bounded trainer-service lookup fails', async () => {
+    const supabase = requestQuery(
+      { data: [{ id: 'request-1', status: 'pending', created_at: '2026-08-01T12:00:00.000Z', trainer_user_id: 'trainer-1', service_id: 'service-1' }], error: null },
+      [],
+      [{ id: 'trainer-1', username: 'marina', full_name: 'Marina Pérez', avatar_url: null }],
+      [{ user_id: 'trainer-1', slug: 'marina-perez' }],
+      { services: { 'marina-perez': { data: null, error: { message: 'read failed' } } } },
+    )
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const { default: CoachingPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachingPage())
+
+    expect(html).toContain('Marina Pérez:No se pudo cargar el servicio.')
+    expect(html).toContain('Algunos servicios de acompañamiento no se pudieron cargar.')
+    expect(html).not.toContain('Servicio de acompañamiento no disponible')
+    expect(supabase.rpc).toHaveBeenCalledWith('get_requestable_trainer_services', { trainer_slug: 'marina-perez' })
   })
 })

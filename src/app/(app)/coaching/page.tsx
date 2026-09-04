@@ -2,9 +2,17 @@ import { ClientCoachingStatus } from '@/components/coaching/ClientCoachingStatus
 import { ConsentManager, type CoachingConsentView } from '@/components/coaching/ConsentManager'
 import { ProposedProgramReview } from '@/components/coaching/ProposedProgramReview'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { getRequestableTrainerServicesBySlug } from '@/lib/coaching/directory'
 import { parseTrainerProgramSnapshot } from '@/lib/coaching/programs'
 import { selectLatestProposedAssignment } from '@/lib/coaching/proposals'
+
+const REQUEST_HISTORY_LIMIT = 20
+
+function CoachingPageLoadError({ message }: { message: string }) {
+  return <main className="mx-auto max-w-lg px-4 pb-24 pt-6">
+    <h1 className="text-2xl font-bold text-foreground">Acompañamiento</h1>
+    <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">{message}</p>
+  </main>
+}
 
 export default async function CoachingPage() {
   const { supabase, user } = await requireAppUserContext()
@@ -13,10 +21,8 @@ export default async function CoachingPage() {
     .select('id, status, created_at, trainer_user_id, service_id')
     .eq('client_user_id', user.id)
     .order('created_at', { ascending: false })
-  if (error) return <main className="mx-auto max-w-lg px-4 pb-24 pt-6">
-    <h1 className="text-2xl font-bold text-foreground">Acompañamiento</h1>
-    <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudo cargar el estado de tus solicitudes. Inténtalo de nuevo más tarde.</p>
-  </main>
+    .limit(REQUEST_HISTORY_LIMIT)
+  if (error) return <CoachingPageLoadError message="No se pudo cargar el estado de tus solicitudes. Inténtalo de nuevo más tarde." />
 
   const requestRows = (data ?? []) as Array<{
     id: string
@@ -32,6 +38,7 @@ export default async function CoachingPage() {
     .eq('client_user_id', user.id)
     .in('status', ['active', 'paused_by_platform'])
     .order('started_at', { ascending: false })
+  if (relationshipsError) return <CoachingPageLoadError message="No se pudo cargar tu acompañamiento. Inténtalo de nuevo más tarde." />
   const relationship = (relationships as Array<{
     id: string
     status: 'active' | 'paused_by_platform'
@@ -54,18 +61,35 @@ export default async function CoachingPage() {
     ...requestRows.map(request => request.trainer_user_id),
     ...(relationship ? [relationship.trainer_user_id] : []),
   ]))
-  const [{ data: profiles }, { data: trainers }] = trainerIds.length
+  const [{ data: profiles, error: profilesError }, { data: trainers, error: trainersError }] = trainerIds.length
     ? await Promise.all([
       (supabase as any).from('public_profiles').select('id, username, full_name, avatar_url').in('id', trainerIds),
       (supabase as any).from('active_trainer_directory').select('user_id, slug').in('user_id', trainerIds),
     ])
-    : [{ data: [] }, { data: [] }]
+    : [{ data: [], error: null }, { data: [], error: null }]
+  if (profilesError || trainersError) return <CoachingPageLoadError message="No se pudieron cargar los datos públicos de tu entrenador. Inténtalo de nuevo más tarde." />
   const profilesById = new Map((profiles ?? []).map((profile: any) => [profile.id, profile]))
   const trainerRows = (trainers ?? []) as Array<{ user_id: string; slug: string }>
-  const servicesByTrainer = new Map(await Promise.all(trainerRows.map(async trainer => [
-    trainer.user_id,
-    trainer.slug ? await getRequestableTrainerServicesBySlug(trainer.slug) : [],
-  ] as const)))
+  const serviceLookupResults = await Promise.allSettled(trainerRows.map(async trainer => {
+    const { data: serviceRows, error: serviceError } = await (supabase as any).rpc('get_requestable_trainer_services', { trainer_slug: trainer.slug })
+    if (serviceError) throw new Error('REQUESTABLE_TRAINER_SERVICES_UNAVAILABLE')
+    const services = Array.isArray(serviceRows)
+      ? serviceRows.flatMap(service => typeof service?.service_id === 'string' && typeof service.name === 'string'
+        ? [{ id: service.service_id, name: service.name }]
+        : [])
+      : []
+    return { trainerUserId: trainer.user_id, services }
+  }))
+  const servicesByTrainer = new Map<string, Array<{ id: string; name: string }>>()
+  const serviceLookupFailures = new Set<string>()
+  for (let index = 0; index < serviceLookupResults.length; index += 1) {
+    const result = serviceLookupResults[index]
+    if (result.status === 'fulfilled') servicesByTrainer.set(result.value.trainerUserId, result.value.services)
+    else {
+      const failedTrainer = trainerRows[index]
+      if (failedTrainer) serviceLookupFailures.add(failedTrainer.user_id)
+    }
+  }
 
   function resolveTrainerEntry(trainerUserId: string, serviceId: string) {
     const profile = profilesById.get(trainerUserId) as { username?: string | null; full_name?: string | null; avatar_url?: string | null } | undefined
@@ -73,7 +97,7 @@ export default async function CoachingPage() {
     return {
       trainerName: profile?.full_name?.trim() || profile?.username?.trim() || 'Entrenador no disponible',
       trainerAvatarUrl: profile?.avatar_url || null,
-      serviceName: service?.name?.trim() || 'Servicio de acompañamiento no disponible',
+      serviceName: serviceLookupFailures.has(trainerUserId) ? 'No se pudo cargar el servicio.' : service?.name?.trim() || 'Servicio de acompañamiento no disponible',
     }
   }
 
@@ -139,6 +163,7 @@ export default async function CoachingPage() {
       <p className="mt-1 text-sm text-muted-foreground">Consulta el estado real de tus solicitudes. No se comparten datos de entrenamiento hasta que exista una relación aceptada.</p>
     </header>
     <ClientCoachingStatus requests={requests} relationship={relationshipView} />
+    {serviceLookupFailures.size ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">Algunos servicios de acompañamiento no se pudieron cargar. Inténtalo de nuevo más tarde.</p> : null}
     {relationshipsError || consentsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus consentimientos.</p> : relationship?.status === 'active' ? <ConsentManager relationshipId={relationship.id} consents={((consents ?? []) as Array<{ scope: CoachingConsentView['scope']; text_version: string; granted_at: string; revoked_at: string | null }>).map(consent => ({
       scope: consent.scope,
       textVersion: consent.text_version,
