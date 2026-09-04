@@ -117,6 +117,20 @@ describe('CoachClientDetailPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })).rejects.toThrow('NOT_FOUND')
+    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+      .rejects.toThrow('No se pudo cargar el estado del acompañamiento.')
+    expect(notFound).not.toHaveBeenCalled()
+  })
+
+  it('does not turn a relationship load failure into a false missing-client response', async () => {
+    const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: null, error: new Error('private database detail') })) }
+    relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const supabase = { from: vi.fn(() => relationshipQuery) }
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+      .rejects.toThrow('No se pudo cargar el estado del acompañamiento.')
+    expect(notFound).not.toHaveBeenCalled()
   })
 })
