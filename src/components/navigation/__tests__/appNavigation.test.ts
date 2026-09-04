@@ -16,6 +16,15 @@ describe('app navigation', () => {
     })
   })
 
+  it('keeps Mi entrenador available alongside the discovery destination in both community modes', () => {
+    for (const communityEnabled of [false, true]) {
+      expect(getPersonalNavItems({ communityEnabled })).toContainEqual({
+        href: '/coaching',
+        label: 'Mi entrenador',
+      })
+    }
+  })
+
   it('uses exactly the five approved destinations for active trainers', () => {
     expect(getCoachNavItems()).toEqual([
       { href: '/coach', label: 'Resumen' },
