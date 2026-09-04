@@ -100,7 +100,7 @@ export function TemplateExerciseCard({
             <label className="text-xs">Peso (kg)<input name="weightKg" type="number" min="0" max="1000" step="0.25" value={draft.weightKg} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2" /></label>
             <label className="text-xs">RPE<input name="targetRpe" type="number" min="1" max="10" step="0.5" value={draft.targetRpe} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2" /></label>
             <label className="text-xs">Descanso (seg.)<input name="restSeconds" type="number" min="0" max="3600" value={draft.restSeconds} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2" /></label>
-            <label className="text-xs sm:col-span-3">Notas<textarea name="notes" maxLength={1000} value={draft.notes} onChange={() => undefined} rows={2} className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-2 py-2" /></label>
+            <label className="text-xs sm:col-span-3">Indicaciones para el cliente<textarea name="notes" maxLength={1000} value={draft.notes} onChange={() => undefined} rows={2} className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-2 py-2" /></label>
             <div className="flex items-center gap-3 sm:col-span-4">
               <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">Guardar ejercicio</button>
               <SaveStateIndicator state={saveState} />

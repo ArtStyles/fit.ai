@@ -124,7 +124,7 @@ export default async function CoachingPage() {
   const { data: proposedAssignments, error: proposalsError } = relationship
     ? await (supabase as any)
       .from('trainer_plan_assignments')
-      .select('id, trainer_user_id, status, created_at, trainer_assignment_versions(id, version_number, snapshot, status)')
+      .select('id, trainer_user_id, status, created_at, trainer_assignment_versions(id, version_number, snapshot, status, change_summary)')
       .eq('relationship_id', relationship.id)
       .eq('client_user_id', user.id)
       .eq('status', 'proposed')
@@ -148,6 +148,7 @@ export default async function CoachingPage() {
       proposedProgram = {
         assignmentId: assignment.id,
         versionNumber: version.version_number,
+        changeSummary: version.change_summary,
         trainerName: trainerResponse.data?.professional_name ?? 'tu entrenador',
         snapshot,
         exerciseNames: Object.fromEntries(((exerciseResponse.data ?? []) as Array<{ id: string; name: string }>).map(exercise => [exercise.id, exercise.name])),

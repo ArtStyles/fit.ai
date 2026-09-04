@@ -178,8 +178,9 @@ describe('active session wiring contracts', () => {
   })
 
   it('renders locked header and card without add/replace/remove controls while preserving skip and result controls', () => {
+    const prescribedExercise = { ...lockedExercise, notes: 'Mantén el torso estable.' }
     const header = renderSessionMarkup(createElement(SessionExerciseHeader, {
-      exercise: lockedExercise,
+      exercise: prescribedExercise,
       exerciseOptions: [],
       prescriptionLocked: true,
     }))
@@ -190,6 +191,9 @@ describe('active session wiring contracts', () => {
     }))
 
     expect(header).toContain('Saltar por')
+    expect(header).toContain('RPE 7')
+    expect(header).toContain('Indicación del entrenador')
+    expect(header).toContain('Mantén el torso estable.')
     expect(header).not.toContain('Cambiar ejercicio solo por hoy')
     expect(header).not.toContain('Quitar ejercicio agregado')
     expect(card).toContain('Peso en kilogramos')

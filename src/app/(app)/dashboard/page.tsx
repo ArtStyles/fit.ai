@@ -401,7 +401,7 @@ export default async function DashboardPage() {
   }).format(referenceNow)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
-  const [dashboardPayload, { data: bannerRaw }] = await Promise.all([
+  const [dashboardPayload, { data: bannerRaw }, unreadNotificationsResult] = await Promise.all([
     loadDashboardPayload(
       supabase,
       user.id,
@@ -413,7 +413,14 @@ export default async function DashboardPage() {
       .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
       .eq('slot', DASHBOARD_BANNER_SLOT)
       .maybeSingle(),
+    (supabase
+      .from('product_notifications') as any)
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .is('dismissed_at', null)
+      .is('read_at', null) as Promise<{ count: number | null; error: { message?: string } | null }>,
   ])
+  const hasUnreadProductNotifications = !unreadNotificationsResult.error && (unreadNotificationsResult.count ?? 0) > 0
   const bannerCandidate = bannerRaw as DashboardBannerData | null
   const dashboardBanner = isDashboardBannerVisible(bannerCandidate, todayStr)
     ? bannerCandidate
@@ -593,7 +600,7 @@ export default async function DashboardPage() {
               communityEnabled,
               username: profile.username,
             })}
-            hasNotificationAttention={dashboard.noticePlacement === 'hub'}
+            hasNotificationAttention={dashboard.noticePlacement === 'hub' || hasUnreadProductNotifications}
           />
         )}
         mainLabel={t('Dashboard')}

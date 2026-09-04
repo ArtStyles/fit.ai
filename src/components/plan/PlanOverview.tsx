@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { CalendarDays, Clock3, Gauge, Sparkles } from 'lucide-react'
 
 import { useI18n } from '@/components/i18n/I18nProvider'
@@ -16,6 +17,7 @@ type PlanOverviewProps = {
   prescriptionLocked?: boolean
   professionalVersionNumber?: number | null
   professionalChangeSummary?: string | null
+  professionalTrainerName?: string | null
 }
 
 export function PlanOverview({
@@ -29,6 +31,7 @@ export function PlanOverview({
   prescriptionLocked = false,
   professionalVersionNumber = null,
   professionalChangeSummary = null,
+  professionalTrainerName = null,
 }: PlanOverviewProps) {
   const { t } = useI18n()
 
@@ -49,6 +52,9 @@ export function PlanOverview({
           )}
           {prescriptionLocked && professionalChangeSummary && (
             <p className="mt-2 text-sm leading-relaxed text-violet-100/80">{professionalChangeSummary}</p>
+          )}
+          {prescriptionLocked && professionalTrainerName && (
+            <p className="mt-2 text-sm text-violet-100/80">{t('Asignada por')} <Link href="/coaching" className="font-semibold text-violet-100 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">{professionalTrainerName}</Link></p>
           )}
           <h1 className="mt-3 text-balance font-display text-3xl font-extrabold leading-tight text-foreground sm:text-4xl">{name}</h1>
           <div className="mt-5 grid gap-2 sm:grid-cols-3">

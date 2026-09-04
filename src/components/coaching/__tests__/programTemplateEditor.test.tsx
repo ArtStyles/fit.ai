@@ -189,7 +189,7 @@ describe('professional template editor browser interactions', () => {
       await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
       const exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
       await exercise.getByLabel('Series').fill('5')
-      await exercise.getByLabel('Notas').fill('Progresión pendiente')
+      await exercise.getByLabel('Indicaciones para el cliente').fill('Progresión pendiente')
       await pwExpect(exercise.getByText('Cambios pendientes')).toBeVisible()
       expect(await page.evaluate(() => {
         const event = new Event('beforeunload', { cancelable: true })
@@ -212,7 +212,7 @@ describe('professional template editor browser interactions', () => {
       let exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
       await exercise.getByLabel('Series').fill('6')
       await exercise.getByLabel('RPE').fill('9')
-      await exercise.getByLabel('Notas').fill('Mantener técnica')
+      await exercise.getByLabel('Indicaciones para el cliente').fill('Mantener técnica')
 
       await page.getByRole('tab', { name: /Día B/ }).click()
       await page.getByRole('tab', { name: /Día A/ }).click()
@@ -220,7 +220,7 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(exercise).toBeVisible()
       await pwExpect(exercise.getByLabel('Series')).toHaveValue('6')
       await pwExpect(exercise.getByLabel('RPE')).toHaveValue('9')
-      await pwExpect(exercise.getByLabel('Notas')).toHaveValue('Mantener técnica')
+      await pwExpect(exercise.getByLabel('Indicaciones para el cliente')).toHaveValue('Mantener técnica')
       await pwExpect(exercise.getByText('Cambios pendientes')).toBeVisible()
     } finally { await page.close() }
   })
@@ -254,7 +254,7 @@ describe('professional template editor browser interactions', () => {
       await exercise.getByLabel('Peso (kg)').fill('082.50')
       await exercise.getByLabel('RPE').fill('8.0')
       await exercise.getByLabel('Descanso (seg.)').fill('075')
-      await exercise.getByLabel('Notas').fill('   ')
+      await exercise.getByLabel('Indicaciones para el cliente').fill('   ')
       await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
       await pwExpect(exercise).toHaveCount(0)
 
@@ -265,7 +265,7 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(exercise.getByLabel('Peso (kg)')).toHaveValue('82.5')
       await pwExpect(exercise.getByLabel('RPE')).toHaveValue('8')
       await pwExpect(exercise.getByLabel('Descanso (seg.)')).toHaveValue('75')
-      await pwExpect(exercise.getByLabel('Notas')).toHaveValue('')
+      await pwExpect(exercise.getByLabel('Indicaciones para el cliente')).toHaveValue('')
     } finally { await page.close() }
   })
 
@@ -276,14 +276,14 @@ describe('professional template editor browser interactions', () => {
       await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
       let exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
       await exercise.getByLabel('Repeticiones').fill('12')
-      await exercise.getByLabel('Notas').fill('Propuesta enviada')
+      await exercise.getByLabel('Indicaciones para el cliente').fill('Propuesta enviada')
       await exercise.getByRole('button', { name: 'Guardar ejercicio' }).click()
       await pwExpect(exercise).toHaveCount(0)
 
       await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
       exercise = page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })
       await pwExpect(exercise.getByLabel('Repeticiones')).toHaveValue('15')
-      await pwExpect(exercise.getByLabel('Notas')).toHaveValue('Ajuste externo')
+      await pwExpect(exercise.getByLabel('Indicaciones para el cliente')).toHaveValue('Ajuste externo')
     } finally { await page.close() }
   })
 
@@ -346,7 +346,7 @@ describe('professional template editor browser interactions', () => {
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?refresh=stale`)
       await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
-      await page.getByRole('group', { name: 'Editar ejercicio Sentadilla' }).getByLabel('Notas').fill('Descartar con el día')
+      await page.getByRole('group', { name: 'Editar ejercicio Sentadilla' }).getByLabel('Indicaciones para el cliente').fill('Descartar con el día')
       page.once('dialog', dialog => void dialog.accept())
       await page.getByRole('button', { name: 'Eliminar día' }).click()
       await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-workout')))

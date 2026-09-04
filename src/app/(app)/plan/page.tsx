@@ -306,13 +306,22 @@ export default async function PlanPage() {
   }
 
   let professionalRelationshipActive = false
+  let professionalTrainerName: string | null = null
   if (planRaw.prescription_locked && planRaw.trainer_relationship_id) {
     const { data: relationship } = await supabase
       .from('coaching_relationships')
-      .select('status')
+      .select('status, trainer_user_id')
       .eq('id', planRaw.trainer_relationship_id)
-      .maybeSingle() as { data: { status: string } | null }
+      .maybeSingle() as { data: { status: string; trainer_user_id: string } | null }
     professionalRelationshipActive = relationship?.status === 'active'
+    if (relationship?.trainer_user_id) {
+      const { data: trainerProfile } = await (supabase as any)
+        .from('public_profiles')
+        .select('full_name, username')
+        .eq('id', relationship.trainer_user_id)
+        .maybeSingle()
+      professionalTrainerName = trainerProfile?.full_name?.trim() || trainerProfile?.username?.trim() || 'Tu entrenador'
+    }
   }
 
   let professionalVersion: { version_number: number; change_summary: string | null } | null = null
@@ -526,6 +535,7 @@ export default async function PlanPage() {
           prescriptionLocked={prescriptionLocked}
           professionalVersionNumber={professionalVersion?.version_number ?? null}
           professionalChangeSummary={professionalVersion?.change_summary ?? null}
+          professionalTrainerName={professionalTrainerName}
           switcher={<PlanSwitcher plans={plans} tier={tier} t={t} prescriptionLocked={professionalRelationshipActive} />}
         />
 

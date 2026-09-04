@@ -32,6 +32,14 @@ describe('trainer assignment UI contracts', () => {
     expect(source).toContain('useRef<string | null>')
     expect(source).toContain('acceptanceKeyRef.current')
   })
+
+  it('shows the trainer message and labels prescription notes before the client accepts', async () => {
+    const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../ProposedProgramReview.tsx', import.meta.url), 'utf8'))
+
+    expect(source).toContain('changeSummary')
+    expect(source).toContain('Mensaje del entrenador')
+    expect(source).toContain('Indicación del entrenador')
+  })
 })
 
 describe('trainer assignment browser interaction', () => {

@@ -159,6 +159,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
     return <ProposedProgramReview proposal={{
       assignmentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       versionNumber: 1,
+      changeSummary: 'Prioriza el control técnico en cada repetición.',
       trainerName: 'Ada Entrenadora',
       snapshot: {
         schemaVersion: 1,
