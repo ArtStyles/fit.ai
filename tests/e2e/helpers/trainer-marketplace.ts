@@ -27,7 +27,7 @@ export const TRAINER_SECURITY_ID_FIELDS = [
 export type TrainerSecurityIdField = typeof TRAINER_SECURITY_ID_FIELDS[number]
 
 export const TRAINER_SECURITY_PREFLIGHT_ERROR =
-  'Trainer security migrations 042, 043, 044, and 045 must be deployed before fixture writes'
+  'Trainer security migrations 040 through 057 must be deployed before fixture writes'
 
 type TrainerSecurityReadOnlyClient = {
   rpc(name: string, args?: Record<string, unknown>): PromiseLike<{ data?: unknown; error: QueryError }>
@@ -43,7 +43,7 @@ export async function probeTrainerSecurityReadOnly(
 
   return {
     tableError: markerResult.error,
-    marker: markerResult.error || markerResult.data !== 45 ? null : 45,
+    marker: markerResult.error || markerResult.data !== 57 ? null : 57,
   }
 }
 
@@ -57,7 +57,7 @@ export async function assertTrainerSecuritySchemaReady(dependencies: {
 }): Promise<void> {
   try {
     const probe = await dependencies.probeReadOnly()
-    if (probe.tableError || probe.marker !== 45) throw new Error(TRAINER_SECURITY_PREFLIGHT_ERROR)
+    if (probe.tableError || probe.marker !== 57) throw new Error(TRAINER_SECURITY_PREFLIGHT_ERROR)
   } catch {
     throw new Error(TRAINER_SECURITY_PREFLIGHT_ERROR)
   }

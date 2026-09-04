@@ -110,6 +110,79 @@ describe('trainer assignment actions', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+  it('declines through the atomic RPC derived from the client session and trims every payload field', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: { assignment_id: ids.assignment, changed: true }, error: null })) }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(declineTrainerAssignment(form({
+      assignmentId: `  ${ids.assignment}  `,
+      reason: '  Necesito otra progresion.  ',
+      idempotencyKey: '  decline-attempt-1  ',
+      clientUserId: 'attacker',
+    }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, changed: true })
+
+    expect(requireActiveTrainerContext).not.toHaveBeenCalled()
+    expect(supabase.rpc).toHaveBeenCalledWith('decline_trainer_assignment', {
+      p_assignment_id: ids.assignment,
+      p_reason: 'Necesito otra progresion.',
+      p_idempotency_key: 'decline-attempt-1',
+    })
+    expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+    expect(revalidatePath).toHaveBeenCalledWith('/coaching')
+    expect(revalidatePath).toHaveBeenCalledWith('/coach/programs')
+  })
+
+  it('sends a blank optional decline reason as null', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: [{ assignment_id: ids.assignment, changed: false }], error: null })) }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(declineTrainerAssignment(form({
+      assignmentId: ids.assignment,
+      reason: '   ',
+      idempotencyKey: 'decline-retry-1',
+    }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, changed: false })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('decline_trainer_assignment', expect.objectContaining({ p_reason: null }))
+  })
+
+  it('rejects malformed decline fields before authentication or RPC dispatch', async () => {
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(declineTrainerAssignment(form({
+      assignmentId: 'not-a-uuid',
+      reason: 'r'.repeat(501),
+      idempotencyKey: 'k'.repeat(201),
+    }))).resolves.toMatchObject({
+      ok: false,
+      fieldErrors: {
+        assignmentId: expect.any(String),
+        reason: expect.any(String),
+        idempotencyKey: expect.any(String),
+      },
+    })
+    expect(requireAppUserContext).not.toHaveBeenCalled()
+  })
+
+  it('returns a safe decline error when the RPC fails or omits a boolean changed flag', async () => {
+    const supabase = { rpc: vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'private provider details' } })
+      .mockResolvedValueOnce({ data: { assignment_id: ids.assignment, changed: 'true' }, error: null }) }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+    const payload = form({ assignmentId: ids.assignment, reason: '', idempotencyKey: 'decline-safe-error' })
+
+    await expect(declineTrainerAssignment(payload)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo rechazar la rutina. Verifica que la propuesta siga pendiente e inténtalo de nuevo.',
+    })
+    await expect(declineTrainerAssignment(payload)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo rechazar la rutina. Verifica que la propuesta siga pendiente e inténtalo de nuevo.',
+    })
+  })
+
   it('publishes a future-only revision through the atomic RPC', async () => {
     const supabase = {
       rpc: vi.fn(async () => ({

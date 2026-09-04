@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser } from '@playwright/test'
+import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -23,14 +23,18 @@ describe('trainer assignment UI contracts', () => {
     expect(source).not.toContain('contact_phone')
   })
 
-  it('renders the proposed prescription as read-only review data with a retry-stable acceptance key', async () => {
+  it('renders the proposed prescription without editable prescription fields and keeps retry-stable mutation keys', async () => {
     const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../ProposedProgramReview.tsx', import.meta.url), 'utf8'))
     expect(source).toContain('prescripción se mantiene bloqueada')
     expect(source).toContain('versionNumber')
-    expect(source).not.toContain('<input')
+    expect(source).not.toContain('name="sets"')
+    expect(source).not.toContain('name="reps"')
+    expect(source).not.toContain('name="weightKg"')
     expect(source).toContain('Aceptar rutina')
+    expect(source).toContain('No aceptar rutina')
     expect(source).toContain('useRef<string | null>')
     expect(source).toContain('acceptanceKeyRef.current')
+    expect(source).toContain('declineKeyRef.current')
   })
 
   it('shows the trainer message and labels prescription notes before the client accepts', async () => {
@@ -78,5 +82,73 @@ describe('trainer assignment browser interaction', () => {
         expect.objectContaining({ relationshipId: '22222222-2222-4222-8222-222222222222', templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
       ])
     } finally { await page.close() }
+  }, 15_000)
+
+  it('keeps proposal context visible and confirmation cancel prevents a decline dispatch', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/proposedProgramReviewInteraction.html`)
+      await page.getByRole('heading', { name: 'Rutina inicial' }).waitFor()
+      await pwExpect(page.getByText('Prioriza la tecnica antes que el peso.')).toBeVisible()
+      await pwExpect(page.getByText('Mantener el tronco estable.')).toBeVisible()
+      await page.getByLabel('Motivo opcional').fill('Necesito menos dias.')
+      page.once('dialog', dialog => dialog.dismiss())
+      await page.getByRole('button', { name: 'No aceptar rutina' }).click()
+      expect(await page.evaluate(() => (window as Window & { __DECLINE_ASSIGNMENT_ACTIONS__?: unknown[] }).__DECLINE_ASSIGNMENT_ACTIONS__ ?? [])).toEqual([])
+      await pwExpect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toBeEnabled()
+    } finally { await page.close() }
+  }, 15_000)
+
+  it('reuses the decline key after a recoverable error and reports terminal success visibly', async () => {
+    const page = await browser.newPage()
+    page.on('dialog', dialog => dialog.accept())
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/proposedProgramReviewInteraction.html?decline=error-once`)
+      await page.getByLabel('Motivo opcional').fill('  Necesito menos dias.  ')
+      await page.getByRole('button', { name: 'No aceptar rutina' }).click()
+      await pwExpect(page.getByRole('alert')).toHaveText('La propuesta ya no esta disponible.')
+      await page.getByRole('button', { name: 'No aceptar rutina' }).click()
+      await pwExpect(page.getByRole('status')).toContainText('Rutina no aceptada')
+
+      const calls = await page.evaluate(() => (window as Window & { __DECLINE_ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__DECLINE_ASSIGNMENT_ACTIONS__)
+      expect(calls).toHaveLength(2)
+      expect(calls?.[0]).toMatchObject({
+        assignmentId: '11111111-1111-4111-8111-111111111111',
+        reason: '  Necesito menos dias.  ',
+        idempotencyKey: expect.any(String),
+      })
+      expect(calls?.[1]?.idempotencyKey).toBe(calls?.[0]?.idempotencyKey)
+      await pwExpect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toBeDisabled()
+      await pwExpect(page.getByRole('button', { name: /Rutina no aceptada/ })).toBeDisabled()
+    } finally { await page.close() }
+  }, 15_000)
+
+  it('uses one mutation lock so accept and decline cannot dispatch together', async () => {
+    const declinePage = await browser.newPage()
+    declinePage.on('dialog', dialog => dialog.accept())
+    const acceptPage = await browser.newPage()
+    acceptPage.on('dialog', dialog => dialog.accept())
+    try {
+      await declinePage.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/proposedProgramReviewInteraction.html?decline=pending`)
+      await declinePage.getByRole('button', { name: 'No aceptar rutina' }).click()
+      await pwExpect(declinePage.getByRole('button', { name: /No aceptando/ })).toBeDisabled()
+      await pwExpect(declinePage.getByRole('button', { name: 'Aceptar rutina', exact: true })).toBeDisabled()
+      expect(await declinePage.evaluate(() => (window as Window & { __ACCEPT_ASSIGNMENT_ACTIONS__?: unknown[] }).__ACCEPT_ASSIGNMENT_ACTIONS__ ?? [])).toEqual([])
+      await declinePage.evaluate(() => (window as Window & { __RESOLVE_DECLINE_ASSIGNMENT__?: (value: unknown) => void }).__RESOLVE_DECLINE_ASSIGNMENT__?.({
+        ok: true,
+        assignmentId: '11111111-1111-4111-8111-111111111111',
+        changed: true,
+      }))
+      await pwExpect(declinePage.getByRole('status')).toContainText('Rutina no aceptada')
+
+      await acceptPage.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/proposedProgramReviewInteraction.html?accept=pending`)
+      await acceptPage.getByRole('button', { name: 'Aceptar rutina', exact: true }).click()
+      await pwExpect(acceptPage.getByRole('button', { name: /Activando/ })).toBeDisabled()
+      await pwExpect(acceptPage.getByRole('button', { name: 'No aceptar rutina' })).toBeDisabled()
+      expect(await acceptPage.evaluate(() => (window as Window & { __DECLINE_ASSIGNMENT_ACTIONS__?: unknown[] }).__DECLINE_ASSIGNMENT_ACTIONS__ ?? [])).toEqual([])
+    } finally {
+      await declinePage.close()
+      await acceptPage.close()
+    }
   }, 15_000)
 })

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migrations = [40, 41, 42, 43, 44, 45].map(number => readFileSync(
@@ -13,7 +13,9 @@ const migrations = [40, 41, 42, 43, 44, 45].map(number => readFileSync(
   'utf8',
 ))
 
-const sql = migrations.join('\n')
+const declineMigrationUrl = new URL('../../../../supabase/migrations/057_trainer_assignment_decline.sql', import.meta.url)
+const declineMigration = existsSync(declineMigrationUrl) ? readFileSync(declineMigrationUrl, 'utf8') : ''
+const sql = [...migrations, declineMigration].join('\n')
 const hardening = migrations.at(-1)!
 const runner = readFileSync(new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url), 'utf8')
 const relationshipsHelper = readFileSync(new URL('../../../../tests/e2e/helpers/core-product.ts', import.meta.url), 'utf8')
@@ -27,6 +29,12 @@ function functionBody(name: string): string {
 }
 
 describe('trainer professional audit coverage', () => {
+  it('keeps assignment decline and its empty audit metadata in one transaction', () => {
+    expect(declineMigration).toContain('CREATE OR REPLACE FUNCTION public.decline_trainer_assignment')
+    expect(declineMigration).toMatch(/professional_audit_logs[\s\S]+?'trainer_plan_assignment'[\s\S]+?'declined'[\s\S]+?'{}'::JSONB/i)
+    expect(declineMigration).toMatch(/WHEN 'trainer_plan_assignment' THEN p_action IN \([\s\S]+?'declined'/i)
+  })
+
   it.each([
     ['transition_trainer_application', ['trainer_interview_scheduled', 'trainer_interview_outcome_recorded', "'trainer_application_' || v_target_status"]],
     ['create_coaching_request', ["'coaching_request'", "'created'"]],
@@ -138,6 +146,7 @@ describe('trainer professional audit coverage', () => {
   it('allowlists automatic cancellation and closes metadata to each event schema', () => {
     const eventDomainBody = functionBody('is_professional_audit_event_allowed')
     expect(eventDomainBody).toContain("'cancelled_after_acceptance'")
+    expect(declineMigration).toMatch(/WHEN 'trainer_plan_assignment' THEN p_action IN \([\s\S]+?'declined'/i)
     const metadataBody = functionBody('sanitize_professional_audit_metadata')
     expect(hardening).toMatch(/FUNCTION public\.sanitize_professional_audit_metadata\(\s*p_entity_type TEXT,\s*p_action TEXT,\s*p_metadata JSONB\s*\)/i)
     expect(metadataBody).toContain("p_entity_type = 'coaching_request' AND p_action = 'accepted'")

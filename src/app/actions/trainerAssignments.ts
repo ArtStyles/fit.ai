@@ -8,6 +8,7 @@ type FieldErrors = Record<string, string>
 type Failure = { ok: false; error: string; fieldErrors?: FieldErrors }
 type ProposalResult = { ok: true; assignmentId: string; assignmentVersionId: string; workoutPlanId: string } | Failure
 type AcceptanceResult = { ok: true; assignmentId: string; workoutPlanId: string } | Failure
+export type DeclineResult = { ok: true; assignmentId: string; changed: boolean } | Failure
 type RevisionResult = { ok: true; assignmentId: string; assignmentVersionId: string; workoutPlanId: string } | Failure
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -86,6 +87,36 @@ export async function acceptTrainerAssignment(formData: FormData): Promise<Accep
   revalidatePath('/coaching')
   revalidatePath('/plan')
   return { ok: true, assignmentId: accepted.assignment_id, workoutPlanId: accepted.workout_plan_id }
+}
+
+/** Terminates an unaccepted proposal without requiring an active coaching relationship. */
+export async function declineTrainerAssignment(formData: FormData): Promise<DeclineResult> {
+  const assignmentId = value(formData, 'assignmentId')
+  const reason = value(formData, 'reason')
+  const idempotencyKey = value(formData, 'idempotencyKey')
+  const fieldErrors: FieldErrors = {}
+
+  if (!isUuid(assignmentId)) fieldErrors.assignmentId = 'La propuesta no es válida.'
+  if (reason.length > 500) fieldErrors.reason = 'El motivo no puede superar 500 caracteres.'
+  if (!idempotencyKey || idempotencyKey.length > 200) {
+    fieldErrors.idempotencyKey = 'No se pudo identificar este rechazo. Inténtalo de nuevo.'
+  }
+  if (Object.keys(fieldErrors).length) return failure(fieldErrors, 'Revisa los datos del rechazo.')
+
+  const { supabase } = await requireAppUserContext()
+  const { data, error } = await (supabase.rpc as any)('decline_trainer_assignment', {
+    p_assignment_id: assignmentId,
+    p_reason: reason || null,
+    p_idempotency_key: idempotencyKey,
+  })
+  const declined = Array.isArray(data) ? data[0] : data
+  if (error || !declined?.assignment_id || typeof declined.changed !== 'boolean') {
+    return failure({}, 'No se pudo rechazar la rutina. Verifica que la propuesta siga pendiente e inténtalo de nuevo.')
+  }
+
+  revalidatePath('/coaching')
+  revalidatePath('/coach/programs')
+  return { ok: true, assignmentId: declined.assignment_id, changed: declined.changed }
 }
 
 /** Publishes an immutable replacement that only affects sessions authorized later. */

@@ -25,6 +25,7 @@ const trainerMigrationFiles = [
   '051_workout_adjustment_atomic.sql',
   '053_trainer_draft_rpc_json_repair.sql',
   '056_trainer_template_exercise_batch_append.sql',
+  '057_trainer_assignment_decline.sql',
 ]
 const migrationPath = file => path.join(repoRoot, 'supabase', 'migrations', file)
 const readMigration = file => readFileSync(migrationPath(file), 'utf8')
@@ -40,6 +41,7 @@ const templateBatchAppendTestPath = path.join(
   'tests',
   '056_trainer_template_exercise_batch_append_test.sql',
 )
+const declineTestPath = path.join(repoRoot, 'supabase', 'tests', '057_trainer_assignment_decline_test.sql')
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
@@ -442,6 +444,223 @@ SELECT dblink_disconnect('accept_a');
 SELECT dblink_disconnect('accept_b');
 `
 
+// Acceptance and decline share the client advisory namespace, then converge on
+// the same assignment/version/plan tail. Exactly one terminal transition wins.
+const acceptVsDeclineRaceSql = `
+CREATE EXTENSION IF NOT EXISTS dblink;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('57a00000-0000-4000-8000-000000000001', 'terminal-race-trainer@example.test', '{}'::jsonb),
+  ('57a00000-0000-4000-8000-000000000002', 'terminal-race-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, account_status) VALUES
+  ('57a00000-0000-4000-8000-000000000001', 'Terminal race trainer', 'https://example.test/terminal-race-trainer.webp', TRUE, 'active'),
+  ('57a00000-0000-4000-8000-000000000002', 'Terminal race client', 'https://example.test/terminal-race-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id, status, decided_at) VALUES
+  ('57a00000-0000-4000-8000-000000000011', '57a00000-0000-4000-8000-000000000001', 'approved', NOW());
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('57a00000-0000-4000-8000-000000000021', '57a00000-0000-4000-8000-000000000001', '57a00000-0000-4000-8000-000000000011', 'terminal-race-trainer', 'active', 'Terminal race trainer', 'Race', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('57a00000-0000-4000-8000-000000000031', '57a00000-0000-4000-8000-000000000021', 'Terminal race service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('57a00000-0000-4000-8000-000000000041', '57a00000-0000-4000-8000-000000000031', '57a00000-0000-4000-8000-000000000001', '57a00000-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('57a00000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', '57a00000-0000-4000-8000-000000000002');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active) VALUES
+  ('57a00000-0000-4000-8000-000000000051', '57a00000-0000-4000-8000-000000000002', 'Terminal race personal', gen_random_uuid(), TRUE);
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
+  ('57a00000-0000-4000-8000-000000000061', '57a00000-0000-4000-8000-000000000041', '57a00000-0000-4000-8000-000000000001', '57a00000-0000-4000-8000-000000000002', 'proposed');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  ('57a00000-0000-4000-8000-000000000071', '57a00000-0000-4000-8000-000000000061', 1, '{"schemaVersion":1,"workouts":[]}'::jsonb, 'proposed', '57a00000-0000-4000-8000-000000000081');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
+  ('57a00000-0000-4000-8000-000000000081', '57a00000-0000-4000-8000-000000000002', 'Terminal race professional', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, '57a00000-0000-4000-8000-000000000041', '57a00000-0000-4000-8000-000000000061', '57a00000-0000-4000-8000-000000000071');
+COMMIT;
+
+SELECT pg_advisory_lock(hashtextextended('57a00000-0000-4000-8000-000000000002', 0));
+SELECT dblink_connect('assignment_terminal_accept', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('assignment_terminal_decline', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec(name, $$SET request.jwt.claim.sub = '57a00000-0000-4000-8000-000000000002'$$)
+FROM (VALUES ('assignment_terminal_accept'), ('assignment_terminal_decline')) AS actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
+FROM (VALUES ('assignment_terminal_accept'), ('assignment_terminal_decline')) AS actor(name);
+SELECT dblink_exec(name, 'SET ROLE authenticated')
+FROM (VALUES ('assignment_terminal_accept'), ('assignment_terminal_decline')) AS actor(name);
+SELECT dblink_exec('assignment_terminal_accept', $$
+  CREATE FUNCTION pg_temp.try_terminal_accept() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.accept_trainer_assignment('57a00000-0000-4000-8000-000000000061', 'terminal-race-accept');
+    RETURN jsonb_build_object('ok', TRUE, 'action', 'accepted');
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'action', 'accepted', 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $f$;
+$$);
+SELECT dblink_exec('assignment_terminal_decline', $$
+  CREATE FUNCTION pg_temp.try_terminal_decline() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.decline_trainer_assignment('57a00000-0000-4000-8000-000000000061', 'Concurrent decline', 'terminal-race-decline');
+    RETURN jsonb_build_object('ok', TRUE, 'action', 'declined', 'changed', result.changed);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'action', 'declined', 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $f$;
+$$);
+SELECT dblink_send_query('assignment_terminal_accept', 'SELECT pg_temp.try_terminal_accept()');
+SELECT dblink_send_query('assignment_terminal_decline', 'SELECT pg_temp.try_terminal_decline()');
+DO $$ DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds'; BEGIN
+  LOOP
+    EXIT WHEN dblink_is_busy('assignment_terminal_accept') = 1 AND dblink_is_busy('assignment_terminal_decline') = 1;
+    IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'accept-versus-decline race did not dispatch'; END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END; $$;
+SELECT pg_advisory_unlock(hashtextextended('57a00000-0000-4000-8000-000000000002', 0));
+CREATE TEMP TABLE assignment_terminal_race_results (result JSONB NOT NULL);
+INSERT INTO assignment_terminal_race_results SELECT result FROM dblink_get_result('assignment_terminal_accept') AS response(result JSONB);
+INSERT INTO assignment_terminal_race_results SELECT result FROM dblink_get_result('assignment_terminal_decline') AS response(result JSONB);
+DO $$
+DECLARE final_status TEXT;
+BEGIN
+  IF (SELECT count(*) FROM assignment_terminal_race_results WHERE result->>'sqlstate' = '40P01') <> 0 THEN
+    RAISE EXCEPTION 'accept-versus-decline race deadlocked';
+  END IF;
+  IF (SELECT count(*) FROM assignment_terminal_race_results WHERE (result->>'ok')::BOOLEAN) <> 1 THEN
+    RAISE EXCEPTION 'accept-versus-decline race did not produce one winner: %', (SELECT string_agg(result::TEXT, ' | ') FROM assignment_terminal_race_results);
+  END IF;
+  IF (SELECT count(*) FROM assignment_terminal_race_results WHERE NOT COALESCE((result->>'ok')::BOOLEAN, FALSE) AND result->>'message' = 'TRAINER_ASSIGNMENT_NOT_PROPOSED') <> 1 THEN
+    RAISE EXCEPTION 'accept-versus-decline loser was not terminally rejected: %', (SELECT string_agg(result::TEXT, ' | ') FROM assignment_terminal_race_results);
+  END IF;
+
+  SELECT status INTO final_status FROM public.trainer_plan_assignments WHERE id = '57a00000-0000-4000-8000-000000000061';
+  IF final_status = 'active' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.trainer_plan_assignments
+      WHERE id = '57a00000-0000-4000-8000-000000000061'
+        AND acceptance_idempotency_key = 'terminal-race-accept'
+        AND decline_idempotency_key IS NULL
+        AND accepted_at IS NOT NULL
+        AND active_version_id = '57a00000-0000-4000-8000-000000000071'
+    ) OR NOT EXISTS (SELECT 1 FROM public.trainer_assignment_versions WHERE id = '57a00000-0000-4000-8000-000000000071' AND status = 'active')
+      OR NOT EXISTS (SELECT 1 FROM public.workout_plans WHERE id = '57a00000-0000-4000-8000-000000000081' AND is_active)
+      OR EXISTS (SELECT 1 FROM public.workout_plans WHERE id = '57a00000-0000-4000-8000-000000000051' AND is_active)
+      OR (SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '57a00000-0000-4000-8000-000000000061' AND action = 'accepted') <> 1
+      OR (SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '57a00000-0000-4000-8000-000000000061' AND action = 'declined') <> 0
+    THEN RAISE EXCEPTION 'accepted terminal race left mixed state'; END IF;
+  ELSIF final_status = 'cancelled' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.trainer_plan_assignments
+      WHERE id = '57a00000-0000-4000-8000-000000000061'
+        AND decline_idempotency_key = 'terminal-race-decline'
+        AND acceptance_idempotency_key IS NULL
+        AND accepted_at IS NULL
+        AND active_version_id IS NULL
+    ) OR NOT EXISTS (SELECT 1 FROM public.trainer_assignment_versions WHERE id = '57a00000-0000-4000-8000-000000000071' AND status = 'cancelled')
+      OR EXISTS (SELECT 1 FROM public.workout_plans WHERE id = '57a00000-0000-4000-8000-000000000081' AND is_active)
+      OR NOT EXISTS (SELECT 1 FROM public.workout_plans WHERE id = '57a00000-0000-4000-8000-000000000051' AND is_active)
+      OR (SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '57a00000-0000-4000-8000-000000000061' AND action = 'declined') <> 1
+      OR (SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '57a00000-0000-4000-8000-000000000061' AND action = 'accepted') <> 0
+    THEN RAISE EXCEPTION 'declined terminal race left mixed state'; END IF;
+  ELSE
+    RAISE EXCEPTION 'accept-versus-decline race left unexpected assignment state: %', final_status;
+  END IF;
+
+  IF (SELECT count(*) FROM public.product_notifications WHERE user_id = '57a00000-0000-4000-8000-000000000001' AND dedupe_key IN (
+    'coaching-assignment-accepted:57a00000-0000-4000-8000-000000000061',
+    'coaching-assignment-declined:57a00000-0000-4000-8000-000000000061'
+  )) <> 1 THEN RAISE EXCEPTION 'accept-versus-decline race emitted mixed trainer notifications'; END IF;
+END;
+$$;
+SELECT dblink_disconnect('assignment_terminal_accept');
+SELECT dblink_disconnect('assignment_terminal_decline');
+`
+
+// Two concurrent retries with one owner/key both succeed, but only the first
+// transition changes state or chooses the durable notification body.
+const sameKeyDeclineRaceSql = `
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('57b00000-0000-4000-8000-000000000002', 'same-key-decline-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, account_status) VALUES
+  ('57b00000-0000-4000-8000-000000000002', 'Same-key decline client', 'https://example.test/same-key-client.webp', TRUE, 'active');
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('57b00000-0000-4000-8000-000000000041', '57a00000-0000-4000-8000-000000000031', '57a00000-0000-4000-8000-000000000001', '57b00000-0000-4000-8000-000000000002', 'active');
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
+  ('57b00000-0000-4000-8000-000000000061', '57b00000-0000-4000-8000-000000000041', '57a00000-0000-4000-8000-000000000001', '57b00000-0000-4000-8000-000000000002', 'proposed');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  ('57b00000-0000-4000-8000-000000000071', '57b00000-0000-4000-8000-000000000061', 1, '{"schemaVersion":1,"workouts":[]}'::jsonb, 'proposed', '57b00000-0000-4000-8000-000000000081');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
+  ('57b00000-0000-4000-8000-000000000081', '57b00000-0000-4000-8000-000000000002', 'Same-key professional', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, '57b00000-0000-4000-8000-000000000041', '57b00000-0000-4000-8000-000000000061', '57b00000-0000-4000-8000-000000000071');
+COMMIT;
+
+SELECT pg_advisory_lock(hashtextextended('57b00000-0000-4000-8000-000000000002', 0));
+SELECT dblink_connect('same_key_decline_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('same_key_decline_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec(name, $$SET request.jwt.claim.sub = '57b00000-0000-4000-8000-000000000002'$$)
+FROM (VALUES ('same_key_decline_a'), ('same_key_decline_b')) AS actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
+FROM (VALUES ('same_key_decline_a'), ('same_key_decline_b')) AS actor(name);
+SELECT dblink_exec(name, 'SET ROLE authenticated')
+FROM (VALUES ('same_key_decline_a'), ('same_key_decline_b')) AS actor(name);
+SELECT dblink_exec('same_key_decline_a', $$
+  CREATE FUNCTION pg_temp.try_same_key_decline_a() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.decline_trainer_assignment('57b00000-0000-4000-8000-000000000061', 'Concurrent reason A', 'same-decline-key');
+    RETURN jsonb_build_object('ok', TRUE, 'changed', result.changed);
+  EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok', FALSE, 'sqlstate', SQLSTATE, 'message', SQLERRM); END;
+  $f$;
+$$);
+SELECT dblink_exec('same_key_decline_b', $$
+  CREATE FUNCTION pg_temp.try_same_key_decline_b() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.decline_trainer_assignment('57b00000-0000-4000-8000-000000000061', 'Concurrent reason B', 'same-decline-key');
+    RETURN jsonb_build_object('ok', TRUE, 'changed', result.changed);
+  EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('ok', FALSE, 'sqlstate', SQLSTATE, 'message', SQLERRM); END;
+  $f$;
+$$);
+SELECT dblink_send_query('same_key_decline_a', 'SELECT pg_temp.try_same_key_decline_a()');
+SELECT dblink_send_query('same_key_decline_b', 'SELECT pg_temp.try_same_key_decline_b()');
+DO $$ DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds'; BEGIN
+  LOOP
+    EXIT WHEN dblink_is_busy('same_key_decline_a') = 1 AND dblink_is_busy('same_key_decline_b') = 1;
+    IF clock_timestamp() >= deadline THEN RAISE EXCEPTION 'same-key decline race did not dispatch'; END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END; $$;
+SELECT pg_advisory_unlock(hashtextextended('57b00000-0000-4000-8000-000000000002', 0));
+CREATE TEMP TABLE same_key_decline_results (result JSONB NOT NULL);
+INSERT INTO same_key_decline_results SELECT result FROM dblink_get_result('same_key_decline_a') AS response(result JSONB);
+INSERT INTO same_key_decline_results SELECT result FROM dblink_get_result('same_key_decline_b') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM same_key_decline_results WHERE COALESCE((result->>'ok')::BOOLEAN, FALSE)) <> 2
+    OR (SELECT count(*) FROM same_key_decline_results WHERE (result->>'changed')::BOOLEAN) <> 1
+  THEN RAISE EXCEPTION 'same-key decline race did not return one change and one retry: %', (SELECT string_agg(result::TEXT, ' | ') FROM same_key_decline_results); END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.trainer_plan_assignments
+    WHERE id = '57b00000-0000-4000-8000-000000000061'
+      AND status = 'cancelled' AND decline_idempotency_key = 'same-decline-key'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.trainer_assignment_versions
+    WHERE id = '57b00000-0000-4000-8000-000000000071' AND status = 'cancelled'
+  ) OR EXISTS (
+    SELECT 1 FROM public.workout_plans
+    WHERE id = '57b00000-0000-4000-8000-000000000081' AND is_active
+  ) THEN RAISE EXCEPTION 'same-key decline race left mixed state'; END IF;
+  IF (SELECT count(*) FROM public.professional_audit_logs WHERE entity_id = '57b00000-0000-4000-8000-000000000061' AND action = 'declined') <> 1
+    OR (SELECT count(*) FROM public.product_notifications WHERE dedupe_key = 'coaching-assignment-declined:57b00000-0000-4000-8000-000000000061') <> 1
+    OR (SELECT body FROM public.product_notifications WHERE dedupe_key = 'coaching-assignment-declined:57b00000-0000-4000-8000-000000000061') NOT IN ('Concurrent reason A', 'Concurrent reason B')
+  THEN RAISE EXCEPTION 'same-key decline race duplicated or replaced side effects'; END IF;
+END;
+$$;
+SELECT dblink_disconnect('same_key_decline_a');
+SELECT dblink_disconnect('same_key_decline_b');
+`
+
 // Hold the relationship lock in the real revocation transaction, then dispatch
 // the measurements RPC in a second authenticated connection. The reader must
 // recheck after the revocation commits and return only the generic error.
@@ -835,7 +1054,7 @@ BEGIN
   SELECT snapshot INTO before_snapshot FROM public.trainer_migration_rerun_snapshot;
   SELECT public.capture_trainer_migration_rerun_snapshot() INTO after_snapshot;
   IF before_snapshot IS DISTINCT FROM after_snapshot THEN
-    RAISE EXCEPTION 'trainer migrations 040-051, 053, 056 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
+    RAISE EXCEPTION 'trainer migrations 040-051, 053, 056, 057 changed locked professional fixture: before=%, after=%', before_snapshot, after_snapshot;
   END IF;
 END $$;
 DROP TABLE public.trainer_migration_rerun_snapshot;
@@ -962,21 +1181,27 @@ try {
   runPsql(readMigration('056_trainer_template_exercise_batch_append.sql'), 'applying migration 056 trainer template exercise batch append')
   const templateBatchAppendTapOutput = runPsql(readFileSync(templateBatchAppendTestPath, 'utf8'), 'running 056 trainer template exercise batch append pgTAP suite')
   if (/^\s*not ok\b/m.test(templateBatchAppendTapOutput) || /# Looks like you (?:failed|planned)\b/.test(templateBatchAppendTapOutput)) throw new Error('056 pgTAP reported one or more failed assertions')
+  runPsql(readMigration('057_trainer_assignment_decline.sql'), 'applying migration 057 trainer assignment decline')
+  runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 for rerunnability')
+  const declineTapOutput = runPsql(readFileSync(declineTestPath, 'utf8'), 'running 057 trainer assignment decline pgTAP suite')
+  if (/^\s*not ok\b/m.test(declineTapOutput) || /# Looks like you (?:failed|planned)\b/.test(declineTapOutput)) throw new Error('057 pgTAP reported one or more failed assertions')
   const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
   if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-051, 053, 056')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-051, 053, 056, 057')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
   runPsql(detailRevocationRaceSql, 'running committed concurrent detail revocation race')
   runPsql(summarySuspensionRaceSql, 'running committed concurrent summary suspension race')
   runPsql(acceptanceRaceSql, 'running committed concurrent trainer acceptance race')
+  runPsql(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race')
+  runPsql(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race')
   runPsql(revisionSessionContinuitySql, 'running real authorization continuity across plan revision')
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
     trainerMigrationFiles.map(readMigration).join('\n'),
-    'reapplying trainer migrations 040-051, 053, 056 after locked professional data',
+    'reapplying trainer migrations 040-051, 053, 056, 057 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   runPsql(conversionFunnelRerunFixtureSql, 'seeding committed conversion rerun fixture')
@@ -985,7 +1210,7 @@ try {
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-051, 053, 056 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-051, 053, 056, 057 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })
