@@ -202,6 +202,18 @@ describe('active session wiring contracts', () => {
     expect(card).not.toContain('Quitar ejercicio agregado')
   })
 
+  it('keeps unlocked exercise notes generic instead of attributing them to a trainer', () => {
+    const header = renderSessionMarkup(createElement(SessionExerciseHeader, {
+      exercise: { ...lockedExercise, notes: 'Cambio solo por hoy.' },
+      exerciseOptions: [],
+      prescriptionLocked: false,
+    }))
+
+    expect(header).toContain('Notas:')
+    expect(header).toContain('Cambio solo por hoy.')
+    expect(header).not.toContain('Indicación del entrenador')
+  })
+
   it('orders completion sections and keeps navigation independent of motion', () => {
     const ordered = [
       'data-section="session-complete"',

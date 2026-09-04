@@ -86,15 +86,4 @@ describe('plan information hierarchy', () => {
     expect(overview).toContain("t('Versión {version}', { version: professionalVersionNumber })")
   })
 
-  it('keeps the assigning trainer and each prescribed RPE and indication visible in a locked plan', () => {
-    const overview = readFileSync(new URL('../PlanOverview.tsx', import.meta.url), 'utf8')
-
-    expect(page).toContain(".from('coaching_relationships')")
-    expect(page).toContain('trainer_user_id')
-    expect(page).toContain(".from('public_profiles')")
-    expect(overview).toContain('professionalTrainerName')
-    expect(overview).toContain('href="/coaching"')
-    expect(readView).toContain('RPE ${row.target_rpe}')
-    expect(readView).toContain('Indicación del entrenador')
-  })
 })

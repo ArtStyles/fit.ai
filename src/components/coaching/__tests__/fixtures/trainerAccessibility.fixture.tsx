@@ -167,9 +167,25 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
         goal: 'Aprender la técnica',
         description: null,
         daysPerWeek: 1,
-        workouts: [],
+        workouts: [{
+          sourceTemplateWorkoutId: '11111111-1111-4111-8111-111111111111',
+          name: 'Día de fuerza',
+          dayOfWeek: 1,
+          orderInPlan: 1,
+          exercises: [{
+            sourceTemplateExerciseId: '22222222-2222-4222-8222-222222222222',
+            exerciseId: '33333333-3333-4333-8333-333333333333',
+            orderIndex: 1,
+            sets: 3,
+            reps: 8,
+            weightKg: null,
+            targetRpe: 7,
+            restSeconds: 90,
+            notes: 'Controla la bajada.',
+          }],
+        }],
       },
-      exerciseNames: {},
+      exerciseNames: { '33333333-3333-4333-8333-333333333333': 'Sentadilla' },
     }} />
   }
   if (surface === 'workspace') {

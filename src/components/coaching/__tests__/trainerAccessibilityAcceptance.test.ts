@@ -96,6 +96,21 @@ describe('trainer accessibility acceptance in a local browser', () => {
     }
   }, 30_000)
 
+  it('shows the trainer message and prescribed indication in the proposal browser surface', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=proposal`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      await pwExpect(page.getByText('Mensaje del entrenador:', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText(/Prioriza el control/)).toBeVisible()
+      await pwExpect(page.getByText('Indicación del entrenador:', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText(/Controla la bajada/)).toBeVisible()
+    } finally {
+      await context.close()
+    }
+  }, 30_000)
+
   it.each(EDITOR_AXE_CASES)('editor with $editorState open in $theme theme has no critical/serious Axe findings', async ({ theme, editorState }) => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const page = await context.newPage()

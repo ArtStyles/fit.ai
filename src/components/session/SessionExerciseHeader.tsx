@@ -68,7 +68,7 @@ export function SessionExerciseHeader({
       </div>
 
       {exercise.originalName && <p className="mt-4 rounded-xl bg-violet-500/10 px-3 py-2 text-xs text-violet-200">{t('Reemplaza solo por hoy a {name}.', { name: exercise.originalName })}</p>}
-      {exercise.notes && <p className="mt-3 rounded-xl bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground"><span className="font-semibold text-foreground">{t('Indicación del entrenador')}:</span> {exercise.notes}</p>}
+      {exercise.notes && <p className="mt-3 rounded-xl bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground"><span className="font-semibold text-foreground">{prescriptionLocked ? t('Indicación del entrenador') : t('Notas')}:</span> {exercise.notes}</p>}
       {exercise.weightSuggestionBasis === 'based_on_previous_logs' && exercise.suggestedWeight !== null && (
         <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-200"><TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />{t('Ajustado por tu progreso')}</p>
       )}
