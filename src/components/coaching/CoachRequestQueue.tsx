@@ -8,6 +8,7 @@ import { dateLocale } from '@/lib/i18n'
 
 type CoachRequest = {
   id: string
+  clientId: string
   message: string
   createdAt: string
   serviceName: string
@@ -31,6 +32,7 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
   const [visibleRequests, setVisibleRequests] = useState(requests)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState({ text: '', isError: false })
+  const [acceptedClient, setAcceptedClient] = useState<Pick<CoachRequest, 'clientId' | 'clientName'> | null>(null)
   const attemptKeys = useRef(new Map<string, string>())
 
   function finishTerminalRequest(requestId: string) {
@@ -51,7 +53,11 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
       const { acceptCoachingRequest } = await import('@/app/actions/coachingRequests')
       const result = await acceptCoachingRequest(formData)
       setMessage({ text: result.ok ? 'La solicitud fue aceptada.' : result.error, isError: !result.ok })
-      if (result.ok || result.refreshed) finishTerminalRequest(requestId)
+      if (result.ok || result.refreshed) {
+        const request = visibleRequests.find(item => item.id === requestId)
+        if (result.ok && request) setAcceptedClient({ clientId: request.clientId, clientName: request.clientName })
+        finishTerminalRequest(requestId)
+      }
     } catch {
       setMessage({ text: 'No se pudo aceptar la solicitud.', isError: true })
     } finally {
@@ -78,6 +84,7 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
   }
 
   if (!visibleRequests.length) return <section className="rounded-3xl border border-dashed border-border/70 bg-muted/10 p-8 text-center">
+    {acceptedClient ? <section role="status" aria-live="polite" className="mb-5 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 text-left"><h2 className="font-bold text-foreground">{acceptedClient.clientName} ya forma parte de tu acompañamiento.</h2><p className="mt-1 text-sm text-muted-foreground">Continúa desde su ficha o prepara una rutina profesional.</p><div className="mt-3 flex flex-wrap gap-2"><a href={`/coach/clients/${acceptedClient.clientId}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground">Ver cliente</a><a href={`/coach/programs?clientId=${acceptedClient.clientId}`} className="inline-flex min-h-11 items-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">Preparar rutina</a></div></section> : null}
     <h1 className="text-xl font-bold text-foreground">No hay solicitudes nuevas</h1>
     <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Las solicitudes reales aparecerán aquí cuando alguien pida trabajar contigo.</p>
     <CoachingActionAnnouncement message={message.text} isError={message.isError} />

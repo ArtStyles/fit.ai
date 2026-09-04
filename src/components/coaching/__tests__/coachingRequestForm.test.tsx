@@ -204,6 +204,22 @@ describe('coaching request browser interactions', () => {
     }
   })
 
+  it('replaces a successfully accepted request with actions for that named client', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=success`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      await page.getByRole('button', { name: 'Aceptar' }).click()
+      await page.getByRole('status').filter({ hasText: 'Ana Pérez ya forma parte de tu acompañamiento.' }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('link', { name: 'Ver cliente' }).getAttribute('href')).toBe('/coach/clients/11111111-1111-4111-8111-111111111111')
+      expect(await page.getByRole('link', { name: 'Preparar rutina' }).getAttribute('href')).toBe('/coach/programs?clientId=11111111-1111-4111-8111-111111111111')
+      expect(await page.getByRole('button', { name: 'Aceptar' }).count()).toBe(0)
+    } finally {
+      await page.close()
+    }
+  })
+
   it('removes a terminal coach request and refreshes for both acceptance success and a refreshed race conflict', async () => {
     for (const mode of ['success', 'conflict'] as const) {
       const page = await browser.newPage()

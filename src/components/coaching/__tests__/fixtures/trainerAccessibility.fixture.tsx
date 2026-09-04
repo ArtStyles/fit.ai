@@ -125,6 +125,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
   if (surface === 'requests') {
     return <CoachRequestQueue requests={[{
       id: '11111111-1111-4111-8111-111111111111',
+      clientId: '22222222-2222-4222-8222-222222222222',
       serviceName: 'Servicio de fuerza',
       message: 'Quiero mejorar mi técnica.',
       createdAt: '2026-08-08T12:00:00.000Z',

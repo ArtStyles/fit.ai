@@ -33,6 +33,7 @@ export default async function CoachRequestsPage() {
     const profile = profilesById.get(request.client_user_id) as any
     return {
       id: request.id,
+      clientId: request.client_user_id,
       message: request.message,
       createdAt: request.created_at,
       serviceName: request.trainer_service_offerings?.name ?? 'Servicio de acompañamiento',

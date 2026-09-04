@@ -102,12 +102,14 @@ export function ProgramTemplateEditor({
   options,
   relationships = [],
   assignments = [],
+  selectedRelationshipId,
 }: {
   template: ProgramTemplateView
   workouts: TemplateWorkoutView[]
   options: PlanExerciseOption[]
-  relationships?: Array<{ id: string; label: string }>
-  assignments?: Array<{ id: string; label: string }>
+  relationships?: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
+  assignments?: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
+  selectedRelationshipId?: string
 }) {
   const router = useRouter()
   const orderedWorkouts = useMemo(
@@ -369,6 +371,7 @@ export function ProgramTemplateEditor({
             assignments={assignments}
             blocked={hasPendingDescriptions}
             blockedMessage={PENDING_DESCRIPTION_MESSAGE}
+            selectedRelationshipId={selectedRelationshipId}
           />
         </aside>
       </div>

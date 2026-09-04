@@ -65,13 +65,13 @@ describe('trainer assignment browser interaction', () => {
 
   afterAll(async () => { await browser?.close(); await viteServer?.close() })
 
-  it('sends the selected distinguishable relationship id to the proposal action', async () => {
+  it('sends the selected visual relationship choice id to the proposal action', async () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html`)
       await page.waitForFunction(() => Boolean((window as Window & { __ASSIGN_DIALOG_READY__?: boolean }).__ASSIGN_DIALOG_READY__))
       await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
-      await page.getByRole('combobox').selectOption('22222222-2222-4222-8222-222222222222')
+      await page.getByRole('radio', { name: /Servicio Movilidad/ }).check()
       await page.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
       await page.waitForFunction(() => Boolean((window as Window & { __ASSIGNMENT_ACTIONS__?: unknown[] }).__ASSIGNMENT_ACTIONS__?.length))
       expect(await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__)).toEqual([

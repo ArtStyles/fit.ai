@@ -25,7 +25,7 @@ export function PublishProgramRevisionDialog({
   blockedMessage = DEFAULT_BLOCKED_MESSAGE,
 }: {
   templateId: string
-  assignments: Array<{ id: string; label: string }>
+  assignments: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
 } & PendingChangeGuardProps) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -89,7 +89,7 @@ export function PublishProgramRevisionDialog({
     <p className="mt-1 text-sm text-muted-foreground">La nueva versión se aplicará solo a sesiones que el cliente inicie después de publicarla.</p>
     <button type="button" onClick={toggleOpen} aria-expanded={open} aria-controls="publish-program-revision-form" disabled={busy} className="mt-3 min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-background disabled:opacity-50">{open ? 'Cerrar' : 'Publicar revisión'}</button>
     {open ? <form id="publish-program-revision-form" onSubmit={event => void submit(event)} noValidate className="mt-4 space-y-3 rounded-xl border border-border/70 p-3">
-      <label className="block text-sm font-semibold text-foreground">Cliente<select required name="assignmentId" defaultValue="" disabled={busy} className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal"><option value="" disabled>Selecciona una asignación activa</option>{assignments.map(assignment => <option key={assignment.id} value={assignment.id}>{assignment.label}</option>)}</select></label>
+      <fieldset disabled={busy}><legend className="text-sm font-semibold text-foreground">Cliente</legend><div className="mt-2 grid gap-2">{assignments.map(assignment => { const name = assignment.clientName ?? assignment.label ?? 'Cliente'; return <label key={assignment.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-border/70 bg-background p-3 has-[:checked]:border-sky-500 has-[:checked]:bg-sky-500/5"><input required type="radio" name="assignmentId" value={assignment.id} className="h-4 w-4 accent-sky-600" />{assignment.clientAvatarUrl ? <img src={assignment.clientAvatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" /> : <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-full bg-muted font-semibold">{name.slice(0, 1).toUpperCase()}</span>}<span className="min-w-0"><span className="block font-semibold text-foreground">{name}</span><span className="block text-xs text-muted-foreground">{assignment.serviceName ?? assignment.label ?? 'Rutina activa'}{assignment.startedAt ? ` · iniciado ${assignment.startedAt}` : ''}{assignment.state ? ` · ${assignment.state}` : ''}</span></span></label> })}</div></fieldset>
       <label className="block text-sm font-semibold text-foreground">Resumen del cambio<textarea required name="changeSummary" maxLength={1000} rows={3} disabled={busy} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 font-normal" /></label>
       <button type="submit" disabled={busy} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{busy ? 'Publicando…' : 'Publicar para sesiones futuras'}</button>
     </form> : null}
