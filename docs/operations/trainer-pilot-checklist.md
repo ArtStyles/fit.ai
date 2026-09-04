@@ -24,7 +24,7 @@ El piloto mantiene `COMMUNITY_ENABLED=false`. El código y los datos de Comunida
 - [ ] Solicitud profesional: borrador, credencial, envío, cambios, reenvío, entrevista externa registrada y aprobación.
 - [ ] Directorio: solo perfiles activos; servicios gratuitos sin precio, moneda, plan o checkout.
 - [ ] Solicitudes abiertas: varias pendientes y una sola aceptación; las competidoras quedan canceladas y solo existe una relación activa.
-- [ ] Rutina profesional: propuesta, rechazo opcional e idempotente con un solo aviso/audit, carrera aceptar frente a rechazar con un único ganador, aceptación del cliente, plan principal de solo lectura y ejecución sin controles de edición.
+- [ ] Rutina profesional: propuesta, rechazo opcional e idempotente con un solo aviso/audit y carrera aceptar frente a rechazar con un único ganador en `pnpm test:db:trainers`; aceptación y materialización ISO en el journey E2E remoto; plan principal de solo lectura y ejecución sin controles de edición. No presentar la cobertura DB del rechazo como si el E2E remoto ya la ejecutara.
 - [ ] Editor de plantilla: en Day A añadir Prensa y Gemelos juntos, añadir Zancada después, editarla a 4 × 8, RPE 8 y 90 s, reordenarla sobre Gemelos, recargar y confirmar persistencia; al cambiar el nombre, la asignación se bloquea hasta «Guardar detalles», después se abre asignación y publicación de revisión; a 390 px no hay desbordamiento horizontal.
 - [ ] Evidencia: sesión y resultados asociados a la versión autorizada; una revisión concurrente no altera la sesión iniciada.
 - [ ] Revocación: medidas ocultas en la siguiente lectura; finalizar relación corta el acceso del entrenador sin borrar el historial del cliente.

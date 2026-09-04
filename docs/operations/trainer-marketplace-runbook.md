@@ -241,11 +241,17 @@ Este es el único comando autorizado para el journey destructivo del marketplace
 3. Solo un entrenador aprobado/activo aparece en `/trainers` y puede publicar servicios gratuitos.
 4. Un cliente envía solicitudes abiertas; una aceptación crea una sola relación activa y cancela las otras pendientes.
 5. El cliente concede/revoca consentimientos y el siguiente acceso del entrenador se actualiza inmediatamente.
-6. El entrenador crea una plantilla sintética con lunes (`1`) y domingo (`7`) y propone dos rutinas en fixtures separados. El cliente rechaza una con un reintento de la misma clave y acepta la otra. Confirmar un solo audit/aviso por rechazo, que aceptar frente a rechazar produce un único ganador y que la aceptada materializa ambos días con esos valores ISO; repetir la auditoría de divergencias con resultado `0`.
+6. El entrenador crea una plantilla sintética con lunes (`1`) y domingo (`7`), propone la rutina y el cliente la acepta. Confirmar que ambos días se materializan con esos valores ISO y repetir la auditoría de divergencias con resultado `0`.
 7. El entrenador publica una revisión sintética que incluye lunes y domingo. Confirmar la misma materialización ISO, que la revisión no reescribe la versión ejecutada ni el historial, y que la auditoría sigue en `0`.
 8. Las vistas del entrenador muestran solo clientes con relación y alcance vigentes.
 9. Analíticas aceptan únicamente eventos allowlisted; los errores devuelven código de dominio y `correlationId`, nunca payloads internos.
 10. Navegación no muestra Comunidad, checkout, precios, chat, reseñas ni edición de la rutina profesional.
+
+El journey E2E remoto actual no ejecuta el rechazo de rutina. La idempotencia del
+rechazo, el único audit/aviso y la carrera aceptar frente a rechazar pertenecen a
+la puerta local `pnpm test:db:trainers`; no atribuir esas garantías al comando E2E
+hasta ampliar explícitamente `trainer-marketplace.spec.ts`. Antes del piloto,
+conservar esta diferencia en la evidencia de aprobación y validar ambas puertas.
 
 Antes del despliegue de UI, y sin mutar producción durante el smoke local,
 verificar en una plantilla existente: abrir Day A; añadir Prensa y Gemelos en una
