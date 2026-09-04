@@ -95,7 +95,6 @@
 - Modify: `src/app/(app)/coach/clients/[clientId]/page.tsx`
 - Modify its focused route test.
 - Modify: `src/app/(app)/coach/programs/page.tsx`
-- Modify: `src/components/coaching/ProgramTemplateList.tsx`
 - Modify: `src/app/(app)/coach/programs/[templateId]/page.tsx`
 - Modify: `src/components/coaching/AssignProgramDialog.tsx`
 - Modify: `src/components/coaching/PublishProgramRevisionDialog.tsx`
@@ -123,6 +122,7 @@
 
 - Add: `supabase/migrations/057_trainer_assignment_decline.sql`
 - Add: `supabase/tests/057_trainer_assignment_decline_test.sql`
+- Modify: `scripts/test-trainer-programming-db.mjs`
 - Modify: `src/app/actions/trainerAssignments.ts`
 - Modify: `src/app/actions/__tests__/trainerAssignments.test.ts`
 - Modify: `src/components/coaching/ProposedProgramReview.tsx`
