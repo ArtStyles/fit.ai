@@ -9,7 +9,7 @@ export const metadata = { title: 'Rutinas profesionales · Vekira' }
 
 type TemplateRow = { id: string; name: string; goal: string | null; days_per_week: number; status: 'draft' | 'active' | 'archived'; updated_at: string }
 
-export default async function CoachProgramsPage({ searchParams }: { searchParams?: { clientId?: string | string[] } }) {
+export default async function CoachProgramsPage({ searchParams }: { searchParams?: { clientId?: string | string[] } } = {}) {
   const { user, supabase } = await requireActiveTrainerContext()
   const { data, error } = await (supabase.from('trainer_program_templates') as any)
     .select('id, name, goal, days_per_week, status, updated_at').eq('trainer_user_id', user.id).neq('status', 'archived').order('updated_at', { ascending: false })

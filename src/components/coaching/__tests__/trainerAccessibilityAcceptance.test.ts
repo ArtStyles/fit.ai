@@ -351,7 +351,9 @@ describe('trainer accessibility acceptance in a local browser', () => {
         }
         if (surface === 'assignment') {
           await page.locator('button[aria-controls="assign-program-form"]').click()
-          await pwExpect(page.getByLabel(/Cliente del acompa/)).toBeVisible()
+          const clientChoices = page.getByRole('group', { name: /Cliente del acompa/ })
+          await pwExpect(clientChoices).toBeVisible()
+          await pwExpect(clientChoices.getByRole('radio', { name: /Ana Rivera.*Servicio Fuerza/ })).toBeVisible()
         }
         await expectResponsiveGeometry(page)
         await expectActionTargetsAtLeast44(page)
@@ -427,7 +429,10 @@ describe('trainer accessibility acceptance in a local browser', () => {
       await page.keyboard.press('Enter')
       await pwExpect(disclosure).toHaveAttribute('aria-expanded', 'true')
       await page.keyboard.press('Tab')
-      await pwExpect(page.getByLabel(/Cliente del acompa/)).toBeFocused()
+      const clientChoice = page.getByRole('group', { name: /Cliente del acompa/ }).getByRole('radio', { name: /Ana Rivera.*Servicio Fuerza/ })
+      await pwExpect(clientChoice).toBeFocused()
+      await page.keyboard.press('Space')
+      await pwExpect(clientChoice).toBeChecked()
       await page.keyboard.press('Tab')
       await pwExpect(page.getByLabel(/Resumen para el cliente/)).toBeFocused()
 
@@ -441,9 +446,10 @@ describe('trainer accessibility acceptance in a local browser', () => {
       })
       await accept.focus()
       await page.keyboard.press('Enter')
-      await page.getByText('La solicitud fue aceptada.').waitFor({ state: 'visible' })
+      const acceptanceAnnouncement = page.getByText('La solicitud fue aceptada.', { exact: true })
+      await acceptanceAnnouncement.waitFor({ state: 'visible' })
       expect(confirmationSeen).toBe(true)
-      await pwExpect(page.locator('[aria-live="polite"]')).toContainText('La solicitud fue aceptada.')
+      await pwExpect(acceptanceAnnouncement).toHaveAttribute('aria-live', 'polite')
     } finally {
       await context.close()
     }

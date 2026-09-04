@@ -138,7 +138,11 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
       templateId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
       relationships={[{
         id: '11111111-1111-4111-8111-111111111111',
-        label: 'Servicio Fuerza · iniciado 1 ene 2026 · ref. 11111111',
+        clientName: 'Ana Rivera',
+        clientAvatarUrl: null,
+        serviceName: 'Servicio Fuerza',
+        startedAt: '1 ene 2026',
+        state: 'activo',
       }]}
     />
   }

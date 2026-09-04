@@ -134,6 +134,7 @@ describe('CoachingPage', () => {
   })
 
   it('uses grouped public projections to pass named trainer and service entries to the client hub', async () => {
+    const trainerName = 'Marina P\u00e9rez'
     const supabase = requestQuery(
       { data: [
         { id: 'old-accepted', status: 'accepted', created_at: '2026-08-01T12:00:00.000Z', trainer_user_id: 'trainer-old', service_id: 'service-old' },
@@ -142,7 +143,7 @@ describe('CoachingPage', () => {
       [{ id: 'relationship-current', status: 'active', trainer_user_id: 'trainer-current', service_id: 'service-current', started_at: '2026-08-02T12:00:00.000Z', source_request_id: 'current-request' }],
       [
         { id: 'trainer-old', username: 'luis', full_name: 'Luis Sosa', avatar_url: null },
-        { id: 'trainer-current', username: 'marina', full_name: 'Marina PÃ©rez', avatar_url: 'https://example.test/marina.jpg' },
+        { id: 'trainer-current', username: 'marina', full_name: trainerName, avatar_url: 'https://example.test/marina.jpg' },
       ],
       [{ user_id: 'trainer-current', slug: 'marina-perez' }],
       {
@@ -162,7 +163,7 @@ describe('CoachingPage', () => {
     expect(supabase.profileIn).toHaveBeenCalledWith('id', ['trainer-old', 'trainer-current'])
     expect(supabase.directoryIn).toHaveBeenCalledWith('user_id', ['trainer-old', 'trainer-current'])
     expect(supabase.rpc).toHaveBeenCalledWith('get_requestable_trainer_services', { trainer_slug: 'marina-perez' })
-    expect(html).toContain('relationship:active:Marina PÃ©rez:Fuerza guiada')
+    expect(html).toContain(`relationship:active:${trainerName}:Fuerza guiada`)
     expect(html).toContain('Luis Sosa:Servicio de acompañamiento no disponible')
   })
 
