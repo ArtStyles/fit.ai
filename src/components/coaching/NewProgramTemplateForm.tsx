@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-export function NewProgramTemplateForm() {
+export function NewProgramTemplateForm({ clientId }: { clientId?: string }) {
   const router = useRouter(); const [saving, setSaving] = useState(false); const [error, setError] = useState('')
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -13,7 +13,7 @@ export function NewProgramTemplateForm() {
     setError('')
     try {
       const result = await (await import('@/app/actions/trainerPrograms')).createTrainerProgram(formData)
-      if (result.ok) router.push(`/coach/programs/${result.templateId}`)
+      if (result.ok) router.push(`/coach/programs/${result.templateId}${clientId ? `?clientId=${encodeURIComponent(clientId)}` : ''}`)
       else setError(result.error)
     } catch { setError('No se pudo crear la rutina.') } finally { setSaving(false) }
   }

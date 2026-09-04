@@ -84,6 +84,19 @@ describe('professional template editor browser interactions', () => {
     } finally { await page.close() }
   })
 
+  it('preserves the server-validated client handoff when creating the first template', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?view=new&clientId=22222222-2222-4222-8222-222222222222`)
+      await page.getByLabel('Nombre').fill('Fuerza base')
+      await page.getByRole('button', { name: 'Crear plantilla' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_PUSHES__?: string[] }).__PROGRAM_PUSHES__?.length))
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_PUSHES__?: string[] }).__PROGRAM_PUSHES__)).toEqual([
+        '/coach/programs/11111111-1111-4111-8111-111111111111?clientId=22222222-2222-4222-8222-222222222222',
+      ])
+    } finally { await page.close() }
+  })
+
   it('marks descriptive edits pending and returns to saved after explicit save', async () => {
     const page = await browser.newPage()
     try {
@@ -154,7 +167,7 @@ describe('professional template editor browser interactions', () => {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
       await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
       const assignment = page.getByRole('region', { name: 'Enviar como rutina profesional' })
-      await assignment.getByLabel('Cliente del acompañamiento').selectOption('relationship-a')
+      await assignment.getByRole('radio', { name: /relationship-a/ }).check()
       await openTemplateDetails(page)
       await page.getByLabel('Descripción de la rutina').fill('Progresión pendiente')
       await assignment.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
@@ -376,25 +389,27 @@ describe('professional template editor browser interactions', () => {
     } finally { await page.close() }
   })
 
-  it('renders complete relationship, assignment, and nested exercise metadata inside the workspace', async () => {
+  it('submits exactly one chosen relationship and assignment from the visual choice cards', async () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
-      await pwExpect(page.getByText('Piernas · Barra', { exact: true }).first()).toBeVisible()
-
       await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
-      await pwExpect(page.getByLabel('Cliente del acompañamiento').getByRole('option')).toHaveText([
-        'Selecciona una relación activa',
-        'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a',
-        'Entrenamiento personal · iniciado 10 ago 2026 · ref. relationship-b',
-      ])
+      const proposal = page.locator('#assign-program-form')
+      await proposal.getByRole('radio', { name: /relationship-b/ }).check()
+      await pwExpect(proposal.getByRole('radio', { checked: true })).toHaveCount(1)
+      await proposal.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
 
       await page.getByRole('button', { name: 'Publicar revisión' }).click()
-      await pwExpect(page.locator('#publish-program-revision-form select[name="assignmentId"] option')).toHaveText([
-        'Selecciona una asignación activa',
-        'Entrenamiento personal · asignación assignment-a',
-        'Entrenamiento personal · asignación assignment-b',
-      ])
+      const revision = page.locator('#publish-program-revision-form')
+      await revision.getByRole('radio', { name: /assignment-b/ }).check()
+      await pwExpect(revision.getByRole('radio', { checked: true })).toHaveCount(1)
+      await revision.getByLabel('Resumen del cambio').fill('Ajuste de carga')
+      await revision.getByRole('button', { name: 'Publicar para sesiones futuras' }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__?.length === 2))
+      expect(await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ relationshipId: 'relationship-b' }),
+        expect.objectContaining({ assignmentId: 'assignment-b' }),
+      ]))
     } finally { await page.close() }
   })
 

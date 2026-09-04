@@ -20,6 +20,10 @@ function CoachingActionAnnouncement({ message, isError }: { message: string; isE
   return <p {...(isError ? { role: 'alert' } : { 'aria-live': 'polite' })} className="mt-3 text-sm text-muted-foreground">{message}</p>
 }
 
+function AcceptedClientPanel({ client }: { client: Pick<CoachRequest, 'clientId' | 'clientName'> }) {
+  return <section role="status" aria-live="polite" className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 text-left"><h2 className="font-bold text-foreground">{client.clientName} ya forma parte de tu acompañamiento.</h2><p className="mt-1 text-sm text-muted-foreground">Continúa desde su ficha o prepara una rutina profesional.</p><div className="mt-3 flex flex-wrap gap-2"><a href={`/coach/clients/${client.clientId}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground">Ver cliente</a><a href={`/coach/programs?clientId=${encodeURIComponent(client.clientId)}`} className="inline-flex min-h-11 items-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">Preparar rutina</a></div></section>
+}
+
 function newIdempotencyKey() {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
@@ -84,13 +88,14 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
   }
 
   if (!visibleRequests.length) return <section className="rounded-3xl border border-dashed border-border/70 bg-muted/10 p-8 text-center">
-    {acceptedClient ? <section role="status" aria-live="polite" className="mb-5 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 text-left"><h2 className="font-bold text-foreground">{acceptedClient.clientName} ya forma parte de tu acompañamiento.</h2><p className="mt-1 text-sm text-muted-foreground">Continúa desde su ficha o prepara una rutina profesional.</p><div className="mt-3 flex flex-wrap gap-2"><a href={`/coach/clients/${acceptedClient.clientId}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground">Ver cliente</a><a href={`/coach/programs?clientId=${acceptedClient.clientId}`} className="inline-flex min-h-11 items-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">Preparar rutina</a></div></section> : null}
+    {acceptedClient ? <div className="mb-5"><AcceptedClientPanel client={acceptedClient} /></div> : null}
     <h1 className="text-xl font-bold text-foreground">No hay solicitudes nuevas</h1>
     <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Las solicitudes reales aparecerán aquí cuando alguien pida trabajar contigo.</p>
     <CoachingActionAnnouncement message={message.text} isError={message.isError} />
   </section>
 
   return <section aria-labelledby="coach-request-queue-title" className="space-y-3">
+    {acceptedClient ? <AcceptedClientPanel client={acceptedClient} /> : null}
     <h1 id="coach-request-queue-title" className="text-xl font-bold text-foreground">Solicitudes pendientes</h1>
     <ul className="space-y-3">{visibleRequests.map(request => {
       const busy = busyId === request.id

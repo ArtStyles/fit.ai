@@ -35,12 +35,14 @@ export default async function CoachClientDetailPage({ params, searchParams }: {
       clientId: params.clientId, weeks, now, ...range,
     })
     const relationshipResponse = typeof (supabase as any).from === 'function'
-      ? await ((supabase as any).from('coaching_relationships').select('id, status, started_at, trainer_service_offerings(name)').eq('trainer_user_id', user?.id).eq('client_user_id', params.clientId).maybeSingle())
+      ? await ((supabase as any).from('coaching_relationships').select('id, status, started_at, trainer_service_offerings(name)').eq('trainer_user_id', user?.id).eq('client_user_id', params.clientId).eq('status', 'active').maybeSingle())
       : { data: null }
+    if (relationshipResponse.error) throw new Error('COACH_CLIENT_RELATIONSHIP_UNAVAILABLE')
     const relationship = relationshipResponse.data as any
     const assignmentResponse = relationship?.id
       ? await ((supabase as any).from('trainer_plan_assignments').select('id, status, created_at').eq('relationship_id', relationship.id).eq('trainer_user_id', user?.id).eq('status', 'active').maybeSingle())
       : { data: null }
+    if (assignmentResponse.error) throw new Error('COACH_CLIENT_ASSIGNMENT_UNAVAILABLE')
     const service = Array.isArray(relationship?.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship?.trainer_service_offerings
     let measurements = null
     if (detail.activeScopes.includes('body_measurements')) {
