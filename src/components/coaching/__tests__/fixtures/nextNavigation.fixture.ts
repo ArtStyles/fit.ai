@@ -5,11 +5,13 @@ export function useRouter() {
         __PROGRAM_REFRESHES__?: number
         __COACH_REFRESHES__?: number
         __PROGRAM_APPLY_SERVER_STATE__?: () => void
+        __COACH_APPLY_SERVER_STATE__?: () => void
       }
       browserWindow.__PROGRAM_REFRESHES__ = (browserWindow.__PROGRAM_REFRESHES__ ?? 0) + 1
       browserWindow.__COACH_REFRESHES__ = (browserWindow.__COACH_REFRESHES__ ?? 0) + 1
       if (new URLSearchParams(window.location.search).get('refresh') !== 'stale') {
         browserWindow.__PROGRAM_APPLY_SERVER_STATE__?.()
+        browserWindow.__COACH_APPLY_SERVER_STATE__?.()
       }
     },
     push: (href: string) => {

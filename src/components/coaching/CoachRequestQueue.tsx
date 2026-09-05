@@ -33,16 +33,24 @@ function newIdempotencyKey() {
 export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
   const router = useRouter()
   const { language, timeZone } = useI18n()
-  const [visibleRequests, setVisibleRequests] = useState(requests)
+  const [terminalRequestIds, setTerminalRequestIds] = useState<Set<string>>(() => new Set())
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState({ text: '', isError: false })
   const [acceptedClient, setAcceptedClient] = useState<Pick<CoachRequest, 'clientId' | 'clientName'> | null>(null)
   const attemptKeys = useRef(new Map<string, string>())
+  const visibleRequests = requests.filter(request => !terminalRequestIds.has(request.id))
 
   function finishTerminalRequest(requestId: string, additionallyRemovedIds: string[] = []) {
     const removedIds = new Set([requestId, ...additionallyRemovedIds])
-    removedIds.forEach(removedId => attemptKeys.current.delete(removedId))
-    setVisibleRequests(current => current.filter(request => !removedIds.has(request.id)))
+    removedIds.forEach(removedId => {
+      attemptKeys.current.delete(removedId)
+    })
+    setTerminalRequestIds(current => {
+      const next = new Set<string>()
+      current.forEach(requestId => next.add(requestId))
+      removedIds.forEach(requestId => next.add(requestId))
+      return next
+    })
     router.refresh()
   }
 

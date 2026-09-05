@@ -254,6 +254,27 @@ describe('coaching request browser interactions', () => {
     }
   })
 
+  it('reconciles a refreshed conflict with server props that removed every same-client request', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=conflict&sameClient=1&serverAfterRefresh=empty`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      const acceptButtons = page.getByRole('button', { name: 'Aceptar' })
+      expect(await acceptButtons.count()).toBe(2)
+
+      await acceptButtons.first().click()
+
+      await page.getByText('La solicitud se actualizó. Recarga la bandeja.').waitFor({ state: 'visible' })
+      await page.getByRole('heading', { name: 'No hay solicitudes nuevas' }).waitFor({ state: 'visible' })
+      expect(await page.getByText('Servicio alternativo').count()).toBe(0)
+      expect(await acceptButtons.count()).toBe(0)
+      expect(await page.evaluate(() => (window as Window & { __COACH_REFRESHES__?: number }).__COACH_REFRESHES__)).toBe(1)
+    } finally {
+      await page.close()
+    }
+  })
+
   it('removes a terminal coach request and refreshes for both acceptance success and a refreshed race conflict', async () => {
     for (const mode of ['success', 'conflict'] as const) {
       const page = await browser.newPage()
