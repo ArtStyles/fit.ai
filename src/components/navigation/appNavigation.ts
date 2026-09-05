@@ -1,10 +1,10 @@
-import { BarChart3, Briefcase, ClipboardList, Dumbbell, Home, LayoutDashboard, Play, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { BarChart3, ClipboardList, Dumbbell, Home, LayoutDashboard, Play, Users, type LucideIcon } from 'lucide-react'
 
 export type AppNavItem = {
-  href: '/dashboard' | '/plan' | '/entrenar' | '/progress' | '/feed' | '/trainers' | '/coaching'
-    | '/coach' | '/coach/clients' | '/coach/programs' | '/coach/requests' | '/coach/profile' | '/coach/services'
-  label: 'Inicio' | 'Plan' | 'Entrenar' | 'Progreso' | 'Comunidad' | 'Entrenadores' | 'Mi entrenador'
-    | 'Resumen' | 'Clientes' | 'Rutinas' | 'Solicitudes' | 'Perfil' | 'Servicios'
+  href: '/dashboard' | '/plan' | '/entrenar' | '/progress' | '/feed' | '/trainers'
+    | '/coach' | '/coach/clients' | '/coach/programs' | '/coach/requests'
+  label: 'Inicio' | 'Plan' | 'Entrenar' | 'Progreso' | 'Comunidad' | 'Entrenadores'
+    | 'Resumen' | 'Clientes' | 'Rutinas' | 'Solicitudes'
 }
 
 const PERSONAL_NAV_ITEMS: readonly AppNavItem[] = [
@@ -17,7 +17,6 @@ const PERSONAL_NAV_ITEMS: readonly AppNavItem[] = [
 export function getPersonalNavItems({ communityEnabled }: { communityEnabled: boolean }): readonly AppNavItem[] {
   return [
     ...PERSONAL_NAV_ITEMS,
-    { href: '/coaching', label: 'Mi entrenador' },
     communityEnabled
       ? { href: '/feed', label: 'Comunidad' }
       : { href: '/trainers', label: 'Entrenadores' },
@@ -29,7 +28,6 @@ const COACH_NAV_ITEMS: readonly AppNavItem[] = [
   { href: '/coach/clients', label: 'Clientes' },
   { href: '/coach/programs', label: 'Rutinas' },
   { href: '/coach/requests', label: 'Solicitudes' },
-  { href: '/coach/profile', label: 'Perfil' },
 ]
 
 export function getCoachNavItems(): readonly AppNavItem[] {
@@ -43,13 +41,10 @@ const APP_NAV_ICONS: Record<AppNavItem['href'], LucideIcon> = {
   '/progress': BarChart3,
   '/feed': Users,
   '/trainers': Users,
-  '/coaching': UserRound,
   '/coach': LayoutDashboard,
   '/coach/clients': Users,
   '/coach/programs': Dumbbell,
   '/coach/requests': ClipboardList,
-  '/coach/profile': UserRound,
-  '/coach/services': Briefcase,
 }
 
 export function getAppNavIcon(href: AppNavItem['href']): LucideIcon {
@@ -59,5 +54,5 @@ export function getAppNavIcon(href: AppNavItem['href']): LucideIcon {
 export function isAppNavItemActive(pathname: string, href: string): boolean {
   if (pathname === href) return true
   if (href === '/dashboard' || href === '/entrenar' || href === '/coach') return false
-  return pathname.startsWith(`${href}/`)
+  return pathname.startsWith(href + '/')
 }
