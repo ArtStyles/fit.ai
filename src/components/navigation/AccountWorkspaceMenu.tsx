@@ -63,13 +63,13 @@ export function AccountWorkspaceMenuBody({
     : ['personal']
   const activeLabel = workspace === 'coach' ? t('Entrenador') : t('Personal')
   const interactionLocked = pendingWorkspace !== null
-  const guardedLinkProps = {
-    'aria-disabled': interactionLocked || undefined,
-    tabIndex: interactionLocked ? -1 : undefined,
-    onClick: interactionLocked
-      ? (event: MouseEvent<HTMLAnchorElement>) => event.preventDefault()
-      : undefined,
-  }
+  const guardedLinkProps = interactionLocked
+    ? {
+        'aria-disabled': true,
+        tabIndex: -1,
+        onClick: (event: MouseEvent<HTMLAnchorElement>) => event.preventDefault(),
+      }
+    : {}
 
   if (presentation === 'menu') {
     return (
