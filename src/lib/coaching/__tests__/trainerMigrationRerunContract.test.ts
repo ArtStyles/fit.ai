@@ -181,6 +181,15 @@ describe('trainer migration rerun contract', () => {
     expect(declineMigration).toContain('procedure.prosrc')
     expect(declineMigration).toContain('btrim(procedure.prosrc) = btrim($audit_event_allowlist$')
     expect(declineMigration).not.toContain("regexp_replace(procedure.prosrc, '[[:space:]]+', '', 'g')")
+    const installedAuditBody = declineMigration.match(
+      /CREATE OR REPLACE FUNCTION public\.is_professional_audit_event_allowed\([\s\S]+?AS \$\$([\s\S]*?)\$\$;/i,
+    )?.[1]
+    const expectedAuditBody = declineMigration.match(
+      /\$audit_event_allowlist\$([\s\S]*?)\$audit_event_allowlist\$/i,
+    )?.[1]
+    expect(installedAuditBody).toBeDefined()
+    expect(expectedAuditBody).toBeDefined()
+    expect(expectedAuditBody?.trim()).toBe(installedAuditBody?.trim())
     for (const historicalEvent of [
       "WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')",
       "WHEN 'trainer_application' THEN p_action IN (",

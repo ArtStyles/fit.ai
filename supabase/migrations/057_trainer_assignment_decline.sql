@@ -299,51 +299,51 @@ BEGIN
         AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
         AND owner_role.rolname = 'postgres'
         AND btrim(procedure.prosrc) = btrim($audit_event_allowlist$
-          SELECT COALESCE(CASE p_entity_type
-            WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')
-            WHEN 'trainer_application' THEN p_action IN (
-              'application_draft_saved', 'application_submitted', 'application_withdrawn',
-              'trainer_application_under_review', 'trainer_application_changes_requested',
-              'trainer_application_interview_required', 'trainer_application_approved',
-              'trainer_application_rejected', 'trainer_interview_scheduled'
-            )
-            WHEN 'trainer_interview' THEN p_action IN ('trainer_interview_outcome_recorded')
-            WHEN 'coaching_request' THEN p_action IN (
-              'created', 'cancelled', 'accepted', 'declined', 'cancelled_after_acceptance'
-            )
-            WHEN 'coaching_relationship' THEN p_action IN (
-              'relationship_created', 'training_profile_consent_granted',
-              'body_measurements_consent_granted', 'body_measurements_consent_revoked',
-              'training_profile_consent_revoked', 'ended', 'resumed',
-              'paused_due_to_account_suspension'
-            )
-            WHEN 'trainer_account' THEN p_action IN ('suspended')
-            WHEN 'trainer_profile' THEN p_action IN (
-              'profile_created', 'profile_updated', 'profile_deleted',
-              'profile_status_changed', 'reinstated'
-            )
-            WHEN 'trainer_service' THEN p_action IN (
-              'service_created', 'service_updated', 'service_deleted',
-              'service_activated', 'service_deactivated'
-            )
-            WHEN 'trainer_program_template' THEN p_action IN (
-              'template_created', 'template_updated', 'template_deleted', 'template_archived'
-            )
-            WHEN 'trainer_template_workout' THEN p_action IN (
-              'template_workout_insert', 'template_workout_update', 'template_workout_delete'
-            )
-            WHEN 'trainer_template_exercise' THEN p_action IN (
-              'template_exercise_insert', 'template_exercise_update', 'template_exercise_delete'
-            )
-            WHEN 'trainer_application_credential' THEN p_action IN (
-              'credential_added', 'credential_removed', 'credential_removal_prepared',
-              'credential_removal_retried', 'credential_cleanup_failed'
-            )
-            WHEN 'trainer_plan_assignment' THEN p_action IN (
-              'proposed', 'accepted', 'revision_published', 'assignment_frozen', 'declined'
-            )
-            ELSE FALSE
-          END, FALSE)
+  SELECT COALESCE(CASE p_entity_type
+    WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')
+    WHEN 'trainer_application' THEN p_action IN (
+      'application_draft_saved', 'application_submitted', 'application_withdrawn',
+      'trainer_application_under_review', 'trainer_application_changes_requested',
+      'trainer_application_interview_required', 'trainer_application_approved',
+      'trainer_application_rejected', 'trainer_interview_scheduled'
+    )
+    WHEN 'trainer_interview' THEN p_action IN ('trainer_interview_outcome_recorded')
+    WHEN 'coaching_request' THEN p_action IN (
+      'created', 'cancelled', 'accepted', 'declined', 'cancelled_after_acceptance'
+    )
+    WHEN 'coaching_relationship' THEN p_action IN (
+      'relationship_created', 'training_profile_consent_granted',
+      'body_measurements_consent_granted', 'body_measurements_consent_revoked',
+      'training_profile_consent_revoked', 'ended', 'resumed',
+      'paused_due_to_account_suspension'
+    )
+    WHEN 'trainer_account' THEN p_action IN ('suspended')
+    WHEN 'trainer_profile' THEN p_action IN (
+      'profile_created', 'profile_updated', 'profile_deleted',
+      'profile_status_changed', 'reinstated'
+    )
+    WHEN 'trainer_service' THEN p_action IN (
+      'service_created', 'service_updated', 'service_deleted',
+      'service_activated', 'service_deactivated'
+    )
+    WHEN 'trainer_program_template' THEN p_action IN (
+      'template_created', 'template_updated', 'template_deleted', 'template_archived'
+    )
+    WHEN 'trainer_template_workout' THEN p_action IN (
+      'template_workout_insert', 'template_workout_update', 'template_workout_delete'
+    )
+    WHEN 'trainer_template_exercise' THEN p_action IN (
+      'template_exercise_insert', 'template_exercise_update', 'template_exercise_delete'
+    )
+    WHEN 'trainer_application_credential' THEN p_action IN (
+      'credential_added', 'credential_removed', 'credential_removal_prepared',
+      'credential_removal_retried', 'credential_cleanup_failed'
+    )
+    WHEN 'trainer_plan_assignment' THEN p_action IN (
+      'proposed', 'accepted', 'revision_published', 'assignment_frozen', 'declined'
+    )
+    ELSE FALSE
+  END, FALSE)
         $audit_event_allowlist$)
     )
     OR NOT EXISTS (
