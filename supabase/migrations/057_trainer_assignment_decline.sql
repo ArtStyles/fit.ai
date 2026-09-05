@@ -235,7 +235,7 @@ END;
 $$;
 
 ALTER FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE;
 GRANT EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.trainer_security_preflight()
@@ -278,15 +278,107 @@ BEGIN
     OR has_function_privilege('anon', 'public.decline_trainer_assignment(uuid,text,text)', 'EXECUTE')
     OR NOT has_function_privilege('authenticated', 'public.decline_trainer_assignment(uuid,text,text)', 'EXECUTE')
     OR NOT has_function_privilege('service_role', 'public.decline_trainer_assignment(uuid,text,text)', 'EXECUTE')
+    OR has_function_privilege('anon', 'public.trainer_security_preflight()', 'EXECUTE')
+    OR NOT has_function_privilege('authenticated', 'public.trainer_security_preflight()', 'EXECUTE')
+    OR NOT has_function_privilege('service_role', 'public.trainer_security_preflight()', 'EXECUTE')
     OR NOT public.is_professional_audit_event_allowed('trainer_plan_assignment', 'declined')
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_proc procedure
+      JOIN pg_language procedure_language ON procedure_language.oid = procedure.prolang
+      JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+      WHERE procedure.oid = 'public.is_professional_audit_event_allowed(text,text)'::REGPROCEDURE
+        AND procedure_language.lanname = 'sql'
+        AND procedure.prokind = 'f'
+        AND procedure.provolatile = 'i'
+        AND NOT procedure.prosecdef
+        AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
+        AND owner_role.rolname = 'postgres'
+        AND regexp_replace(procedure.prosrc, '[[:space:]]+', '', 'g') = regexp_replace($audit_event_allowlist$
+          SELECT COALESCE(CASE p_entity_type
+            WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')
+            WHEN 'trainer_application' THEN p_action IN (
+              'application_draft_saved', 'application_submitted', 'application_withdrawn',
+              'trainer_application_under_review', 'trainer_application_changes_requested',
+              'trainer_application_interview_required', 'trainer_application_approved',
+              'trainer_application_rejected', 'trainer_interview_scheduled'
+            )
+            WHEN 'trainer_interview' THEN p_action IN ('trainer_interview_outcome_recorded')
+            WHEN 'coaching_request' THEN p_action IN (
+              'created', 'cancelled', 'accepted', 'declined', 'cancelled_after_acceptance'
+            )
+            WHEN 'coaching_relationship' THEN p_action IN (
+              'relationship_created', 'training_profile_consent_granted',
+              'body_measurements_consent_granted', 'body_measurements_consent_revoked',
+              'training_profile_consent_revoked', 'ended', 'resumed',
+              'paused_due_to_account_suspension'
+            )
+            WHEN 'trainer_account' THEN p_action IN ('suspended')
+            WHEN 'trainer_profile' THEN p_action IN (
+              'profile_created', 'profile_updated', 'profile_deleted',
+              'profile_status_changed', 'reinstated'
+            )
+            WHEN 'trainer_service' THEN p_action IN (
+              'service_created', 'service_updated', 'service_deleted',
+              'service_activated', 'service_deactivated'
+            )
+            WHEN 'trainer_program_template' THEN p_action IN (
+              'template_created', 'template_updated', 'template_deleted', 'template_archived'
+            )
+            WHEN 'trainer_template_workout' THEN p_action IN (
+              'template_workout_insert', 'template_workout_update', 'template_workout_delete'
+            )
+            WHEN 'trainer_template_exercise' THEN p_action IN (
+              'template_exercise_insert', 'template_exercise_update', 'template_exercise_delete'
+            )
+            WHEN 'trainer_application_credential' THEN p_action IN (
+              'credential_added', 'credential_removed', 'credential_removal_prepared',
+              'credential_removal_retried', 'credential_cleanup_failed'
+            )
+            WHEN 'trainer_plan_assignment' THEN p_action IN (
+              'proposed', 'accepted', 'revision_published', 'assignment_frozen', 'declined'
+            )
+            ELSE FALSE
+          END, FALSE)
+        $audit_event_allowlist$, '[[:space:]]+', '', 'g')
+    )
     OR NOT EXISTS (
       SELECT 1
       FROM pg_proc procedure
       JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
       WHERE procedure.oid = 'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE
         AND procedure.prosecdef
-        AND procedure.proconfig @> ARRAY['search_path=public, pg_temp']::TEXT[]
+        AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
         AND owner_role.rolname = 'postgres'
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_proc procedure
+      JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+      WHERE procedure.oid = 'public.trainer_security_preflight()'::REGPROCEDURE
+        AND procedure.prosecdef
+        AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
+        AND owner_role.rolname = 'postgres'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM pg_proc procedure
+      CROSS JOIN LATERAL aclexplode(
+        COALESCE(procedure.proacl, acldefault('f', procedure.proowner))
+      ) expanded_acl
+      LEFT JOIN pg_roles grantee_role ON grantee_role.oid = expanded_acl.grantee
+      WHERE procedure.oid IN (
+          'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE,
+          'public.trainer_security_preflight()'::REGPROCEDURE
+        )
+        AND expanded_acl.privilege_type = 'EXECUTE'
+        AND expanded_acl.grantee <> procedure.proowner
+        AND (
+          expanded_acl.is_grantable
+          OR expanded_acl.grantee = 0
+          OR grantee_role.rolname IS NULL
+          OR grantee_role.rolname NOT IN ('authenticated', 'service_role')
+        )
     )
     OR NOT EXISTS (
       SELECT 1
@@ -295,6 +387,9 @@ BEGIN
         AND column_row.attname = 'decline_idempotency_key'
         AND column_row.atttypid = 'text'::REGTYPE
         AND NOT column_row.attnotnull
+        AND NOT column_row.atthasdef
+        AND column_row.attidentity = ''
+        AND column_row.attgenerated = ''
         AND NOT column_row.attisdropped
     )
     OR NOT EXISTS (
@@ -344,7 +439,7 @@ END;
 $$;
 
 ALTER FUNCTION public.trainer_security_preflight() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon, authenticated, service_role CASCADE;
 GRANT EXECUTE ON FUNCTION public.trainer_security_preflight() TO authenticated, service_role;
 
 COMMIT;

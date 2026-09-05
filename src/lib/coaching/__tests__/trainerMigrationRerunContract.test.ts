@@ -164,7 +164,7 @@ describe('trainer migration rerun contract', () => {
     expect(execution.slice(sameKeyDeclineRace)).not.toContain('trainerMigrationFiles.map(readMigration)')
   })
 
-  it('pins the exact decline check, index catalog identity, and audit allowlist in preflight and pgTAP tamper coverage', () => {
+  it('pins the exact decline check, index catalog identity, and complete audit allowlist in preflight and pgTAP tamper coverage', () => {
     const expectedCheck = '((decline_idempotency_key IS NULL) OR ((char_length(btrim(decline_idempotency_key)) >= 1) AND (char_length(btrim(decline_idempotency_key)) <= 200)))'
 
     expect(declineMigration).toContain('constraint_row.convalidated')
@@ -178,14 +178,31 @@ describe('trainer migration rerun contract', () => {
       expect(declineMigration).toContain(`index_definition.${flag}`)
     }
     expect(declineMigration).toContain("pg_get_expr(index_definition.indpred, index_definition.indrelid) = '(decline_idempotency_key IS NOT NULL)'")
-    expect(declineMigration).toContain("is_professional_audit_event_allowed('trainer_plan_assignment', 'declined')")
+    expect(declineMigration).toContain('procedure.prosrc')
+    expect(declineMigration).toContain("regexp_replace(procedure.prosrc, '[[:space:]]+', '', 'g')")
+    for (const historicalEvent of [
+      "WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')",
+      "WHEN 'trainer_application' THEN p_action IN (",
+      "WHEN 'coaching_request' THEN p_action IN (",
+      "WHEN 'coaching_relationship' THEN p_action IN (",
+      "WHEN 'trainer_plan_assignment' THEN p_action IN (",
+      "'proposed', 'accepted', 'revision_published', 'assignment_frozen', 'declined'",
+      'ELSE FALSE',
+    ]) expect(declineMigration).toContain(historicalEvent)
 
     expect(declineTap).toContain(expectedCheck)
+    expect(declineTap).toContain('SELECT plan(61);')
     expect(declineTap).toContain('AND convalidated')
     expect(declineTap).toContain('index_definition.indexprs IS NULL')
     expect(declineTap).toContain('CHECK (TRUE)')
     expect(declineTap).toContain('decline_idempotency_key IS NULL')
-    expect(declineTap).toContain('downgraded audit allowlist')
+    expect(declineTap).toContain('audit allowlist reduced to only assignment decline')
+    expect(declineTap).toContain('preflight rejects unexpected audit event pairs')
+    expect(declineMigration).toContain('AND NOT column_row.atthasdef')
+    expect(declineMigration).toContain("AND column_row.attidentity = ''")
+    expect(declineMigration).toContain("AND column_row.attgenerated = ''")
+    expect(declineTap).toContain("ALTER COLUMN decline_idempotency_key SET DEFAULT 'rogue-default'")
+    expect(declineTap).toContain('preflight rejects a decline idempotency default')
   })
 
   it('proves the elevated preflight keeps its fixed API boundary for authenticated and anonymous roles', () => {
@@ -193,11 +210,26 @@ describe('trainer migration rerun contract', () => {
     const preflightAclEnd = declineTap.indexOf(preflightAclLabel)
     const preflightAclStart = declineTap.lastIndexOf('SELECT ok(', preflightAclEnd)
     const preflightAclAssertion = declineTap.slice(preflightAclStart, preflightAclEnd + preflightAclLabel.length)
+    const declineProcedureCatalogAssertion = declineMigration.match(
+      /OR NOT EXISTS \(\s*SELECT 1\s*FROM pg_proc procedure\s*JOIN pg_roles owner_role[^]*?WHERE procedure\.oid = 'public\.decline_trainer_assignment\(uuid,text,text\)'::REGPROCEDURE[^]*?\n\s*\)/i,
+    )?.[0]
+    const exactFunctionAclAssertion = declineMigration.match(
+      /OR EXISTS \(\s*SELECT 1\s*FROM pg_proc procedure\s*CROSS JOIN LATERAL aclexplode[^]*?expanded_acl\.is_grantable[^]*?\n\s*\)/i,
+    )?.[0]
 
     expect(declineMigration).toMatch(/CREATE OR REPLACE FUNCTION public\.trainer_security_preflight\(\)[\s\S]+?SECURITY DEFINER[\s\S]+?SET search_path = public, pg_temp/i)
     expect(declineMigration).toContain('ALTER FUNCTION public.trainer_security_preflight() OWNER TO postgres')
-    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon, authenticated, service_role CASCADE')
     expect(declineMigration).toContain('GRANT EXECUTE ON FUNCTION public.trainer_security_preflight() TO authenticated, service_role')
+    expect(declineProcedureCatalogAssertion).toBeDefined()
+    expect(declineProcedureCatalogAssertion).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
+    expect(declineProcedureCatalogAssertion).not.toContain('procedure.proconfig @>')
+    expect(declineMigration).toContain("grantee_role.rolname NOT IN ('authenticated', 'service_role')")
+    expect(declineMigration).toContain('expanded_acl.is_grantable')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE')
+    expect(exactFunctionAclAssertion).toBeDefined()
+    expect(exactFunctionAclAssertion).toContain("'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE")
+    expect(exactFunctionAclAssertion).toContain("'public.trainer_security_preflight()'::REGPROCEDURE")
 
     expect(preflightAclStart).toBeGreaterThan(-1)
     expect(preflightAclAssertion).toContain("procedure.oid = 'public.trainer_security_preflight()'::REGPROCEDURE")
@@ -211,6 +243,27 @@ describe('trainer migration rerun contract', () => {
     expect(declineTap).toMatch(/SET LOCAL ROLE authenticated;\s*SELECT is\(\s*public\.trainer_security_preflight\(\),\s*57,[\s\S]+?\);\s*RESET ROLE;/i)
     expect(declineTap).toMatch(/SET LOCAL ROLE anon;[\s\S]+?SELECT throws_ok\(\s*\$\$SELECT public\.trainer_security_preflight\(\)\$\$,[\s\S]+?'permission denied for function trainer_security_preflight'[\s\S]+?RESET ROLE;/i)
     expect(declineTap).toMatch(/RESET ROLE;\s*SELECT set_config\('request.jwt.claim.sub', '', TRUE\);\s*SELECT set_config\('request.jwt.claim.role', '', TRUE\);/i)
+    expect(declineTap).toContain("SET statement_timeout = '5s'")
+    expect(declineTap).toContain('preflight rejects extra decline RPC configuration')
+    expect(declineTap).toContain('CREATE ROLE trainer_assignment_decline_extra_executor NOLOGIN')
+    expect(declineTap).toContain('TO trainer_assignment_decline_extra_executor')
+    expect(declineTap).toContain('preflight rejects an extra decline RPC executor')
+    expect(declineTap).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
+    expect(declineTap).toContain("grantee_role.rolname NOT IN ('authenticated', 'service_role')")
+    for (const signature of [
+      'public.decline_trainer_assignment(UUID, TEXT, TEXT)',
+      'public.trainer_security_preflight()',
+    ]) {
+      for (const role of ['authenticated', 'service_role']) {
+        const escapedSignature = signature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        expect(declineTap).toMatch(new RegExp(
+          `GRANT EXECUTE ON FUNCTION ${escapedSignature}\\s+TO ${role} WITH GRANT OPTION;[^]*?`
+          + `REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION ${escapedSignature}\\s+FROM ${role};`,
+          'i',
+        ))
+      }
+    }
+    expect(declineTap.match(/expanded_acl\.is_grantable/g)).toHaveLength(2)
   })
 
   it('compares proposal and revision materializations to canonical snapshot order/day pairs', () => {

@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(45);
+SELECT plan(61);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('57000000-0000-4000-8000-000000000001', 'decline-trainer@example.test', '{}'::JSONB),
@@ -103,7 +103,21 @@ INSERT INTO public.workout_plans (
   ('57000000-0000-4000-8000-000000000089', '57000000-0000-4000-8000-000000000002', 'Invalid identity', gen_random_uuid(), FALSE, 'trainer_assigned', 'professional', TRUE, '57000000-0000-4000-8000-000000000042', '57000000-0000-4000-8000-000000000069', '57000000-0000-4000-8000-000000000079'),
   ('57000000-0000-4000-8000-00000000008a', '57000000-0000-4000-8000-000000000003', 'Foreign', gen_random_uuid(), FALSE, 'trainer_assigned', 'professional', TRUE, '57000000-0000-4000-8000-000000000042', '57000000-0000-4000-8000-00000000006a', '57000000-0000-4000-8000-00000000007a');
 
-SELECT has_column('public', 'trainer_plan_assignments', 'decline_idempotency_key', 'decline idempotency is persisted on assignments');
+SELECT ok(
+  EXISTS (
+    SELECT 1
+    FROM pg_attribute column_row
+    WHERE column_row.attrelid = 'public.trainer_plan_assignments'::REGCLASS
+      AND column_row.attname = 'decline_idempotency_key'
+      AND column_row.atttypid = 'text'::REGTYPE
+      AND NOT column_row.attnotnull
+      AND NOT column_row.atthasdef
+      AND column_row.attidentity = ''
+      AND column_row.attgenerated = ''
+      AND NOT column_row.attisdropped
+  ),
+  'decline idempotency is an exact nullable plain text column without a default'
+);
 SELECT ok(
   EXISTS (
     SELECT 1 FROM pg_constraint
@@ -387,6 +401,21 @@ SELECT is(
   'preflight recovers after restoring the exact decline index'
 );
 
+ALTER TABLE public.trainer_plan_assignments
+  ALTER COLUMN decline_idempotency_key SET DEFAULT 'rogue-default';
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects a decline idempotency default'
+);
+ALTER TABLE public.trainer_plan_assignments
+  ALTER COLUMN decline_idempotency_key DROP DEFAULT;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing the decline idempotency default'
+);
+
 CREATE OR REPLACE FUNCTION public.is_professional_audit_event_allowed(
   p_entity_type TEXT,
   p_action TEXT
@@ -395,11 +424,14 @@ RETURNS BOOLEAN
 LANGUAGE sql
 IMMUTABLE
 SET search_path = public, pg_temp
-AS $$ SELECT FALSE $$;
+AS $$
+  SELECT p_entity_type = 'trainer_plan_assignment'
+    AND p_action = 'declined'
+$$;
 SELECT throws_ok(
   $$SELECT public.trainer_security_preflight()$$,
   'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
-  'preflight rejects a downgraded audit allowlist'
+  'preflight rejects an audit allowlist reduced to only assignment decline'
 );
 DO $restore$
 DECLARE definition TEXT;
@@ -414,6 +446,142 @@ SELECT is(
   'preflight recovers after restoring the decline audit allowlist'
 );
 
+CREATE OR REPLACE FUNCTION public.is_professional_audit_event_allowed(
+  p_entity_type TEXT,
+  p_action TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT COALESCE(CASE p_entity_type
+    WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')
+    WHEN 'trainer_application' THEN p_action IN (
+      'application_draft_saved', 'application_submitted', 'application_withdrawn',
+      'trainer_application_under_review', 'trainer_application_changes_requested',
+      'trainer_application_interview_required', 'trainer_application_approved',
+      'trainer_application_rejected', 'trainer_interview_scheduled'
+    )
+    WHEN 'trainer_interview' THEN p_action IN ('trainer_interview_outcome_recorded')
+    WHEN 'coaching_request' THEN p_action IN (
+      'created', 'cancelled', 'accepted', 'declined', 'cancelled_after_acceptance'
+    )
+    WHEN 'coaching_relationship' THEN p_action IN (
+      'relationship_created', 'training_profile_consent_granted',
+      'body_measurements_consent_granted', 'body_measurements_consent_revoked',
+      'training_profile_consent_revoked', 'ended', 'resumed',
+      'paused_due_to_account_suspension'
+    )
+    WHEN 'trainer_account' THEN p_action IN ('suspended')
+    WHEN 'trainer_profile' THEN p_action IN (
+      'profile_created', 'profile_updated', 'profile_deleted',
+      'profile_status_changed', 'reinstated'
+    )
+    WHEN 'trainer_service' THEN p_action IN (
+      'service_created', 'service_updated', 'service_deleted',
+      'service_activated', 'service_deactivated'
+    )
+    WHEN 'trainer_program_template' THEN p_action IN (
+      'template_created', 'template_updated', 'template_deleted', 'template_archived'
+    )
+    WHEN 'trainer_template_workout' THEN p_action IN (
+      'template_workout_insert', 'template_workout_update', 'template_workout_delete'
+    )
+    WHEN 'trainer_template_exercise' THEN p_action IN (
+      'template_exercise_insert', 'template_exercise_update', 'template_exercise_delete'
+    )
+    WHEN 'trainer_application_credential' THEN p_action IN (
+      'credential_added', 'credential_removed', 'credential_removal_prepared',
+      'credential_removal_retried', 'credential_cleanup_failed'
+    )
+    WHEN 'trainer_plan_assignment' THEN p_action IN (
+      'proposed', 'accepted', 'revision_published', 'assignment_frozen', 'declined'
+    )
+    WHEN 'unexpected_entity' THEN p_action IN ('unexpected_action')
+    ELSE FALSE
+  END, FALSE)
+$$;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects unexpected audit event pairs'
+);
+DO $restore$
+DECLARE definition TEXT;
+BEGIN
+  SELECT allowlist_ddl INTO definition FROM decline_catalog_restore;
+  EXECUTE definition;
+END;
+$restore$;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing unexpected audit event pairs'
+);
+
+ALTER FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  SET statement_timeout = '5s';
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects extra decline RPC configuration'
+);
+ALTER FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  RESET statement_timeout;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring the exact decline RPC configuration'
+);
+
+CREATE ROLE trainer_assignment_decline_extra_executor NOLOGIN;
+GRANT EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  TO trainer_assignment_decline_extra_executor;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects an extra decline RPC executor'
+);
+REVOKE EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  FROM trainer_assignment_decline_extra_executor;
+DROP ROLE trainer_assignment_decline_extra_executor;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing the extra decline RPC executor'
+);
+
+GRANT EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  TO authenticated WITH GRANT OPTION;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects authenticated grant option on the decline RPC'
+);
+REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  FROM authenticated;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing authenticated grant option from the decline RPC'
+);
+
+GRANT EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  TO service_role WITH GRANT OPTION;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects service role grant option on the decline RPC'
+);
+REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
+  FROM service_role;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing service role grant option from the decline RPC'
+);
+
 SELECT ok(
   (
     SELECT procedure.prosecdef
@@ -422,8 +590,15 @@ SELECT ok(
       AND NOT EXISTS (
         SELECT 1
         FROM aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) expanded_acl
-        WHERE expanded_acl.grantee = 0
-          AND expanded_acl.privilege_type = 'EXECUTE'
+        LEFT JOIN pg_roles grantee_role ON grantee_role.oid = expanded_acl.grantee
+        WHERE expanded_acl.privilege_type = 'EXECUTE'
+          AND expanded_acl.grantee <> procedure.proowner
+          AND (
+            expanded_acl.is_grantable
+            OR expanded_acl.grantee = 0
+            OR grantee_role.rolname IS NULL
+            OR grantee_role.rolname NOT IN ('authenticated', 'service_role')
+          )
       )
     FROM pg_proc procedure
     JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
@@ -433,6 +608,36 @@ SELECT ok(
   AND has_function_privilege('service_role', 'public.trainer_security_preflight()', 'EXECUTE')
   AND NOT has_function_privilege('anon', 'public.trainer_security_preflight()', 'EXECUTE'),
   'preflight is postgres-owned SECURITY DEFINER with exact search path and least-privilege ACLs'
+);
+
+GRANT EXECUTE ON FUNCTION public.trainer_security_preflight()
+  TO authenticated WITH GRANT OPTION;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects authenticated grant option on its own RPC boundary'
+);
+REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION public.trainer_security_preflight()
+  FROM authenticated;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing authenticated grant option from its own RPC boundary'
+);
+
+GRANT EXECUTE ON FUNCTION public.trainer_security_preflight()
+  TO service_role WITH GRANT OPTION;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects service role grant option on its own RPC boundary'
+);
+REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION public.trainer_security_preflight()
+  FROM service_role;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing service role grant option from its own RPC boundary'
 );
 
 SELECT set_config('request.jwt.claim.sub', '57000000-0000-4000-8000-000000000002', TRUE);
@@ -467,8 +672,21 @@ SELECT set_config('request.jwt.claim.role', '', TRUE);
 SELECT ok(
   (
     SELECT procedure.prosecdef
-      AND procedure.proconfig @> ARRAY['search_path=public, pg_temp']::TEXT[]
+      AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
       AND owner_role.rolname = 'postgres'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) expanded_acl
+        LEFT JOIN pg_roles grantee_role ON grantee_role.oid = expanded_acl.grantee
+        WHERE expanded_acl.privilege_type = 'EXECUTE'
+          AND expanded_acl.grantee <> procedure.proowner
+          AND (
+            expanded_acl.is_grantable
+            OR expanded_acl.grantee = 0
+            OR grantee_role.rolname IS NULL
+            OR grantee_role.rolname NOT IN ('authenticated', 'service_role')
+          )
+      )
     FROM pg_proc procedure
     JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
     WHERE procedure.oid = 'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE
