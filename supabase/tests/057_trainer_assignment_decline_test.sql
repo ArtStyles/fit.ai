@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(78);
+SELECT plan(79);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('57000000-0000-4000-8000-000000000001', 'decline-trainer@example.test', '{}'::JSONB),
@@ -162,6 +162,31 @@ SELECT ok(
 SELECT ok(
   public.is_professional_audit_event_allowed('trainer_plan_assignment', 'declined'),
   'declined assignments are in the final professional audit allowlist'
+);
+SELECT ok(
+  (
+    SELECT strpos(
+      procedure.prosrc,
+      $needle$IF v_assignment.status = 'cancelled'$needle$
+    ) > 0
+      AND strpos(
+        procedure.prosrc,
+        $needle$IF v_assignment.status <> 'proposed' THEN$needle$
+      ) > strpos(
+        procedure.prosrc,
+        $needle$IF v_assignment.status = 'cancelled'$needle$
+      )
+      AND strpos(
+        procedure.prosrc,
+        $needle$FROM public.trainer_assignment_versions candidate$needle$
+      ) > strpos(
+        procedure.prosrc,
+        $needle$IF v_assignment.status <> 'proposed' THEN$needle$
+      )
+    FROM pg_proc procedure
+    WHERE procedure.oid = 'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE
+  ),
+  'stale assignment status is rejected before the version row lock'
 );
 
 SELECT set_config('request.jwt.claim.sub', '57000000-0000-4000-8000-000000000002', TRUE);

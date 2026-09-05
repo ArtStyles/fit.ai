@@ -133,6 +133,21 @@ BEGIN
     RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_FOUND';
   END IF;
 
+  -- Relationship closure freezes active prescriptions by locking version then
+  -- assignment. Resolve terminal/stale assignment states before touching the
+  -- version so a late decline cannot form the inverse assignment -> version
+  -- lock cycle with that trigger.
+  IF v_assignment.status = 'cancelled'
+    AND v_assignment.decline_idempotency_key = v_idempotency_key
+  THEN
+    RETURN QUERY SELECT v_assignment.id, FALSE;
+    RETURN;
+  END IF;
+
+  IF v_assignment.status <> 'proposed' THEN
+    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_PROPOSED';
+  END IF;
+
   SELECT *
   INTO v_version
   FROM public.trainer_assignment_versions candidate
@@ -160,16 +175,6 @@ BEGIN
     RAISE EXCEPTION 'TRAINER_ASSIGNMENT_PLAN_INVALID';
   END IF;
 
-  IF v_assignment.status = 'cancelled'
-    AND v_assignment.decline_idempotency_key = v_idempotency_key
-  THEN
-    RETURN QUERY SELECT v_assignment.id, FALSE;
-    RETURN;
-  END IF;
-
-  IF v_assignment.status <> 'proposed' THEN
-    RAISE EXCEPTION 'TRAINER_ASSIGNMENT_NOT_PROPOSED';
-  END IF;
   IF v_version.status <> 'proposed' THEN
     RAISE EXCEPTION 'TRAINER_ASSIGNMENT_VERSION_NOT_PROPOSED';
   END IF;

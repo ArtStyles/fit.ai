@@ -576,6 +576,191 @@ SELECT dblink_disconnect('assignment_terminal_accept');
 SELECT dblink_disconnect('assignment_terminal_decline');
 `
 
+// A stale decline against an already-active assignment must reject before it
+// touches the active version. Relationship closure freezes version then
+// assignment, so this orchestration pre-holds the assignment and proves the
+// two operations cannot form an assignment/version deadlock cycle.
+const declineVsEndRelationshipRaceSql = `
+CREATE EXTENSION IF NOT EXISTS dblink;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('57c00000-0000-4000-8000-000000000001', 'decline-end-trainer@example.test', '{}'::jsonb),
+  ('57c00000-0000-4000-8000-000000000002', 'decline-end-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, account_status) VALUES
+  ('57c00000-0000-4000-8000-000000000001', 'Decline end trainer', 'https://example.test/decline-end-trainer.webp', TRUE, 'active'),
+  ('57c00000-0000-4000-8000-000000000002', 'Decline end client', 'https://example.test/decline-end-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id, status, decided_at) VALUES
+  ('57c00000-0000-4000-8000-000000000011', '57c00000-0000-4000-8000-000000000001', 'approved', NOW());
+INSERT INTO public.trainer_profiles (id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary) VALUES
+  ('57c00000-0000-4000-8000-000000000021', '57c00000-0000-4000-8000-000000000001', '57c00000-0000-4000-8000-000000000011', 'decline-end-trainer', 'active', 'Decline end trainer', 'Race', 'Evidence');
+INSERT INTO public.trainer_service_offerings (id, trainer_profile_id, name, modality, duration_minutes) VALUES
+  ('57c00000-0000-4000-8000-000000000031', '57c00000-0000-4000-8000-000000000021', 'Decline end service', 'online', 60);
+INSERT INTO public.coaching_relationships (id, service_id, trainer_user_id, client_user_id, status) VALUES
+  ('57c00000-0000-4000-8000-000000000041', '57c00000-0000-4000-8000-000000000031', '57c00000-0000-4000-8000-000000000001', '57c00000-0000-4000-8000-000000000002', 'active');
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES
+  ('57c00000-0000-4000-8000-000000000041', 'training_profile', 'training-profile-v1', '57c00000-0000-4000-8000-000000000002');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, is_active) VALUES
+  ('57c00000-0000-4000-8000-000000000051', '57c00000-0000-4000-8000-000000000002', 'Decline end personal', gen_random_uuid(), TRUE);
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status) VALUES
+  ('57c00000-0000-4000-8000-000000000061', '57c00000-0000-4000-8000-000000000041', '57c00000-0000-4000-8000-000000000001', '57c00000-0000-4000-8000-000000000002', 'proposed');
+INSERT INTO public.trainer_assignment_versions (id, assignment_id, version_number, snapshot, status, materialized_plan_id) VALUES
+  ('57c00000-0000-4000-8000-000000000071', '57c00000-0000-4000-8000-000000000061', 1, '{"schemaVersion":1,"workouts":[]}'::jsonb, 'proposed', '57c00000-0000-4000-8000-000000000081');
+INSERT INTO public.workout_plans (id, user_id, name, family_id, source_type, library_slot, prescription_locked, trainer_relationship_id, trainer_assignment_id, trainer_assignment_version_id) VALUES
+  ('57c00000-0000-4000-8000-000000000081', '57c00000-0000-4000-8000-000000000002', 'Decline end professional', gen_random_uuid(), 'trainer_assigned', 'professional', TRUE, '57c00000-0000-4000-8000-000000000041', '57c00000-0000-4000-8000-000000000061', '57c00000-0000-4000-8000-000000000071');
+COMMIT;
+
+SET request.jwt.claim.sub = '57c00000-0000-4000-8000-000000000002';
+SET request.jwt.claim.role = 'authenticated';
+SET ROLE authenticated;
+SELECT * FROM public.accept_trainer_assignment(
+  '57c00000-0000-4000-8000-000000000061',
+  'decline-end-activation'
+);
+RESET ROLE;
+RESET request.jwt.claim.sub;
+RESET request.jwt.claim.role;
+
+SELECT dblink_connect('stale_decline_vs_end_decline', 'dbname=postgres user=supabase_admin application_name=stale_decline_vs_end_decline');
+SELECT dblink_connect('stale_decline_vs_end_end', 'dbname=postgres user=supabase_admin application_name=stale_decline_vs_end_end');
+SELECT dblink_exec('stale_decline_vs_end_decline', $$
+  CREATE FUNCTION pg_temp.try_stale_decline() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.decline_trainer_assignment(
+      '57c00000-0000-4000-8000-000000000061',
+      'Stale concurrent decline',
+      'decline-end-stale-key'
+    );
+    RETURN jsonb_build_object('ok', TRUE, 'changed', result.changed);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $f$;
+$$);
+SELECT dblink_exec('stale_decline_vs_end_end', $$
+  CREATE FUNCTION pg_temp.try_end_relationship() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.end_coaching_relationship(
+      '57c00000-0000-4000-8000-000000000041',
+      'Concurrent relationship closure',
+      '57c00000-0000-4000-8000-000000000099'
+    );
+    RETURN jsonb_build_object('ok', TRUE, 'changed', result.changed);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $f$;
+$$);
+SELECT dblink_exec('stale_decline_vs_end_decline', 'BEGIN');
+SELECT locked.id
+FROM dblink(
+  'stale_decline_vs_end_decline',
+  $$SELECT id FROM public.trainer_plan_assignments WHERE id = '57c00000-0000-4000-8000-000000000061' FOR UPDATE$$
+) AS locked(id UUID);
+SELECT dblink_exec('stale_decline_vs_end_decline', $$SET request.jwt.claim.sub = '57c00000-0000-4000-8000-000000000002'$$);
+SELECT dblink_exec('stale_decline_vs_end_decline', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('stale_decline_vs_end_decline', 'SET ROLE authenticated');
+SELECT dblink_exec('stale_decline_vs_end_decline', $$SET statement_timeout = '10s'$$);
+SELECT dblink_exec('stale_decline_vs_end_end', $$SET request.jwt.claim.sub = '57c00000-0000-4000-8000-000000000002'$$);
+SELECT dblink_exec('stale_decline_vs_end_end', $$SET request.jwt.claim.role = 'authenticated'$$);
+SELECT dblink_exec('stale_decline_vs_end_end', 'SET ROLE authenticated');
+SELECT dblink_exec('stale_decline_vs_end_end', $$SET statement_timeout = '10s'$$);
+
+SELECT dblink_send_query('stale_decline_vs_end_end', 'SELECT pg_temp.try_end_relationship()');
+DO $$
+DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN EXISTS (
+      SELECT 1
+      FROM pg_stat_activity ending
+      WHERE ending.application_name = 'stale_decline_vs_end_end'
+        AND ending.wait_event_type = 'Lock'
+        AND EXISTS (
+          SELECT 1
+          FROM unnest(pg_blocking_pids(ending.pid)) AS blocker(blocker_pid)
+          JOIN pg_stat_activity declining ON declining.pid = blocker.blocker_pid
+          WHERE declining.application_name = 'stale_decline_vs_end_decline'
+        )
+    );
+    IF clock_timestamp() >= deadline THEN
+      RAISE EXCEPTION 'relationship end did not wait on the prelocked assignment';
+    END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT dblink_send_query('stale_decline_vs_end_decline', 'SELECT pg_temp.try_stale_decline()');
+CREATE TEMP TABLE decline_end_race_results (operation TEXT NOT NULL, result JSONB NOT NULL);
+INSERT INTO decline_end_race_results
+SELECT 'decline', result
+FROM dblink_get_result('stale_decline_vs_end_decline') AS response(result JSONB);
+SELECT result
+FROM dblink_get_result('stale_decline_vs_end_decline') AS response(result JSONB);
+SELECT dblink_exec('stale_decline_vs_end_decline', 'RESET ROLE');
+SELECT dblink_exec('stale_decline_vs_end_decline', 'COMMIT');
+INSERT INTO decline_end_race_results
+SELECT 'end', result
+FROM dblink_get_result('stale_decline_vs_end_end') AS response(result JSONB);
+SELECT result
+FROM dblink_get_result('stale_decline_vs_end_end') AS response(result JSONB);
+
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM decline_end_race_results WHERE result->>'sqlstate' = '40P01') <> 0 THEN
+    RAISE EXCEPTION 'stale decline versus relationship end deadlocked: %',
+      (SELECT string_agg(operation || ':' || result::TEXT, ' | ') FROM decline_end_race_results);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM decline_end_race_results
+    WHERE operation = 'decline'
+      AND NOT COALESCE((result->>'ok')::BOOLEAN, FALSE)
+      AND result->>'sqlstate' = 'P0001'
+      AND result->>'message' = 'TRAINER_ASSIGNMENT_NOT_PROPOSED'
+  ) THEN
+    RAISE EXCEPTION 'stale decline was not rejected before version locking: %',
+      (SELECT string_agg(operation || ':' || result::TEXT, ' | ') FROM decline_end_race_results);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM decline_end_race_results
+    WHERE operation = 'end'
+      AND COALESCE((result->>'ok')::BOOLEAN, FALSE)
+      AND COALESCE((result->>'changed')::BOOLEAN, FALSE)
+  ) THEN
+    RAISE EXCEPTION 'relationship end did not complete: %',
+      (SELECT string_agg(operation || ':' || result::TEXT, ' | ') FROM decline_end_race_results);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.coaching_relationships
+    WHERE id = '57c00000-0000-4000-8000-000000000041' AND status = 'ended'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.trainer_plan_assignments
+    WHERE id = '57c00000-0000-4000-8000-000000000061'
+      AND status = 'frozen' AND decline_idempotency_key IS NULL
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.trainer_assignment_versions
+    WHERE id = '57c00000-0000-4000-8000-000000000071' AND status = 'frozen'
+  ) OR EXISTS (
+    SELECT 1 FROM public.professional_audit_logs
+    WHERE entity_id = '57c00000-0000-4000-8000-000000000061' AND action = 'declined'
+  ) OR EXISTS (
+    SELECT 1 FROM public.product_notifications
+    WHERE dedupe_key = 'coaching-assignment-declined:57c00000-0000-4000-8000-000000000061'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.workout_plans
+    WHERE id = '57c00000-0000-4000-8000-000000000081'
+      AND is_active AND prescription_locked
+  ) THEN
+    RAISE EXCEPTION 'stale decline versus relationship end left mixed state';
+  END IF;
+END;
+$$;
+SELECT dblink_disconnect('stale_decline_vs_end_decline');
+SELECT dblink_disconnect('stale_decline_vs_end_end');
+`
+
 // Two concurrent retries with one owner/key both succeed, but only the first
 // transition changes state or chooses the durable notification body.
 const sameKeyDeclineRaceSql = `
@@ -1271,6 +1456,7 @@ try {
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   runPsql(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race')
+  runPsql(declineVsEndRelationshipRaceSql, 'running committed stale-decline-versus-relationship-end race')
   runPsql(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race')
   runPsql(trainerDeclineRerunSnapshotSql, 'capturing durable 057 decline state')
   runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 against durable decline evidence')

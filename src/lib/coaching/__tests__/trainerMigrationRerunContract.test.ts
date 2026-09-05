@@ -146,10 +146,45 @@ describe('trainer migration rerun contract', () => {
     expect(trainerRunner).toMatch(/running 057 trainer assignment decline pgTAP suite[\s\S]+runPsql\(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race'\)[\s\S]+runPsql\(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race'\)/i)
   })
 
+  it('rejects a stale non-proposed decline before version locks and races it against relationship closure', () => {
+    const declineBody = declineMigration.match(
+      /CREATE OR REPLACE FUNCTION public\.decline_trainer_assignment\([^]*?AS \$\$([^]*?)\$\$;/i,
+    )?.[1] ?? ''
+    const exactReplay = declineBody.indexOf("IF v_assignment.status = 'cancelled'")
+    const staleStatusRejection = declineBody.indexOf("IF v_assignment.status <> 'proposed'")
+    const versionLock = declineBody.indexOf('FROM public.trainer_assignment_versions candidate')
+
+    expect(exactReplay).toBeGreaterThan(-1)
+    expect(staleStatusRejection).toBeGreaterThan(exactReplay)
+    expect(versionLock).toBeGreaterThan(staleStatusRejection)
+    expect(trainerRunner).toContain('const declineVsEndRelationshipRaceSql = `')
+    expect(trainerRunner).toContain("public.end_coaching_relationship(")
+    expect(trainerRunner).toContain("result->>'sqlstate' = '40P01'")
+    expect(trainerRunner).toContain("runPsql(declineVsEndRelationshipRaceSql, 'running committed stale-decline-versus-relationship-end race')")
+
+    const declineResults = Array.from(
+      trainerRunner.matchAll(/dblink_get_result\('stale_decline_vs_end_decline'\)/g),
+      (match) => match.index,
+    )
+    const endResults = Array.from(
+      trainerRunner.matchAll(/dblink_get_result\('stale_decline_vs_end_end'\)/g),
+      (match) => match.index,
+    )
+    expect(declineResults).toHaveLength(2)
+    expect(endResults).toHaveLength(2)
+    expect(declineResults[1]).toBeLessThan(
+      trainerRunner.indexOf("dblink_exec('stale_decline_vs_end_decline', 'RESET ROLE')"),
+    )
+    expect(endResults[1]).toBeLessThan(
+      trainerRunner.indexOf("dblink_disconnect('stale_decline_vs_end_end')"),
+    )
+  })
+
   it('replays whole history before decline evidence and reruns only 057 over the durable decline fixture', () => {
     const execution = trainerRunner.slice(trainerRunner.indexOf('let started = false'))
     const wholeHistoryReplay = execution.indexOf('trainerMigrationFiles.map(readMigration)')
     const acceptVsDeclineRace = execution.indexOf('runPsql(acceptVsDeclineRaceSql')
+    const declineVsEndRace = execution.indexOf('runPsql(declineVsEndRelationshipRaceSql')
     const sameKeyDeclineRace = execution.indexOf('runPsql(sameKeyDeclineRaceSql')
     const declineSnapshot = execution.indexOf("runPsql(trainerDeclineRerunSnapshotSql, 'capturing durable 057 decline state')")
     const declineOnlyReplay = execution.indexOf("runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 against durable decline evidence')")
@@ -157,7 +192,10 @@ describe('trainer migration rerun contract', () => {
 
     expect(wholeHistoryReplay).toBeGreaterThan(-1)
     expect(wholeHistoryReplay).toBeLessThan(acceptVsDeclineRace)
+    expect(wholeHistoryReplay).toBeLessThan(declineVsEndRace)
     expect(wholeHistoryReplay).toBeLessThan(sameKeyDeclineRace)
+    expect(declineVsEndRace).toBeGreaterThan(acceptVsDeclineRace)
+    expect(declineVsEndRace).toBeLessThan(sameKeyDeclineRace)
     expect(declineSnapshot).toBeGreaterThan(sameKeyDeclineRace)
     expect(declineOnlyReplay).toBeGreaterThan(declineSnapshot)
     expect(declineVerification).toBeGreaterThan(declineOnlyReplay)
@@ -201,7 +239,7 @@ describe('trainer migration rerun contract', () => {
     ]) expect(declineMigration).toContain(historicalEvent)
 
     expect(declineTap).toContain(expectedCheck)
-    expect(declineTap).toContain('SELECT plan(78);')
+    expect(declineTap).toContain('SELECT plan(79);')
     expect(declineTap).toContain('AND convalidated')
     expect(declineTap).toContain('index_definition.indexprs IS NULL')
     expect(declineTap).toContain('CHECK (TRUE)')
@@ -210,6 +248,7 @@ describe('trainer migration rerun contract', () => {
     expect(declineTap).toContain('preflight rejects unexpected audit event pairs')
     expect(declineTap).toContain("'service_ created'")
     expect(declineTap).toContain('preflight rejects semantic audit allowlist drift hidden by internal whitespace')
+    expect(declineTap).toContain('stale assignment status is rejected before the version row lock')
     expect(declineMigration).toContain('AND NOT column_row.atthasdef')
     expect(declineMigration).toContain("AND column_row.attidentity = ''")
     expect(declineMigration).toContain("AND column_row.attgenerated = ''")
