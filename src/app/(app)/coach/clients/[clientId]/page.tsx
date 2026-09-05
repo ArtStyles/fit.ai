@@ -45,6 +45,7 @@ export default async function CoachClientDetailPage({ params, searchParams }: {
       ? await ((supabase as any).from('coaching_relationships').select('id, status, started_at, trainer_service_offerings(name)').eq('trainer_user_id', user?.id).eq('client_user_id', params.clientId).eq('status', 'active').maybeSingle())
       : { data: null, error: null }
     if (relationshipResponse.error) throw new CoachClientStateLoadError()
+    if (!relationshipResponse.data) notFound()
     const relationship = relationshipResponse.data as any
     const assignmentResponse = relationship?.id
       ? await ((supabase as any).from('trainer_plan_assignments').select('id, status, created_at').eq('relationship_id', relationship.id).eq('trainer_user_id', user?.id).in('status', ['active', 'proposed']).order('created_at', { ascending: false }))

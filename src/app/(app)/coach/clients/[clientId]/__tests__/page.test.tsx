@@ -15,10 +15,39 @@ vi.mock('@/components/navigation/PageTopBar', () => ({ PageTopBar: () => null })
 vi.mock('@/components/coaching/ClientInsightsDashboard', () => ({ ClientInsightsDashboard: () => null }))
 vi.mock('@/components/coaching/ClientMeasurementsPanel', () => ({ ClientMeasurementsPanel: () => null }))
 
+function activeRelationshipSupabase() {
+  const relationshipQuery: any = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn(async () => ({
+      data: { id: 'relationship-active', status: 'active', trainer_service_offerings: { name: 'Fuerza' } },
+      error: null,
+    })),
+  }
+  relationshipQuery.select.mockReturnValue(relationshipQuery)
+  relationshipQuery.eq.mockReturnValue(relationshipQuery)
+  const assignmentQuery: any = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    in: vi.fn(),
+    order: vi.fn(async () => ({ data: [], error: null })),
+  }
+  assignmentQuery.select.mockReturnValue(assignmentQuery)
+  assignmentQuery.eq.mockReturnValue(assignmentQuery)
+  assignmentQuery.in.mockReturnValue(assignmentQuery)
+  return {
+    from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery),
+  }
+}
+
 describe('CoachClientDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, supabase: {} })
+    requireActiveTrainerContext.mockResolvedValue({
+      profile: { timezone: 'America/Havana' },
+      user: { id: 'trainer-1' },
+      supabase: activeRelationshipSupabase(),
+    })
     getCoachClientInsights.mockResolvedValue({ activeScopes: [] })
     getCoachClientMeasurements.mockResolvedValue([])
   })
@@ -63,7 +92,7 @@ describe('CoachClientDetailPage', () => {
     await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })
 
     expect(getCoachClientMeasurements).toHaveBeenCalledTimes(1)
-    expect(getCoachClientMeasurements).toHaveBeenCalledWith({}, { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fromDate: '2025-12-04', toDate: '2025-12-31' })
+    expect(getCoachClientMeasurements).toHaveBeenCalledWith(expect.any(Object), { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fromDate: '2025-12-04', toDate: '2025-12-31' })
   })
 
   it('keeps the already-authorized detail visible when the later measurements request fails', async () => {
@@ -198,5 +227,32 @@ describe('CoachClientDetailPage', () => {
     await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
       .rejects.toThrow('No se pudo cargar el estado del acompañamiento.')
     expect(notFound).not.toHaveBeenCalled()
+  })
+
+  it('does not render previously authorized insights after the active relationship disappears', async () => {
+    const relationshipQuery: any = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+    }
+    relationshipQuery.select.mockReturnValue(relationshipQuery)
+    relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const supabase = { from: vi.fn(() => relationshipQuery) }
+    requireActiveTrainerContext.mockResolvedValue({
+      profile: { timezone: 'America/Havana' },
+      user: { id: 'trainer-1' },
+      supabase,
+    })
+    getCoachClientInsights.mockResolvedValue({
+      activeScopes: ['training_profile', 'body_measurements'],
+      rangeStart: '2026-08-01',
+      rangeEnd: '2026-08-28',
+    })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+      .rejects.toThrow('NOT_FOUND')
+    expect(notFound).toHaveBeenCalled()
+    expect(getCoachClientMeasurements).not.toHaveBeenCalled()
   })
 })
