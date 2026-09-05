@@ -47,9 +47,19 @@ export default async function CoachClientDetailPage({ params, searchParams }: {
     if (relationshipResponse.error) throw new CoachClientStateLoadError()
     const relationship = relationshipResponse.data as any
     const assignmentResponse = relationship?.id
-      ? await ((supabase as any).from('trainer_plan_assignments').select('id, status, created_at').eq('relationship_id', relationship.id).eq('trainer_user_id', user?.id).eq('status', 'active').maybeSingle())
+      ? await ((supabase as any).from('trainer_plan_assignments').select('id, status, created_at').eq('relationship_id', relationship.id).eq('trainer_user_id', user?.id).in('status', ['active', 'proposed']).order('created_at', { ascending: false }))
       : { data: null, error: null }
     if (assignmentResponse.error) throw new CoachClientStateLoadError()
+    const assignments = (assignmentResponse.data ?? []) as Array<{ id: string; status: 'active' | 'proposed'; created_at: string }>
+    const assignment = assignments.find(candidate => candidate.status === 'active')
+      ?? assignments.find(candidate => candidate.status === 'proposed')
+      ?? null
+    const hasProposedAssignment = assignments.some(candidate => candidate.status === 'proposed')
+    const assignmentStatus = assignment?.status === 'active'
+      ? 'Rutina activa'
+      : assignment?.status === 'proposed'
+        ? 'Propuesta de rutina pendiente'
+        : 'Sin rutina activa'
     const service = Array.isArray(relationship?.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship?.trainer_service_offerings
     let measurements = null
     if (detail.activeScopes.includes('body_measurements')) {
@@ -61,7 +71,7 @@ export default async function CoachClientDetailPage({ params, searchParams }: {
         console.error('[coach-client-measurements] unavailable')
       }
     }
-    return <div className="min-h-screen bg-background pb-28"><PageTopBar title="Detalle del cliente" subtitle="Evidencia compartida" backHref="/coach/clients" backLabel="Clientes" /><main className="mx-auto max-w-4xl px-4 py-8"><section className="mb-6 rounded-2xl border border-border/70 bg-muted/10 p-4" aria-label="Estado del acompañamiento"><p className="text-sm font-semibold text-foreground">{service?.name ?? 'Acompañamiento profesional'}</p><p className="mt-1 text-sm text-muted-foreground">{relationship?.status === 'active' ? 'Relación activa' : relationship?.status ? 'Relación no activa' : 'Estado de relación no disponible'} · {assignmentResponse.data ? 'Rutina activa' : 'Sin rutina activa'}</p>{relationship?.status === 'active' ? <a href={`/coach/programs?clientId=${params.clientId}`} className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">Asignar rutina</a> : null}</section><ClientInsightsDashboard detail={detail} weeks={weeks} viewerTimeZone={viewerTimeZone} />{measurements === null ? null : <ClientMeasurementsPanel measurements={measurements} />}</main></div>
+    return <div className="min-h-screen bg-background pb-28"><PageTopBar title="Detalle del cliente" subtitle="Evidencia compartida" backHref="/coach/clients" backLabel="Clientes" /><main className="mx-auto max-w-4xl px-4 py-8"><section className="mb-6 rounded-2xl border border-border/70 bg-muted/10 p-4" aria-label="Estado del acompañamiento"><p className="text-sm font-semibold text-foreground">{service?.name ?? 'Acompañamiento profesional'}</p><p className="mt-1 text-sm text-muted-foreground">{relationship?.status === 'active' ? 'Relación activa' : relationship?.status ? 'Relación no activa' : 'Estado de relación no disponible'} · {assignmentStatus}</p>{relationship?.status === 'active' && !hasProposedAssignment ? <a href={`/coach/programs?clientId=${params.clientId}`} className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">{assignment?.status === 'active' ? 'Gestionar rutina' : 'Asignar rutina'}</a> : null}</section><ClientInsightsDashboard detail={detail} weeks={weeks} viewerTimeZone={viewerTimeZone} />{measurements === null ? null : <ClientMeasurementsPanel measurements={measurements} />}</main></div>
   } catch (error) {
     if (error instanceof CoachClientStateLoadError) throw error
     notFound()
