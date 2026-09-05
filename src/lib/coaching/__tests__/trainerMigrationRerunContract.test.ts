@@ -179,7 +179,8 @@ describe('trainer migration rerun contract', () => {
     }
     expect(declineMigration).toContain("pg_get_expr(index_definition.indpred, index_definition.indrelid) = '(decline_idempotency_key IS NOT NULL)'")
     expect(declineMigration).toContain('procedure.prosrc')
-    expect(declineMigration).toContain("regexp_replace(procedure.prosrc, '[[:space:]]+', '', 'g')")
+    expect(declineMigration).toContain('btrim(procedure.prosrc) = btrim($audit_event_allowlist$')
+    expect(declineMigration).not.toContain("regexp_replace(procedure.prosrc, '[[:space:]]+', '', 'g')")
     for (const historicalEvent of [
       "WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')",
       "WHEN 'trainer_application' THEN p_action IN (",
@@ -191,13 +192,15 @@ describe('trainer migration rerun contract', () => {
     ]) expect(declineMigration).toContain(historicalEvent)
 
     expect(declineTap).toContain(expectedCheck)
-    expect(declineTap).toContain('SELECT plan(61);')
+    expect(declineTap).toContain('SELECT plan(63);')
     expect(declineTap).toContain('AND convalidated')
     expect(declineTap).toContain('index_definition.indexprs IS NULL')
     expect(declineTap).toContain('CHECK (TRUE)')
     expect(declineTap).toContain('decline_idempotency_key IS NULL')
     expect(declineTap).toContain('audit allowlist reduced to only assignment decline')
     expect(declineTap).toContain('preflight rejects unexpected audit event pairs')
+    expect(declineTap).toContain("'service_ created'")
+    expect(declineTap).toContain('preflight rejects semantic audit allowlist drift hidden by internal whitespace')
     expect(declineMigration).toContain('AND NOT column_row.atthasdef')
     expect(declineMigration).toContain("AND column_row.attidentity = ''")
     expect(declineMigration).toContain("AND column_row.attgenerated = ''")

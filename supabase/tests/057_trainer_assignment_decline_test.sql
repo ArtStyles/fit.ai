@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(61);
+SELECT plan(63);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('57000000-0000-4000-8000-000000000001', 'decline-trainer@example.test', '{}'::JSONB),
@@ -518,6 +518,37 @@ SELECT is(
   public.trainer_security_preflight(),
   57,
   'preflight recovers after removing unexpected audit event pairs'
+);
+
+DO $tamper$
+DECLARE
+  definition TEXT;
+  tampered_definition TEXT;
+BEGIN
+  SELECT allowlist_ddl INTO definition FROM decline_catalog_restore;
+  tampered_definition := replace(definition, '''service_created''', '''service_ created''');
+  IF tampered_definition = definition THEN
+    RAISE EXCEPTION 'AUDIT_ALLOWLIST_TAMPER_SETUP_FAILED';
+  END IF;
+  EXECUTE tampered_definition;
+END;
+$tamper$;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects semantic audit allowlist drift hidden by internal whitespace'
+);
+DO $restore$
+DECLARE definition TEXT;
+BEGIN
+  SELECT allowlist_ddl INTO definition FROM decline_catalog_restore;
+  EXECUTE definition;
+END;
+$restore$;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring internal audit allowlist whitespace'
 );
 
 ALTER FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)

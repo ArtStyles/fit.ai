@@ -294,7 +294,7 @@ BEGIN
         AND NOT procedure.prosecdef
         AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
         AND owner_role.rolname = 'postgres'
-        AND regexp_replace(procedure.prosrc, '[[:space:]]+', '', 'g') = regexp_replace($audit_event_allowlist$
+        AND btrim(procedure.prosrc) = btrim($audit_event_allowlist$
           SELECT COALESCE(CASE p_entity_type
             WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')
             WHEN 'trainer_application' THEN p_action IN (
@@ -340,7 +340,7 @@ BEGIN
             )
             ELSE FALSE
           END, FALSE)
-        $audit_event_allowlist$, '[[:space:]]+', '', 'g')
+        $audit_event_allowlist$)
     )
     OR NOT EXISTS (
       SELECT 1
