@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-09-05
 
-**Estado:** Dirección aprobada; documento pendiente de revisión
+**Estado:** Aprobado para planificación
 
 **Alcance:** Reorganización del chrome de navegación autenticado de Vekira
 
@@ -72,6 +72,11 @@ La primera entrega no retirará `Entrenadores` ni `Comunidad`: hoy no existe otr
 con la misma visibilidad. La desaparición del sexto control devolverá espacio suficiente y
 recuperará la simetría alrededor de `Entrenar`.
 
+`Mi entrenador` dejará de ser un destino inferior, pero `/coaching` no quedará huérfano: se
+reubicará como `Mi acompañamiento` dentro de la hoja de cuenta cuando el espacio activo sea
+Personal. El enlace será estable incluso si todavía no existe un plan asignado, de modo que una
+solicitud, relación o propuesta siga siendo recuperable después de recargar.
+
 Una reducción posterior a cuatro destinos personales queda fuera de este alcance. Solo deberá
 considerarse después de crear en Inicio una sección **Acompañamiento** con CTA dependiente del
 estado real: `Buscar entrenador`, `Ver solicitud`, `Mi entrenador` o `Revisar propuesta`.
@@ -138,8 +143,8 @@ Orden del contenido:
 5. Ajustes;
 6. Cerrar sesión, separado visualmente.
 
-Cuando el espacio activo sea Personal, el enlace contextual será `Perfil personal`. Cuando sea
-Entrenador, los enlaces contextuales serán `Perfil profesional` y `Servicios`. El acceso al otro
+Cuando el espacio activo sea Personal, los enlaces contextuales serán `Perfil personal` y
+`Mi acompañamiento`. Cuando sea Entrenador, serán `Perfil profesional` y `Servicios`. El acceso al otro
 espacio siempre se hará mediante el selector antes de mostrar sus destinos profundos de gestión;
 así la URL, el badge y la navegación no quedan en contextos diferentes. El acceso a
 Notificaciones continuará mediante la campana y no se duplicará en la primera entrega.
@@ -409,14 +414,16 @@ del flujo.
 6. El dashboard conserva saludo y notificaciones, pero Ajustes vive en la hoja de cuenta.
 7. Tocar el avatar del dashboard abre la hoja; cambiar la foto se hace desde Perfil.
 8. Perfil profesional y Servicios siguen accesibles aunque no estén en la barra profesional.
-9. Un usuario sin perfil profesional activo recibe `coach_unavailable`, conserva la cookie y no
-   puede activar el espacio Entrenador.
-10. La instantánea de entrenamiento persistida antes y después del cambio es idéntica; no se
-    introduce ninguna migración ni se relajan guards, grants o RLS.
-11. Para cada cruce ruta/cookie probado, el badge y los destinos coinciden con
-    `resolvePresentedWorkspace`.
-12. La hoja enfoca su título o espacio seleccionado al abrir, cierra con Escape, devuelve el foco
-    al disparador y mantiene sus controles por encima de la safe area inferior.
+9. `/coaching` sigue accesible como `Mi acompañamiento` desde la hoja Personal aunque no exista
+   todavía un plan profesional asignado.
+10. Un usuario sin perfil profesional activo recibe `coach_unavailable`, conserva la cookie y no
+    puede activar el espacio Entrenador.
+11. La instantánea de entrenamiento persistida antes y después del cambio es idéntica; no se
+     introduce ninguna migración ni se relajan guards, grants o RLS.
+12. Para cada cruce ruta/cookie probado, el badge y los destinos coinciden con
+     `resolvePresentedWorkspace`.
+13. La hoja enfoca su título o espacio seleccionado al abrir, cierra con Escape, devuelve el foco
+     al disparador y mantiene sus controles por encima de la safe area inferior.
 
 ## 14. Fuera de alcance
 
