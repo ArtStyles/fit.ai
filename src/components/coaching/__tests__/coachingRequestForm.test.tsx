@@ -275,6 +275,24 @@ describe('coaching request browser interactions', () => {
     }
   })
 
+  it('removes a request that became terminal during a decline race', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?decline=conflict&serverAfterRefresh=empty`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+
+      await page.getByRole('button', { name: 'Rechazar' }).click()
+
+      await page.getByText('La solicitud se actualizó. Recarga la bandeja.').waitFor({ state: 'visible' })
+      await page.getByRole('heading', { name: 'No hay solicitudes nuevas' }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('button', { name: 'Rechazar' }).count()).toBe(0)
+      expect(await page.evaluate(() => (window as Window & { __COACH_REFRESHES__?: number }).__COACH_REFRESHES__)).toBe(1)
+    } finally {
+      await page.close()
+    }
+  })
+
   it('removes a terminal coach request and refreshes for both acceptance success and a refreshed race conflict', async () => {
     for (const mode of ['success', 'conflict'] as const) {
       const page = await browser.newPage()

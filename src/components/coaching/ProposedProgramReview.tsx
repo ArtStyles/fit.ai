@@ -18,6 +18,10 @@ export type ProposedProgramReviewView = {
 
 /** An intentionally read-only proposal; only the atomic acceptance may change it. */
 export function ProposedProgramReview({ proposal }: { proposal: ProposedProgramReviewView }) {
+  return <ProposedProgramReviewState key={proposal.assignmentId} proposal={proposal} />
+}
+
+function ProposedProgramReviewState({ proposal }: { proposal: ProposedProgramReviewView }) {
   const { snapshot } = proposal
   const canAccept = proposal.canAccept && proposal.exerciseDetailsAvailable
   const router = useRouter()

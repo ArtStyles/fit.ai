@@ -133,6 +133,24 @@ describe('trainer assignment browser interaction', () => {
     } finally { await page.close() }
   }, 15_000)
 
+  it('resets terminal form state when refresh reveals an earlier proposal', async () => {
+    const page = await browser.newPage()
+    page.on('dialog', dialog => dialog.accept())
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/proposedProgramReviewInteraction.html?nextProposal=1`)
+      await page.getByRole('heading', { name: 'Rutina inicial' }).waitFor()
+      await page.getByLabel('Motivo opcional').fill('Prefiero revisar la anterior.')
+
+      await page.getByRole('button', { name: 'No aceptar rutina' }).click()
+
+      await page.getByRole('heading', { name: 'Rutina anterior pendiente' }).waitFor()
+      await pwExpect(page.getByLabel('Motivo opcional')).toHaveValue('')
+      await pwExpect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toBeEnabled()
+      await pwExpect(page.getByRole('button', { name: 'No aceptar rutina' })).toBeEnabled()
+      await pwExpect(page.getByText('Rutina no aceptada. Actualizando propuestas…')).toHaveCount(0)
+    } finally { await page.close() }
+  }, 15_000)
+
   it('reuses the decline key after a recoverable error and reports terminal success visibly', async () => {
     const page = await browser.newPage()
     page.on('dialog', dialog => dialog.accept())

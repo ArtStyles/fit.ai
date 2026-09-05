@@ -88,7 +88,7 @@ export function CoachRequestQueue({ requests }: { requests: CoachRequest[] }) {
       const { declineCoachingRequest } = await import('@/app/actions/coachingRequests')
       const result = await declineCoachingRequest(formData)
       setMessage({ text: result.ok ? 'La solicitud fue rechazada.' : result.error, isError: !result.ok })
-      if (result.ok) finishTerminalRequest(requestId)
+      if (result.ok || result.refreshed) finishTerminalRequest(requestId)
     } catch {
       setMessage({ text: 'No se pudo rechazar la solicitud.', isError: true })
     } finally {

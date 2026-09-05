@@ -24,5 +24,7 @@ export async function acceptCoachingRequest() {
 }
 
 export async function declineCoachingRequest() {
-  return { ok: true as const, requestId: 'request-1' }
+  return new URLSearchParams(window.location.search).get('decline') === 'conflict'
+    ? { ok: false as const, error: 'La solicitud se actualizó. Recarga la bandeja.', refreshed: true }
+    : { ok: true as const, requestId: 'request-1' }
 }
