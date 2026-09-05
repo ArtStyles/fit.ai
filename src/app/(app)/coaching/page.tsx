@@ -140,16 +140,27 @@ export default async function CoachingPage() {
     try {
       const snapshot = parseTrainerProgramSnapshot(version.snapshot)
       const exerciseIds = snapshot.workouts.flatMap(workout => workout.exercises.map(exercise => exercise.exerciseId))
-      const exerciseResponse = await (supabase as any).from('exercises').select('id, name').in('id', exerciseIds).eq('is_public', true)
+      let exerciseNames: Record<string, string> = {}
+      let exerciseDetailsAvailable = false
+      try {
+        const exerciseResponse = await (supabase as any).from('exercises').select('id, name').in('id', exerciseIds).eq('is_public', true)
+        if (!exerciseResponse.error) {
+          exerciseNames = Object.fromEntries(((exerciseResponse.data ?? []) as Array<{ id: string; name: string }>).map(exercise => [exercise.id, exercise.name]))
+          exerciseDetailsAvailable = exerciseIds.every(exerciseId => Boolean(exerciseNames[exerciseId]?.trim()))
+        }
+      } catch {
+        exerciseDetailsAvailable = false
+      }
       const proposalTrainer = profilesById.get(assignment.trainer_user_id) as { username?: string | null; full_name?: string | null } | undefined
       proposedProgram = {
         assignmentId: assignment.id,
         versionNumber: version.version_number,
         changeSummary: version.change_summary,
         trainerName: proposalTrainer?.full_name?.trim() || proposalTrainer?.username?.trim() || 'tu entrenador',
-        canAccept: relationship?.status === 'active' && relationship.id === assignment.relationship_id,
+        canAccept: exerciseDetailsAvailable && relationship?.status === 'active' && relationship.id === assignment.relationship_id,
+        exerciseDetailsAvailable,
         snapshot,
-        exerciseNames: Object.fromEntries(((exerciseResponse.data ?? []) as Array<{ id: string; name: string }>).map(exercise => [exercise.id, exercise.name])),
+        exerciseNames,
       }
     } catch {
       proposedProgram = null

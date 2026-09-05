@@ -11,7 +11,7 @@ vi.mock('@/components/coaching/ClientCoachingStatus', () => ({
 }))
 vi.mock('@/components/coaching/ConsentManager', () => ({ ConsentManager: ({ relationshipId }: { relationshipId: string }) => <p>consents:{relationshipId}</p> }))
 vi.mock('@/components/coaching/ProposedProgramReview', () => ({
-  ProposedProgramReview: ({ proposal }: { proposal: { trainerName: string; snapshot: { name: string }; canAccept: boolean } }) => <section><h2>{proposal.snapshot.name}</h2><p>{`proposal-trainer:${proposal.trainerName}`}</p><p>{`proposal-can-accept:${proposal.canAccept}`}</p>{proposal.canAccept ? <button type="button">Aceptar rutina</button> : null}<button type="button">No aceptar rutina</button></section>,
+  ProposedProgramReview: ({ proposal }: { proposal: { trainerName: string; snapshot: { name: string }; canAccept: boolean; exerciseDetailsAvailable: boolean } }) => <section><h2>{proposal.snapshot.name}</h2><p>{`proposal-trainer:${proposal.trainerName}`}</p><p>{`proposal-can-accept:${proposal.canAccept}`}</p><p>{`proposal-exercise-details:${proposal.exerciseDetailsAvailable}`}</p>{proposal.canAccept ? <button type="button">Aceptar rutina</button> : null}<button type="button">No aceptar rutina</button></section>,
 }))
 
 function requestQuery(
@@ -24,6 +24,7 @@ function requestQuery(
     services?: Record<string, { data: unknown; error: unknown }>
     proposals?: { data: unknown; error: unknown }
     exercises?: { data: unknown; error: unknown }
+    exerciseException?: unknown
   } = {},
 ) {
   const requestLimit = vi.fn(async () => result)
@@ -51,7 +52,10 @@ function requestQuery(
   proposalQuery.order = proposalOrder
   proposalQuery.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => proposalResult.then(resolve, reject)
   const proposalSelect = vi.fn(() => proposalQuery)
-  const exercisePublicEq = vi.fn(async () => options.exercises ?? { data: [], error: null })
+  const exercisePublicEq = vi.fn(async () => {
+    if (options.exerciseException) throw options.exerciseException
+    return options.exercises ?? { data: [], error: null }
+  })
   const exerciseIn = vi.fn(() => ({ eq: exercisePublicEq }))
   const exerciseSelect = vi.fn(() => ({ in: exerciseIn }))
   const emptyQuery: any = {
@@ -65,6 +69,46 @@ function requestQuery(
   const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : table === 'coaching_requests' ? requestSelect : table === 'public_profiles' ? profileSelect : table === 'active_trainer_directory' ? directorySelect : table === 'trainer_plan_assignments' ? proposalSelect : table === 'exercises' ? exerciseSelect : emptyQuery.select }))
   const rpc = vi.fn(async (_name: string, args: { trainer_slug: string }) => options.services?.[args.trainer_slug] ?? { data: [], error: null })
   return { from, rpc, order, requestLimit, requestSelect, relationshipSelect, profileIn, directoryIn, proposalEq, proposalOrder }
+}
+
+function proposedAssignmentFixture(relationshipId: string) {
+  return [{
+    id: '77777777-7777-4777-8777-777777777777',
+    relationship_id: relationshipId,
+    trainer_user_id: 'trainer-active',
+    status: 'proposed',
+    created_at: '2026-09-04T12:00:00.000Z',
+    trainer_assignment_versions: [{
+      id: '88888888-8888-4888-8888-888888888888',
+      version_number: 1,
+      status: 'proposed',
+      change_summary: 'Revisa esta propuesta.',
+      snapshot: {
+        schemaVersion: 1,
+        name: 'Rutina con detalle pendiente',
+        goal: 'Fuerza',
+        description: null,
+        daysPerWeek: 1,
+        workouts: [{
+          sourceTemplateWorkoutId: '99999999-9999-4999-8999-999999999999',
+          name: 'Día uno',
+          dayOfWeek: 1,
+          orderInPlan: 1,
+          exercises: [{
+            sourceTemplateExerciseId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            exerciseId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            orderIndex: 1,
+            sets: 3,
+            reps: 8,
+            weightKg: null,
+            targetRpe: 7,
+            restSeconds: 60,
+            notes: null,
+          }],
+        }],
+      },
+    }],
+  }]
 }
 
 describe('CoachingPage', () => {
@@ -315,6 +359,33 @@ describe('CoachingPage', () => {
 
     expect(html).toContain('proposal-can-accept:true')
     expect(html).toContain('>Aceptar rutina<')
+    expect(html).toContain('>No aceptar rutina<')
+  })
+
+  it.each([
+    ['returns an error', { exercises: { data: null, error: { message: 'exercise read failed' } } }],
+    ['throws', { exerciseException: new Error('exercise read failed') }],
+  ])('keeps the proposal rejectable but not acceptable when the exercise lookup %s', async (_case, exerciseOptions) => {
+    const relationshipId = '66666666-6666-4666-8666-666666666666'
+    const supabase = requestQuery(
+      { data: [], error: null },
+      [{ id: relationshipId, status: 'active', trainer_user_id: 'trainer-active', service_id: 'service-active', started_at: '2026-09-04T12:00:00.000Z', source_request_id: null }],
+      [{ id: 'trainer-active', username: 'ines', full_name: 'Inés Torres', avatar_url: null }],
+      [],
+      {
+        proposals: { data: proposedAssignmentFixture(relationshipId), error: null },
+        ...exerciseOptions,
+      },
+    )
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const { default: CoachingPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachingPage())
+
+    expect(html).toContain('Rutina con detalle pendiente')
+    expect(html).toContain('proposal-exercise-details:false')
+    expect(html).toContain('proposal-can-accept:false')
+    expect(html).not.toContain('>Aceptar rutina<')
     expect(html).toContain('>No aceptar rutina<')
   })
 })

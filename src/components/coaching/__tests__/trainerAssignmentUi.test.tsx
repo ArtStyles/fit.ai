@@ -117,6 +117,22 @@ describe('trainer assignment browser interaction', () => {
     } finally { await page.close() }
   }, 15_000)
 
+  it('keeps an incomplete proposal visible and rejectable without offering acceptance', async () => {
+    const page = await browser.newPage()
+    page.on('dialog', dialog => dialog.accept())
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/proposedProgramReviewInteraction.html?exerciseDetails=unavailable`)
+      await page.getByRole('heading', { name: 'Rutina inicial' }).waitFor()
+
+      await pwExpect(page.getByRole('alert')).toContainText('No se pudieron cargar todos los detalles de los ejercicios.')
+      await pwExpect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toHaveCount(0)
+      await pwExpect(page.getByRole('button', { name: 'No aceptar rutina' })).toBeEnabled()
+
+      await page.getByRole('button', { name: 'No aceptar rutina' }).click()
+      await pwExpect(page.getByRole('status')).toContainText('Rutina no aceptada')
+    } finally { await page.close() }
+  }, 15_000)
+
   it('reuses the decline key after a recoverable error and reports terminal success visibly', async () => {
     const page = await browser.newPage()
     page.on('dialog', dialog => dialog.accept())

@@ -174,6 +174,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
       assignmentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       versionNumber: 1,
       canAccept: true,
+      exerciseDetailsAvailable: true,
       changeSummary: 'Prioriza el control técnico en cada repetición.',
       trainerName: 'Ada Entrenadora',
       snapshot: {
