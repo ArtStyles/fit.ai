@@ -192,7 +192,7 @@ describe('trainer migration rerun contract', () => {
     ]) expect(declineMigration).toContain(historicalEvent)
 
     expect(declineTap).toContain(expectedCheck)
-    expect(declineTap).toContain('SELECT plan(63);')
+    expect(declineTap).toContain('SELECT plan(78);')
     expect(declineTap).toContain('AND convalidated')
     expect(declineTap).toContain('index_definition.indexprs IS NULL')
     expect(declineTap).toContain('CHECK (TRUE)')
@@ -224,6 +224,9 @@ describe('trainer migration rerun contract', () => {
     expect(declineMigration).toContain('ALTER FUNCTION public.trainer_security_preflight() OWNER TO postgres')
     expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon, authenticated, service_role CASCADE')
     expect(declineMigration).toContain('GRANT EXECUTE ON FUNCTION public.trainer_security_preflight() TO authenticated, service_role')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB) FROM PUBLIC, anon, authenticated, service_role CASCADE')
+    expect(declineMigration).toContain('GRANT EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB) TO authenticated, service_role')
     expect(declineProcedureCatalogAssertion).toBeDefined()
     expect(declineProcedureCatalogAssertion).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
     expect(declineProcedureCatalogAssertion).not.toContain('procedure.proconfig @>')
@@ -231,8 +234,11 @@ describe('trainer migration rerun contract', () => {
     expect(declineMigration).toContain('expanded_acl.is_grantable')
     expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE')
     expect(exactFunctionAclAssertion).toBeDefined()
+    expect(exactFunctionAclAssertion).toContain("'public.is_professional_audit_event_allowed(text,text)'::REGPROCEDURE")
+    expect(exactFunctionAclAssertion).toContain("'public.append_trainer_template_exercises(uuid,jsonb)'::REGPROCEDURE")
     expect(exactFunctionAclAssertion).toContain("'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE")
     expect(exactFunctionAclAssertion).toContain("'public.trainer_security_preflight()'::REGPROCEDURE")
+    expect(declineMigration).toMatch(/procedure\.oid = 'public\.append_trainer_template_exercises\(uuid,jsonb\)'::REGPROCEDURE[\s\S]+?procedure_language\.lanname = 'plpgsql'[\s\S]+?procedure\.provolatile = 'v'[\s\S]+?procedure\.prorettype = 'jsonb'::REGTYPE[\s\S]+?procedure\.prosecdef[\s\S]+?procedure\.proconfig = ARRAY\['search_path=public, pg_temp'\]::TEXT\[\][\s\S]+?owner_role\.rolname = 'postgres'/i)
 
     expect(preflightAclStart).toBeGreaterThan(-1)
     expect(preflightAclAssertion).toContain("procedure.oid = 'public.trainer_security_preflight()'::REGPROCEDURE")
@@ -251,6 +257,14 @@ describe('trainer migration rerun contract', () => {
     expect(declineTap).toContain('CREATE ROLE trainer_assignment_decline_extra_executor NOLOGIN')
     expect(declineTap).toContain('TO trainer_assignment_decline_extra_executor')
     expect(declineTap).toContain('preflight rejects an extra decline RPC executor')
+    expect(declineTap).toContain('preflight rejects any non-owner executor on the private audit allowlist')
+    expect(declineTap).toContain('preflight rejects a non-definer trainer batch append RPC')
+    expect(declineTap).toContain('preflight rejects extra trainer batch append RPC configuration')
+    expect(declineTap).toContain('preflight rejects a non-postgres trainer batch append owner')
+    expect(declineTap).toContain('preflight rejects an extra trainer batch append RPC executor')
+    expect(declineTap).toContain('preflight rejects authenticated grant option on trainer batch append')
+    expect(declineTap).toContain('preflight rejects service role grant option on trainer batch append')
+    expect(declineTap).toContain('trainer batch append is an exact postgres-owned SECURITY DEFINER RPC with least-privilege ACLs')
     expect(declineTap).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
     expect(declineTap).toContain("grantee_role.rolname NOT IN ('authenticated', 'service_role')")
     for (const signature of [
@@ -266,7 +280,7 @@ describe('trainer migration rerun contract', () => {
         ))
       }
     }
-    expect(declineTap.match(/expanded_acl\.is_grantable/g)).toHaveLength(2)
+    expect(declineTap.match(/expanded_acl\.is_grantable/g)).toHaveLength(3)
   })
 
   it('compares proposal and revision materializations to canonical snapshot order/day pairs', () => {

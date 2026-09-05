@@ -75,7 +75,7 @@ AS $$
 $$;
 
 ALTER FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE;
 
 CREATE OR REPLACE FUNCTION public.decline_trainer_assignment(
   p_assignment_id UUID,
@@ -238,6 +238,10 @@ ALTER FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) OWNER TO post
 REVOKE ALL ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE;
 GRANT EXECUTE ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) TO authenticated, service_role;
 
+ALTER FUNCTION public.append_trainer_template_exercises(UUID, JSONB) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB) FROM PUBLIC, anon, authenticated, service_role CASCADE;
+GRANT EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB) TO authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.trainer_security_preflight()
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -345,6 +349,20 @@ BEGIN
     OR NOT EXISTS (
       SELECT 1
       FROM pg_proc procedure
+      JOIN pg_language procedure_language ON procedure_language.oid = procedure.prolang
+      JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+      WHERE procedure.oid = 'public.append_trainer_template_exercises(uuid,jsonb)'::REGPROCEDURE
+        AND procedure_language.lanname = 'plpgsql'
+        AND procedure.prokind = 'f'
+        AND procedure.provolatile = 'v'
+        AND procedure.prorettype = 'jsonb'::REGTYPE
+        AND procedure.prosecdef
+        AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
+        AND owner_role.rolname = 'postgres'
+    )
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_proc procedure
       JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
       WHERE procedure.oid = 'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE
         AND procedure.prosecdef
@@ -368,16 +386,28 @@ BEGIN
       ) expanded_acl
       LEFT JOIN pg_roles grantee_role ON grantee_role.oid = expanded_acl.grantee
       WHERE procedure.oid IN (
+          'public.is_professional_audit_event_allowed(text,text)'::REGPROCEDURE,
+          'public.append_trainer_template_exercises(uuid,jsonb)'::REGPROCEDURE,
           'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE,
           'public.trainer_security_preflight()'::REGPROCEDURE
         )
         AND expanded_acl.privilege_type = 'EXECUTE'
         AND expanded_acl.grantee <> procedure.proowner
         AND (
-          expanded_acl.is_grantable
-          OR expanded_acl.grantee = 0
-          OR grantee_role.rolname IS NULL
-          OR grantee_role.rolname NOT IN ('authenticated', 'service_role')
+          procedure.oid = 'public.is_professional_audit_event_allowed(text,text)'::REGPROCEDURE
+          OR (
+            procedure.oid IN (
+              'public.append_trainer_template_exercises(uuid,jsonb)'::REGPROCEDURE,
+              'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE,
+              'public.trainer_security_preflight()'::REGPROCEDURE
+            )
+            AND (
+              expanded_acl.is_grantable
+              OR expanded_acl.grantee = 0
+              OR grantee_role.rolname IS NULL
+              OR grantee_role.rolname NOT IN ('authenticated', 'service_role')
+            )
+          )
         )
     )
     OR NOT EXISTS (

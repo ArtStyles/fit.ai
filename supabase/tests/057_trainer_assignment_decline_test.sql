@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(63);
+SELECT plan(78);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('57000000-0000-4000-8000-000000000001', 'decline-trainer@example.test', '{}'::JSONB),
@@ -549,6 +549,144 @@ SELECT is(
   public.trainer_security_preflight(),
   57,
   'preflight recovers after restoring internal audit allowlist whitespace'
+);
+
+CREATE ROLE trainer_audit_allowlist_extra_executor NOLOGIN;
+GRANT EXECUTE ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT)
+  TO trainer_audit_allowlist_extra_executor;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects any non-owner executor on the private audit allowlist'
+);
+REVOKE EXECUTE ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT)
+  FROM trainer_audit_allowlist_extra_executor;
+DROP ROLE trainer_audit_allowlist_extra_executor;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring the private audit allowlist ACL'
+);
+
+ALTER FUNCTION public.append_trainer_template_exercises(UUID, JSONB) SECURITY INVOKER;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects a non-definer trainer batch append RPC'
+);
+ALTER FUNCTION public.append_trainer_template_exercises(UUID, JSONB) SECURITY DEFINER;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring trainer batch append security definer'
+);
+
+ALTER FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  SET statement_timeout = '5s';
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects extra trainer batch append RPC configuration'
+);
+ALTER FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  RESET statement_timeout;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring exact trainer batch append RPC configuration'
+);
+
+CREATE ROLE trainer_batch_append_rogue_owner NOLOGIN;
+ALTER FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  OWNER TO trainer_batch_append_rogue_owner;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects a non-postgres trainer batch append owner'
+);
+ALTER FUNCTION public.append_trainer_template_exercises(UUID, JSONB) OWNER TO postgres;
+DROP ROLE trainer_batch_append_rogue_owner;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after restoring trainer batch append ownership'
+);
+
+CREATE ROLE trainer_batch_append_extra_executor NOLOGIN;
+GRANT EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  TO trainer_batch_append_extra_executor;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects an extra trainer batch append RPC executor'
+);
+REVOKE EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  FROM trainer_batch_append_extra_executor;
+DROP ROLE trainer_batch_append_extra_executor;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing the extra trainer batch append executor'
+);
+
+GRANT EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  TO authenticated WITH GRANT OPTION;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects authenticated grant option on trainer batch append'
+);
+REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  FROM authenticated;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing authenticated trainer batch append grant option'
+);
+
+GRANT EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  TO service_role WITH GRANT OPTION;
+SELECT throws_ok(
+  $$SELECT public.trainer_security_preflight()$$,
+  'P0001', 'TRAINER_SECURITY_PREFLIGHT_FAILED',
+  'preflight rejects service role grant option on trainer batch append'
+);
+REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB)
+  FROM service_role;
+SELECT is(
+  public.trainer_security_preflight(),
+  57,
+  'preflight recovers after removing service role trainer batch append grant option'
+);
+
+SELECT ok(
+  (
+    SELECT procedure_language.lanname = 'plpgsql'
+      AND procedure.prokind = 'f'
+      AND procedure.provolatile = 'v'
+      AND procedure.prorettype = 'jsonb'::REGTYPE
+      AND procedure.prosecdef
+      AND procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]
+      AND owner_role.rolname = 'postgres'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) expanded_acl
+        LEFT JOIN pg_roles grantee_role ON grantee_role.oid = expanded_acl.grantee
+        WHERE expanded_acl.privilege_type = 'EXECUTE'
+          AND expanded_acl.grantee <> procedure.proowner
+          AND (
+            expanded_acl.is_grantable
+            OR expanded_acl.grantee = 0
+            OR grantee_role.rolname IS NULL
+            OR grantee_role.rolname NOT IN ('authenticated', 'service_role')
+          )
+      )
+    FROM pg_proc procedure
+    JOIN pg_language procedure_language ON procedure_language.oid = procedure.prolang
+    JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+    WHERE procedure.oid = 'public.append_trainer_template_exercises(uuid,jsonb)'::REGPROCEDURE
+  ),
+  'trainer batch append is an exact postgres-owned SECURITY DEFINER RPC with least-privilege ACLs'
 );
 
 ALTER FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT)
