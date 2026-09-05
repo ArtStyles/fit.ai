@@ -76,7 +76,7 @@ export default async function SessionPage({ params }: PageProps) {
   const workout = access.workout
 
   // ── Datos del workout + última sesión completada (en paralelo) ────────────
-  const [{ data: weRows }, { data: exerciseOptionRows }, { data: lastLogRow }, workoutPlanResult] = await Promise.all([
+  const [workoutExercisesResult, { data: exerciseOptionRows }, { data: lastLogRow }, workoutPlanResult] = await Promise.all([
     supabase
       .from('workout_exercises')
       .select(`
@@ -103,7 +103,10 @@ export default async function SessionPage({ params }: PageProps) {
         )
       `)
       .eq('workout_id', workoutId)
-      .order('order_index') as unknown as Promise<{ data: RawWorkoutExercise[] | null }>,
+      .order('order_index') as unknown as Promise<{
+        data: RawWorkoutExercise[] | null
+        error: { message?: string } | null
+      }>,
     supabase
       .from('exercises')
       .select('id, name, name_es, image_url, instructions, instructions_es, is_compound, muscle_groups, muscle_groups_es')
@@ -157,6 +160,40 @@ export default async function SessionPage({ params }: PageProps) {
   }
 
   const workoutPlan = workoutPlanResult.data
+  const prescriptionLocked = workoutPlan?.prescription_locked === true
+  const workoutExercisesUnavailable = (
+    workoutExercisesResult.error ||
+    !Array.isArray(workoutExercisesResult.data) ||
+    (
+      prescriptionLocked &&
+      (
+        workoutExercisesResult.data.length === 0 ||
+        workoutExercisesResult.data.some(row => row.exercises == null)
+      )
+    )
+  )
+
+  if (workoutExercisesUnavailable) {
+    return (
+      <main className="flex min-h-[60vh] items-center justify-center px-6">
+        <section
+          role="alert"
+          className="w-full max-w-xl rounded-2xl border border-red-500/30 bg-red-500/[0.06] p-5 text-center"
+        >
+          <h1 className="text-lg font-bold text-foreground">No se puede abrir esta rutina de forma segura</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            No pudimos cargar todos los ejercicios de esta rutina. Para evitar una sesión incompleta, inténtalo de nuevo más tarde.
+          </p>
+          <a
+            href="/dashboard"
+            className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground"
+          >
+            Volver al inicio
+          </a>
+        </section>
+      </main>
+    )
+  }
 
   // ── Pesos/reps de la última sesión para pre-rellenar ──────────────────────
   type LastLogRow = {
@@ -193,8 +230,7 @@ export default async function SessionPage({ params }: PageProps) {
     }] as const
   }))
 
-  const rows = weRows ?? []
-  const prescriptionLocked = workoutPlan?.prescription_locked === true
+  const rows = workoutExercisesResult.data ?? []
 
   // ── Transformar a ExerciseSession[] ───────────────────────────────────────
   const exerciseInitData = rows

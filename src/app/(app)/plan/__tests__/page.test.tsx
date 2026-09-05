@@ -74,6 +74,8 @@ type CoachingLookupOverrides = {
   relationship?: QueryResult
   trainerProfile?: QueryResult
   assignmentVersion?: QueryResult
+  workouts?: QueryResult
+  workoutExercises?: QueryResult
 }
 
 type PlanFixture = {
@@ -106,6 +108,41 @@ const lockedPlan: PlanFixture = {
   trainer_assignment_version_id: 'version-1',
   trainer_relationship_id: 'relationship-1',
   created_at: '2026-09-01T00:00:00.000Z',
+}
+
+const completeWorkout = {
+  id: 'workout-1',
+  name: 'Día A',
+  focus: 'Fuerza',
+  day_of_week: 1,
+  order_in_plan: 0,
+  estimated_duration_minutes: 45,
+}
+
+const completeWorkoutExercise = {
+  id: 'workout-exercise-1',
+  workout_id: 'workout-1',
+  order_index: 0,
+  sets: 3,
+  reps: 10,
+  rest_seconds: 90,
+  weight_kg: null,
+  notes: 'Mantener el control',
+  target_rpe: 7,
+  weight_suggestion_basis: null,
+  exercise: {
+    id: 'exercise-1',
+    name: 'Squat',
+    name_es: 'Sentadilla',
+    image_url: null,
+    muscle_groups: ['quadriceps'],
+    muscle_groups_es: ['cuádriceps'],
+    equipment: 'barbell',
+    equipment_es: 'barra',
+    difficulty: 'intermediate',
+    exercise_type: 'strength',
+    is_compound: true,
+  },
 }
 
 function createThenableQuery(result: QueryResult) {
@@ -176,7 +213,19 @@ function createSupabase(plan: PlanFixture, overrides: CoachingLookupOverrides = 
       if (table === 'profiles') {
         return createThenableQuery({ data: null, error: null })
       }
-      if (table === 'workouts' || table === 'exercises') {
+      if (table === 'workouts') {
+        return createThenableQuery(overrides.workouts ?? {
+          data: plan.prescription_locked ? [completeWorkout] : [],
+          error: null,
+        })
+      }
+      if (table === 'workout_exercises') {
+        return createThenableQuery(overrides.workoutExercises ?? {
+          data: plan.prescription_locked ? [completeWorkoutExercise] : [],
+          error: null,
+        })
+      }
+      if (table === 'exercises') {
         return createThenableQuery({ data: [], error: null })
       }
 
@@ -309,5 +358,145 @@ describe('plan coaching metadata projection', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('coaching_relationships')
     expect(supabase.from).not.toHaveBeenCalledWith('public_profiles')
     expect(supabase.from).not.toHaveBeenCalledWith('trainer_assignment_versions')
+  })
+
+  it('does not render prescribed content when the workout lookup fails', async () => {
+    const { html } = await renderPlan(lockedPlan, {
+      workouts: { data: [], error: { message: 'workouts lookup failed' } },
+    })
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).not.toContain('data-plan-workspace')
+    expect(html).not.toContain('data-plan-distribution')
+  })
+
+  it('does not render a prescribed plan without workouts', async () => {
+    const { html } = await renderPlan(lockedPlan, {
+      workouts: { data: [], error: null },
+    })
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).not.toContain('data-plan-workspace')
+    expect(html).not.toContain('data-plan-distribution')
+  })
+
+  it('does not render prescribed content when the workout exercise lookup fails', async () => {
+    const { html } = await renderPlan(lockedPlan, {
+      workouts: {
+        data: [{
+          id: 'workout-1',
+          name: 'Día A',
+          focus: 'Fuerza',
+          day_of_week: 1,
+          order_in_plan: 0,
+          estimated_duration_minutes: 45,
+        }],
+        error: null,
+      },
+      workoutExercises: { data: [], error: { message: 'workout exercises lookup failed' } },
+    })
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).not.toContain('data-plan-workspace')
+    expect(html).not.toContain('data-plan-distribution')
+  })
+
+  it('does not render prescribed content when a required exercise join is missing', async () => {
+    const { html } = await renderPlan(lockedPlan, {
+      workouts: {
+        data: [{
+          id: 'workout-1',
+          name: 'Día A',
+          focus: 'Fuerza',
+          day_of_week: 1,
+          order_in_plan: 0,
+          estimated_duration_minutes: 45,
+        }],
+        error: null,
+      },
+      workoutExercises: {
+        data: [{
+          id: 'workout-exercise-1',
+          workout_id: 'workout-1',
+          order_index: 0,
+          sets: 3,
+          reps: 10,
+          rest_seconds: 90,
+          weight_kg: null,
+          notes: 'Mantener el control',
+          target_rpe: 7,
+          weight_suggestion_basis: null,
+          exercise: null,
+        }],
+        error: null,
+      },
+    })
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).not.toContain('data-plan-workspace')
+    expect(html).not.toContain('data-plan-distribution')
+  })
+
+  it('does not render a prescribed plan when any workout has no exercises', async () => {
+    const { html } = await renderPlan(lockedPlan, {
+      workouts: {
+        data: [
+          {
+            id: 'workout-1',
+            name: 'Día A',
+            focus: 'Fuerza',
+            day_of_week: 1,
+            order_in_plan: 0,
+            estimated_duration_minutes: 45,
+          },
+          {
+            id: 'workout-2',
+            name: 'Día B',
+            focus: 'Piernas',
+            day_of_week: 3,
+            order_in_plan: 1,
+            estimated_duration_minutes: 50,
+          },
+        ],
+        error: null,
+      },
+      workoutExercises: {
+        data: [{
+          id: 'workout-exercise-1',
+          workout_id: 'workout-1',
+          order_index: 0,
+          sets: 3,
+          reps: 10,
+          rest_seconds: 90,
+          weight_kg: null,
+          notes: 'Mantener el control',
+          target_rpe: 7,
+          weight_suggestion_basis: null,
+          exercise: {
+            id: 'exercise-1',
+            name: 'Squat',
+            name_es: 'Sentadilla',
+            image_url: null,
+            muscle_groups: ['quadriceps'],
+            muscle_groups_es: ['cuádriceps'],
+            equipment: 'barbell',
+            equipment_es: 'barra',
+            difficulty: 'intermediate',
+            exercise_type: 'strength',
+            is_compound: true,
+          },
+        }],
+        error: null,
+      },
+    })
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).not.toContain('data-plan-workspace')
+    expect(html).not.toContain('data-plan-distribution')
   })
 })
