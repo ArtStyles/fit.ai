@@ -12,7 +12,7 @@ import { TrainerPublicProfile } from '../../TrainerPublicProfile'
 import { WorkspaceSwitcher } from '../../../navigation/WorkspaceSwitcher'
 import { ActiveWorkoutDockView } from '../../../navigation/BottomNav'
 import { AppShell } from '../../../navigation/AppShell'
-import { getCoachNavItems } from '../../../navigation/appNavigation'
+import { getCoachNavItems, getPersonalNavItems } from '../../../navigation/appNavigation'
 import { ExerciseCatalogDialog } from '../../../plan/ExercisePicker'
 import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
@@ -69,6 +69,15 @@ function DirectoryFixture() {
 }
 
 function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
+  if (!routeEditorOnly && surface === 'personal-shell') {
+    return <AppShell navItems={getPersonalNavItems({ communityEnabled: true })} workspace="personal">
+      <div className="min-h-screen bg-background pb-28">
+        <main className="mx-auto max-w-6xl space-y-6 px-4 py-8" aria-label="Espacio personal con entrenador">
+          <h1 className="text-2xl font-bold">Mi entrenamiento</h1>
+        </main>
+      </div>
+    </AppShell>
+  }
   if (!routeEditorOnly && surface === 'editor-shell') {
     return <AppShell navItems={getCoachNavItems()} workspace="coach">
       <div className="min-h-screen bg-background pb-28">
@@ -125,6 +134,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
   if (surface === 'requests') {
     return <CoachRequestQueue requests={[{
       id: '11111111-1111-4111-8111-111111111111',
+      clientId: '22222222-2222-4222-8222-222222222222',
       serviceName: 'Servicio de fuerza',
       message: 'Quiero mejorar mi técnica.',
       createdAt: '2026-08-08T12:00:00.000Z',
@@ -137,7 +147,11 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
       templateId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
       relationships={[{
         id: '11111111-1111-4111-8111-111111111111',
-        label: 'Servicio Fuerza · iniciado 1 ene 2026 · ref. 11111111',
+        clientName: 'Ana Rivera',
+        clientAvatarUrl: null,
+        serviceName: 'Servicio Fuerza',
+        startedAt: '1 ene 2026',
+        state: 'activo',
       }]}
     />
   }
@@ -159,6 +173,9 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
     return <ProposedProgramReview proposal={{
       assignmentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       versionNumber: 1,
+      canAccept: true,
+      exerciseDetailsAvailable: true,
+      changeSummary: 'Prioriza el control técnico en cada repetición.',
       trainerName: 'Ada Entrenadora',
       snapshot: {
         schemaVersion: 1,
@@ -166,9 +183,25 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
         goal: 'Aprender la técnica',
         description: null,
         daysPerWeek: 1,
-        workouts: [],
+        workouts: [{
+          sourceTemplateWorkoutId: '11111111-1111-4111-8111-111111111111',
+          name: 'Día de fuerza',
+          dayOfWeek: 1,
+          orderInPlan: 1,
+          exercises: [{
+            sourceTemplateExerciseId: '22222222-2222-4222-8222-222222222222',
+            exerciseId: '33333333-3333-4333-8333-333333333333',
+            orderIndex: 1,
+            sets: 3,
+            reps: 8,
+            weightKg: null,
+            targetRpe: 7,
+            restSeconds: 90,
+            notes: 'Controla la bajada.',
+          }],
+        }],
       },
-      exerciseNames: {},
+      exerciseNames: { '33333333-3333-4333-8333-333333333333': 'Sentadilla' },
     }} />
   }
   if (surface === 'workspace') {
@@ -257,7 +290,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
 }
 
 function FixtureRoot() {
-  if (surface === 'editor-shell') return <Surface />
+  if (surface === 'editor-shell' || surface === 'personal-shell') return <Surface />
   return <main id="main-content" aria-label="Superficie profesional" className="mx-auto max-w-5xl px-4 py-6">
     <Surface />
   </main>

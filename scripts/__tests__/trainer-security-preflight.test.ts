@@ -25,12 +25,12 @@ describe('trainer security E2E deployment boundary', () => {
     ])
   })
 
-  it('uses exactly one read-only 045 marker call before marketplace fixture writes', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: 45, error: null })
+  it('uses exactly one read-only 057 marker call before marketplace fixture writes', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 57, error: null })
 
     await expect(probeTrainerSecurityReadOnly({ rpc })).resolves.toEqual({
       tableError: null,
-      marker: 45,
+      marker: 57,
     })
 
     expect(rpc).toHaveBeenCalledTimes(1)
@@ -66,7 +66,7 @@ describe('trainer security E2E deployment boundary', () => {
   })
 
   it.each([
-    { tableError: { message: 'relation does not exist' }, marker: 45 },
+    { tableError: { message: 'relation does not exist' }, marker: 57 },
     { tableError: null, marker: null },
     { tableError: null, marker: 44 },
   ])('blocks an incomplete deployment before seed or cleanup: %j', async probe => {

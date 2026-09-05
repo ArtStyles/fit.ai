@@ -32,6 +32,11 @@ import {
   type DashboardBannerData,
 } from '@/lib/dashboard/banner'
 import { getDashboardGreeting } from '@/components/dashboard/dashboardFormatters'
+import {
+  hasDashboardNotificationAttention,
+  loadUnreadProductNotificationAttention,
+  type UnreadProductNotificationClient,
+} from '@/lib/dashboard/notificationAttention'
 
 export const metadata = { title: 'Dashboard · Vekira' }
 
@@ -401,7 +406,7 @@ export default async function DashboardPage() {
   }).format(referenceNow)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
-  const [dashboardPayload, { data: bannerRaw }] = await Promise.all([
+  const [dashboardPayload, { data: bannerRaw }, hasUnreadProductNotifications] = await Promise.all([
     loadDashboardPayload(
       supabase,
       user.id,
@@ -413,6 +418,7 @@ export default async function DashboardPage() {
       .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
       .eq('slot', DASHBOARD_BANNER_SLOT)
       .maybeSingle(),
+    loadUnreadProductNotificationAttention(supabase as unknown as UnreadProductNotificationClient, user.id),
   ])
   const bannerCandidate = bannerRaw as DashboardBannerData | null
   const dashboardBanner = isDashboardBannerVisible(bannerCandidate, todayStr)
@@ -593,7 +599,10 @@ export default async function DashboardPage() {
               communityEnabled,
               username: profile.username,
             })}
-            hasNotificationAttention={dashboard.noticePlacement === 'hub'}
+            hasNotificationAttention={hasDashboardNotificationAttention({
+              hasDashboardNotice: dashboard.noticePlacement === 'hub',
+              hasUnreadProductNotifications,
+            })}
           />
         )}
         mainLabel={t('Dashboard')}

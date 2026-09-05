@@ -85,4 +85,5 @@ describe('plan information hierarchy', () => {
     expect(overview).toContain('professionalChangeSummary')
     expect(overview).toContain("t('Versión {version}', { version: professionalVersionNumber })")
   })
+
 })

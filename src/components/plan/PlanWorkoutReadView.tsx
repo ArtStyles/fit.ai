@@ -16,6 +16,7 @@ function prescription(row: PlanWorkoutExerciseRow, t: (source: string, values?: 
   const parts = [
     row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.sets ? t('{count} series', { count: row.sets }) : null,
     row.weight_kg ? t('{weight} kg', { weight: row.weight_kg }) : null,
+    row.target_rpe ? `RPE ${row.target_rpe}` : null,
     row.rest_seconds ? t('{seconds} s descanso', { seconds: row.rest_seconds }) : null,
   ]
   return parts.filter(Boolean).join(' · ')
@@ -26,11 +27,13 @@ export function PlanWorkoutReadView({
   exercises,
   isToday,
   onEdit,
+  prescriptionLocked = false,
 }: {
   summary: PlanDaySummary
   exercises: PlanWorkoutExerciseRow[]
   isToday: boolean
   onEdit?: () => void
+  prescriptionLocked?: boolean
 }) {
   const { t } = useI18n()
 
@@ -70,6 +73,7 @@ export function PlanWorkoutReadView({
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-foreground">{index + 1}. {exercise?.name ?? t('Ejercicio')}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{prescription(row, t) || t('Prescripción pendiente')}</p>
+                  {row.notes ? <p className="mt-2 text-sm leading-relaxed text-muted-foreground"><span className="font-semibold text-foreground">{prescriptionLocked ? t('Indicación del entrenador') : t('Notas')}:</span> {row.notes}</p> : null}
                   {(exercise?.muscle_groups?.length ?? 0) > 0 && (
                     <p className="mt-2 text-xs text-violet-300">{exercise?.muscle_groups?.join(' · ')}</p>
                   )}

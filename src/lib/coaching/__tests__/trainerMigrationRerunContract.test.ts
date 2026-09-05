@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migrationNames: Record<number, string> = {
@@ -19,6 +19,10 @@ const isoRepair = readFileSync(
   new URL('../../../../supabase/migrations/049_trainer_iso_weekday_repair.sql', import.meta.url),
   'utf8',
 )
+const declineMigrationUrl = new URL('../../../../supabase/migrations/057_trainer_assignment_decline.sql', import.meta.url)
+const declineMigration = existsSync(declineMigrationUrl) ? readFileSync(declineMigrationUrl, 'utf8') : ''
+const declineTapUrl = new URL('../../../../supabase/tests/057_trainer_assignment_decline_test.sql', import.meta.url)
+const declineTap = existsSync(declineTapUrl) ? readFileSync(declineTapUrl, 'utf8') : ''
 const trainerRunner = readFileSync(
   new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url),
   'utf8',
@@ -43,7 +47,7 @@ const duplicateMigrationPrefixes = (files: string[]) => {
     prefixes.filter((prefix, index) => prefixes.indexOf(prefix) !== index),
   ))
 }
-const releaseMigrationFiles = migrationFiles.filter((file) => /^(?:04\d|05[0-6])_/.test(file))
+const releaseMigrationFiles = migrationFiles.filter((file) => /^(?:04\d|05[0-7])_/.test(file))
 const readme = readFileSync(new URL('../../../../README.md', import.meta.url), 'utf8')
 const envExample = readFileSync(new URL('../../../../.env.example', import.meta.url), 'utf8')
 const runbook = readFileSync(new URL('../../../../docs/operations/trainer-marketplace-runbook.md', import.meta.url), 'utf8')
@@ -68,7 +72,7 @@ describe('trainer migration rerun contract', () => {
     ])).toEqual(['039', '050'])
   })
 
-  it('keeps the production migrations in the exact 040-056 order', () => {
+  it('keeps the production migrations in the exact 040-057 order', () => {
     expect(releaseMigrationFiles).toEqual([
       '040_trainer_foundations.sql',
       '041_trainer_verification.sql',
@@ -87,20 +91,22 @@ describe('trainer migration rerun contract', () => {
       '054_product_notification_archiving.sql',
       '055_atomic_notification_attention_dismissal.sql',
       '056_trainer_template_exercise_batch_append.sql',
+      '057_trainer_assignment_decline.sql',
     ])
   })
 
-  it('documents migrations 051, 053, and 056 plus the explicit history-continuity E2E gate', () => {
+  it('documents migrations 051, 053, 056, and 057 plus the explicit history-continuity E2E gate', () => {
     expect(readme).toContain('051_workout_adjustment_atomic.sql')
     expect(readme).toContain('053_trainer_draft_rpc_json_repair.sql')
     expect(readme).toContain('056_trainer_template_exercise_batch_append.sql')
+    expect(readme).toContain('057_trainer_assignment_decline.sql')
     expect(readme).toContain('pnpm exec playwright test tests/e2e/training-evidence.spec.ts --grep "completed evidence survives"')
     expect(readme).not.toContain('No hay pruebas end-to-end')
     expect(envExample).toContain('E2E_HISTORY_CONTINUITY_ENABLED=true')
-    expect(runbook).toContain('040–056')
-    expect(runbook).toContain('trainer_security_preflight() = 56')
-    expect(pilotChecklist).toContain('040–056')
-    expect(pilotChecklist).toContain('trainer_security_preflight() = 56')
+    expect(runbook).toContain('040–057')
+    expect(runbook).toContain('trainer_security_preflight() = 57')
+    expect(pilotChecklist).toContain('040–057')
+    expect(pilotChecklist).toContain('trainer_security_preflight() = 57')
     expect(`${runbook}\n${pilotChecklist}`).not.toMatch(/040[–-]050/)
   })
 
@@ -126,10 +132,203 @@ describe('trainer migration rerun contract', () => {
     expect(backfill).toMatch(/trainer_assignment_version_id IS NULL/i)
   })
 
-  it('reapplies the ISO repair after every historical trainer routine', () => {
+  it('reapplies every production trainer routine through the decline boundary', () => {
     expect(isoRepair).toMatch(/RETURN 49/i)
-    expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_product_notification_preferences_insert\.sql[\s\S]+048_profile_weight_measurement_sync\.sql[\s\S]+049_trainer_iso_weekday_repair\.sql[\s\S]+050_product_events_conversion_funnel\.sql[\s\S]+051_workout_adjustment_atomic\.sql[\s\S]+053_trainer_draft_rpc_json_repair\.sql[\s\S]+056_trainer_template_exercise_batch_append\.sql/i)
-    expect(trainerRunner).toMatch(/trainerMigrationFiles\.map\(readMigration\)[\s\S]+reapplying trainer migrations 040-051, 053, 056/i)
+    expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_product_notification_preferences_insert\.sql[\s\S]+048_profile_weight_measurement_sync\.sql[\s\S]+049_trainer_iso_weekday_repair\.sql[\s\S]+050_product_events_conversion_funnel\.sql[\s\S]+051_workout_adjustment_atomic\.sql[\s\S]+053_trainer_draft_rpc_json_repair\.sql[\s\S]+056_trainer_template_exercise_batch_append\.sql[\s\S]+057_trainer_assignment_decline\.sql/i)
+    expect(trainerRunner).toMatch(/trainerMigrationFiles\.map\(readMigration\)[\s\S]+reapplying trainer migrations 040-051, 053, 056, 057/i)
+  })
+
+  it('keeps 056 historical checks before applying and racing the rerunnable 057 boundary', () => {
+    expect(declineMigration).toMatch(/^BEGIN;[\s\S]+COMMIT;\s*$/i)
+    expect(declineMigration).toContain('ADD COLUMN IF NOT EXISTS decline_idempotency_key TEXT')
+    expect(declineMigration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS trainer_plan_assignments_decline_idempotency_unique')
+    expect(trainerRunner).toMatch(/running 056 trainer template exercise batch append pgTAP suite[\s\S]+applying migration 057[\s\S]+reapplying migration 057[\s\S]+running 057 trainer assignment decline pgTAP suite/i)
+    expect(trainerRunner).toMatch(/running 057 trainer assignment decline pgTAP suite[\s\S]+runPsql\(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race'\)[\s\S]+runPsql\(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race'\)/i)
+  })
+
+  it('rejects a stale non-proposed decline before version locks and races it against relationship closure', () => {
+    const declineBody = declineMigration.match(
+      /CREATE OR REPLACE FUNCTION public\.decline_trainer_assignment\([^]*?AS \$\$([^]*?)\$\$;/i,
+    )?.[1] ?? ''
+    const exactReplay = declineBody.indexOf("IF v_assignment.status = 'cancelled'")
+    const staleStatusRejection = declineBody.indexOf("IF v_assignment.status <> 'proposed'")
+    const versionLock = declineBody.indexOf('FROM public.trainer_assignment_versions candidate')
+
+    expect(exactReplay).toBeGreaterThan(-1)
+    expect(staleStatusRejection).toBeGreaterThan(exactReplay)
+    expect(versionLock).toBeGreaterThan(staleStatusRejection)
+    expect(trainerRunner).toContain('const declineVsEndRelationshipRaceSql = `')
+    expect(trainerRunner).toContain("public.end_coaching_relationship(")
+    expect(trainerRunner).toContain("result->>'sqlstate' = '40P01'")
+    expect(trainerRunner).toContain("runPsql(declineVsEndRelationshipRaceSql, 'running committed stale-decline-versus-relationship-end race')")
+
+    const declineResults = Array.from(
+      trainerRunner.matchAll(/dblink_get_result\('stale_decline_vs_end_decline'\)/g),
+      (match) => match.index,
+    )
+    const endResults = Array.from(
+      trainerRunner.matchAll(/dblink_get_result\('stale_decline_vs_end_end'\)/g),
+      (match) => match.index,
+    )
+    expect(declineResults).toHaveLength(2)
+    expect(endResults).toHaveLength(2)
+    expect(declineResults[1]).toBeLessThan(
+      trainerRunner.indexOf("dblink_exec('stale_decline_vs_end_decline', 'RESET ROLE')"),
+    )
+    expect(endResults[1]).toBeLessThan(
+      trainerRunner.indexOf("dblink_disconnect('stale_decline_vs_end_end')"),
+    )
+  })
+
+  it('replays whole history before decline evidence and reruns only 057 over the durable decline fixture', () => {
+    const execution = trainerRunner.slice(trainerRunner.indexOf('let started = false'))
+    const wholeHistoryReplay = execution.indexOf('trainerMigrationFiles.map(readMigration)')
+    const acceptVsDeclineRace = execution.indexOf('runPsql(acceptVsDeclineRaceSql')
+    const declineVsEndRace = execution.indexOf('runPsql(declineVsEndRelationshipRaceSql')
+    const sameKeyDeclineRace = execution.indexOf('runPsql(sameKeyDeclineRaceSql')
+    const declineSnapshot = execution.indexOf("runPsql(trainerDeclineRerunSnapshotSql, 'capturing durable 057 decline state')")
+    const declineOnlyReplay = execution.indexOf("runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 against durable decline evidence')")
+    const declineVerification = execution.indexOf("runPsql(trainerDeclineRerunVerifySql, 'verifying migration 057 rerun preserves declined evidence')")
+
+    expect(wholeHistoryReplay).toBeGreaterThan(-1)
+    expect(wholeHistoryReplay).toBeLessThan(acceptVsDeclineRace)
+    expect(wholeHistoryReplay).toBeLessThan(declineVsEndRace)
+    expect(wholeHistoryReplay).toBeLessThan(sameKeyDeclineRace)
+    expect(declineVsEndRace).toBeGreaterThan(acceptVsDeclineRace)
+    expect(declineVsEndRace).toBeLessThan(sameKeyDeclineRace)
+    expect(declineSnapshot).toBeGreaterThan(sameKeyDeclineRace)
+    expect(declineOnlyReplay).toBeGreaterThan(declineSnapshot)
+    expect(declineVerification).toBeGreaterThan(declineOnlyReplay)
+    expect(execution.slice(sameKeyDeclineRace)).not.toContain('trainerMigrationFiles.map(readMigration)')
+  })
+
+  it('pins the exact decline check, index catalog identity, and complete audit allowlist in preflight and pgTAP tamper coverage', () => {
+    const expectedCheck = '((decline_idempotency_key IS NULL) OR ((char_length(btrim(decline_idempotency_key)) >= 1) AND (char_length(btrim(decline_idempotency_key)) <= 200)))'
+
+    expect(declineMigration).toContain('constraint_row.convalidated')
+    expect(declineMigration).toContain(expectedCheck)
+    expect(declineMigration).toContain('index_definition.indnkeyatts = 2')
+    expect(declineMigration).toContain('index_definition.indnatts = 2')
+    expect(declineMigration).toContain('index_definition.indexprs IS NULL')
+    expect(declineMigration).toContain('index_definition.indkey[0] = client_column.attnum')
+    expect(declineMigration).toContain('index_definition.indkey[1] = decline_column.attnum')
+    for (const flag of ['indisunique', 'indisvalid', 'indisready', 'indislive']) {
+      expect(declineMigration).toContain(`index_definition.${flag}`)
+    }
+    expect(declineMigration).toContain("pg_get_expr(index_definition.indpred, index_definition.indrelid) = '(decline_idempotency_key IS NOT NULL)'")
+    expect(declineMigration).toContain('procedure.prosrc')
+    expect(declineMigration).toContain('btrim(procedure.prosrc) = btrim($audit_event_allowlist$')
+    expect(declineMigration).not.toContain("regexp_replace(procedure.prosrc, '[[:space:]]+', '', 'g')")
+    const installedAuditBody = declineMigration.match(
+      /CREATE OR REPLACE FUNCTION public\.is_professional_audit_event_allowed\([\s\S]+?AS \$\$([\s\S]*?)\$\$;/i,
+    )?.[1]
+    const expectedAuditBody = declineMigration.match(
+      /\$audit_event_allowlist\$([\s\S]*?)\$audit_event_allowlist\$/i,
+    )?.[1]
+    expect(installedAuditBody).toBeDefined()
+    expect(expectedAuditBody).toBeDefined()
+    expect(expectedAuditBody?.trim()).toBe(installedAuditBody?.trim())
+    for (const historicalEvent of [
+      "WHEN 'professional_audit' THEN p_action IN ('legacy_event_redacted')",
+      "WHEN 'trainer_application' THEN p_action IN (",
+      "WHEN 'coaching_request' THEN p_action IN (",
+      "WHEN 'coaching_relationship' THEN p_action IN (",
+      "WHEN 'trainer_plan_assignment' THEN p_action IN (",
+      "'proposed', 'accepted', 'revision_published', 'assignment_frozen', 'declined'",
+      'ELSE FALSE',
+    ]) expect(declineMigration).toContain(historicalEvent)
+
+    expect(declineTap).toContain(expectedCheck)
+    expect(declineTap).toContain('SELECT plan(79);')
+    expect(declineTap).toContain('AND convalidated')
+    expect(declineTap).toContain('index_definition.indexprs IS NULL')
+    expect(declineTap).toContain('CHECK (TRUE)')
+    expect(declineTap).toContain('decline_idempotency_key IS NULL')
+    expect(declineTap).toContain('audit allowlist reduced to only assignment decline')
+    expect(declineTap).toContain('preflight rejects unexpected audit event pairs')
+    expect(declineTap).toContain("'service_ created'")
+    expect(declineTap).toContain('preflight rejects semantic audit allowlist drift hidden by internal whitespace')
+    expect(declineTap).toContain('stale assignment status is rejected before the version row lock')
+    expect(declineMigration).toContain('AND NOT column_row.atthasdef')
+    expect(declineMigration).toContain("AND column_row.attidentity = ''")
+    expect(declineMigration).toContain("AND column_row.attgenerated = ''")
+    expect(declineTap).toContain("ALTER COLUMN decline_idempotency_key SET DEFAULT 'rogue-default'")
+    expect(declineTap).toContain('preflight rejects a decline idempotency default')
+  })
+
+  it('proves the elevated preflight keeps its fixed API boundary for authenticated and anonymous roles', () => {
+    const preflightAclLabel = "'preflight is postgres-owned SECURITY DEFINER with exact search path and least-privilege ACLs'"
+    const preflightAclEnd = declineTap.indexOf(preflightAclLabel)
+    const preflightAclStart = declineTap.lastIndexOf('SELECT ok(', preflightAclEnd)
+    const preflightAclAssertion = declineTap.slice(preflightAclStart, preflightAclEnd + preflightAclLabel.length)
+    const declineProcedureCatalogAssertion = declineMigration.match(
+      /OR NOT EXISTS \(\s*SELECT 1\s*FROM pg_proc procedure\s*JOIN pg_roles owner_role[^]*?WHERE procedure\.oid = 'public\.decline_trainer_assignment\(uuid,text,text\)'::REGPROCEDURE[^]*?\n\s*\)/i,
+    )?.[0]
+    const exactFunctionAclAssertion = declineMigration.match(
+      /OR EXISTS \(\s*SELECT 1\s*FROM pg_proc procedure\s*CROSS JOIN LATERAL aclexplode[^]*?expanded_acl\.is_grantable[^]*?\n\s*\)/i,
+    )?.[0]
+
+    expect(declineMigration).toMatch(/CREATE OR REPLACE FUNCTION public\.trainer_security_preflight\(\)[\s\S]+?SECURITY DEFINER[\s\S]+?SET search_path = public, pg_temp/i)
+    expect(declineMigration).toContain('ALTER FUNCTION public.trainer_security_preflight() OWNER TO postgres')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.trainer_security_preflight() FROM PUBLIC, anon, authenticated, service_role CASCADE')
+    expect(declineMigration).toContain('GRANT EXECUTE ON FUNCTION public.trainer_security_preflight() TO authenticated, service_role')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.is_professional_audit_event_allowed(TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB) FROM PUBLIC, anon, authenticated, service_role CASCADE')
+    expect(declineMigration).toContain('GRANT EXECUTE ON FUNCTION public.append_trainer_template_exercises(UUID, JSONB) TO authenticated, service_role')
+    expect(declineProcedureCatalogAssertion).toBeDefined()
+    expect(declineProcedureCatalogAssertion).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
+    expect(declineProcedureCatalogAssertion).not.toContain('procedure.proconfig @>')
+    expect(declineMigration).toContain("grantee_role.rolname NOT IN ('authenticated', 'service_role')")
+    expect(declineMigration).toContain('expanded_acl.is_grantable')
+    expect(declineMigration).toContain('REVOKE ALL ON FUNCTION public.decline_trainer_assignment(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated, service_role CASCADE')
+    expect(exactFunctionAclAssertion).toBeDefined()
+    expect(exactFunctionAclAssertion).toContain("'public.is_professional_audit_event_allowed(text,text)'::REGPROCEDURE")
+    expect(exactFunctionAclAssertion).toContain("'public.append_trainer_template_exercises(uuid,jsonb)'::REGPROCEDURE")
+    expect(exactFunctionAclAssertion).toContain("'public.decline_trainer_assignment(uuid,text,text)'::REGPROCEDURE")
+    expect(exactFunctionAclAssertion).toContain("'public.trainer_security_preflight()'::REGPROCEDURE")
+    expect(declineMigration).toMatch(/procedure\.oid = 'public\.append_trainer_template_exercises\(uuid,jsonb\)'::REGPROCEDURE[\s\S]+?procedure_language\.lanname = 'plpgsql'[\s\S]+?procedure\.provolatile = 'v'[\s\S]+?procedure\.prorettype = 'jsonb'::REGTYPE[\s\S]+?procedure\.prosecdef[\s\S]+?procedure\.proconfig = ARRAY\['search_path=public, pg_temp'\]::TEXT\[\][\s\S]+?owner_role\.rolname = 'postgres'/i)
+
+    expect(preflightAclStart).toBeGreaterThan(-1)
+    expect(preflightAclAssertion).toContain("procedure.oid = 'public.trainer_security_preflight()'::REGPROCEDURE")
+    expect(preflightAclAssertion).toContain('procedure.prosecdef')
+    expect(preflightAclAssertion).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
+    expect(preflightAclAssertion).toContain("owner_role.rolname = 'postgres'")
+    expect(preflightAclAssertion).toContain('expanded_acl.grantee = 0')
+    expect(preflightAclAssertion).toContain("has_function_privilege('authenticated', 'public.trainer_security_preflight()', 'EXECUTE')")
+    expect(preflightAclAssertion).toContain("has_function_privilege('service_role', 'public.trainer_security_preflight()', 'EXECUTE')")
+    expect(preflightAclAssertion).toContain("NOT has_function_privilege('anon', 'public.trainer_security_preflight()', 'EXECUTE')")
+    expect(declineTap).toMatch(/SET LOCAL ROLE authenticated;\s*SELECT is\(\s*public\.trainer_security_preflight\(\),\s*57,[\s\S]+?\);\s*RESET ROLE;/i)
+    expect(declineTap).toMatch(/SET LOCAL ROLE anon;[\s\S]+?SELECT throws_ok\(\s*\$\$SELECT public\.trainer_security_preflight\(\)\$\$,[\s\S]+?'permission denied for function trainer_security_preflight'[\s\S]+?RESET ROLE;/i)
+    expect(declineTap).toMatch(/RESET ROLE;\s*SELECT set_config\('request.jwt.claim.sub', '', TRUE\);\s*SELECT set_config\('request.jwt.claim.role', '', TRUE\);/i)
+    expect(declineTap).toContain("SET statement_timeout = '5s'")
+    expect(declineTap).toContain('preflight rejects extra decline RPC configuration')
+    expect(declineTap).toContain('CREATE ROLE trainer_assignment_decline_extra_executor NOLOGIN')
+    expect(declineTap).toContain('TO trainer_assignment_decline_extra_executor')
+    expect(declineTap).toContain('preflight rejects an extra decline RPC executor')
+    expect(declineTap).toContain('preflight rejects any non-owner executor on the private audit allowlist')
+    expect(declineTap).toContain('preflight rejects a non-definer trainer batch append RPC')
+    expect(declineTap).toContain('preflight rejects extra trainer batch append RPC configuration')
+    expect(declineTap).toContain('preflight rejects a non-postgres trainer batch append owner')
+    expect(declineTap).toContain('preflight rejects an extra trainer batch append RPC executor')
+    expect(declineTap).toContain('preflight rejects authenticated grant option on trainer batch append')
+    expect(declineTap).toContain('preflight rejects service role grant option on trainer batch append')
+    expect(declineTap).toContain('trainer batch append is an exact postgres-owned SECURITY DEFINER RPC with least-privilege ACLs')
+    expect(declineTap).toContain("procedure.proconfig = ARRAY['search_path=public, pg_temp']::TEXT[]")
+    expect(declineTap).toContain("grantee_role.rolname NOT IN ('authenticated', 'service_role')")
+    for (const signature of [
+      'public.decline_trainer_assignment(UUID, TEXT, TEXT)',
+      'public.trainer_security_preflight()',
+    ]) {
+      for (const role of ['authenticated', 'service_role']) {
+        const escapedSignature = signature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        expect(declineTap).toMatch(new RegExp(
+          `GRANT EXECUTE ON FUNCTION ${escapedSignature}\\s+TO ${role} WITH GRANT OPTION;[^]*?`
+          + `REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION ${escapedSignature}\\s+FROM ${role};`,
+          'i',
+        ))
+      }
+    }
+    expect(declineTap.match(/expanded_acl\.is_grantable/g)).toHaveLength(3)
   })
 
   it('compares proposal and revision materializations to canonical snapshot order/day pairs', () => {

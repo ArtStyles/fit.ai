@@ -80,7 +80,7 @@ Validar solo presencia y alcance; nunca imprimir valores:
 
 6. Eliminar `trainer-predeploy.catalog` al cerrar la verificación conforme a la política temporal aprobada. Si descifrado, catálogo, restauración o controles de acceso/cifrado fallan, detener el despliegue.
 
-## Orden de migración 040–056
+## Orden de migración 040–057
 
 Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 
@@ -101,6 +101,7 @@ Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 15. `054_product_notification_archiving.sql`
 16. `055_atomic_notification_attention_dismissal.sql`
 17. `056_trainer_template_exercise_batch_append.sql`
+18. `057_trainer_assignment_decline.sql`
 
 La 053 reemplaza hacia delante el RPC `save_trainer_application_draft` para
 eliminar el uso de `jsonb_object_length(jsonb)`, que PostgreSQL no ofrece.
@@ -116,8 +117,11 @@ versión vigente de los avisos de plan, revisión del perfil y promoción. Despl
 054 y 055 antes que la aplicación que expone los nuevos controles de descarte.
 
 La 056 añade `append_trainer_template_exercises(uuid, jsonb)` para incorporar
-un lote de ejercicios a un día existente de plantilla de forma atómica. Aplicar
-las migraciones de producción 040–056 completas y en este orden numérico; el
+un lote de ejercicios a un día existente de plantilla de forma atómica. La 057
+añade el cierre idempotente de propuestas no aceptadas, conserva intacto el
+snapshot, serializa aceptación frente a rechazo y notifica al entrenador sin
+guardar el motivo libre en auditoría. Aplicar las migraciones de producción
+040–057 completas y en este orden numérico; el
 hecho de que un archivo esté confirmado en Git no demuestra que se haya aplicado
 en el proyecto remoto.
 
@@ -153,10 +157,10 @@ pnpm lint
 Usar `pnpm test:db:trainers` como puerta funcional y de autorización, y
 `pnpm test:db:trainer-security` como puerta de seguridad repetida tres veces.
 Ambos ejercitan el conjunto profesional 040–051 y 053; la 052, independiente
-del dominio de entrenadores, permanece obligatoria en el orden remoto 040–056.
-La puerta profesional incluye además la 056: su subconjunto es exactamente
-`040–051, 053, 056`; no sustituye la aplicación remota de 052, 054 y 055 dentro
-de la cronología completa 040–056.
+del dominio de entrenadores, permanece obligatoria en el orden remoto 040–057.
+La puerta profesional incluye además la 056 y la 057: su subconjunto es
+exactamente `040–051, 053, 056, 057`; no sustituye la aplicación remota de 052,
+054 y 055 dentro de la cronología completa 040–057.
 
 En el proyecto enlazado de staging:
 
@@ -167,7 +171,7 @@ supabase db push --linked
 supabase migration list --linked
 ```
 
-El `dry-run` y la lista final deben mostrar 040–056 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
+El `dry-run` y la lista final deben mostrar 040–057 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
 
 ## Preflight remoto de solo lectura
 
@@ -177,10 +181,11 @@ Después de migrar y antes de crear fixtures o invitar usuarios, ejecutar con un
 SELECT public.trainer_security_preflight() AS schema_marker;
 ```
 
-El único resultado válido es `56`: `trainer_security_preflight() = 56`. La
-función es de solo lectura e incluye la capa ISO y el contrato de la 056. Confirmar
-también que `append_trainer_template_exercises(uuid, jsonb)` existe y que solo
-`authenticated` y `service_role` tienen `EXECUTE`; `anon` no debe tenerlo. A
+El único resultado válido es `57`: `trainer_security_preflight() = 57`. La
+función es de solo lectura e incluye la capa ISO y los contratos de la 056 y la
+057. Confirmar también que `append_trainer_template_exercises(uuid, jsonb)` y
+`decline_trainer_assignment(uuid, text, text)` existen, que solo `authenticated`
+y `service_role` tienen `EXECUTE`, y que `anon` no lo tiene. A
 continuación, en una sesión operativa privilegiada con acceso de lectura, ejecutar
 esta auditoría exclusivamente de conteo:
 
@@ -201,7 +206,7 @@ WHERE plan.source_type = 'trainer_assigned'
 Resultados obligatorios:
 
 ```text
-trainer_security_preflight = 56
+trainer_security_preflight = 57
 iso_weekday_divergences = 0
 ```
 
@@ -241,6 +246,12 @@ Este es el único comando autorizado para el journey destructivo del marketplace
 8. Las vistas del entrenador muestran solo clientes con relación y alcance vigentes.
 9. Analíticas aceptan únicamente eventos allowlisted; los errores devuelven código de dominio y `correlationId`, nunca payloads internos.
 10. Navegación no muestra Comunidad, checkout, precios, chat, reseñas ni edición de la rutina profesional.
+
+El journey E2E remoto actual no ejecuta el rechazo de rutina. La idempotencia del
+rechazo, el único audit/aviso y la carrera aceptar frente a rechazar pertenecen a
+la puerta local `pnpm test:db:trainers`; no atribuir esas garantías al comando E2E
+hasta ampliar explícitamente `trainer-marketplace.spec.ts`. Antes del piloto,
+conservar esta diferencia en la evidencia de aprobación y validar ambas puertas.
 
 Antes del despliegue de UI, y sin mutar producción durante el smoke local,
 verificar en una plantilla existente: abrir Day A; añadir Prensa y Gemelos en una
@@ -331,15 +342,21 @@ La retención futura requiere diseño y migración independiente con revisión l
 
 ## Rollback
 
-Las migraciones 040–056 son aditivas. Tras un despliegue exitoso de la 056,
+Las migraciones 040–057 son aditivas. Tras un despliegue exitoso de la 057,
 el rollback es solo hacia delante: no ejecutar una down migration destructiva,
 no eliminar tablas/columnas, no borrar auditoría, no eliminar ejercicios
-anexados y nunca restaurar la sustracción defectuosa de días.
+anexados y nunca restaurar la sustracción defectuosa de días. En un entorno ya
+desplegado tampoco se debe volver a ejecutar la migración histórica 045 ni la
+secuencia completa 040–057 sobre evidencia creada por la 057: la 045 contiene
+el dominio de auditoría anterior a `trainer_plan_assignment/declined`. Cualquier
+reparación posterior se entrega como una migración nueva, revisada y solo hacia
+delante; la reaplicación aislada de 057 se reserva para su prueba de
+rerunnabilidad documentada en una base descartable.
 
-Procedimiento posterior a la 056:
+Procedimiento posterior a la 057:
 
 1. Detener invitaciones, nuevas propuestas y publicaciones de revisiones.
-2. Mantener aplicadas las migraciones hasta la 056 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
+2. Mantener aplicadas las migraciones hasta la 057 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
 3. Confirmar que Comunidad sigue apagada y que pagos, precios, chat, reseñas y planes comerciales permanecen ocultos.
 4. Investigar con conteos agregados y ensayar cualquier restauración de respaldo en aislamiento; no restaurar producción sin la decisión explícita por la posible pérdida de cambios posteriores.
 5. Corregir hacia delante con una migración revisada y repetir preflight, auditoría ISO y smoke antes de reabrir publicaciones.
@@ -348,8 +365,8 @@ Esta versión no define una bandera global del marketplace. No asumir que una va
 
 ## Cierre del despliegue
 
-El responsable firma la salida solo si respaldo/restauración, orden 040–056,
-`trainer_security_preflight() = 56`, divergencias ISO profesionales en `0`,
+El responsable firma la salida solo si respaldo/restauración, orden 040–057,
+`trainer_security_preflight() = 57`, divergencias ISO profesionales en `0`,
 pruebas técnicas, smoke por roles, privacidad, auditoría append-only y
 exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de
 plan, pérdida de evidencia o fallo de revocación detiene el piloto.

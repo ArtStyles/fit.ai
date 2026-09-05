@@ -7,7 +7,7 @@
  * For now these are hand-crafted to match the migrations.
  * NOTE: Relationships is required by supabase-js v2 GenericTable constraint.
  *
- * Last updated: migration 051_workout_adjustment_atomic
+ * Last updated: migration 057_trainer_assignment_decline
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
@@ -649,6 +649,8 @@ export interface Database {
           accepted_at: string | null
           active_version_id: string | null
           proposal_idempotency_key: string | null
+          acceptance_idempotency_key: string | null
+          decline_idempotency_key: string | null
           created_at: string
           updated_at: string
         }
@@ -662,6 +664,8 @@ export interface Database {
           accepted_at?: string | null
           active_version_id?: string | null
           proposal_idempotency_key?: string | null
+          acceptance_idempotency_key?: string | null
+          decline_idempotency_key?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -680,6 +684,7 @@ export interface Database {
           effective_from: string
           effective_to: string | null
           materialized_plan_id: string | null
+          revision_idempotency_key: string | null
           created_at: string
         }
         Insert: {
@@ -692,6 +697,7 @@ export interface Database {
           effective_from?: string
           effective_to?: string | null
           materialized_plan_id?: string | null
+          revision_idempotency_key?: string | null
           created_at?: string
         }
         Update: Partial<Database['public']['Tables']['trainer_assignment_versions']['Insert']>
@@ -1658,6 +1664,18 @@ export interface Database {
       }
       propose_trainer_assignment: {
         Args: { p_relationship_id: string; p_template_id: string; p_change_summary: string | null; p_idempotency_key: string }
+        Returns: Array<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>
+      }
+      accept_trainer_assignment: {
+        Args: { p_assignment_id: string; p_idempotency_key: string }
+        Returns: Array<{ assignment_id: string; workout_plan_id: string }>
+      }
+      decline_trainer_assignment: {
+        Args: { p_assignment_id: string; p_reason: string | null; p_idempotency_key: string }
+        Returns: Array<{ assignment_id: string; changed: boolean }>
+      }
+      publish_trainer_assignment_revision: {
+        Args: { p_assignment_id: string; p_template_id: string; p_change_summary: string; p_idempotency_key: string }
         Returns: Array<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>
       }
       grant_body_measurements_consent: {

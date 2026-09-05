@@ -18,6 +18,7 @@ const VIEWPORTS = [
   { width: 1440, height: 900 },
 ] as const
 const EDITOR_MOBILE_VIEWPORTS = [320, 360, 390, 430, 450] as const
+const NARROW_PERSONAL_NAV_VIEWPORTS = [320, 360] as const
 const EDITOR_AXE_CASES = [
   { theme: 'dark', editorState: 'metadata editor' },
   { theme: 'dark', editorState: 'batch dialog' },
@@ -91,6 +92,21 @@ describe('trainer accessibility acceptance in a local browser', () => {
         await page.locator('button[aria-controls="assign-program-form"]').click()
       }
       await auditCriticalAndSeriousAccessibility(page)
+    } finally {
+      await context.close()
+    }
+  }, 30_000)
+
+  it('shows the trainer message and prescribed indication in the proposal browser surface', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=proposal`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      await pwExpect(page.getByText('Mensaje del entrenador:', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText(/Prioriza el control/)).toBeVisible()
+      await pwExpect(page.getByText('Indicación del entrenador:', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText(/Controla la bajada/)).toBeVisible()
     } finally {
       await context.close()
     }
@@ -290,6 +306,46 @@ describe('trainer accessibility acceptance in a local browser', () => {
     }
   }, 15_000)
 
+  it.each(NARROW_PERSONAL_NAV_VIEWPORTS)('keeps six personal destinations and the workspace switcher usable at %i px', async width => {
+    const context = await browser.newContext({ viewport: { width, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=personal-shell`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+
+      const navigation = page.locator('nav.fitai-safe-bottom')
+      const expectedDestinations = ['Inicio', 'Plan', 'Entrenar', 'Progreso', 'Mi entrenador', 'Comunidad']
+      await pwExpect(navigation.getByRole('link')).toHaveCount(expectedDestinations.length)
+      for (const destination of expectedDestinations) {
+        await pwExpect(navigation.getByRole('link', { name: destination, exact: true })).toBeVisible()
+      }
+      await pwExpect(navigation.getByRole('button', { name: 'Cambiar al espacio Entrenador' })).toBeVisible()
+
+      await expectResponsiveGeometry(page)
+      await expectActionTargetsAtLeast44(page)
+
+      const geometry = await navigation.evaluate(element => {
+        const targets = Array.from(element.querySelectorAll<HTMLElement>('a, button'))
+        const iconBoxes = Array.from(element.querySelectorAll<HTMLElement>('[data-bottom-nav-icon]'))
+          .map(icon => icon.getBoundingClientRect())
+        return {
+          targetBounds: targets.map(target => {
+            const rect = target.getBoundingClientRect()
+            return { left: rect.left, right: rect.right }
+          }),
+          iconBounds: iconBoxes.map(rect => ({ left: rect.left, right: rect.right })),
+        }
+      })
+
+      expect(geometry.iconBounds).toHaveLength(expectedDestinations.length + 1)
+      expect(geometry.targetBounds.every(({ left, right }) => left >= -0.5 && right <= width + 0.5)).toBe(true)
+      expect(geometry.targetBounds.every((target, index, targets) => index === 0 || target.left >= targets[index - 1].right - 0.5)).toBe(true)
+      expect(geometry.iconBounds.every((icon, index, icons) => index === 0 || icon.left >= icons[index - 1].right - 0.5)).toBe(true)
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
   it('selects a batch with Space and Enter and restores focus after keyboard close', async () => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const page = await context.newPage()
@@ -336,7 +392,9 @@ describe('trainer accessibility acceptance in a local browser', () => {
         }
         if (surface === 'assignment') {
           await page.locator('button[aria-controls="assign-program-form"]').click()
-          await pwExpect(page.getByLabel(/Cliente del acompa/)).toBeVisible()
+          const clientChoices = page.getByRole('group', { name: /Cliente del acompa/ })
+          await pwExpect(clientChoices).toBeVisible()
+          await pwExpect(clientChoices.getByRole('radio', { name: /Ana Rivera.*Servicio Fuerza/ })).toBeVisible()
         }
         await expectResponsiveGeometry(page)
         await expectActionTargetsAtLeast44(page)
@@ -412,7 +470,10 @@ describe('trainer accessibility acceptance in a local browser', () => {
       await page.keyboard.press('Enter')
       await pwExpect(disclosure).toHaveAttribute('aria-expanded', 'true')
       await page.keyboard.press('Tab')
-      await pwExpect(page.getByLabel(/Cliente del acompa/)).toBeFocused()
+      const clientChoice = page.getByRole('group', { name: /Cliente del acompa/ }).getByRole('radio', { name: /Ana Rivera.*Servicio Fuerza/ })
+      await pwExpect(clientChoice).toBeFocused()
+      await page.keyboard.press('Space')
+      await pwExpect(clientChoice).toBeChecked()
       await page.keyboard.press('Tab')
       await pwExpect(page.getByLabel(/Resumen para el cliente/)).toBeFocused()
 
@@ -426,9 +487,10 @@ describe('trainer accessibility acceptance in a local browser', () => {
       })
       await accept.focus()
       await page.keyboard.press('Enter')
-      await page.getByText('La solicitud fue aceptada.').waitFor({ state: 'visible' })
+      const acceptanceAnnouncement = page.getByText('La solicitud fue aceptada.', { exact: true })
+      await acceptanceAnnouncement.waitFor({ state: 'visible' })
       expect(confirmationSeen).toBe(true)
-      await pwExpect(page.locator('[aria-live="polite"]')).toContainText('La solicitud fue aceptada.')
+      await pwExpect(acceptanceAnnouncement).toHaveAttribute('aria-live', 'polite')
     } finally {
       await context.close()
     }

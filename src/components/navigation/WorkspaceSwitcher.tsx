@@ -3,6 +3,7 @@
 import { setWorkspace } from '@/app/actions/workspace'
 import type { Workspace } from '@/lib/coaching/workspace'
 import { cn } from '@/lib/utils'
+import { ArrowLeftRight } from 'lucide-react'
 
 type WorkspaceSwitcherProps = {
   workspace: Workspace
@@ -15,15 +16,16 @@ export function WorkspaceSwitcher({ workspace, variant }: WorkspaceSwitcherProps
     const destinationLabel = destination === 'coach' ? 'Entrenador' : 'Personal'
 
     return (
-      <form action={setWorkspace} className="flex shrink-0">
+      <form action={setWorkspace} className="flex w-11 shrink-0 min-[380px]:w-auto">
         <button
           type="submit"
           name="workspace"
           value={destination}
-          className="min-h-11 rounded-xl px-3 text-xs font-semibold text-primary outline-none transition-colors hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-11 w-11 items-center justify-center rounded-xl p-0 text-xs font-semibold text-primary outline-none transition-colors hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring min-[380px]:w-auto min-[380px]:px-3"
           aria-label={`Cambiar al espacio ${destinationLabel}`}
         >
-          {destinationLabel}
+          <ArrowLeftRight data-bottom-nav-icon aria-hidden="true" className="h-5 w-5 min-[380px]:hidden" />
+          <span className="hidden min-[380px]:inline">{destinationLabel}</span>
         </button>
       </form>
     )

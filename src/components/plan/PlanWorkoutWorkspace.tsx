@@ -162,6 +162,7 @@ export function PlanWorkoutWorkspace(props: WorkspaceProps) {
       exercises={selectedWorkout.exercises}
       isToday={selectedWorkout.summary.dayOfWeek === props.todayIso}
       onEdit={props.prescriptionLocked ? undefined : () => setMode('edit')}
+      prescriptionLocked={props.prescriptionLocked}
     />
   ) : (
     <WorkoutEditView

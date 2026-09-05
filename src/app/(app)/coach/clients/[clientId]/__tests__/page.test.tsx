@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 
 const { notFound, requireActiveTrainerContext, getCoachClientInsights, getCoachClientMeasurements } = vi.hoisted(() => ({
   notFound: vi.fn(() => { throw new Error('NOT_FOUND') }),
@@ -14,10 +15,39 @@ vi.mock('@/components/navigation/PageTopBar', () => ({ PageTopBar: () => null })
 vi.mock('@/components/coaching/ClientInsightsDashboard', () => ({ ClientInsightsDashboard: () => null }))
 vi.mock('@/components/coaching/ClientMeasurementsPanel', () => ({ ClientMeasurementsPanel: () => null }))
 
+function activeRelationshipSupabase() {
+  const relationshipQuery: any = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn(async () => ({
+      data: { id: 'relationship-active', status: 'active', trainer_service_offerings: { name: 'Fuerza' } },
+      error: null,
+    })),
+  }
+  relationshipQuery.select.mockReturnValue(relationshipQuery)
+  relationshipQuery.eq.mockReturnValue(relationshipQuery)
+  const assignmentQuery: any = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    in: vi.fn(),
+    order: vi.fn(async () => ({ data: [], error: null })),
+  }
+  assignmentQuery.select.mockReturnValue(assignmentQuery)
+  assignmentQuery.eq.mockReturnValue(assignmentQuery)
+  assignmentQuery.in.mockReturnValue(assignmentQuery)
+  return {
+    from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery),
+  }
+}
+
 describe('CoachClientDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, supabase: {} })
+    requireActiveTrainerContext.mockResolvedValue({
+      profile: { timezone: 'America/Havana' },
+      user: { id: 'trainer-1' },
+      supabase: activeRelationshipSupabase(),
+    })
     getCoachClientInsights.mockResolvedValue({ activeScopes: [] })
     getCoachClientMeasurements.mockResolvedValue([])
   })
@@ -62,7 +92,7 @@ describe('CoachClientDetailPage', () => {
     await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })
 
     expect(getCoachClientMeasurements).toHaveBeenCalledTimes(1)
-    expect(getCoachClientMeasurements).toHaveBeenCalledWith({}, { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fromDate: '2025-12-04', toDate: '2025-12-31' })
+    expect(getCoachClientMeasurements).toHaveBeenCalledWith(expect.any(Object), { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fromDate: '2025-12-04', toDate: '2025-12-31' })
   })
 
   it('keeps the already-authorized detail visible when the later measurements request fails', async () => {
@@ -89,5 +119,140 @@ describe('CoachClientDetailPage', () => {
     expect(log.mock.calls.flat().join(' ')).not.toContain('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
     expect(log.mock.calls.flat().join(' ')).not.toContain('private client measurement payload')
     log.mockRestore()
+  })
+
+  it('projects the active relationship rather than an ended history row before offering assignment', async () => {
+    const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: { id: 'relationship-active', status: 'active', started_at: '2026-08-01T00:00:00.000Z', trainer_service_offerings: { name: 'Fuerza' } }, error: null })) }
+    relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const activeAssignment = { id: 'assignment-active', status: 'active', created_at: '2026-08-01T00:00:00.000Z' }
+    const assignmentQuery: any = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      in: vi.fn(),
+      order: vi.fn(async () => ({ data: [activeAssignment], error: null })),
+      maybeSingle: vi.fn(async () => ({ data: activeAssignment, error: null })),
+    }
+    assignmentQuery.select.mockReturnValue(assignmentQuery); assignmentQuery.eq.mockReturnValue(assignmentQuery); assignmentQuery.in.mockReturnValue(assignmentQuery)
+    const supabase = { from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery) }
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+
+    expect(relationshipQuery.eq).toHaveBeenCalledWith('status', 'active')
+    expect(html).toContain('Relación activa')
+    expect(html).toContain('Rutina activa')
+    expect(html).toContain('Gestionar rutina')
+    expect(html).not.toContain('Asignar rutina')
+    expect(html).toContain('/coach/programs?clientId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+  })
+
+  it('shows a pending routine proposal without offering a duplicate assignment', async () => {
+    const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: { id: 'relationship-active', status: 'active', trainer_service_offerings: { name: 'Fuerza' } }, error: null })) }
+    relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const proposedAssignment = { id: 'assignment-proposed', status: 'proposed', created_at: '2026-08-15T00:00:00.000Z' }
+    const assignmentQuery: any = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      in: vi.fn(),
+      order: vi.fn(async () => ({ data: [proposedAssignment], error: null })),
+      maybeSingle: vi.fn(async () => ({ data: proposedAssignment, error: null })),
+    }
+    assignmentQuery.select.mockReturnValue(assignmentQuery); assignmentQuery.eq.mockReturnValue(assignmentQuery); assignmentQuery.in.mockReturnValue(assignmentQuery)
+    const supabase = { from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery) }
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+
+    expect(html).toContain('Propuesta de rutina pendiente')
+    expect(html).not.toContain('Asignar rutina')
+    expect(html).not.toContain('/coach/programs?clientId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    expect(assignmentQuery.in).toHaveBeenCalledWith('status', ['active', 'proposed'])
+  })
+
+  it('prioritizes an active routine when active and proposed assignments coexist', async () => {
+    const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: { id: 'relationship-active', status: 'active', trainer_service_offerings: { name: 'Fuerza' } }, error: null })) }
+    relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const proposedAssignment = { id: 'assignment-proposed', status: 'proposed', created_at: '2026-08-15T00:00:00.000Z' }
+    const activeAssignment = { id: 'assignment-active', status: 'active', created_at: '2026-08-01T00:00:00.000Z' }
+    const assignmentQuery: any = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      in: vi.fn(),
+      order: vi.fn(async () => ({ data: [proposedAssignment, activeAssignment], error: null })),
+      maybeSingle: vi.fn(async () => ({ data: proposedAssignment, error: null })),
+    }
+    assignmentQuery.select.mockReturnValue(assignmentQuery); assignmentQuery.eq.mockReturnValue(assignmentQuery); assignmentQuery.in.mockReturnValue(assignmentQuery)
+    const supabase = { from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery) }
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+
+    expect(html).toContain('Rutina activa')
+    expect(html).not.toContain('Propuesta de rutina pendiente')
+    expect(html).not.toContain('Asignar rutina')
+    expect(html).not.toContain('Gestionar rutina')
+  })
+
+  it('does not turn an assignment load failure into a false no-routine state', async () => {
+    const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: { id: 'relationship-active', status: 'active', trainer_service_offerings: { name: 'Fuerza' } }, error: null })) }
+    relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const loadError = new Error('temporary failure')
+    const assignmentQuery: any = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      in: vi.fn(),
+      order: vi.fn(async () => ({ data: null, error: loadError })),
+      maybeSingle: vi.fn(async () => ({ data: null, error: loadError })),
+    }
+    assignmentQuery.select.mockReturnValue(assignmentQuery); assignmentQuery.eq.mockReturnValue(assignmentQuery); assignmentQuery.in.mockReturnValue(assignmentQuery)
+    const supabase = { from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery) }
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+      .rejects.toThrow('No se pudo cargar el estado del acompañamiento.')
+    expect(notFound).not.toHaveBeenCalled()
+  })
+
+  it('does not turn a relationship load failure into a false missing-client response', async () => {
+    const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: null, error: new Error('private database detail') })) }
+    relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const supabase = { from: vi.fn(() => relationshipQuery) }
+    requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+      .rejects.toThrow('No se pudo cargar el estado del acompañamiento.')
+    expect(notFound).not.toHaveBeenCalled()
+  })
+
+  it('does not render previously authorized insights after the active relationship disappears', async () => {
+    const relationshipQuery: any = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+    }
+    relationshipQuery.select.mockReturnValue(relationshipQuery)
+    relationshipQuery.eq.mockReturnValue(relationshipQuery)
+    const supabase = { from: vi.fn(() => relationshipQuery) }
+    requireActiveTrainerContext.mockResolvedValue({
+      profile: { timezone: 'America/Havana' },
+      user: { id: 'trainer-1' },
+      supabase,
+    })
+    getCoachClientInsights.mockResolvedValue({
+      activeScopes: ['training_profile', 'body_measurements'],
+      rangeStart: '2026-08-01',
+      rangeEnd: '2026-08-28',
+    })
+    const { default: CoachClientDetailPage } = await import('../page')
+
+    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+      .rejects.toThrow('NOT_FOUND')
+    expect(notFound).toHaveBeenCalled()
+    expect(getCoachClientMeasurements).not.toHaveBeenCalled()
   })
 })

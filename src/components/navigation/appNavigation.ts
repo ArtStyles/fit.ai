@@ -1,9 +1,9 @@
 import { BarChart3, Briefcase, ClipboardList, Dumbbell, Home, LayoutDashboard, Play, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export type AppNavItem = {
-  href: '/dashboard' | '/plan' | '/entrenar' | '/progress' | '/feed' | '/trainers'
+  href: '/dashboard' | '/plan' | '/entrenar' | '/progress' | '/feed' | '/trainers' | '/coaching'
     | '/coach' | '/coach/clients' | '/coach/programs' | '/coach/requests' | '/coach/profile' | '/coach/services'
-  label: 'Inicio' | 'Plan' | 'Entrenar' | 'Progreso' | 'Comunidad' | 'Entrenadores'
+  label: 'Inicio' | 'Plan' | 'Entrenar' | 'Progreso' | 'Comunidad' | 'Entrenadores' | 'Mi entrenador'
     | 'Resumen' | 'Clientes' | 'Rutinas' | 'Solicitudes' | 'Perfil' | 'Servicios'
 }
 
@@ -17,6 +17,7 @@ const PERSONAL_NAV_ITEMS: readonly AppNavItem[] = [
 export function getPersonalNavItems({ communityEnabled }: { communityEnabled: boolean }): readonly AppNavItem[] {
   return [
     ...PERSONAL_NAV_ITEMS,
+    { href: '/coaching', label: 'Mi entrenador' },
     communityEnabled
       ? { href: '/feed', label: 'Comunidad' }
       : { href: '/trainers', label: 'Entrenadores' },
@@ -42,6 +43,7 @@ const APP_NAV_ICONS: Record<AppNavItem['href'], LucideIcon> = {
   '/progress': BarChart3,
   '/feed': Users,
   '/trainers': Users,
+  '/coaching': UserRound,
   '/coach': LayoutDashboard,
   '/coach/clients': Users,
   '/coach/programs': Dumbbell,

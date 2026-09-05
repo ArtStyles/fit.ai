@@ -168,6 +168,7 @@ Aplica las migraciones SQL en este orden:
 054_product_notification_archiving.sql
 055_atomic_notification_attention_dismissal.sql
 056_trainer_template_exercise_batch_append.sql
+057_trainer_assignment_decline.sql
 ```
 
 Para el marketplace de entrenadores, desplegar primero la base de datos y
@@ -178,12 +179,15 @@ aplican `050_product_events_conversion_funnel.sql`,
 `051_workout_adjustment_atomic.sql`, `052_notification_attention_dismissals.sql`,
 `053_trainer_draft_rpc_json_repair.sql`, `054_product_notification_archiving.sql`
 y `055_atomic_notification_attention_dismissal.sql`, antes de
-`056_trainer_template_exercise_batch_append.sql`.
+`056_trainer_template_exercise_batch_append.sql` y
+`057_trainer_assignment_decline.sql`.
 La 053 debe estar aplicada para que el formulario de entrenador pueda guardar el
 borrador mediante su RPC atómico; la 054 habilita el archivado no destructivo de
 notificaciones y la 055 valida y persiste de forma atómica únicamente la versión
 vigente de cada aviso descartable. La 056 agrega ejercicios de una plantilla en
-un lote atómico; confirmar `trainer_security_preflight() = 56` en el proyecto
+un lote atómico. La 057 permite que el cliente cierre de forma idempotente una
+propuesta aún no aceptada, sin modificar su snapshot, y notifica al entrenador;
+confirmar `trainer_security_preflight() = 57` en el proyecto
 remoto antes de desplegar la interfaz compatible. Que la migración esté
 confirmada en Git no demuestra que se haya aplicado al proyecto remoto.
 

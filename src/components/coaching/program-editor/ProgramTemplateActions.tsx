@@ -13,13 +13,15 @@ export function ProgramTemplateActions({
   assignments,
   blocked,
   blockedMessage,
+  selectedRelationshipId,
 }: {
   template: ProgramTemplateView
   summary: RoutineSummary
-  relationships: Array<{ id: string; label: string }>
-  assignments: Array<{ id: string; label: string }>
+  relationships: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
+  assignments: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
   blocked: boolean
   blockedMessage: string
+  selectedRelationshipId?: string
 }) {
   const router = useRouter()
   const [archiving, setArchiving] = useState(false)
@@ -55,7 +57,7 @@ export function ProgramTemplateActions({
       </dl>
       <p className="mt-3 text-xs text-muted-foreground">Asignar y publicar una revisión siguen siendo acciones separadas de esta plantilla editable.</p>
       <div className="mt-4 space-y-3">
-        <AssignProgramDialog templateId={template.id} relationships={relationships} blocked={blocked} blockedMessage={blockedMessage} />
+        <AssignProgramDialog templateId={template.id} relationships={relationships} selectedRelationshipId={selectedRelationshipId} blocked={blocked} blockedMessage={blockedMessage} />
         <PublishProgramRevisionDialog templateId={template.id} assignments={assignments} blocked={blocked} blockedMessage={blockedMessage} />
       </div>
       <button type="button" disabled={archiving || template.status === 'archived'} onClick={() => void archive()} className="mt-4 min-h-11 w-full rounded-xl border border-destructive/60 px-4 text-sm font-semibold text-foreground disabled:opacity-50">

@@ -305,25 +305,51 @@ export default async function PlanPage() {
     )
   }
 
-  let professionalRelationshipActive = false
+  let professionalRelationshipActive = planRaw.prescription_locked
+  let professionalTrainerName: string | null = null
+  const professionalMetadataErrors: string[] = []
   if (planRaw.prescription_locked && planRaw.trainer_relationship_id) {
-    const { data: relationship } = await supabase
+    const { data: relationship, error: relationshipError } = await supabase
       .from('coaching_relationships')
-      .select('status')
+      .select('status, trainer_user_id')
       .eq('id', planRaw.trainer_relationship_id)
-      .maybeSingle() as { data: { status: string } | null }
-    professionalRelationshipActive = relationship?.status === 'active'
+      .maybeSingle() as {
+        data: { status: string; trainer_user_id: string } | null
+        error: { message?: string } | null
+      }
+    if (relationshipError || !relationship) {
+      professionalMetadataErrors.push(t('No pudimos verificar la relación con tu entrenador.'))
+    } else {
+      professionalRelationshipActive = relationship.status === 'active'
+    }
+    if (!relationshipError && relationship?.trainer_user_id) {
+      const { data: trainerProfile, error: trainerProfileError } = await (supabase as any)
+        .from('public_profiles')
+        .select('full_name, username')
+        .eq('id', relationship.trainer_user_id)
+        .maybeSingle()
+      if (trainerProfileError || !trainerProfile) {
+        professionalMetadataErrors.push(t('No pudimos cargar el nombre de tu entrenador.'))
+      } else {
+        professionalTrainerName = trainerProfile.full_name?.trim() || trainerProfile.username?.trim() || 'Tu entrenador'
+      }
+    }
   }
 
   let professionalVersion: { version_number: number; change_summary: string | null } | null = null
   if (planRaw.prescription_locked && planRaw.trainer_assignment_id && planRaw.trainer_assignment_version_id) {
-    const { data: version } = await supabase
+    const { data: version, error: versionError } = await supabase
       .from('trainer_assignment_versions')
       .select('version_number, change_summary, assignment_id')
       .eq('id', planRaw.trainer_assignment_version_id)
       .eq('assignment_id', planRaw.trainer_assignment_id)
-      .maybeSingle() as { data: { version_number: number; change_summary: string | null; assignment_id: string } | null }
-    if (version?.assignment_id === planRaw.trainer_assignment_id) {
+      .maybeSingle() as {
+        data: { version_number: number; change_summary: string | null; assignment_id: string } | null
+        error: { message?: string } | null
+      }
+    if (versionError || !version || version.assignment_id !== planRaw.trainer_assignment_id) {
+      professionalMetadataErrors.push(t('No pudimos cargar la versión de esta rutina.'))
+    } else {
       professionalVersion = {
         version_number: version.version_number,
         change_summary: version.change_summary,
@@ -336,7 +362,10 @@ export default async function PlanPage() {
       .from('workouts')
       .select('id, name, focus, day_of_week, order_in_plan, estimated_duration_minutes')
       .eq('plan_id', planRaw.id)
-      .order('order_in_plan') as unknown as Promise<{ data: WorkoutRow[] | null }>,
+      .order('order_in_plan') as unknown as Promise<{
+        data: WorkoutRow[] | null
+        error: { message?: string } | null
+      }>,
     supabase
       .from('exercises')
       .select('id, name, name_es, image_url, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound')
@@ -361,9 +390,12 @@ export default async function PlanPage() {
 
   const workoutIds = workouts.map(workout => workout.id)
   let exerciseRows: PlanWorkoutExerciseRow[] = []
+  let workoutExercisesError: { message?: string } | null = null
+  let workoutExercisesDataAvailable = true
+  let hasMissingExerciseJoin = false
 
   if (workoutIds.length > 0) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('workout_exercises')
       .select(`
         id,
@@ -379,7 +411,16 @@ export default async function PlanPage() {
         exercise:exercises(id, name, name_es, image_url, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound)
       `)
       .in('workout_id', workoutIds)
-      .order('order_index') as unknown as { data: PlanWorkoutExerciseRow[] | null }
+      .order('order_index') as unknown as {
+        data: PlanWorkoutExerciseRow[] | null
+        error: { message?: string } | null
+      }
+
+    workoutExercisesError = error
+    workoutExercisesDataAvailable = Array.isArray(data)
+    hasMissingExerciseJoin = (data ?? []).some(row => (
+      row.exercise == null || (Array.isArray(row.exercise) && row.exercise.length === 0)
+    ))
 
     exerciseRows = (data ?? []).map(row => ({
       ...row,
@@ -389,6 +430,50 @@ export default async function PlanPage() {
           ? localizeExercise(row.exercise, language)
           : null,
     }))
+  }
+
+  const workoutsMissingExercises = workouts.some(workout => (
+    !exerciseRows.some(row => row.workout_id === workout.id)
+  ))
+
+  const prescribedContentUnavailable = planRaw.prescription_locked && (
+    workoutRowsResult.error ||
+    !Array.isArray(workoutRowsResult.data) ||
+    workouts.length === 0 ||
+    workoutExercisesError ||
+    !workoutExercisesDataAvailable ||
+    hasMissingExerciseJoin ||
+    workoutsMissingExercises
+  )
+
+  if (prescribedContentUnavailable) {
+    return (
+      <div className="min-h-screen bg-background pb-20">
+        <PageTopBar
+          title={t('Plan')}
+          subtitle={planRaw.name}
+          backHref="/dashboard"
+          backLabel="Dashboard"
+          icon={<Dumbbell className="h-5 w-5" />}
+        />
+        <main className="mx-auto max-w-xl px-4 py-8 sm:px-6">
+          <section
+            role="alert"
+            className="rounded-2xl border border-red-500/30 bg-red-500/[0.06] p-5 text-center"
+          >
+            <h1 className="text-lg font-bold text-foreground">
+              {t('No se puede mostrar esta rutina de forma segura')}
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {t('No pudimos cargar completa la rutina indicada por tu entrenador. Para evitar indicaciones parciales, inténtalo de nuevo más tarde.')}
+            </p>
+            <Button asChild variant="outline" className="mt-5 min-h-11">
+              <PendingLink href="/dashboard">{t('Volver al inicio')}</PendingLink>
+            </Button>
+          </section>
+        </main>
+      </div>
+    )
   }
 
   const exercisesByWorkout = exerciseRows.reduce<Record<string, PlanWorkoutExerciseRow[]>>((acc, row) => {
@@ -516,6 +601,12 @@ export default async function PlanPage() {
       />
 
       <main aria-label={t('Plan')} className="mx-auto max-w-6xl space-y-7 px-4 py-6 sm:px-6 lg:px-8">
+        {professionalMetadataErrors.length > 0 && (
+          <div role="alert" className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-foreground">
+            {professionalMetadataErrors.map(message => <p key={message}>{message}</p>)}
+          </div>
+        )}
+
         <PlanOverview
           name={planRaw.name}
           sourceLabel={formatSource(planRaw.source_type, t)}
@@ -526,6 +617,7 @@ export default async function PlanPage() {
           prescriptionLocked={prescriptionLocked}
           professionalVersionNumber={professionalVersion?.version_number ?? null}
           professionalChangeSummary={professionalVersion?.change_summary ?? null}
+          professionalTrainerName={professionalTrainerName}
           switcher={<PlanSwitcher plans={plans} tier={tier} t={t} prescriptionLocked={professionalRelationshipActive} />}
         />
 

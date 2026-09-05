@@ -9,6 +9,13 @@ afterEach(() => {
 
 async function renderDashboardWithCommunityDisabled() {
   const isCommunityEnabled = vi.fn(() => false)
+  const query: any = {
+    select: () => query,
+    eq: () => query,
+    is: () => query,
+    maybeSingle: async () => ({ data: null, error: null }),
+    then: (resolve: (value: unknown) => unknown) => resolve({ data: null, count: 0, error: null }),
+  }
   const supabase = {
     rpc: vi.fn(async () => ({
       data: {
@@ -21,13 +28,7 @@ async function renderDashboardWithCommunityDisabled() {
       },
       error: null,
     })),
-    from: vi.fn(() => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: null, error: null }),
-        }),
-      }),
-    })),
+    from: vi.fn(() => query),
   }
 
   vi.doMock('@/lib/auth/server', () => ({

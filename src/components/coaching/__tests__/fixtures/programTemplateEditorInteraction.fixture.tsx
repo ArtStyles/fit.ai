@@ -174,7 +174,7 @@ function EditorFixture() {
 createRoot(document.getElementById('root')!).render(
   <main>
     {!showNewTemplateForm ? <PendingLink href="/coach/programs">Rutinas</PendingLink> : null}
-    {showNewTemplateForm ? <NewProgramTemplateForm /> : <EditorFixture />}
+    {showNewTemplateForm ? <NewProgramTemplateForm clientId={query.get('clientId') ?? undefined} /> : <EditorFixture />}
   </main>,
 )
 

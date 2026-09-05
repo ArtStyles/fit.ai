@@ -36,7 +36,7 @@ function supabaseWithPendingRequest(profile: {
   full_name: 'Ana Pérez',
   username: 'ana',
   avatar_url: 'https://cdn.example.test/ana.jpg',
-}) {
+}, profileError: unknown = null) {
   const requestOrder = vi.fn(async () => ({
     data: [{
       id: 'request-1',
@@ -51,8 +51,8 @@ function supabaseWithPendingRequest(profile: {
   const requestTrainerEq = vi.fn(() => ({ eq: requestStatusEq }))
   const requestSelect = vi.fn(() => ({ eq: requestTrainerEq }))
   const profileIn = vi.fn(async () => ({
-    data: [profile],
-    error: null,
+    data: profileError ? null : [profile],
+    error: profileError,
   }))
   const profileSelect = vi.fn(() => ({ in: profileIn }))
   const relationshipOrder = vi.fn(async () => ({ data: [], error: null }))
@@ -112,5 +112,18 @@ describe('CoachRequestsPage', () => {
     expect(html).toContain('>U</span>')
     expect(html).toContain('Seguimiento de fuerza')
     expect(html).toContain('Aceptar')
+  })
+
+  it('does not render actionable requests when the client identity lookup fails', async () => {
+    const supabase = supabaseWithPendingRequest(undefined, { message: 'profile read failed' })
+    requireActiveTrainerContext.mockResolvedValue({ supabase, user: { id: 'trainer-1' } })
+    const { default: CoachRequestsPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachRequestsPage())
+
+    expect(html).toContain('No se pudo cargar la identidad de las personas que enviaron estas solicitudes.')
+    expect(html).not.toContain('>Aceptar</button>')
+    expect(html).not.toContain('>Rechazar</button>')
+    expect(html).not.toContain('>Usuario</h2>')
   })
 })
