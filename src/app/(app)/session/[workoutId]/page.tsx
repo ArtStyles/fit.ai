@@ -76,7 +76,7 @@ export default async function SessionPage({ params }: PageProps) {
   const workout = access.workout
 
   // ── Datos del workout + última sesión completada (en paralelo) ────────────
-  const [{ data: weRows }, { data: exerciseOptionRows }, { data: lastLogRow }, { data: workoutPlan }] = await Promise.all([
+  const [{ data: weRows }, { data: exerciseOptionRows }, { data: lastLogRow }, workoutPlanResult] = await Promise.all([
     supabase
       .from('workout_exercises')
       .select(`
@@ -124,9 +124,39 @@ export default async function SessionPage({ params }: PageProps) {
           .select('prescription_locked')
           .eq('id', workout.plan_id)
           .eq('user_id', user.id)
-          .maybeSingle() as unknown as Promise<{ data: { prescription_locked: boolean | null } | null }>)
-      : Promise.resolve({ data: null }),
+          .maybeSingle() as unknown as Promise<{
+            data: { prescription_locked: boolean | null } | null
+            error: { message: string } | null
+          }>)
+      : Promise.resolve({ data: null, error: null }),
   ])
+
+  if (
+    workout.plan_id &&
+    (workoutPlanResult.error || typeof workoutPlanResult.data?.prescription_locked !== 'boolean')
+  ) {
+    return (
+      <main className="flex min-h-[60vh] items-center justify-center px-6">
+        <section
+          role="alert"
+          className="w-full max-w-xl rounded-2xl border border-red-500/30 bg-red-500/[0.06] p-5 text-center"
+        >
+          <h1 className="text-lg font-bold text-foreground">No se puede abrir esta rutina de forma segura</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            No pudimos verificar las indicaciones de esta rutina. Inténtalo de nuevo más tarde.
+          </p>
+          <a
+            href="/dashboard"
+            className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground"
+          >
+            Volver al inicio
+          </a>
+        </section>
+      </main>
+    )
+  }
+
+  const workoutPlan = workoutPlanResult.data
 
   // ── Pesos/reps de la última sesión para pre-rellenar ──────────────────────
   type LastLogRow = {
