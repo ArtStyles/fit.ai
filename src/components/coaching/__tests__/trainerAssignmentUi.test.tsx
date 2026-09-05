@@ -99,6 +99,24 @@ describe('trainer assignment browser interaction', () => {
     } finally { await page.close() }
   }, 15_000)
 
+  it('prevents accepting an ended-relationship proposal while keeping decline available', async () => {
+    const page = await browser.newPage()
+    page.on('dialog', dialog => dialog.accept())
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/proposedProgramReviewInteraction.html?canAccept=false`)
+      await page.getByRole('heading', { name: 'Rutina inicial' }).waitFor()
+
+      await pwExpect(page.getByText('Este acompañamiento ya no está activo.')).toBeVisible()
+      await pwExpect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toHaveCount(0)
+      await pwExpect(page.getByRole('button', { name: 'No aceptar rutina' })).toBeEnabled()
+
+      await page.getByRole('button', { name: 'No aceptar rutina' }).click()
+      await pwExpect(page.getByRole('status')).toContainText('Rutina no aceptada')
+      expect(await page.evaluate(() => (window as Window & { __DECLINE_ASSIGNMENT_ACTIONS__?: unknown[] }).__DECLINE_ASSIGNMENT_ACTIONS__ ?? [])).toHaveLength(1)
+      expect(await page.evaluate(() => (window as Window & { __ACCEPT_ASSIGNMENT_ACTIONS__?: unknown[] }).__ACCEPT_ASSIGNMENT_ACTIONS__ ?? [])).toEqual([])
+    } finally { await page.close() }
+  }, 15_000)
+
   it('reuses the decline key after a recoverable error and reports terminal success visibly', async () => {
     const page = await browser.newPage()
     page.on('dialog', dialog => dialog.accept())

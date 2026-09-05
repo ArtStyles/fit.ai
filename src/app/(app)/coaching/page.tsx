@@ -147,6 +147,7 @@ export default async function CoachingPage() {
         versionNumber: version.version_number,
         changeSummary: version.change_summary,
         trainerName: proposalTrainer?.full_name?.trim() || proposalTrainer?.username?.trim() || 'tu entrenador',
+        canAccept: relationship?.status === 'active' && relationship.id === assignment.relationship_id,
         snapshot,
         exerciseNames: Object.fromEntries(((exerciseResponse.data ?? []) as Array<{ id: string; name: string }>).map(exercise => [exercise.id, exercise.name])),
       }
