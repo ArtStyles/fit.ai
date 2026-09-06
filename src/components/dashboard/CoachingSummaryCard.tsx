@@ -58,7 +58,7 @@ export function CoachingSummaryCard({
               src={summary.trainerAvatarUrl}
             />
           ) : null}
-          <AvatarFallback className="bg-primary/10 font-semibold text-primary">
+          <AvatarFallback className="bg-violet-600 font-semibold text-white">
             {initials}
           </AvatarFallback>
         </Avatar>
