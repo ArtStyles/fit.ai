@@ -315,7 +315,7 @@ describe('executeWorkspaceTransition', () => {
       action: async () => ({
         ok: false,
         code: 'unexpected',
-        error: 'No se pudo cambiar de espacio. IntÃ©ntalo nuevamente.',
+        error: 'No se pudo cambiar de espacio. Inténtalo nuevamente.',
       }),
       replace,
       refresh: vi.fn(),
@@ -323,7 +323,7 @@ describe('executeWorkspaceTransition', () => {
     })).resolves.toEqual({
       status: 'failed',
       code: 'unexpected',
-      error: 'No se pudo cambiar de espacio. IntÃ©ntalo nuevamente.',
+      error: 'No se pudo cambiar de espacio. Inténtalo nuevamente.',
     })
 
     expect(commitIntent).not.toHaveBeenCalled()

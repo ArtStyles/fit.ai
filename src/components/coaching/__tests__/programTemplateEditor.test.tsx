@@ -81,11 +81,10 @@ describe('professional template editor browser interactions', () => {
 
       page.once('dialog', dialog => void dialog.dismiss())
       await page.getByRole('button', { name: 'Personal' }).click()
-      await page.waitForTimeout(50)
+      await pwExpect(page.getByRole('dialog')).toBeVisible()
       expect(await page.evaluate(() => (
         window as Window & { __WORKSPACE_ACTIONS__?: unknown[] }
       ).__WORKSPACE_ACTIONS__ ?? [])).toHaveLength(0)
-      await pwExpect(page.getByRole('dialog')).toBeVisible()
 
       page.once('dialog', dialog => void dialog.accept())
       await page.getByRole('button', { name: 'Personal' }).click()
