@@ -1668,6 +1668,7 @@ try {
   runPsql(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race')
   runPsql(declineVsEndRelationshipRaceSql, 'running committed stale-decline-versus-relationship-end race')
   runPsql(sameKeyDeclineRaceSql, 'running committed same-key concurrent decline race')
+  runPsql(readMigration('057_trainer_assignment_decline.sql'), 'restoring historical migration 057 before durable decline snapshot')
   runPsql(trainerDeclineRerunSnapshotSql, 'capturing durable 057 decline state')
   runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 against durable decline evidence')
   runPsql(trainerDeclineRerunVerifySql, 'verifying migration 057 rerun preserves declined evidence')

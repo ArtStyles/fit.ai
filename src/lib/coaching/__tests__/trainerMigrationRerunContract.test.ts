@@ -159,7 +159,7 @@ describe('trainer migration rerun contract', () => {
     expect(consentRecoveryTap).toContain('an exact retry returns unchanged without duplicate effects')
     expect(consentRecoveryTap).toContain('anonymous callers cannot execute the consent recovery RPC')
     expect(trainerRunner).toMatch(/running 057 trainer assignment decline pgTAP suite[\s\S]+applying migration 058 training profile consent regrant[\s\S]+reapplying migration 058 for rerunnability[\s\S]+running 058 training profile consent regrant pgTAP suite/i)
-    expect(trainerRunner).toMatch(/verifying migration 057 rerun preserves declined evidence[\s\S]+restoring migration 058 after historical 057 rerun[\s\S]+running committed concurrent training consent regrant race/i)
+    expect(trainerRunner).toMatch(/restoring historical migration 057 before durable decline snapshot[\s\S]+capturing durable 057 decline state[\s\S]+reapplying migration 057 against durable decline evidence[\s\S]+verifying migration 057 rerun preserves declined evidence[\s\S]+restoring migration 058 after historical 057 rerun[\s\S]+running committed concurrent training consent regrant race/i)
     expect(trainerRunner).toContain("runPsql(trainingConsentRegrantRaceSql, 'running committed concurrent training consent regrant race')")
     expect(trainerRunner).toContain("runPsql(readMigration('058_training_profile_consent_regrant.sql'), 'reapplying migration 058 against durable consent evidence')")
     expect(trainerRunner).toContain("runPsql(trainingConsentRegrantRerunVerifySql, 'verifying migration 058 rerun preserves consent evidence')")

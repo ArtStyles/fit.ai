@@ -13,7 +13,6 @@ AS $$
 DECLARE
   v_client_user_id UUID := auth.uid();
   v_trainer_user_id UUID;
-  v_version TEXT := btrim(COALESCE(p_consent_version, ''));
   v_trainer_account public.profiles%ROWTYPE;
   v_trainer_profile public.trainer_profiles%ROWTYPE;
   v_client_account public.profiles%ROWTYPE;
@@ -25,8 +24,8 @@ BEGIN
   END IF;
   IF p_relationship_id IS NULL
     OR p_idempotency_key IS NULL
-    OR char_length(v_version) NOT BETWEEN 1 AND 160
-    OR v_version IS DISTINCT FROM 'training-profile-v1'
+    OR char_length(p_consent_version) NOT BETWEEN 1 AND 160
+    OR p_consent_version IS DISTINCT FROM 'training-profile-v1'
   THEN
     RAISE EXCEPTION 'COACHING_CONSENT_INVALID';
   END IF;
@@ -108,7 +107,7 @@ BEGIN
   INSERT INTO public.coaching_consents (
     relationship_id, scope, text_version, granted_by
   ) VALUES (
-    v_relationship.id, 'training_profile', v_version, v_client_user_id
+    v_relationship.id, 'training_profile', p_consent_version, v_client_user_id
   );
 
   -- Migration 045's AFTER INSERT trigger owns the single

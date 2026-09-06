@@ -108,7 +108,8 @@ describe('trainer relationships migration', () => {
     )?.[1] ?? ''
 
     expect(body).toContain('v_client_user_id UUID := auth.uid()')
-    expect(body).toContain("v_version IS DISTINCT FROM 'training-profile-v1'")
+    expect(body).toContain("p_consent_version IS DISTINCT FROM 'training-profile-v1'")
+    expect(body).not.toContain('btrim(COALESCE(p_consent_version')
     expect(body).toContain('relationship.client_user_id = v_client_user_id')
     expect(body).toContain('relationship.trainer_user_id = v_trainer_user_id')
     expect(body.indexOf('FROM public.coaching_relationships relationship')).toBeLessThan(

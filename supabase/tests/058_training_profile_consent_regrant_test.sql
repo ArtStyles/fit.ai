@@ -167,8 +167,8 @@ SELECT throws_ok(
   'P0001', 'COACHING_CONSENT_INVALID', 'a null relationship is rejected'
 );
 SELECT throws_ok(
-  $$SELECT public.grant_training_profile_consent('58000000-0000-4000-8000-000000000041', '   ', '58000000-0000-4000-8000-000000000053')$$,
-  'P0001', 'COACHING_CONSENT_INVALID', 'a blank consent version is rejected'
+  $$SELECT public.grant_training_profile_consent('58000000-0000-4000-8000-000000000041', ' training-profile-v1 ', '58000000-0000-4000-8000-000000000053')$$,
+  'P0001', 'COACHING_CONSENT_INVALID', 'a whitespace-padded consent version is rejected instead of normalized'
 );
 SELECT throws_ok(
   $$SELECT public.grant_training_profile_consent('58000000-0000-4000-8000-000000000041', repeat('v', 161), '58000000-0000-4000-8000-000000000054')$$,
@@ -232,7 +232,7 @@ SELECT set_config('request.jwt.claim.sub', '58000000-0000-4000-8000-000000000002
 SET LOCAL ROLE authenticated;
 SELECT results_eq(
   $$SELECT relationship_id, changed FROM public.grant_training_profile_consent(
-    '58000000-0000-4000-8000-000000000041', '  training-profile-v1  ', '58000000-0000-4000-8000-00000000005b'
+    '58000000-0000-4000-8000-000000000041', 'training-profile-v1', '58000000-0000-4000-8000-00000000005b'
   )$$,
   $$VALUES ('58000000-0000-4000-8000-000000000041'::UUID, TRUE)$$,
   'the owning client can explicitly recover missing training-profile consent'
@@ -248,7 +248,7 @@ SELECT is(
       AND revoked_at IS NULL
   ),
   '58000000-0000-4000-8000-000000000041:training_profile:training-profile-v1:58000000-0000-4000-8000-000000000002:true',
-  'the recovered grant stores the relationship, trimmed version, client actor, and active state'
+  'the recovered grant stores the relationship, literal version, client actor, and active state'
 );
 SELECT is(
   (SELECT count(*) FROM public.coaching_consents WHERE relationship_id = '58000000-0000-4000-8000-000000000041' AND scope = 'training_profile' AND revoked_at IS NULL),

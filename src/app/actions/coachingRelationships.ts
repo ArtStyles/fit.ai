@@ -23,6 +23,19 @@ function revalidateRelationshipPaths() {
   revalidatePath('/coach/requests')
 }
 
+function parseConsentRpcResult(data: unknown, expectedRelationshipId: string) {
+  if (!Array.isArray(data) || data.length !== 1) return null
+  const row = data[0]
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null
+  const result = row as Record<string, unknown>
+  if (
+    typeof result.relationship_id !== 'string'
+    || result.relationship_id !== expectedRelationshipId
+    || typeof result.changed !== 'boolean'
+  ) return null
+  return { relationshipId: result.relationship_id, changed: result.changed }
+}
+
 async function invokeConsentAction(
   rpcName: 'grant_training_profile_consent' | 'grant_body_measurements_consent' | 'revoke_body_measurements_consent' | 'revoke_training_profile_consent',
   formData: FormData,
@@ -39,11 +52,11 @@ async function invokeConsentAction(
         ? { p_relationship_id: relationshipId, p_consent_version: 'body-measurements-v1', p_idempotency_key: idempotencyKey }
         : { p_relationship_id: relationshipId, p_idempotency_key: idempotencyKey }
     const { data, error } = await (supabase as any).rpc(rpcName, args)
-    const result = Array.isArray(data) ? data[0] : data
-    if (error || !result?.relationship_id) return { ok: false, error: 'No se pudo actualizar el consentimiento.' }
+    const result = error ? null : parseConsentRpcResult(data, relationshipId)
+    if (!result) return { ok: false, error: 'No se pudo actualizar el consentimiento.' }
 
     revalidateConsentPaths()
-    return { ok: true, relationshipId: result.relationship_id, changed: result.changed === true }
+    return { ok: true, relationshipId: result.relationshipId, changed: result.changed }
   } catch {
     return { ok: false, error: 'No se pudo actualizar el consentimiento.' }
   }
