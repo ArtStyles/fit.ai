@@ -65,6 +65,9 @@ describe('DesktopSidebar workspace destinations', () => {
     expect((html.match(/aria-current="page"/g) ?? [])).toHaveLength(1)
     expect(html).not.toContain('href="/coach/profile"')
     expect(html).not.toContain('href="/coach/services"')
+    const overview = html.match(/<a[^>]+aria-current="page"[^>]*>/)?.[0]
+    expect(overview).toContain('text-primary')
+    expect(overview).toContain('dark:text-violet-300')
     expect(html).not.toContain('data-workspace-switcher')
     const navEnd = html.indexOf('</nav>')
     const accountTrigger = html.indexOf('aria-label="Abrir cuenta y espacios"')

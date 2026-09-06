@@ -168,7 +168,7 @@ export function AccountWorkspaceMenuBody({
             data-account-sign-out
             disabled={interactionLocked}
             onClick={onSignOut}
-            className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-destructive disabled:opacity-60"
+            className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-red-700 dark:text-red-400 disabled:opacity-60"
           >
             <LogOut className="h-4 w-4" aria-hidden="true" />
             {t('Cerrar sesión')}
@@ -372,7 +372,7 @@ export function AccountWorkspaceMenu({
       ) : null}
       {surface === 'sidebar' ? (
         <div className="hidden lg:block">
-          <DropdownMenu open={desktopOpen} onOpenChange={changeDesktopOpen}>
+          <DropdownMenu modal={false} open={desktopOpen} onOpenChange={changeDesktopOpen}>
             <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
             <DropdownMenuContent
               aria-labelledby={desktopTitleId}

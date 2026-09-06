@@ -43,7 +43,7 @@ export function DesktopSidebar() {
               className={cn(
                 'flex min-h-12 cursor-pointer items-center gap-3 rounded-xl px-4 text-sm font-semibold outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring',
                 isActive
-                  ? 'bg-primary/15 text-primary'
+                  ? 'bg-primary/15 text-primary dark:text-violet-300'
                   : 'text-muted-foreground hover:bg-[hsl(var(--surface-2))] hover:text-foreground',
               )}
             >

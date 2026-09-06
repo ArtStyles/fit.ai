@@ -322,7 +322,12 @@ describe('AccountWorkspaceMenu browser behavior', () => {
 
   beforeEach(async () => {
     page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
-    await page.setContent('<main><div id="root"></div></main>')
+    await page.setContent([
+      '<main style="position: fixed; inset: 0">',
+      '<button type="button" style="position: absolute; left: 120px; top: 120px">Control fuera del menú</button>',
+      '</main>',
+      '<div id="root" style="position: relative; z-index: 1"></div>',
+    ].join(''))
     await page.evaluate(() => {
       const harness = window as MenuBrowserHarness
       const realMatchMedia = window.matchMedia.bind(window)
@@ -373,6 +378,9 @@ describe('AccountWorkspaceMenu browser behavior', () => {
     const personal = page.getByRole('menuitemradio', { name: 'Personal' })
     const coach = page.getByRole('menuitemradio', { name: 'Entrenador' })
     await pwExpect(menu).toBeVisible()
+    await pwExpect(page.locator('#root')).not.toHaveAttribute('aria-hidden', 'true')
+    await pwExpect(page.locator('[data-account-sign-out]')).toHaveClass(/text-red-700/)
+    await pwExpect(page.locator('[data-account-sign-out]')).toHaveClass(/dark:text-red-400/)
     await pwExpect(trigger).toHaveAttribute('aria-expanded', 'true')
     await pwExpect(trigger).toHaveAttribute('data-state', 'open')
     await pwExpect(personal).toBeFocused()
@@ -394,6 +402,12 @@ describe('AccountWorkspaceMenu browser behavior', () => {
     expect(await page.evaluate(() => (
       window as MenuBrowserHarness
     ).__workspaceChanges)).toEqual(['coach'])
+
+    await trigger.focus()
+    await page.keyboard.press('Enter')
+    await pwExpect(menu).toBeVisible()
+    await page.getByRole('button', { name: 'Control fuera del menú' }).click()
+    await pwExpect(menu).toHaveCount(0)
   }, 15_000)
 
   it('closes with Escape and returns focus to the forwarded trigger', async () => {
