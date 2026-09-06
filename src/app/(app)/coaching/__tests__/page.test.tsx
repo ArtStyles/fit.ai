@@ -9,7 +9,9 @@ vi.mock('@/lib/auth/server', () => ({ requireAppUserContext }))
 vi.mock('@/components/coaching/ClientCoachingStatus', () => ({
   ClientCoachingStatus: ({ requests, relationship }: { requests: Array<{ trainerName: string; serviceName: string }>; relationship?: { id: string; status: string; trainerName: string; serviceName: string } }) => <>{relationship ? <p>{`relationship:${relationship.status}:${relationship.trainerName}:${relationship.serviceName}`}</p> : null}<p>{requests.length ? requests.map(request => `${request.trainerName}:${request.serviceName}`).join(',') : !relationship ? 'No tienes solicitudes de acompañamiento.' : ''}</p></>,
 }))
-vi.mock('@/components/coaching/ConsentManager', () => ({ ConsentManager: ({ relationshipId }: { relationshipId: string }) => <p>consents:{relationshipId}</p> }))
+vi.mock('@/components/coaching/ConsentManager', () => ({
+  ConsentManager: ({ relationshipId, consents }: { relationshipId: string; consents: unknown[] }) => <><p>consents:{relationshipId}</p><p>consent-count:{consents.length}</p></>,
+}))
 vi.mock('@/components/coaching/ProposedProgramReview', () => ({
   ProposedProgramReview: ({ proposal }: { proposal: { trainerName: string; snapshot: { name: string }; canAccept: boolean; exerciseDetailsAvailable: boolean } }) => <section><h2>{proposal.snapshot.name}</h2><p>{`proposal-trainer:${proposal.trainerName}`}</p><p>{`proposal-can-accept:${proposal.canAccept}`}</p><p>{`proposal-exercise-details:${proposal.exerciseDetailsAvailable}`}</p>{proposal.canAccept ? <button type="button">Aceptar rutina</button> : null}<button type="button">No aceptar rutina</button></section>,
 }))
@@ -175,6 +177,20 @@ describe('CoachingPage', () => {
 
     expect(html).toContain('relationship:active')
     expect(html).toContain('consents:active-second')
+  })
+
+  it('keeps the recovery manager visible for an active relationship with no training grant', async () => {
+    const supabase = requestQuery(
+      { data: [], error: null },
+      [{ id: 'relationship-missing-consent', status: 'active', trainer_user_id: 'trainer-1', service_id: 'service-1', started_at: '2026-09-06T12:00:00.000Z', source_request_id: null }],
+    )
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const { default: CoachingPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachingPage())
+
+    expect(html).toContain('consents:relationship-missing-consent')
+    expect(html).toContain('consent-count:0')
   })
 
   it('uses grouped public projections to pass named trainer and service entries to the client hub', async () => {

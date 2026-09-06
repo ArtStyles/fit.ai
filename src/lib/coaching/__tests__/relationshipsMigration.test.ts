@@ -13,6 +13,10 @@ function readArtifact(url: URL): string {
 const migration = readArtifact(
   new URL('../../../../supabase/migrations/042_trainer_relationships.sql', import.meta.url),
 )
+const consentRecoveryMigration = readArtifact(
+  new URL('../../../../supabase/migrations/058_training_profile_consent_regrant.sql', import.meta.url),
+)
+const relationshipRpcMigrations = `${migration}\n${consentRecoveryMigration}`
 const databaseTypes = readArtifact(new URL('../../../types/database.ts', import.meta.url))
 
 const relationshipTables = [
@@ -23,6 +27,7 @@ const relationshipTables = [
 ]
 
 type RelationshipRpcName =
+  | 'grant_training_profile_consent'
   | 'grant_body_measurements_consent'
   | 'revoke_body_measurements_consent'
   | 'revoke_training_profile_consent'
@@ -30,6 +35,11 @@ type RelationshipRpcName =
   | 'resume_paused_coaching_relationship'
 
 const typedRelationshipRpcArgs = {
+  grant_training_profile_consent: {
+    p_relationship_id: 'relationship-id',
+    p_consent_version: 'training-profile-v1',
+    p_idempotency_key: 'idempotency-key',
+  },
   grant_body_measurements_consent: {
     p_relationship_id: 'relationship-id',
     p_consent_version: 'body-measurements-v1',
@@ -55,6 +65,7 @@ const typedRelationshipRpcArgs = {
 } satisfies { [Name in RelationshipRpcName]: Database['public']['Functions'][Name]['Args'] }
 
 const typedRelationshipRpcReturns = {
+  grant_training_profile_consent: [{ relationship_id: 'relationship-id', changed: true }],
   grant_body_measurements_consent: [{ relationship_id: 'relationship-id', changed: true }],
   revoke_body_measurements_consent: [{ relationship_id: 'relationship-id', changed: true }],
   revoke_training_profile_consent: [{ relationship_id: 'relationship-id', changed: true }],
@@ -65,6 +76,7 @@ const typedRelationshipRpcReturns = {
 describe('trainer relationships migration', () => {
   it('keeps relationship RPC database types aligned with the exact SQL signatures', () => {
     const expectedArgs: Record<RelationshipRpcName, string[]> = {
+      grant_training_profile_consent: ['p_relationship_id', 'p_consent_version', 'p_idempotency_key'],
       grant_body_measurements_consent: ['p_relationship_id', 'p_consent_version', 'p_idempotency_key'],
       revoke_body_measurements_consent: ['p_relationship_id', 'p_idempotency_key'],
       revoke_training_profile_consent: ['p_relationship_id', 'p_idempotency_key'],
@@ -73,7 +85,7 @@ describe('trainer relationships migration', () => {
     }
 
     for (const [name, args] of Object.entries(expectedArgs) as [RelationshipRpcName, string[]][]) {
-      const sqlContract = migration.match(new RegExp(
+      const sqlContract = relationshipRpcMigrations.match(new RegExp(
         `CREATE OR REPLACE FUNCTION public\\.${name}\\(\\s*([\\s\\S]*?)\\s*\\)\\s*RETURNS TABLE \\(relationship_id UUID, changed BOOLEAN\\)`,
         'i',
       ))
@@ -88,6 +100,22 @@ describe('trainer relationships migration', () => {
       expect(Object.keys(typedRelationshipRpcArgs[name])).toEqual(args)
       expect(typedRelationshipRpcReturns[name]).toEqual([{ relationship_id: 'relationship-id', changed: true }])
     }
+  })
+
+  it('keeps training-profile recovery client-owned, exact-versioned, and serialized by the relationship', () => {
+    const body = consentRecoveryMigration.match(
+      /CREATE OR REPLACE FUNCTION public\.grant_training_profile_consent\([^]*?AS \$\$([^]*?)\$\$;/i,
+    )?.[1] ?? ''
+
+    expect(body).toContain('v_client_user_id UUID := auth.uid()')
+    expect(body).toContain("v_version IS DISTINCT FROM 'training-profile-v1'")
+    expect(body).toContain('relationship.client_user_id = v_client_user_id')
+    expect(body).toContain('relationship.trainer_user_id = v_trainer_user_id')
+    expect(body.indexOf('FROM public.coaching_relationships relationship')).toBeLessThan(
+      body.indexOf('FROM public.coaching_consents consent'),
+    )
+    expect(body).not.toContain('UPDATE public.coaching_consents')
+    expect(body).not.toContain('INSERT INTO public.professional_audit_logs')
   })
 
   it('creates the service, request, relationship, and scoped consent records under RLS', () => {

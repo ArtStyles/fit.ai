@@ -15,7 +15,9 @@ const migrations = [40, 41, 42, 43, 44, 45].map(number => readFileSync(
 
 const declineMigrationUrl = new URL('../../../../supabase/migrations/057_trainer_assignment_decline.sql', import.meta.url)
 const declineMigration = existsSync(declineMigrationUrl) ? readFileSync(declineMigrationUrl, 'utf8') : ''
-const sql = [...migrations, declineMigration].join('\n')
+const consentRecoveryMigrationUrl = new URL('../../../../supabase/migrations/058_training_profile_consent_regrant.sql', import.meta.url)
+const consentRecoveryMigration = existsSync(consentRecoveryMigrationUrl) ? readFileSync(consentRecoveryMigrationUrl, 'utf8') : ''
+const sql = [...migrations, declineMigration, consentRecoveryMigration].join('\n')
 const hardening = migrations.at(-1)!
 const runner = readFileSync(new URL('../../../../scripts/test-trainer-programming-db.mjs', import.meta.url), 'utf8')
 const relationshipsHelper = readFileSync(new URL('../../../../tests/e2e/helpers/core-product.ts', import.meta.url), 'utf8')
@@ -29,6 +31,15 @@ function functionBody(name: string): string {
 }
 
 describe('trainer professional audit coverage', () => {
+  it('routes recovered training-profile grants through the existing single audit trigger', () => {
+    const body = functionBody('grant_training_profile_consent')
+    expect(body).toContain("'training_profile'")
+    expect(body).not.toContain('professional_audit_logs')
+    expect(functionBody('audit_coaching_materialization')).toContain("'training_profile_consent_granted'")
+    expect(consentRecoveryMigration).not.toContain('CREATE OR REPLACE FUNCTION public.audit_coaching_materialization')
+    expect(consentRecoveryMigration).not.toContain('CREATE OR REPLACE FUNCTION public.is_professional_audit_event_allowed')
+  })
+
   it('keeps assignment decline and its empty audit metadata in one transaction', () => {
     expect(declineMigration).toContain('CREATE OR REPLACE FUNCTION public.decline_trainer_assignment')
     expect(declineMigration).toMatch(/professional_audit_logs[\s\S]+?'trainer_plan_assignment'[\s\S]+?'declined'[\s\S]+?'{}'::JSONB/i)

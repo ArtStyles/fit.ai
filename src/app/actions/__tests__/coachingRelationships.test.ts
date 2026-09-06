@@ -43,6 +43,29 @@ describe('coaching relationship consent actions', () => {
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
   })
 
+  it('grants training-profile consent with the server-owned version and revalidates every coaching surface', async () => {
+    const supabase = consentSupabase()
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const formData = relationshipForm()
+    formData.set('trainerUserId', 'attacker-trainer')
+    formData.set('consentVersion', 'attacker-version')
+    const { grantTrainingProfileConsent } = await import('../coachingRelationships')
+
+    await expect(grantTrainingProfileConsent(formData)).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
+    expect(supabase.rpc).toHaveBeenCalledWith('grant_training_profile_consent', {
+      p_relationship_id: '11111111-1111-4111-8111-111111111111',
+      p_consent_version: 'training-profile-v1',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
+    })
+    expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+    expect(revalidatePath.mock.calls).toEqual([
+      ['/dashboard'],
+      ['/coaching'],
+      ['/coach/clients'],
+      ['/coach/programs'],
+    ])
+  })
+
   it('revokes body measurements without ending the relationship', async () => {
     const supabase = consentSupabase()
     requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
@@ -135,8 +158,13 @@ describe('coaching relationship consent actions', () => {
       new URL('../../../../supabase/migrations/043_trainer_programming.sql', import.meta.url),
       'utf8',
     )
-    const signatures = `${relationshipsSql}\n${programmingSql}`
+    const consentRecoverySql = readFileSync(
+      new URL('../../../../supabase/migrations/058_training_profile_consent_regrant.sql', import.meta.url),
+      'utf8',
+    )
+    const signatures = `${relationshipsSql}\n${programmingSql}\n${consentRecoverySql}`
 
+    expect(signatures).toMatch(/grant_training_profile_consent\(\s*p_relationship_id UUID,\s*p_consent_version TEXT,\s*p_idempotency_key UUID\s*\)/i)
     expect(signatures).toMatch(/grant_body_measurements_consent\(\s*p_relationship_id UUID, p_consent_version TEXT, p_idempotency_key UUID\s*\)/i)
     expect(signatures).toMatch(/revoke_body_measurements_consent\(\s*p_relationship_id UUID, p_idempotency_key UUID\s*\)/i)
     expect(signatures).toMatch(/revoke_training_profile_consent\(\s*p_relationship_id UUID, p_idempotency_key UUID\s*\)/i)

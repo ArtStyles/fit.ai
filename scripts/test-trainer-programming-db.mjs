@@ -26,6 +26,7 @@ const trainerMigrationFiles = [
   '053_trainer_draft_rpc_json_repair.sql',
   '056_trainer_template_exercise_batch_append.sql',
   '057_trainer_assignment_decline.sql',
+  '058_training_profile_consent_regrant.sql',
 ]
 const migrationPath = file => path.join(repoRoot, 'supabase', 'migrations', file)
 const readMigration = file => readFileSync(migrationPath(file), 'utf8')
@@ -42,6 +43,12 @@ const templateBatchAppendTestPath = path.join(
   '056_trainer_template_exercise_batch_append_test.sql',
 )
 const declineTestPath = path.join(repoRoot, 'supabase', 'tests', '057_trainer_assignment_decline_test.sql')
+const trainingConsentRegrantTestPath = path.join(
+  repoRoot,
+  'supabase',
+  'tests',
+  '058_training_profile_consent_regrant_test.sql',
+)
 const authorizationTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_authorization_test.sql')
 const securityTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_security_test.sql')
 const auditTestPath = path.join(repoRoot, 'supabase', 'tests', 'trainer_audit_test.sql')
@@ -914,6 +921,205 @@ $$;
 DROP TABLE public.trainer_decline_rerun_snapshot;
 `
 
+// Hold the client advisory namespace while two authenticated sessions dispatch
+// the same consent transition. Once released, the relationship row lock must
+// serialize them into one grant and one unchanged retry without duplicate
+// audit or notification evidence.
+const trainingConsentRegrantRaceSql = `
+CREATE EXTENSION IF NOT EXISTS dblink;
+BEGIN;
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('58a00000-0000-4000-8000-000000000001', 'consent-race-trainer@example.test', '{}'::jsonb),
+  ('58a00000-0000-4000-8000-000000000002', 'consent-race-client@example.test', '{}'::jsonb);
+INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, account_status) VALUES
+  ('58a00000-0000-4000-8000-000000000001', 'Consent race trainer', 'https://example.test/consent-race-trainer.webp', TRUE, 'active'),
+  ('58a00000-0000-4000-8000-000000000002', 'Consent race client', 'https://example.test/consent-race-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id, status, decided_at) VALUES
+  ('58a00000-0000-4000-8000-000000000011', '58a00000-0000-4000-8000-000000000001', 'approved', NOW());
+INSERT INTO public.trainer_profiles (
+  id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary
+) VALUES (
+  '58a00000-0000-4000-8000-000000000021',
+  '58a00000-0000-4000-8000-000000000001',
+  '58a00000-0000-4000-8000-000000000011',
+  'consent-race-trainer',
+  'active',
+  'Consent race trainer',
+  'Race',
+  'Evidence'
+);
+INSERT INTO public.trainer_service_offerings (
+  id, trainer_profile_id, name, modality, duration_minutes
+) VALUES (
+  '58a00000-0000-4000-8000-000000000031',
+  '58a00000-0000-4000-8000-000000000021',
+  'Consent race service',
+  'online',
+  60
+);
+INSERT INTO public.coaching_relationships (
+  id, service_id, trainer_user_id, client_user_id, status
+) VALUES (
+  '58a00000-0000-4000-8000-000000000041',
+  '58a00000-0000-4000-8000-000000000031',
+  '58a00000-0000-4000-8000-000000000001',
+  '58a00000-0000-4000-8000-000000000002',
+  'active'
+);
+COMMIT;
+
+SELECT pg_advisory_lock(hashtextextended('58a00000-0000-4000-8000-000000000002', 0));
+SELECT dblink_connect('training_consent_a', 'dbname=postgres user=supabase_admin');
+SELECT dblink_connect('training_consent_b', 'dbname=postgres user=supabase_admin');
+SELECT dblink_exec(name, format('SET application_name = %L', name))
+FROM (VALUES ('training_consent_a'), ('training_consent_b')) AS actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.sub = '58a00000-0000-4000-8000-000000000002'$$)
+FROM (VALUES ('training_consent_a'), ('training_consent_b')) AS actor(name);
+SELECT dblink_exec(name, $$SET request.jwt.claim.role = 'authenticated'$$)
+FROM (VALUES ('training_consent_a'), ('training_consent_b')) AS actor(name);
+SELECT dblink_exec(name, 'SET ROLE authenticated')
+FROM (VALUES ('training_consent_a'), ('training_consent_b')) AS actor(name);
+SELECT dblink_exec('training_consent_a', $$
+  CREATE FUNCTION pg_temp.try_training_consent_a() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.grant_training_profile_consent(
+      '58a00000-0000-4000-8000-000000000041',
+      'training-profile-v1',
+      '58a00000-0000-4000-8000-000000000051'
+    );
+    RETURN jsonb_build_object('ok', TRUE, 'changed', result.changed);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $f$;
+$$);
+SELECT dblink_exec('training_consent_b', $$
+  CREATE FUNCTION pg_temp.try_training_consent_b() RETURNS JSONB LANGUAGE plpgsql AS $f$
+  DECLARE result RECORD;
+  BEGIN
+    SELECT * INTO result FROM public.grant_training_profile_consent(
+      '58a00000-0000-4000-8000-000000000041',
+      'training-profile-v1',
+      '58a00000-0000-4000-8000-000000000052'
+    );
+    RETURN jsonb_build_object('ok', TRUE, 'changed', result.changed);
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', FALSE, 'sqlstate', SQLSTATE, 'message', SQLERRM);
+  END;
+  $f$;
+$$);
+SELECT dblink_send_query('training_consent_a', 'SELECT pg_temp.try_training_consent_a()');
+SELECT dblink_send_query('training_consent_b', 'SELECT pg_temp.try_training_consent_b()');
+DO $$
+DECLARE deadline TIMESTAMPTZ := clock_timestamp() + interval '5 seconds';
+BEGIN
+  LOOP
+    EXIT WHEN (
+      SELECT count(*)
+      FROM pg_stat_activity
+      WHERE application_name IN ('training_consent_a', 'training_consent_b')
+        AND wait_event_type = 'Lock'
+    ) = 2;
+    IF clock_timestamp() >= deadline THEN
+      RAISE EXCEPTION 'training consent race did not reach the client lock';
+    END IF;
+    PERFORM pg_sleep(0.01);
+  END LOOP;
+END;
+$$;
+SELECT pg_advisory_unlock(hashtextextended('58a00000-0000-4000-8000-000000000002', 0));
+CREATE TEMP TABLE training_consent_race_results (result JSONB NOT NULL);
+INSERT INTO training_consent_race_results
+SELECT result FROM dblink_get_result('training_consent_a') AS response(result JSONB);
+INSERT INTO training_consent_race_results
+SELECT result FROM dblink_get_result('training_consent_b') AS response(result JSONB);
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM training_consent_race_results WHERE COALESCE((result->>'ok')::BOOLEAN, FALSE)) <> 2
+    OR (SELECT count(*) FROM training_consent_race_results WHERE (result->>'changed')::BOOLEAN) <> 1
+    OR (SELECT count(*) FROM training_consent_race_results WHERE NOT (result->>'changed')::BOOLEAN) <> 1
+  THEN
+    RAISE EXCEPTION 'training consent race did not return one grant and one unchanged retry: %',
+      (SELECT string_agg(result::TEXT, ' | ') FROM training_consent_race_results);
+  END IF;
+  IF (SELECT count(*) FROM public.coaching_consents
+      WHERE relationship_id = '58a00000-0000-4000-8000-000000000041'
+        AND scope = 'training_profile' AND revoked_at IS NULL) <> 1
+    OR (SELECT count(*) FROM public.professional_audit_logs
+      WHERE entity_id = '58a00000-0000-4000-8000-000000000041'
+        AND action = 'training_profile_consent_granted') <> 1
+    OR (SELECT count(*) FROM public.product_notifications
+      WHERE dedupe_key = 'coaching-training-profile-granted:58a00000-0000-4000-8000-000000000041') <> 1
+  THEN
+    RAISE EXCEPTION 'training consent race duplicated its durable side effects';
+  END IF;
+END;
+$$;
+SELECT dblink_disconnect('training_consent_a');
+SELECT dblink_disconnect('training_consent_b');
+`
+
+const trainingConsentRegrantRerunSnapshotSql = `
+DROP TABLE IF EXISTS public.training_consent_regrant_rerun_snapshot;
+CREATE TABLE public.training_consent_regrant_rerun_snapshot (snapshot JSONB NOT NULL);
+INSERT INTO public.training_consent_regrant_rerun_snapshot (snapshot)
+SELECT jsonb_build_object(
+  'consents', (SELECT COALESCE(jsonb_agg(to_jsonb(consent_row) ORDER BY consent_row.id), '[]'::JSONB)
+    FROM public.coaching_consents consent_row
+    WHERE consent_row.relationship_id = '58a00000-0000-4000-8000-000000000041'),
+  'audits', (SELECT COALESCE(jsonb_agg(to_jsonb(audit_row) ORDER BY audit_row.id), '[]'::JSONB)
+    FROM public.professional_audit_logs audit_row
+    WHERE audit_row.entity_id = '58a00000-0000-4000-8000-000000000041'
+      AND audit_row.action = 'training_profile_consent_granted'),
+  'notifications', (SELECT COALESCE(jsonb_agg(to_jsonb(notification_row) ORDER BY notification_row.id), '[]'::JSONB)
+    FROM public.product_notifications notification_row
+    WHERE notification_row.dedupe_key = 'coaching-training-profile-granted:58a00000-0000-4000-8000-000000000041'),
+  'marker', public.trainer_security_preflight()
+);
+DO $$
+DECLARE captured JSONB;
+BEGIN
+  SELECT snapshot INTO captured FROM public.training_consent_regrant_rerun_snapshot;
+  IF jsonb_array_length(captured->'consents') <> 1
+    OR jsonb_array_length(captured->'audits') <> 1
+    OR jsonb_array_length(captured->'notifications') <> 1
+    OR (captured->>'marker')::INTEGER <> 58
+  THEN
+    RAISE EXCEPTION 'durable 058 consent snapshot is incomplete: %', captured;
+  END IF;
+END;
+$$;
+`
+
+const trainingConsentRegrantRerunVerifySql = `
+DO $$
+DECLARE
+  before_snapshot JSONB;
+  after_snapshot JSONB;
+BEGIN
+  SELECT snapshot INTO before_snapshot FROM public.training_consent_regrant_rerun_snapshot;
+  SELECT jsonb_build_object(
+    'consents', (SELECT COALESCE(jsonb_agg(to_jsonb(consent_row) ORDER BY consent_row.id), '[]'::JSONB)
+      FROM public.coaching_consents consent_row
+      WHERE consent_row.relationship_id = '58a00000-0000-4000-8000-000000000041'),
+    'audits', (SELECT COALESCE(jsonb_agg(to_jsonb(audit_row) ORDER BY audit_row.id), '[]'::JSONB)
+      FROM public.professional_audit_logs audit_row
+      WHERE audit_row.entity_id = '58a00000-0000-4000-8000-000000000041'
+        AND audit_row.action = 'training_profile_consent_granted'),
+    'notifications', (SELECT COALESCE(jsonb_agg(to_jsonb(notification_row) ORDER BY notification_row.id), '[]'::JSONB)
+      FROM public.product_notifications notification_row
+      WHERE notification_row.dedupe_key = 'coaching-training-profile-granted:58a00000-0000-4000-8000-000000000041'),
+    'marker', public.trainer_security_preflight()
+  ) INTO after_snapshot;
+  IF before_snapshot IS DISTINCT FROM after_snapshot THEN
+    RAISE EXCEPTION 'migration 058 changed durable consent evidence: before=%, after=%', before_snapshot, after_snapshot;
+  END IF;
+END;
+$$;
+DROP TABLE public.training_consent_regrant_rerun_snapshot;
+`
+
 // Hold the relationship lock in the real revocation transaction, then dispatch
 // the measurements RPC in a second authenticated connection. The reader must
 // recheck after the revocation commits and return only the generic error.
@@ -1438,10 +1644,14 @@ try {
   runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 for rerunnability')
   const declineTapOutput = runPsql(readFileSync(declineTestPath, 'utf8'), 'running 057 trainer assignment decline pgTAP suite')
   if (/^\s*not ok\b/m.test(declineTapOutput) || /# Looks like you (?:failed|planned)\b/.test(declineTapOutput)) throw new Error('057 pgTAP reported one or more failed assertions')
+  runPsql(readMigration('058_training_profile_consent_regrant.sql'), 'applying migration 058 training profile consent regrant')
+  runPsql(readMigration('058_training_profile_consent_regrant.sql'), 'reapplying migration 058 for rerunnability')
+  const trainingConsentRegrantTapOutput = runPsql(readFileSync(trainingConsentRegrantTestPath, 'utf8'), 'running 058 training profile consent regrant pgTAP suite')
+  if (/^\s*not ok\b/m.test(trainingConsentRegrantTapOutput) || /# Looks like you (?:failed|planned)\b/.test(trainingConsentRegrantTapOutput)) throw new Error('058 pgTAP reported one or more failed assertions')
   const auditTapOutput = runPsql(readFileSync(auditTestPath, 'utf8'), 'running trainer append-only audit behavior suite')
   if (/^\s*not ok\b/m.test(auditTapOutput) || /# Looks like you (?:failed|planned)\b/.test(auditTapOutput)) throw new Error('trainer audit pgTAP reported one or more failed assertions')
   if (authorizationMode) {
-    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-051, 053, 056, 057')
+    const authorizationTapOutput = runPsql(readFileSync(authorizationTestPath, 'utf8'), 'running trainer authorization matrix against migrations 040-051, 053, 056-058')
     if (/^\s*not ok\b/m.test(authorizationTapOutput) || /# Looks like you (?:failed|planned)\b/.test(authorizationTapOutput)) throw new Error('trainer authorization pgTAP reported one or more failed assertions')
   }
   runPsql(measurementRevocationRaceSql, 'running committed concurrent measurement revocation race')
@@ -1452,7 +1662,7 @@ try {
   runPsql(trainerMigrationRerunSnapshotSql, 'seeding rerun preservation fixture')
   runPsql(
     trainerMigrationFiles.map(readMigration).join('\n'),
-    'reapplying trainer migrations 040-051, 053, 056, 057 after locked professional data',
+    'reapplying trainer migrations 040-051, 053, 056-058 after locked professional data',
   )
   runPsql(trainerMigrationRerunVerifySql, 'verifying rerun preservation snapshot')
   runPsql(acceptVsDeclineRaceSql, 'running committed accept-versus-decline race')
@@ -1461,13 +1671,18 @@ try {
   runPsql(trainerDeclineRerunSnapshotSql, 'capturing durable 057 decline state')
   runPsql(readMigration('057_trainer_assignment_decline.sql'), 'reapplying migration 057 against durable decline evidence')
   runPsql(trainerDeclineRerunVerifySql, 'verifying migration 057 rerun preserves declined evidence')
+  runPsql(readMigration('058_training_profile_consent_regrant.sql'), 'restoring migration 058 after historical 057 rerun')
+  runPsql(trainingConsentRegrantRaceSql, 'running committed concurrent training consent regrant race')
+  runPsql(trainingConsentRegrantRerunSnapshotSql, 'capturing durable 058 consent regrant state')
+  runPsql(readMigration('058_training_profile_consent_regrant.sql'), 'reapplying migration 058 against durable consent evidence')
+  runPsql(trainingConsentRegrantRerunVerifySql, 'verifying migration 058 rerun preserves consent evidence')
   runPsql(conversionFunnelRerunFixtureSql, 'seeding committed conversion rerun fixture')
   runPsql(readMigration('050_product_events_conversion_funnel.sql'), 'reapplying migration 050 against committed conversion rows')
   runPsql(conversionFunnelRerunVerifySql, 'verifying conversion rows after migration 050 rerun')
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-051, 053, 056, 057 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-051, 053, 056-058 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

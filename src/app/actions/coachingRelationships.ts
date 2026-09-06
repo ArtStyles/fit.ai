@@ -12,12 +12,19 @@ function formString(formData: FormData, name: string) {
 }
 
 function revalidateConsentPaths() {
+  revalidatePath('/dashboard')
   revalidatePath('/coaching')
+  revalidatePath('/coach/clients')
+  revalidatePath('/coach/programs')
+}
+
+function revalidateRelationshipPaths() {
+  revalidateConsentPaths()
   revalidatePath('/coach/requests')
 }
 
 async function invokeConsentAction(
-  rpcName: 'grant_body_measurements_consent' | 'revoke_body_measurements_consent' | 'revoke_training_profile_consent',
+  rpcName: 'grant_training_profile_consent' | 'grant_body_measurements_consent' | 'revoke_body_measurements_consent' | 'revoke_training_profile_consent',
   formData: FormData,
 ): Promise<ConsentResult> {
   const relationshipId = formString(formData, 'relationshipId')
@@ -26,9 +33,11 @@ async function invokeConsentAction(
 
   try {
     const { supabase } = await requireAppUserContext()
-    const args = rpcName === 'grant_body_measurements_consent'
-      ? { p_relationship_id: relationshipId, p_consent_version: 'body-measurements-v1', p_idempotency_key: idempotencyKey }
-      : { p_relationship_id: relationshipId, p_idempotency_key: idempotencyKey }
+    const args = rpcName === 'grant_training_profile_consent'
+      ? { p_relationship_id: relationshipId, p_consent_version: 'training-profile-v1', p_idempotency_key: idempotencyKey }
+      : rpcName === 'grant_body_measurements_consent'
+        ? { p_relationship_id: relationshipId, p_consent_version: 'body-measurements-v1', p_idempotency_key: idempotencyKey }
+        : { p_relationship_id: relationshipId, p_idempotency_key: idempotencyKey }
     const { data, error } = await (supabase as any).rpc(rpcName, args)
     const result = Array.isArray(data) ? data[0] : data
     if (error || !result?.relationship_id) return { ok: false, error: 'No se pudo actualizar el consentimiento.' }
@@ -38,6 +47,10 @@ async function invokeConsentAction(
   } catch {
     return { ok: false, error: 'No se pudo actualizar el consentimiento.' }
   }
+}
+
+export async function grantTrainingProfileConsent(formData: FormData) {
+  return invokeConsentAction('grant_training_profile_consent', formData)
 }
 
 export async function grantBodyMeasurementsConsent(formData: FormData) {
@@ -73,7 +86,7 @@ async function invokeRelationshipAction(
     const result = Array.isArray(data) ? data[0] : data
     if (error || !result?.relationship_id) return { ok: false, error: 'No se pudo actualizar el acompañamiento.' }
 
-    revalidateConsentPaths()
+    revalidateRelationshipPaths()
     return { ok: true, relationshipId: result.relationship_id, changed: result.changed === true }
   } catch {
     return { ok: false, error: 'No se pudo actualizar el acompañamiento.' }
