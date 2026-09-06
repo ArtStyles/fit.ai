@@ -68,13 +68,13 @@ describe('trainer assignment proposal errors', () => {
       'La cuenta del cliente no está activa.',
     ],
   ])('maps %s to an actionable tenant-safe message', async (_token, error, expected) => {
-    const { mapTrainerAssignmentProposalError } = await import('../trainerAssignments')
+    const { mapTrainerAssignmentProposalError } = await import('@/lib/coaching/trainerAssignmentProposalErrors')
 
     expect(mapTrainerAssignmentProposalError(error)).toBe(expected)
   })
 
   it('does not expose unknown database text', async () => {
-    const { mapTrainerAssignmentProposalError } = await import('../trainerAssignments')
+    const { mapTrainerAssignmentProposalError } = await import('@/lib/coaching/trainerAssignmentProposalErrors')
     const rawDatabaseText = 'private row 8dd20be2 violated internal_policy'
 
     const message = mapTrainerAssignmentProposalError({
