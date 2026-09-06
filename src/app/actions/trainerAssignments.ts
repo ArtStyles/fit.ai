@@ -12,6 +12,33 @@ export type DeclineResult = { ok: true; assignmentId: string; changed: boolean }
 type RevisionResult = { ok: true; assignmentId: string; assignmentVersionId: string; workoutPlanId: string } | Failure
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const GENERIC_PROPOSAL_ERROR = 'No se pudo enviar la rutina. Inténtalo de nuevo.'
+const PROPOSAL_ERROR_MESSAGES = {
+  TRAINER_ASSIGNMENT_CONSENT_REQUIRED: 'No se puede enviar la rutina porque la autorización de datos de entrenamiento del cliente no está activa. Pídele que revise Acompañamiento.',
+  COACHING_RELATIONSHIP_NOT_ACTIVE: 'El acompañamiento está pausado o finalizado. Revísalo antes de enviar la rutina.',
+  TRAINER_ASSIGNMENT_ACTIVE_EXISTS: 'Este cliente ya tiene una rutina profesional activa. Gestiona esa rutina en lugar de enviar otra.',
+  TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE: 'Completa todos los días y añade al menos un ejercicio por día antes de enviar la rutina.',
+  TRAINER_ASSIGNMENT_TEMPLATE_NOT_AVAILABLE: 'Esta rutina ya no está disponible para enviarla.',
+  TRAINER_ASSIGNMENT_TRAINER_INACTIVE: 'Tu perfil de entrenador no está activo.',
+  TRAINER_ASSIGNMENT_CLIENT_INACTIVE: 'La cuenta del cliente no está activa.',
+} as const
+
+export function mapTrainerAssignmentProposalError(error: unknown): string {
+  const texts = typeof error === 'string'
+    ? [error]
+    : error && typeof error === 'object'
+      ? ['message', 'details', 'hint'].flatMap(field => {
+        const candidate = (error as Record<string, unknown>)[field]
+        return typeof candidate === 'string' ? [candidate] : []
+      })
+      : []
+
+  for (const [token, message] of Object.entries(PROPOSAL_ERROR_MESSAGES)) {
+    if (texts.some(text => text.includes(token))) return message
+  }
+
+  return GENERIC_PROPOSAL_ERROR
+}
 
 function value(formData: FormData, field: string) {
   const candidate = formData.get(field)
@@ -48,9 +75,8 @@ export async function proposeTrainerAssignment(formData: FormData): Promise<Prop
     p_idempotency_key: idempotencyKey,
   })
   const proposal = Array.isArray(data) ? data[0] : data
-  if (error || !proposal?.assignment_id || !proposal?.assignment_version_id || !proposal?.workout_plan_id) {
-    return failure({}, 'No se pudo enviar la rutina. Verifica que el acompañamiento siga activo y que el cliente haya dado su consentimiento.')
-  }
+  if (error) return failure({}, mapTrainerAssignmentProposalError(error))
+  if (!proposal?.assignment_id || !proposal?.assignment_version_id || !proposal?.workout_plan_id) return failure({}, GENERIC_PROPOSAL_ERROR)
 
   revalidatePath('/coaching')
   revalidatePath('/coach/programs')
