@@ -13,6 +13,7 @@ const browserFixtureTests = [
   'src/components/coaching/__tests__/applicationForm.test.tsx',
   'src/components/coaching/__tests__/coachInsightsAnalytics.test.ts',
   'src/components/coaching/__tests__/coachingRequestForm.test.tsx',
+  'src/components/coaching/__tests__/coachingContextAcceptance.test.tsx',
   'src/components/coaching/__tests__/consentManager.test.tsx',
   'src/components/coaching/__tests__/programTemplateEditor.test.tsx',
   'src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts',
