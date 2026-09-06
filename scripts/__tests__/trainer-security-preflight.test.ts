@@ -25,12 +25,12 @@ describe('trainer security E2E deployment boundary', () => {
     ])
   })
 
-  it('uses exactly one read-only 058 marker call before marketplace fixture writes', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: 58, error: null })
+  it('uses exactly one read-only 059 marker call before marketplace fixture writes', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 59, error: null })
 
     await expect(probeTrainerSecurityReadOnly({ rpc })).resolves.toEqual({
       tableError: null,
-      marker: 58,
+      marker: 59,
     })
 
     expect(rpc).toHaveBeenCalledTimes(1)
