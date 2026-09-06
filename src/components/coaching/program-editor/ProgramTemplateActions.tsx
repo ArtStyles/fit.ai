@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AssignProgramDialog } from '../AssignProgramDialog'
+import { AssignProgramDialog, type Relationship as AssignProgramRelationship } from '../AssignProgramDialog'
 import { PublishProgramRevisionDialog } from '../PublishProgramRevisionDialog'
 import type { ProgramTemplateView, RoutineSummary } from './types'
 
@@ -17,7 +17,7 @@ export function ProgramTemplateActions({
 }: {
   template: ProgramTemplateView
   summary: RoutineSummary
-  relationships: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
+  relationships: AssignProgramRelationship[]
   assignments: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
   blocked: boolean
   blockedMessage: string

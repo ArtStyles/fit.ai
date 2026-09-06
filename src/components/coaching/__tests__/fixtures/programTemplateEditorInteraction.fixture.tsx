@@ -172,8 +172,8 @@ function EditorFixture() {
     workouts={workouts}
     options={options}
     relationships={[
-      { id: 'relationship-a', label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a' },
-      { id: 'relationship-b', label: 'Entrenamiento personal · iniciado 10 ago 2026 · ref. relationship-b' },
+      { id: 'relationship-a', clientUserId: 'client-a', canReceiveProposal: true, label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a' },
+      { id: 'relationship-b', clientUserId: 'client-b', canReceiveProposal: true, label: 'Entrenamiento personal · iniciado 10 ago 2026 · ref. relationship-b' },
     ]}
     assignments={[
       { id: 'assignment-a', label: 'Entrenamiento personal · asignación assignment-a' },

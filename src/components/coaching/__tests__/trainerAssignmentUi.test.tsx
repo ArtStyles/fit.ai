@@ -69,18 +69,40 @@ describe('trainer assignment browser interaction', () => {
 
   afterAll(async () => { await browser?.close(); await viteServer?.close() })
 
-  it('sends the selected visual relationship choice id to the proposal action', async () => {
+  it('disables blocked recipients with visible reasons and submits only the ready recipient', async () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html`)
       await page.waitForFunction(() => Boolean((window as Window & { __ASSIGN_DIALOG_READY__?: boolean }).__ASSIGN_DIALOG_READY__))
       await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
-      await page.getByRole('radio', { name: /Servicio Movilidad/ }).check()
-      await page.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
+      const readyRecipient = page.getByRole('radio', { name: /Ana Lista/ })
+      const proposedRecipient = page.getByRole('radio', { name: /Luis Pendiente/ })
+      const activeRecipient = page.getByRole('radio', { name: /Eva Activa/ })
+
+      await pwExpect(readyRecipient).toBeEnabled()
+      await pwExpect(readyRecipient).toBeChecked()
+      await pwExpect(proposedRecipient).toBeDisabled()
+      await pwExpect(activeRecipient).toBeDisabled()
+      await pwExpect(page.getByText('El cliente ya tiene una propuesta pendiente de revisión.')).toBeVisible()
+      await pwExpect(page.getByText('El cliente ya tiene una rutina profesional activa.')).toBeVisible()
+
+      const submit = page.getByRole('button', { name: 'Enviar propuesta bloqueada' })
+      await pwExpect(submit).toBeEnabled()
+      await submit.click()
       await page.waitForFunction(() => Boolean((window as Window & { __ASSIGNMENT_ACTIONS__?: unknown[] }).__ASSIGNMENT_ACTIONS__?.length))
       expect(await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__)).toEqual([
-        expect.objectContaining({ relationshipId: '22222222-2222-4222-8222-222222222222', templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+        expect.objectContaining({ relationshipId: '11111111-1111-4111-8111-111111111111', templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
       ])
+    } finally { await page.close() }
+  }, 15_000)
+
+  it('explains both prerequisites when there are no eligible relationships', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html?empty=1`)
+
+      await pwExpect(page.getByText('Necesitas un acompañamiento activo y una autorización de datos de entrenamiento vigente para enviar esta rutina.')).toBeVisible()
+      await pwExpect(page.getByRole('button', { name: 'Enviar a un cliente' })).toHaveCount(0)
     } finally { await page.close() }
   }, 15_000)
 

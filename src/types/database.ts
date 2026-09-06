@@ -1678,6 +1678,10 @@ export interface Database {
         Args: { p_assignment_id: string; p_template_id: string; p_change_summary: string; p_idempotency_key: string }
         Returns: Array<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>
       }
+      grant_training_profile_consent: {
+        Args: { p_relationship_id: string; p_consent_version: string; p_idempotency_key: string }
+        Returns: { relationship_id: string; changed: boolean }[]
+      }
       grant_body_measurements_consent: {
         Args: { p_relationship_id: string; p_consent_version: string; p_idempotency_key: string }
         Returns: { relationship_id: string; changed: boolean }[]

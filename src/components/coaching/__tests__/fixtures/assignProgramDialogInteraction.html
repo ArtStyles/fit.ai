@@ -4,9 +4,37 @@
   import { AssignProgramDialog } from '../../AssignProgramDialog'
   createRoot(document.getElementById('root')).render(React.createElement(AssignProgramDialog, {
     templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    relationships: [
-      { id: '11111111-1111-4111-8111-111111111111', label: 'Servicio Fuerza · iniciado 1 ene 2026 · ref. 11111111' },
-      { id: '22222222-2222-4222-8222-222222222222', label: 'Servicio Movilidad · iniciado 2 ene 2026 · ref. 22222222' },
+    selectedRelationshipId: '22222222-2222-4222-8222-222222222222',
+    relationships: new URLSearchParams(window.location.search).get('empty') === '1' ? [] : [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        clientUserId: 'aaaaaaaa-1111-4111-8111-111111111111',
+        clientName: 'Ana Lista',
+        serviceName: 'Servicio Fuerza',
+        startedAt: '1 ene 2026',
+        state: 'Listo para recibir rutina',
+        canReceiveProposal: true,
+      },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        clientUserId: 'aaaaaaaa-2222-4222-8222-222222222222',
+        clientName: 'Luis Pendiente',
+        serviceName: 'Servicio Movilidad',
+        startedAt: '2 ene 2026',
+        state: 'Propuesta pendiente',
+        canReceiveProposal: false,
+        blockingReason: 'El cliente ya tiene una propuesta pendiente de revisión.',
+      },
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        clientUserId: 'aaaaaaaa-3333-4333-8333-333333333333',
+        clientName: 'Eva Activa',
+        serviceName: 'Servicio Resistencia',
+        startedAt: '3 ene 2026',
+        state: 'Rutina activa',
+        canReceiveProposal: false,
+        blockingReason: 'El cliente ya tiene una rutina profesional activa.',
+      },
     ],
   }))
   window.__ASSIGN_DIALOG_READY__ = true

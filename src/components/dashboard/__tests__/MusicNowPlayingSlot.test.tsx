@@ -232,6 +232,7 @@ describe('DashboardPrimaryFlow', () => {
         mainLabel="Inicio"
         mainClassName="dashboard-main"
         title={<h1 data-primary-stage="title">Inicio</h1>}
+        coaching={null}
         music={<section data-primary-stage="music" />}
         notice={<aside data-primary-stage="notice" />}
         journey={<div data-primary-stage="journey" />}

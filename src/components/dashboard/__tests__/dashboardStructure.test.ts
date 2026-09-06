@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const page = readFileSync(new URL('../../../app/(app)/dashboard/page.tsx', import.meta.url), 'utf8')
+const primaryFlow = readFileSync(new URL('../DashboardPrimaryFlow.tsx', import.meta.url), 'utf8')
 const header = readFileSync(new URL('../DashboardHeader.tsx', import.meta.url), 'utf8')
 const recommendation = readFileSync(new URL('../NextRecommendation.tsx', import.meta.url), 'utf8')
 const viewModel = readFileSync(new URL('../dashboardViewModel.ts', import.meta.url), 'utf8')
@@ -20,6 +21,52 @@ describe('dashboard structure', () => {
     expect(positions.every(position => position >= 0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a, b) => a - b))
     expect(page.match(/<DashboardWeekJourney\b/g)).toHaveLength(1)
+  })
+
+  it('places one coaching summary after the accessible title and before music and the weekly journey', () => {
+    const flowPositions = ['{title}', '{coaching}', '{music}', '{journey}']
+      .map(section => primaryFlow.indexOf(section))
+    const pagePositions = [
+      'title={<h1 className="sr-only"',
+      'coaching={coachingSummary ? (',
+      '<CoachingSummaryCard',
+      'music={<MusicNowPlayingSlot',
+      'journey={<DashboardWeekJourney',
+    ].map(section => page.indexOf(section))
+
+    expect(flowPositions.every(position => position >= 0)).toBe(true)
+    expect(flowPositions).toEqual([...flowPositions].sort((a, b) => a - b))
+    expect(pagePositions.every(position => position >= 0)).toBe(true)
+    expect(pagePositions).toEqual([...pagePositions].sort((a, b) => a - b))
+    expect(page.match(/<CoachingSummaryCard\b/g)).toHaveLength(1)
+  })
+
+  it('loads the private coaching summary at the page boundary inside the existing parallel load', () => {
+    const dashboardPageStart = page.indexOf('export default async function DashboardPage')
+    const parallelLoadStart = page.indexOf('await Promise.all([', dashboardPageStart)
+    const parallelLoadEnd = page.indexOf('\n  ])', parallelLoadStart)
+    const summaryLoad = page.indexOf('loadClientCoachingSummary(', parallelLoadStart)
+    const summaryLoadSource = page.slice(summaryLoad, summaryLoad + 160)
+
+    expect(dashboardPageStart).toBeGreaterThanOrEqual(0)
+    expect(parallelLoadStart).toBeGreaterThanOrEqual(0)
+    expect(summaryLoad).toBeGreaterThan(parallelLoadStart)
+    expect(summaryLoad).toBeLessThan(parallelLoadEnd)
+    expect(summaryLoadSource).toContain('supabase,')
+    expect(summaryLoadSource).not.toContain('as unknown as ClientCoachingSummaryClient')
+    expect(summaryLoadSource).toContain('user.id')
+    expect(page).not.toMatch(/active_trainer_directory[^]*client_user_id/)
+  })
+
+  it('keeps the persistent coaching load error out of live announcement semantics', () => {
+    const coachingStart = page.indexOf('coaching={')
+    const coachingEnd = page.indexOf('music={<MusicNowPlayingSlot', coachingStart)
+    const coachingSource = page.slice(coachingStart, coachingEnd)
+
+    expect(coachingStart).toBeGreaterThanOrEqual(0)
+    expect(coachingEnd).toBeGreaterThan(coachingStart)
+    expect(coachingSource).toContain('coachingSummaryError')
+    expect(coachingSource).not.toMatch(/role="status"|aria-live/)
   })
 
   it('uses a real desktop grid without duplicating the current workout', () => {

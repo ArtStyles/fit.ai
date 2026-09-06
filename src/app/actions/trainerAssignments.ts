@@ -3,6 +3,10 @@
 import { revalidatePath } from 'next/cache'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
 import { requireAppUserContext } from '@/lib/auth/server'
+import {
+  GENERIC_TRAINER_ASSIGNMENT_PROPOSAL_ERROR,
+  mapTrainerAssignmentProposalError,
+} from '@/lib/coaching/trainerAssignmentProposalErrors'
 
 type FieldErrors = Record<string, string>
 type Failure = { ok: false; error: string; fieldErrors?: FieldErrors }
@@ -48,8 +52,9 @@ export async function proposeTrainerAssignment(formData: FormData): Promise<Prop
     p_idempotency_key: idempotencyKey,
   })
   const proposal = Array.isArray(data) ? data[0] : data
-  if (error || !proposal?.assignment_id || !proposal?.assignment_version_id || !proposal?.workout_plan_id) {
-    return failure({}, 'No se pudo enviar la rutina. Verifica que el acompañamiento siga activo y que el cliente haya dado su consentimiento.')
+  if (error) return failure({}, mapTrainerAssignmentProposalError(error))
+  if (!proposal?.assignment_id || !proposal?.assignment_version_id || !proposal?.workout_plan_id) {
+    return failure({}, GENERIC_TRAINER_ASSIGNMENT_PROPOSAL_ERROR)
   }
 
   revalidatePath('/coaching')

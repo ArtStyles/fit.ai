@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(179);
+SELECT plan(181);
 
 CREATE TEMP TABLE expected_trainer_sensitive_tables (table_name TEXT PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO expected_trainer_sensitive_tables (table_name) VALUES
@@ -414,10 +414,28 @@ SELECT throws_ok($$DELETE FROM public.coaching_relationships WHERE id = '1110000
 SELECT throws_ok($$INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES ('11100000-0000-4000-8000-000000000001','training_profile','forged','a1000000-0000-4000-8000-000000000001')$$, '42501', NULL, 'consent insertion is RPC-only');
 SELECT throws_ok($$UPDATE public.coaching_consents SET text_version = 'forged' WHERE relationship_id = '11100000-0000-4000-8000-000000000001'$$, '42501', NULL, 'consent update is denied');
 SELECT throws_ok($$DELETE FROM public.coaching_consents WHERE relationship_id = '11100000-0000-4000-8000-000000000001'$$, '42501', NULL, 'consent deletion is denied');
+SELECT is(
+  (SELECT changed FROM public.grant_training_profile_consent(
+    '11100000-0000-4000-8000-000000000001',
+    'training-profile-v1',
+    'f5800000-0000-4000-8000-000000000001'
+  )),
+  FALSE,
+  'client_a can idempotently confirm its own active training-profile grant through the RPC'
+);
 RESET ROLE; SELECT set_config('request.jwt.claim.sub', 'a3000000-0000-4000-8000-000000000003', true); SET LOCAL ROLE authenticated;
 SELECT is((SELECT count(*) FROM public.coaching_requests), 3::BIGINT, 'coach_a reads requests addressed to it');
 SELECT is((SELECT count(*) FROM public.coaching_relationships), 2::BIGINT, 'coach_a reads active scoped relationships');
 SELECT is((SELECT count(*) FROM public.coaching_consents), 4::BIGINT, 'coach_a reads active scoped consents');
+SELECT throws_ok(
+  $$SELECT public.grant_training_profile_consent(
+    '11100000-0000-4000-8000-000000000001',
+    'training-profile-v1',
+    'f5800000-0000-4000-8000-000000000002'
+  )$$,
+  'P0001', 'COACHING_RELATIONSHIP_NOT_ACTIVE',
+  'the trainer cannot grant training-profile consent for a client'
+);
 RESET ROLE; SELECT set_config('request.jwt.claim.sub', 'a4000000-0000-4000-8000-000000000004', true); SET LOCAL ROLE authenticated;
 SELECT is((SELECT count(*) FROM public.coaching_requests WHERE client_user_id IN ('a1000000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000002')), 0::BIGINT, 'coach_b cannot read coach_a requests');
 SELECT is((SELECT count(*) FROM public.coaching_relationships WHERE client_user_id IN ('a1000000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000002')), 0::BIGINT, 'coach_b cannot read coach_a relationships');

@@ -1,4 +1,5 @@
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
+import { CoachingSummaryCard } from '@/components/dashboard/CoachingSummaryCard'
 import { DashboardPrimaryFlow } from '@/components/dashboard/DashboardPrimaryFlow'
 import { DashboardMainNotice } from '@/components/dashboard/DashboardNotice'
 import { DashboardWeekJourney } from '@/components/dashboard/DashboardWeekJourney'
@@ -37,6 +38,7 @@ import {
   loadUnreadProductNotificationAttention,
   type UnreadProductNotificationClient,
 } from '@/lib/dashboard/notificationAttention'
+import { loadClientCoachingSummary } from '@/lib/coaching/clientSummary'
 
 export const metadata = { title: 'Dashboard · Vekira' }
 
@@ -406,7 +408,12 @@ export default async function DashboardPage() {
   }).format(referenceNow)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
-  const [dashboardPayload, { data: bannerRaw }, hasUnreadProductNotifications] = await Promise.all([
+  const [
+    dashboardPayload,
+    { data: bannerRaw },
+    hasUnreadProductNotifications,
+    { summary: coachingSummary, error: coachingSummaryError },
+  ] = await Promise.all([
     loadDashboardPayload(
       supabase,
       user.id,
@@ -419,6 +426,7 @@ export default async function DashboardPage() {
       .eq('slot', DASHBOARD_BANNER_SLOT)
       .maybeSingle(),
     loadUnreadProductNotificationAttention(supabase as unknown as UnreadProductNotificationClient, user.id),
+    loadClientCoachingSummary(supabase, user.id),
   ])
   const bannerCandidate = bannerRaw as DashboardBannerData | null
   const dashboardBanner = isDashboardBannerVisible(bannerCandidate, todayStr)
@@ -607,6 +615,13 @@ export default async function DashboardPage() {
         mainLabel={t('Dashboard')}
         mainClassName="mx-auto max-w-6xl space-y-6 px-4 pt-5 sm:px-6"
         title={<h1 className="sr-only">{t('Dashboard')}</h1>}
+        coaching={coachingSummary ? (
+          <CoachingSummaryCard summary={coachingSummary} />
+        ) : coachingSummaryError ? (
+          <p className="rounded-xl border border-border/70 px-4 py-3 text-sm text-muted-foreground">
+            {coachingSummaryError}
+          </p>
+        ) : null}
         music={<MusicNowPlayingSlot />}
         notice={dashboard.noticePlacement !== 'hub' ? (
           <DashboardMainNotice

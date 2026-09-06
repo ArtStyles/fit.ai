@@ -12,7 +12,10 @@ async function renderDashboardWithCommunityDisabled() {
   const query: any = {
     select: () => query,
     eq: () => query,
+    in: () => query,
     is: () => query,
+    order: () => query,
+    limit: () => query,
     maybeSingle: async () => ({ data: null, error: null }),
     then: (resolve: (value: unknown) => unknown) => resolve({ data: null, count: 0, error: null }),
   }

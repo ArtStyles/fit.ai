@@ -166,11 +166,13 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
       templateId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
       relationships={[{
         id: '11111111-1111-4111-8111-111111111111',
+        clientUserId: '22222222-2222-4222-8222-222222222222',
         clientName: 'Ana Rivera',
         clientAvatarUrl: null,
         serviceName: 'Servicio Fuerza',
         startedAt: '1 ene 2026',
-        state: 'activo',
+        state: 'Listo para recibir rutina',
+        canReceiveProposal: true,
       }]}
     />
   }
@@ -299,6 +301,8 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
     ]}
     relationships={[{
       id: 'relationship-a',
+      clientUserId: 'client-a',
+      canReceiveProposal: true,
       label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a',
     }]}
     assignments={[{

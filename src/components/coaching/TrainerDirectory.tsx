@@ -16,6 +16,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { CompactCategorySelect } from '@/components/ui/compact-category-select'
 import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
+import type { ClientCoachingSummary } from '@/lib/coaching/clientSummary'
 import type { DirectoryFilters, PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 
 const modalityLabels: Record<PublicTrainerDirectoryRow['modalities'][number], string> = {
@@ -62,10 +63,12 @@ export function TrainerDirectory({
   trainers,
   filters,
   nextCursor,
+  coachingSummary = null,
 }: {
   trainers: PublicTrainerDirectoryRow[]
   filters: DirectoryFilters
   nextCursor: string | null
+  coachingSummary?: ClientCoachingSummary | null
 }) {
   const router = useRouter()
   const [draftFilters, setDraftFilters] = useState<DirectoryFilters>(filters)
@@ -131,7 +134,7 @@ export function TrainerDirectory({
               className="h-12 w-full rounded-xl border border-input bg-background pl-11 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
             />
           </label>
-          <button type="submit" className="min-h-12 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white shadow-md shadow-violet-950/20 hover:bg-violet-500">
+          <button type="submit" className="min-h-12 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white shadow-md shadow-violet-950/20 hover:bg-violet-700">
             Buscar
           </button>
         </div>
@@ -209,12 +212,11 @@ export function TrainerDirectory({
         <div className="space-y-3">
           <p className="text-xs font-medium text-muted-foreground">{resultLabel}</p>
           <ul className="grid gap-3 sm:grid-cols-2">
-            {trainers.map(trainer => (
-              <li key={trainer.userId}>
-                <Link
-                  href={`/trainers/${trainer.slug}`}
-                  className="group flex h-full flex-col rounded-2xl border border-border/70 bg-card p-4 shadow-sm transition-[border-color,background-color,transform,box-shadow] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-muted/20 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 motion-reduce:transform-none"
-                >
+            {trainers.map(trainer => {
+              const isContractedTrainer = coachingSummary?.trainerUserId === trainer.userId
+
+              return <li key={trainer.userId}>
+                <article className={`group flex h-full flex-col rounded-2xl border bg-card p-4 shadow-sm transition-[border-color,background-color,transform,box-shadow] hover:-translate-y-0.5 hover:bg-muted/20 hover:shadow-lg motion-reduce:transform-none ${isContractedTrainer ? 'border-violet-500/60 bg-violet-500/[0.03] hover:border-violet-500/80' : 'border-border/70 hover:border-primary/35'}`}>
                   <div className="flex items-start gap-3">
                     <Avatar className="h-14 w-14 border border-border/70 bg-muted">
                       {trainer.professionalPhotoUrl ? <AvatarImage src={trainer.professionalPhotoUrl} alt={trainer.professionalName} className="object-cover" /> : null}
@@ -222,12 +224,26 @@ export function TrainerDirectory({
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <h2 className="truncate text-base font-bold text-foreground">{trainer.professionalName}</h2>
+                        <h2 className="min-w-0 flex-1 truncate text-base font-bold text-foreground">
+                          <Link
+                            href={`/trainers/${trainer.slug}`}
+                            className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60 focus-visible:ring-offset-2"
+                          >
+                            {trainer.professionalName}
+                          </Link>
+                        </h2>
                         <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-300">
                           <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                           Verificado
                         </span>
                       </div>
+                      {isContractedTrainer ? (
+                        <div className="mt-2 space-y-0.5 rounded-xl bg-violet-500/10 px-2.5 py-2 text-xs text-violet-800 dark:text-violet-200">
+                          <p className="font-bold">Tu entrenador</p>
+                          <p className="font-semibold">{coachingSummary.relationshipStatus === 'active' ? 'Acompañamiento activo' : 'Acompañamiento pausado'}</p>
+                          <p className="text-violet-700/90 dark:text-violet-200/90">{coachingSummary.serviceName}</p>
+                        </div>
+                      ) : null}
                       <div className="mt-1 flex flex-wrap gap-1">
                         {(trainer.specialties.length > 0 ? trainer.specialties : ['Entrenamiento']).slice(0, 3).map(specialty => (
                           <span key={specialty} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{specialty}</span>
@@ -248,13 +264,16 @@ export function TrainerDirectory({
                     <p className="font-medium">{trainer.modalities.map(modality => modalityLabels[modality]).join(' · ')}</p>
                   </div>
 
-                  <span className="mt-4 flex min-h-11 items-center justify-between border-t border-border/50 pt-3 text-sm font-semibold text-violet-700 dark:text-violet-300">
-                    Ver perfil
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />
-                  </span>
-                </Link>
+                  <div className="mt-4 flex min-h-11 flex-wrap gap-2 border-t border-border/50 pt-3 text-sm font-semibold">
+                    {isContractedTrainer ? <Link href="/coaching" className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-violet-600 px-3 text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50">Ver acompañamiento</Link> : null}
+                    <Link href={`/trainers/${trainer.slug}`} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-violet-500/30 px-3 text-violet-700 hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 dark:text-violet-300">
+                      Ver perfil
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />
+                    </Link>
+                  </div>
+                </article>
               </li>
-            ))}
+            })}
           </ul>
         </div>
       ) : (

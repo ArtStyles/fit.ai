@@ -14,6 +14,7 @@ import { ProgramTemplateActions } from './program-editor/ProgramTemplateActions'
 import { ProgramTemplateSummary } from './program-editor/ProgramTemplateSummary'
 import { TemplateDayTabs } from './program-editor/TemplateDayTabs'
 import type { ProgramTemplateView, SaveState, TemplateExerciseDraft, TemplateExerciseView, TemplateWorkoutView } from './program-editor/types'
+import type { Relationship as AssignProgramRelationship } from './AssignProgramDialog'
 
 export type { ProgramTemplateView, TemplateExerciseView, TemplateWorkoutView } from './program-editor/types'
 
@@ -41,7 +42,7 @@ export function ProgramTemplateEditor({
   template: ProgramTemplateView
   workouts: TemplateWorkoutView[]
   options: PlanExerciseOption[]
-  relationships?: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
+  relationships?: AssignProgramRelationship[]
   assignments?: Array<{ id: string; label?: string; clientName?: string; clientAvatarUrl?: string | null; serviceName?: string; startedAt?: string; state?: string }>
   selectedRelationshipId?: string
 }) {
