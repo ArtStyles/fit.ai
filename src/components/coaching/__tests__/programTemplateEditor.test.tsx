@@ -24,6 +24,7 @@ describe('professional template editor browser interactions', () => {
     const viteEntry = path.join(repoRoot, 'node_modules/.pnpm/node_modules/vite/dist/node/index.js')
     const fixtureActions = path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerPrograms.fixture.ts')
     const fixtureAssignmentActions = path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerAssignments.fixture.ts')
+    const fixtureWorkspaceActions = path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts')
     const { createServer } = await import(pathToFileURL(viteEntry).href)
     viteServer = await createServer({
       configFile: false,
@@ -31,13 +32,15 @@ describe('professional template editor browser interactions', () => {
       appType: 'spa',
       cacheDir: path.join(repoRoot, 'node_modules', '.vite-program-template-test'),
       oxc: { jsx: { runtime: 'automatic' } },
-      optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'lucide-react', '@radix-ui/react-dialog'] },
+      optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'lucide-react', '@radix-ui/react-avatar', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu'] },
       resolve: {
         dedupe: ['react', 'react-dom'],
         alias: [
           { find: '@/app/actions/trainerPrograms', replacement: fixtureActions },
           { find: '@/app/actions/trainerAssignments', replacement: fixtureAssignmentActions },
           { find: '@/app/actions/exerciseCatalog', replacement: fixtureActions },
+          { find: '@/app/actions/workspace', replacement: fixtureWorkspaceActions },
+          { find: '@/app/(auth)/actions', replacement: fixtureWorkspaceActions },
           { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
           { find: 'next/link', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextLink.fixture.tsx') },
           { find: 'next/image', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextImage.fixture.tsx') },
@@ -64,6 +67,63 @@ describe('professional template editor browser interactions', () => {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
       await pwExpect(page.getByText(/Las ediciones de esta plantilla no cambian asignaciones ya publicadas/)).toBeVisible()
     } finally { await page.close() }
+  })
+
+  it('vetoes a workspace change before the action and continues once after confirmation', async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
+      const historyLengthBeforeGuard = await page.evaluate(() => window.history.length)
+      await openTemplateDetails(page)
+      await page.getByLabel('Nombre de la rutina').fill('Fuerza pendiente')
+      await page.getByRole('button', { name: 'Abrir cuenta y espacios' }).click()
+
+      page.once('dialog', dialog => void dialog.dismiss())
+      await page.getByRole('button', { name: 'Personal' }).click()
+      await page.waitForTimeout(50)
+      expect(await page.evaluate(() => (
+        window as Window & { __WORKSPACE_ACTIONS__?: unknown[] }
+      ).__WORKSPACE_ACTIONS__ ?? [])).toHaveLength(0)
+      await pwExpect(page.getByRole('dialog')).toBeVisible()
+
+      page.once('dialog', dialog => void dialog.accept())
+      await page.getByRole('button', { name: 'Personal' }).click()
+      await page.waitForFunction(() => (
+        window as Window & { __WORKSPACE_ACTIONS__?: unknown[] }
+      ).__WORKSPACE_ACTIONS__?.length === 1)
+
+      expect(await page.evaluate(() => (
+        window as Window & { __WORKSPACE_REPLACES__?: string[] }
+      ).__WORKSPACE_REPLACES__)).toEqual(['/dashboard'])
+      expect(await page.evaluate(() => window.history.length)).toBe(historyLengthBeforeGuard)
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('keeps blocking a later editor exit when a confirmed workspace action fails', async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?workspace=error`)
+      await openTemplateDetails(page)
+      await page.getByLabel('Nombre de la rutina').fill('Fuerza pendiente')
+      await page.getByRole('button', { name: 'Abrir cuenta y espacios' }).click()
+      page.once('dialog', dialog => void dialog.accept())
+      await page.getByRole('button', { name: 'Personal' }).click()
+      await page.waitForFunction(() => (
+        window as Window & { __WORKSPACE_ACTIONS__?: unknown[] }
+      ).__WORKSPACE_ACTIONS__?.length === 1)
+
+      await page.keyboard.press('Escape')
+      page.once('dialog', dialog => void dialog.dismiss())
+      await page.getByRole('link', { name: 'Rutinas' }).click()
+      expect(await page.evaluate(() => (
+        window as Window & { __PROGRAM_NAVIGATIONS__?: string[] }
+      ).__PROGRAM_NAVIGATIONS__ ?? [])).toEqual([])
+    } finally {
+      await page.close()
+    }
   })
 
   it('submits the new routine fields before the lazy server action and navigates to its editor', async () => {

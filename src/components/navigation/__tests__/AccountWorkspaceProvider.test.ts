@@ -304,6 +304,33 @@ describe('executeWorkspaceTransition', () => {
     expect(setPending.mock.calls).toEqual([['coach'], [null]])
   })
 
+  it('does not commit or replace when the action fails unexpectedly', async () => {
+    const commitIntent = vi.fn()
+    const replace = vi.fn()
+    const setPending = vi.fn()
+
+    await expect(executeWorkspaceTransition('coach', 'personal', {
+      requestIntent: () => true,
+      commitIntent,
+      action: async () => ({
+        ok: false,
+        code: 'unexpected',
+        error: 'No se pudo cambiar de espacio. IntÃ©ntalo nuevamente.',
+      }),
+      replace,
+      refresh: vi.fn(),
+      setPending,
+    })).resolves.toEqual({
+      status: 'failed',
+      code: 'unexpected',
+      error: 'No se pudo cambiar de espacio. IntÃ©ntalo nuevamente.',
+    })
+
+    expect(commitIntent).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+    expect(setPending.mock.calls).toEqual([['coach'], [null]])
+  })
+
   it('turns a rejected network call into an unexpected failure', async () => {
     const commitIntent = vi.fn()
     const replace = vi.fn()

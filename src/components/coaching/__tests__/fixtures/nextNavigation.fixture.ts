@@ -21,6 +21,11 @@ export function useRouter() {
       browserWindow.__PROGRAM_PUSHES__ ??= []
       browserWindow.__PROGRAM_PUSHES__.push(href)
     },
+    replace: (href: string) => {
+      const state = window as Window & { __WORKSPACE_REPLACES__?: string[] }
+      state.__WORKSPACE_REPLACES__ ??= []
+      state.__WORKSPACE_REPLACES__.push(href)
+    },
   }
 }
 

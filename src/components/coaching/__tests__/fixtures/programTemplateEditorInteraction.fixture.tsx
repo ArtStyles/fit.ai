@@ -4,6 +4,10 @@ import { NewProgramTemplateForm } from '../../NewProgramTemplateForm'
 import { ProgramTemplateEditor } from '../../ProgramTemplateEditor'
 import type { TemplateWorkoutView } from '../../program-editor/types'
 import { PendingLink } from '@/components/navigation/PendingLink'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
+import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
+import { AccountWorkspaceProvider } from '@/components/navigation/AccountWorkspaceProvider'
+import { getCoachNavItems, getPersonalNavItems } from '@/components/navigation/appNavigation'
 
 type RecordedFields = Record<string, string | string[]>
 type AppendedExercise = { id: string; exerciseId: string; orderIndex: number }
@@ -27,6 +31,13 @@ type ServerEvent =
 
 const query = new URLSearchParams(window.location.search)
 const showNewTemplateForm = query.get('view') === 'new'
+const editorAccountModel = {
+  account: { name: 'Ada Entrenadora', email: 'ada@example.com', avatarUrl: null },
+  trainerAccess: { granted: true as const },
+  preferredWorkspace: 'coach' as const,
+  personalNavItems: getPersonalNavItems({ communityEnabled: false }),
+  coachNavItems: getCoachNavItems(),
+}
 
 ;(window as Window & { __NEXT_LINK_NAVIGATE__?: (href: string) => void; __PROGRAM_NAVIGATIONS__?: string[] }).__NEXT_LINK_NAVIGATE__ = href => {
   const state = window as Window & { __PROGRAM_NAVIGATIONS__?: string[] }
@@ -172,10 +183,17 @@ function EditorFixture() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <main>
-    {!showNewTemplateForm ? <PendingLink href="/coach/programs">Rutinas</PendingLink> : null}
-    {showNewTemplateForm ? <NewProgramTemplateForm clientId={query.get('clientId') ?? undefined} /> : <EditorFixture />}
-  </main>,
+  <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
+    <AccountWorkspaceProvider model={editorAccountModel}>
+      <main>
+        <div className="flex justify-end p-2">
+          <AccountWorkspaceMenu surface="dashboard" />
+        </div>
+        {!showNewTemplateForm ? <PendingLink href="/coach/programs">Rutinas</PendingLink> : null}
+        {showNewTemplateForm ? <NewProgramTemplateForm clientId={query.get('clientId') ?? undefined} /> : <EditorFixture />}
+      </main>
+    </AccountWorkspaceProvider>
+  </I18nProvider>,
 )
 
 ;(window as Window & { __PROGRAM_EDITOR_READY__?: boolean }).__PROGRAM_EDITOR_READY__ = true

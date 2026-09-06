@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
+import { useWorkspaceNavigationGuard } from '@/components/navigation/WorkspaceNavigationGuard'
 import {
   ActiveTemplateWorkout,
   EMPTY_WORKOUT_STRUCTURAL_PENDING,
@@ -29,73 +30,6 @@ type ExerciseSaveCheckpoint = {
 const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const PENDING_DESCRIPTION_MESSAGE = 'Guarda los cambios pendientes antes de asignar o publicar.'
 const LEAVE_EDITOR_MESSAGE = 'Hay cambios de la rutina sin guardar. ¿Quieres salir y descartarlos?'
-const HISTORY_GUARD_KEY = '__vekiraTrainerRoutineGuard'
-
-function usePendingNavigationGuard(blocked: boolean) {
-  const sequence = useRef(0)
-
-  useEffect(() => {
-    if (!blocked) return
-    sequence.current += 1
-    const guardId = `${Date.now()}:${sequence.current}`
-    let bypass = false
-    let restoringGuardEntry = false
-    const currentState = window.history.state
-    window.history.pushState({
-      ...(currentState && typeof currentState === 'object' ? currentState : {}),
-      [HISTORY_GUARD_KEY]: guardId,
-    }, '', window.location.href)
-
-    const confirmDiscard = () => window.confirm(LEAVE_EDITOR_MESSAGE)
-    const preventUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    const guardLink = (event: MouseEvent) => {
-      if (bypass || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-      const target = event.target
-      const anchor = target instanceof Element ? target.closest<HTMLAnchorElement>('a[href]') : null
-      if (!anchor || anchor.download || (anchor.target && anchor.target !== '_self')) return
-      const destination = new URL(anchor.href, window.location.href)
-      const current = new URL(window.location.href)
-      if (destination.origin !== current.origin
-        || (destination.pathname === current.pathname && destination.search === current.search)) return
-      if (confirmDiscard()) {
-        bypass = true
-        return
-      }
-      event.preventDefault()
-      event.stopImmediatePropagation()
-    }
-    const guardBack = () => {
-      if (bypass) return
-      if (restoringGuardEntry) {
-        restoringGuardEntry = false
-        return
-      }
-      if (confirmDiscard()) {
-        bypass = true
-        window.history.back()
-        return
-      }
-      restoringGuardEntry = true
-      window.history.go(1)
-    }
-
-    window.addEventListener('beforeunload', preventUnload)
-    document.addEventListener('click', guardLink, true)
-    window.addEventListener('popstate', guardBack)
-    return () => {
-      window.removeEventListener('beforeunload', preventUnload)
-      document.removeEventListener('click', guardLink, true)
-      window.removeEventListener('popstate', guardBack)
-      if (!bypass && window.history.state?.[HISTORY_GUARD_KEY] === guardId) {
-        window.history.back()
-      }
-    }
-  }, [blocked])
-}
-
 export function ProgramTemplateEditor({
   template,
   workouts,
@@ -133,7 +67,10 @@ export function ProgramTemplateEditor({
   const canAddWorkout = orderedWorkouts.length < template.days_per_week
   const guardedSaveStates = [templateSaveState, ...Object.values(workoutSaveStates), ...Object.values(exerciseSaveStates)]
   const hasPendingDescriptions = guardedSaveStates.some(state => state !== 'saved')
-  usePendingNavigationGuard(hasPendingDescriptions)
+  useWorkspaceNavigationGuard({
+    blocked: hasPendingDescriptions,
+    message: LEAVE_EDITOR_MESSAGE,
+  })
 
   useEffect(() => {
     if (!orderedWorkouts.some(workout => workout.id === activeWorkoutId)) {
