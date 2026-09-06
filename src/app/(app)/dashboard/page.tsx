@@ -38,10 +38,7 @@ import {
   loadUnreadProductNotificationAttention,
   type UnreadProductNotificationClient,
 } from '@/lib/dashboard/notificationAttention'
-import {
-  loadClientCoachingSummary,
-  type ClientCoachingSummaryClient,
-} from '@/lib/coaching/clientSummary'
+import { loadClientCoachingSummary } from '@/lib/coaching/clientSummary'
 
 export const metadata = { title: 'Dashboard · Vekira' }
 
@@ -429,10 +426,7 @@ export default async function DashboardPage() {
       .eq('slot', DASHBOARD_BANNER_SLOT)
       .maybeSingle(),
     loadUnreadProductNotificationAttention(supabase as unknown as UnreadProductNotificationClient, user.id),
-    loadClientCoachingSummary(
-      supabase as unknown as ClientCoachingSummaryClient,
-      user.id,
-    ),
+    loadClientCoachingSummary(supabase, user.id),
   ])
   const bannerCandidate = bannerRaw as DashboardBannerData | null
   const dashboardBanner = isDashboardBannerVisible(bannerCandidate, todayStr)

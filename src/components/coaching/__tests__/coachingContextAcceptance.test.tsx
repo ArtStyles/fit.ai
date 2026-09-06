@@ -264,6 +264,37 @@ describe('coaching context cross-flow acceptance', () => {
       await page.context().close()
     }
   }, 45_000)
+
+  it('keeps both primary directory controls accessible while hovered', async () => {
+    const page = await openFixture(390)
+    try {
+      const directorySurface = page.locator('[data-acceptance-surface="directory"]')
+      const controls = [
+        directorySurface.getByRole('button', { name: 'Buscar' }),
+        directorySurface.getByRole('link', { name: 'Ver acompañamiento' }),
+      ]
+
+      for (const control of controls) {
+        await control.hover()
+        expect(await control.evaluate(element => element.matches(':hover'))).toBe(true)
+
+        const axeResult = await new AxeBuilder({ page })
+          .include('[data-acceptance-surface="directory"]')
+          .analyze()
+        expect(
+          axeResult.violations.map(violation => ({
+            help: violation.help,
+            id: violation.id,
+            impact: violation.impact,
+            targets: violation.nodes.map(node => node.target),
+          })),
+          `the hovered directory control ${await control.textContent()} has Axe violations`,
+        ).toEqual([])
+      }
+    } finally {
+      await page.context().close()
+    }
+  }, 45_000)
 })
 
 declare global {

@@ -48,6 +48,11 @@ describe('trainer assignment proposal errors', () => {
       'Este cliente ya tiene una rutina profesional activa. Gestiona esa rutina en lugar de enviar otra.',
     ],
     [
+      'TRAINER_ASSIGNMENT_PROPOSAL_EXISTS',
+      { message: 'TRAINER_ASSIGNMENT_PROPOSAL_EXISTS' },
+      'Este cliente ya tiene una propuesta pendiente de revisión. Gestiona esa propuesta antes de enviar otra.',
+    ],
+    [
       'TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE',
       'TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE',
       'Completa todos los días y añade al menos un ejercicio por día antes de enviar la rutina.',

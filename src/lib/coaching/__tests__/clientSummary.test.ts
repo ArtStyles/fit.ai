@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { loadClientCoachingSummary } from '../clientSummary'
+import { loadClientCoachingSummary, type ClientCoachingSummaryClient } from '../clientSummary'
 
 type QueryResult = { data: unknown; error: { message: string } | null }
 type QueryCall = { table: string; method: string; args: unknown[] }
@@ -36,25 +36,29 @@ function clientFor({
   profile = { id: 'trainer-1', full_name: 'Ada Lovelace', username: 'ada', avatar_url: 'https://example.com/ada.jpg' },
   directory = { user_id: 'trainer-1', slug: 'ada-lovelace' },
   consents = [{ scope: 'training_profile', revoked_at: null }],
+  consentError = null,
   assignments = [
     { id: 'assignment-active', status: 'active', created_at: '2026-09-04T10:00:00.000Z' },
     { id: 'assignment-proposed', status: 'proposed', created_at: '2026-09-03T10:00:00.000Z' },
   ],
+  assignmentError = null,
 }: {
   relationship?: unknown
   relationshipError?: { message: string } | null
   profile?: unknown
   directory?: unknown
   consents?: unknown[]
+  consentError?: { message: string } | null
   assignments?: unknown[]
+  assignmentError?: { message: string } | null
 } = {}) {
   const queryCalls: QueryCall[] = []
   const from = (table: string) => {
     if (table === 'coaching_relationships') return chain(table, { data: relationship ? [relationship] : [], error: relationshipError }, queryCalls)
     if (table === 'public_profiles') return chain(table, { data: profile ? [profile] : [], error: null }, queryCalls)
     if (table === 'active_trainer_directory') return chain(table, { data: directory ? [directory] : [], error: null }, queryCalls)
-    if (table === 'coaching_consents') return chain(table, { data: consents, error: null }, queryCalls)
-    if (table === 'trainer_plan_assignments') return chain(table, { data: assignments, error: null }, queryCalls)
+    if (table === 'coaching_consents') return chain(table, { data: consents, error: consentError }, queryCalls)
+    if (table === 'trainer_plan_assignments') return chain(table, { data: assignments, error: assignmentError }, queryCalls)
     throw new Error(`Unexpected table: ${table}`)
   }
 
@@ -73,7 +77,7 @@ describe('loadClientCoachingSummary', () => {
   it('projects the owned relationship, active training consent, latest proposed assignment, public trainer identity, and contracted service', async () => {
     const client = clientFor()
 
-    const result = await loadClientCoachingSummary(client, 'client-1')
+    const result = await loadClientCoachingSummary(client as unknown as ClientCoachingSummaryClient, 'client-1')
 
     expect(result).toEqual({
       summary: {
@@ -107,13 +111,31 @@ describe('loadClientCoachingSummary', () => {
   })
 
   it('returns an empty, non-error summary when the client has no active relationship', async () => {
-    const result = await loadClientCoachingSummary(clientFor({ relationship: null }), 'client-1')
+    const result = await loadClientCoachingSummary(clientFor({ relationship: null }) as unknown as ClientCoachingSummaryClient, 'client-1')
 
     expect(result).toEqual({ summary: null, error: null })
   })
 
   it('returns the contracted error when the relationship query cannot load', async () => {
-    const result = await loadClientCoachingSummary(clientFor({ relationshipError: { message: 'network' } }), 'client-1')
+    const result = await loadClientCoachingSummary(clientFor({ relationshipError: { message: 'network' } }) as unknown as ClientCoachingSummaryClient, 'client-1')
+
+    expect(result).toEqual({ summary: null, error: 'No se pudo cargar tu acompañamiento.' })
+  })
+
+  it('fails closed when required training-consent state cannot be loaded', async () => {
+    const result = await loadClientCoachingSummary(
+      clientFor({ consentError: { message: 'consent read failed' } }) as unknown as ClientCoachingSummaryClient,
+      'client-1',
+    )
+
+    expect(result).toEqual({ summary: null, error: 'No se pudo cargar tu acompañamiento.' })
+  })
+
+  it('fails closed when authoritative assignment state cannot be loaded', async () => {
+    const result = await loadClientCoachingSummary(
+      clientFor({ assignmentError: { message: 'assignment read failed' } }) as unknown as ClientCoachingSummaryClient,
+      'client-1',
+    )
 
     expect(result).toEqual({ summary: null, error: 'No se pudo cargar tu acompañamiento.' })
   })
@@ -121,7 +143,7 @@ describe('loadClientCoachingSummary', () => {
   it('preserves the relationship with safe fallbacks when public trainer details are unavailable', async () => {
     const client = clientFor({ profile: null, directory: null, consents: [], assignments: [] })
 
-    const result = await loadClientCoachingSummary(client, 'client-1')
+    const result = await loadClientCoachingSummary(client as unknown as ClientCoachingSummaryClient, 'client-1')
 
     expect(result).toEqual({
       summary: {

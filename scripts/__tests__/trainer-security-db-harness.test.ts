@@ -71,10 +71,10 @@ describe('trainer security database harness', () => {
     expect(released).toBeGreaterThan(suspended)
   })
 
-  it('reapplies trainer migrations through 058 after a locked professional fixture and compares an immutable snapshot', async () => {
+  it('reapplies trainer migrations through 059 after a locked professional fixture and compares an immutable snapshot', async () => {
     const source = await readFile(new URL('../test-trainer-programming-db.mjs', import.meta.url), 'utf8')
     const seeded = source.indexOf('seeding rerun preservation fixture')
-    const rerun = source.indexOf('reapplying trainer migrations 040-051, 053, 056-058 after locked professional data')
+    const rerun = source.indexOf('reapplying trainer migrations 040-051, 053, 056-059 after locked professional data')
     const verified = source.indexOf('verifying rerun preservation snapshot')
     const historicalConversion = source.indexOf('seeding pre-050 conversion history')
     const migration050 = source.indexOf('applying migration 050 conversion funnel events')

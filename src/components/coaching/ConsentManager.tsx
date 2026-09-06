@@ -22,7 +22,7 @@ function nextIdempotencyKey() {
 
 function ConsentStatus({ consent }: { consent?: CoachingConsentView }) {
   const { language, timeZone } = useI18n()
-  if (!consent) return <p className="mt-2 text-sm text-muted-foreground">Aún no autorizaste este alcance.</p>
+  if (!consent) return <p className="mt-2 text-sm text-muted-foreground">No hay una autorización activa para este alcance.</p>
   const date = new Intl.DateTimeFormat(dateLocale(language), { dateStyle: 'medium', timeZone }).format(new Date(consent.grantedAt))
   return <p className="mt-2 text-sm text-muted-foreground">Versión {consent.textVersion}. Otorgado el {date}.</p>
 }

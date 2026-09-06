@@ -1,3 +1,6 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
+
 export type ClientCoachingSummary = {
   relationshipId: string
   relationshipStatus: 'active' | 'paused_by_platform'
@@ -17,10 +20,7 @@ export type ClientCoachingSummaryResult = {
   error: string | null
 }
 
-export type ClientCoachingSummaryClient = {
-  from: (table: string) => any
-  rpc: (functionName: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>
-}
+export type ClientCoachingSummaryClient = Pick<SupabaseClient<Database>, 'from' | 'rpc'>
 
 type RelationshipRow = {
   id: string
@@ -92,10 +92,14 @@ export async function loadClientCoachingSummary(
       .order('id', { ascending: false }),
   ])
 
+  if (consentResponse.error || assignmentResponse.error) {
+    return { summary: null, error: 'No se pudo cargar tu acompañamiento.' }
+  }
+
   const profile = profileResponse.error ? null : firstRow<ProfileRow>(profileResponse.data)
   const directory = directoryResponse.error ? null : firstRow<DirectoryRow>(directoryResponse.data)
-  const consent = consentResponse.error ? null : firstRow<ConsentRow>(consentResponse.data)
-  const assignments = assignmentResponse.error || !Array.isArray(assignmentResponse.data)
+  const consent = firstRow<ConsentRow>(consentResponse.data)
+  const assignments = !Array.isArray(assignmentResponse.data)
     ? []
     : assignmentResponse.data as AssignmentRow[]
   const assignment = assignments.find(candidate => candidate.status === 'proposed')

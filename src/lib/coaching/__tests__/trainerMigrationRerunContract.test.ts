@@ -51,7 +51,7 @@ const duplicateMigrationPrefixes = (files: string[]) => {
     prefixes.filter((prefix, index) => prefixes.indexOf(prefix) !== index),
   ))
 }
-const releaseMigrationFiles = migrationFiles.filter((file) => /^(?:04\d|05[0-8])_/.test(file))
+const releaseMigrationFiles = migrationFiles.filter((file) => /^(?:04\d|05\d)_/.test(file))
 const readme = readFileSync(new URL('../../../../README.md', import.meta.url), 'utf8')
 const envExample = readFileSync(new URL('../../../../.env.example', import.meta.url), 'utf8')
 const runbook = readFileSync(new URL('../../../../docs/operations/trainer-marketplace-runbook.md', import.meta.url), 'utf8')
@@ -76,7 +76,7 @@ describe('trainer migration rerun contract', () => {
     ])).toEqual(['039', '050'])
   })
 
-  it('keeps the production migrations in the exact 040-058 order', () => {
+  it('keeps the production migrations in the exact 040-059 order', () => {
     expect(releaseMigrationFiles).toEqual([
       '040_trainer_foundations.sql',
       '041_trainer_verification.sql',
@@ -97,22 +97,24 @@ describe('trainer migration rerun contract', () => {
       '056_trainer_template_exercise_batch_append.sql',
       '057_trainer_assignment_decline.sql',
       '058_training_profile_consent_regrant.sql',
+      '059_trainer_assignment_single_pending.sql',
     ])
   })
 
-  it('documents migrations 051, 053, and 056-058 plus the explicit history-continuity E2E gate', () => {
+  it('documents migrations 051, 053, and 056-059 plus the explicit history-continuity E2E gate', () => {
     expect(readme).toContain('051_workout_adjustment_atomic.sql')
     expect(readme).toContain('053_trainer_draft_rpc_json_repair.sql')
     expect(readme).toContain('056_trainer_template_exercise_batch_append.sql')
     expect(readme).toContain('057_trainer_assignment_decline.sql')
     expect(readme).toContain('058_training_profile_consent_regrant.sql')
+    expect(readme).toContain('059_trainer_assignment_single_pending.sql')
     expect(readme).toContain('pnpm exec playwright test tests/e2e/training-evidence.spec.ts --grep "completed evidence survives"')
     expect(readme).not.toContain('No hay pruebas end-to-end')
     expect(envExample).toContain('E2E_HISTORY_CONTINUITY_ENABLED=true')
-    expect(runbook).toContain('040–058')
-    expect(runbook).toContain('trainer_security_preflight() = 58')
-    expect(pilotChecklist).toContain('040–058')
-    expect(pilotChecklist).toContain('trainer_security_preflight() = 58')
+    expect(runbook).toContain('040–059')
+    expect(runbook).toContain('trainer_security_preflight() = 59')
+    expect(pilotChecklist).toContain('040–059')
+    expect(pilotChecklist).toContain('trainer_security_preflight() = 59')
     expect(`${runbook}\n${pilotChecklist}`).not.toMatch(/040[–-]050/)
   })
 
@@ -138,10 +140,10 @@ describe('trainer migration rerun contract', () => {
     expect(backfill).toMatch(/trainer_assignment_version_id IS NULL/i)
   })
 
-  it('reapplies every production trainer routine through the consent recovery boundary', () => {
+  it('reapplies every production trainer routine through the single-pending boundary', () => {
     expect(isoRepair).toMatch(/RETURN 49/i)
-    expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_product_notification_preferences_insert\.sql[\s\S]+048_profile_weight_measurement_sync\.sql[\s\S]+049_trainer_iso_weekday_repair\.sql[\s\S]+050_product_events_conversion_funnel\.sql[\s\S]+051_workout_adjustment_atomic\.sql[\s\S]+053_trainer_draft_rpc_json_repair\.sql[\s\S]+056_trainer_template_exercise_batch_append\.sql[\s\S]+057_trainer_assignment_decline\.sql[\s\S]+058_training_profile_consent_regrant\.sql/i)
-    expect(trainerRunner).toMatch(/trainerMigrationFiles\.map\(readMigration\)[\s\S]+reapplying trainer migrations 040-051, 053, 056-058/i)
+    expect(trainerRunner).toMatch(/043_trainer_programming\.sql[\s\S]+045_trainer_hardening\.sql[\s\S]+046_release_session_authorization\.sql[\s\S]+047_product_notification_preferences_insert\.sql[\s\S]+048_profile_weight_measurement_sync\.sql[\s\S]+049_trainer_iso_weekday_repair\.sql[\s\S]+050_product_events_conversion_funnel\.sql[\s\S]+051_workout_adjustment_atomic\.sql[\s\S]+053_trainer_draft_rpc_json_repair\.sql[\s\S]+056_trainer_template_exercise_batch_append\.sql[\s\S]+057_trainer_assignment_decline\.sql[\s\S]+058_training_profile_consent_regrant\.sql[\s\S]+059_trainer_assignment_single_pending\.sql/i)
+    expect(trainerRunner).toMatch(/trainerMigrationFiles\.map\(readMigration\)[\s\S]+reapplying trainer migrations 040-051, 053, 056-059/i)
   })
 
   it('keeps 056 historical checks before applying and racing the rerunnable 057 boundary', () => {

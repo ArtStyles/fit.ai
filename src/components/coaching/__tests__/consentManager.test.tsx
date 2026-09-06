@@ -30,6 +30,8 @@ describe('ConsentManager', () => {
     expect(html).toContain('Falta un paso para recibir tu rutina')
     expect(html).toContain('Tus medidas corporales no se incluyen.')
     expect(html).toContain('Autorizar datos de entrenamiento')
+    expect(html).toContain('No hay una autorización activa para este alcance.')
+    expect(html).not.toContain('Aún no autorizaste este alcance.')
     expect(html).not.toContain('Revocar datos de entrenamiento')
     expect(html).not.toContain('role="status"')
     expect(html).not.toContain('role="alert"')

@@ -130,7 +130,7 @@ export function TrainerDirectory({
               className="h-12 w-full rounded-xl border border-input bg-background pl-11 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
             />
           </label>
-          <button type="submit" className="min-h-12 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white shadow-md shadow-violet-950/20 hover:bg-violet-500">
+          <button type="submit" className="min-h-12 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white shadow-md shadow-violet-950/20 hover:bg-violet-700">
             Buscar
           </button>
         </div>
@@ -220,7 +220,14 @@ export function TrainerDirectory({
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <h2 className="truncate text-base font-bold text-foreground">{trainer.professionalName}</h2>
+                        <h2 className="min-w-0 flex-1 truncate text-base font-bold text-foreground">
+                          <Link
+                            href={`/trainers/${trainer.slug}`}
+                            className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60 focus-visible:ring-offset-2"
+                          >
+                            {trainer.professionalName}
+                          </Link>
+                        </h2>
                         <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-300">
                           <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                           Verificado
@@ -254,7 +261,7 @@ export function TrainerDirectory({
                   </div>
 
                   <div className="mt-4 flex min-h-11 flex-wrap gap-2 border-t border-border/50 pt-3 text-sm font-semibold">
-                    {isContractedTrainer ? <Link href="/coaching" className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-violet-600 px-3 text-white hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50">Ver acompañamiento</Link> : null}
+                    {isContractedTrainer ? <Link href="/coaching" className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-violet-600 px-3 text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50">Ver acompañamiento</Link> : null}
                     <Link href={`/trainers/${trainer.slug}`} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-violet-500/30 px-3 text-violet-700 hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 dark:text-violet-300">
                       Ver perfil
                       <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />

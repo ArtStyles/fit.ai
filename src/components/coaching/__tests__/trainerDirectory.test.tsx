@@ -114,6 +114,18 @@ describe('TrainerDirectory', () => {
     expect(html).toContain('Acompañamiento de fuerza')
     expect(html).toContain('href="/coaching"')
     expect(html).toContain('href="/trainers/ada-lovelace"')
+    expect(html.match(/hover:bg-violet-700/g)).toHaveLength(2)
+  })
+
+  it('makes the trainer name a focus-visible profile link without wrapping other actions', () => {
+    const html = renderToStaticMarkup(
+      <TrainerDirectory trainers={[TRAINER]} filters={{}} nextCursor={null} />,
+    )
+
+    const heading = html.match(/<h2[^>]*>[\s\S]*?<\/h2>/)?.[0]
+    expect(heading).toContain('href="/trainers/ada-lovelace"')
+    expect(heading).toContain('focus-visible:ring-2')
+    expect(heading).toContain('Ada Lovelace')
   })
 
   it('labels a matching paused relationship as paused instead of active', () => {

@@ -47,4 +47,29 @@ describe('TrainersPage', () => {
     expect(html).toContain('Tu entrenador')
     expect(html).toContain('href="/coaching"')
   })
+
+  it('keeps directory results visible and shows a persistent non-live coaching-state error', async () => {
+    mocks.requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase: { from: vi.fn() } })
+    mocks.normalizeDirectoryFilters.mockReturnValue({})
+    mocks.getTrainerDirectory.mockResolvedValue({
+      trainers: [{
+        userId: 'trainer-2', slug: 'grace-hopper', professionalName: 'Grace Hopper', professionalPhotoUrl: null,
+        bio: 'Entrenadora de movilidad.', specialties: ['Movilidad'], modalities: ['online'], experienceSummary: 'Seis años de experiencia.',
+        generalLocation: 'Matanzas', languages: ['Español'], verifiedAt: '2026-09-01T00:00:00.000Z', services: [],
+      }],
+      nextCursor: null,
+      error: null,
+    })
+    mocks.loadClientCoachingSummary.mockResolvedValue({
+      summary: null,
+      error: 'No se pudo cargar tu acompañamiento.',
+    })
+
+    const html = renderToStaticMarkup(await TrainersPage({ searchParams: {} }))
+
+    expect(html).toContain('No se pudo cargar tu acompañamiento.')
+    expect(html).toContain('Grace Hopper')
+    expect(html).not.toContain('role="alert"')
+    expect(html).not.toContain('role="status"')
+  })
 })

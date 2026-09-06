@@ -4,6 +4,7 @@ const PROPOSAL_ERROR_MESSAGES = {
   TRAINER_ASSIGNMENT_CONSENT_REQUIRED: 'No se puede enviar la rutina porque la autorización de datos de entrenamiento del cliente no está activa. Pídele que revise Acompañamiento.',
   COACHING_RELATIONSHIP_NOT_ACTIVE: 'El acompañamiento está pausado o finalizado. Revísalo antes de enviar la rutina.',
   TRAINER_ASSIGNMENT_ACTIVE_EXISTS: 'Este cliente ya tiene una rutina profesional activa. Gestiona esa rutina en lugar de enviar otra.',
+  TRAINER_ASSIGNMENT_PROPOSAL_EXISTS: 'Este cliente ya tiene una propuesta pendiente de revisión. Gestiona esa propuesta antes de enviar otra.',
   TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE: 'Completa todos los días y añade al menos un ejercicio por día antes de enviar la rutina.',
   TRAINER_ASSIGNMENT_TEMPLATE_NOT_AVAILABLE: 'Esta rutina ya no está disponible para enviarla.',
   TRAINER_ASSIGNMENT_TRAINER_INACTIVE: 'Tu perfil de entrenador no está activo.',
