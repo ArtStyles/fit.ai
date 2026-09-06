@@ -9,7 +9,6 @@ export default function AppRouteLoading() {
             <div className="fitai-shimmer h-8 w-8 rounded-lg bg-violet-500/15" />
             <div className="fitai-shimmer h-4 w-36 rounded bg-muted/60" />
           </div>
-          <div className="fitai-shimmer h-10 w-10 rounded-full bg-violet-500/30" />
       </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4">

@@ -158,18 +158,20 @@ export function ChatContainer({ initialConversations }: Props) {
     return (
       <div className="flex h-full flex-col bg-background pb-16">
         <FixedTopBar>
-          <button
-            type="button"
-            onClick={handleBack}
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white">{selected.title}</p>
-            <p className="text-xs text-muted-foreground/70">
-              {t(selected.context ? CONTEXT_LABELS[selected.context] : 'General')}
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white">{selected.title}</p>
+              <p className="text-xs text-muted-foreground/70">
+                {t(selected.context ? CONTEXT_LABELS[selected.context] : 'General')}
+              </p>
+            </div>
           </div>
         </FixedTopBar>
 
@@ -206,24 +208,27 @@ export function ChatContainer({ initialConversations }: Props) {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      <FixedTopBar contentClassName="justify-between">
-          <div className="flex items-center gap-2.5">
-            <PendingLink
-              href="/dashboard"
-              className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </PendingLink>
-            <h1 className="font-display text-xl font-bold text-foreground">Coach IA</h1>
-          </div>
+      <FixedTopBar
+        actions={(
           <button
             type="button"
             onClick={() => setShowNewDialog(true)}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700"
+            className="flex min-h-11 items-center gap-1.5 rounded-lg bg-violet-600 px-3 text-sm font-medium text-white transition-colors hover:bg-violet-500 active:bg-violet-700"
           >
             <Plus className="h-4 w-4" />
             {t('Nueva')}
           </button>
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <PendingLink
+            href="/dashboard"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </PendingLink>
+          <h1 className="truncate font-display text-xl font-bold text-foreground">Coach IA</h1>
+        </div>
       </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4 pt-6">

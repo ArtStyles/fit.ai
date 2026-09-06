@@ -40,8 +40,8 @@ function containsRawForwardRef(node: ReactNode): boolean {
     return true
   }
 
-  return Children.toArray((node.props as { children?: ReactNode }).children)
-    .some(containsRawForwardRef)
+  return Object.values(node.props as Record<string, unknown>)
+    .some(value => containsRawForwardRef(value as ReactNode))
 }
 
 describe('PendingLink RSC boundaries', () => {
@@ -83,6 +83,20 @@ describe('PendingLink RSC boundaries', () => {
     expect(html).toContain('h-11 w-11')
     expect(html).toContain('lucide-arrow-left')
     expect(html).toContain('h-5 w-5')
+  })
+
+  it('keeps PageTopBar right actions inside the serializable FixedTopBar boundary', () => {
+    const output = PageTopBar({
+      title: 'Notificaciones',
+      right: <button type="button">Filtrar</button>,
+    })
+    const fixedTopBars = findElementsOfType(output, FixedTopBar)
+
+    expect(fixedTopBars).toHaveLength(1)
+    expect(containsRawForwardRef(fixedTopBars[0])).toBe(false)
+
+    const html = renderToStaticMarkup(output)
+    expect(html).toContain('data-page-topbar-actions')
   })
 
   it('keeps settings entry icons inside serializable client boundaries', () => {

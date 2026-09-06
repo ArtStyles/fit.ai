@@ -45,6 +45,7 @@ export default async function GeneratePlanPage({
   return (
     <div className="min-h-screen bg-background">
       <PageTopBar
+        accountSlot="hidden"
         title="Generar plan"
         subtitle="Entrenamiento personalizado basado en evidencia"
         backHref="/plan"

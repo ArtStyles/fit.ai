@@ -22,24 +22,28 @@ export default async function FeedPage() {
 
   return (
     <div className="mx-auto max-w-lg pb-24">
-      <FixedTopBar contentClassName="justify-between">
-        <h1 className="text-lg font-bold">{t('Comunidad')}</h1>
-        <div className="flex items-center gap-1">
-          <Link href="/solicitudes" aria-label={t('Solicitudes de seguimiento')} className="relative flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground">
-            <Bell className="h-5 w-5" />
-            {pendingRequests > 0 && (
-              <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                {pendingRequests}
-              </span>
-            )}
-          </Link>
-          <Link href="/buscar" aria-label={t('Buscar usuarios')} className="flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground">
-            <Search className="h-5 w-5" />
-          </Link>
-          <Link href="/feed/new" aria-label={t('Nueva publicación')} className="inline-flex h-11 items-center gap-1.5 text-sm font-medium text-primary">
-            <PlusCircle className="h-5 w-5" /> {t('Publicar')}
-          </Link>
-        </div>
+      <FixedTopBar
+        actions={(
+          <div className="flex items-center gap-1">
+            <Link href="/solicitudes" aria-label={t('Solicitudes de seguimiento')} className="relative flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground">
+              <Bell className="h-5 w-5" />
+              {pendingRequests > 0 ? (
+                <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  {pendingRequests}
+                </span>
+              ) : null}
+            </Link>
+            <Link href="/buscar" aria-label={t('Buscar usuarios')} className="flex h-11 w-11 items-center justify-center text-muted-foreground hover:text-foreground">
+              <Search className="h-5 w-5" />
+            </Link>
+            <Link href="/feed/new" aria-label={t('Nueva publicación')} className="inline-flex h-11 w-11 items-center justify-center gap-1.5 text-primary sm:w-auto sm:px-2">
+              <PlusCircle className="h-5 w-5" />
+              <span className="sr-only sm:not-sr-only">{t('Publicar')}</span>
+            </Link>
+          </div>
+        )}
+      >
+        <h1 className="min-w-0 flex-1 truncate font-display text-lg font-bold">{t('Comunidad')}</h1>
       </FixedTopBar>
       <FeedTabs discover={discover} following={following} />
     </div>

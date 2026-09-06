@@ -13,7 +13,7 @@ export default async function NewPostPage() {
 
   return (
     <div className="mx-auto max-w-lg pb-8">
-      <FixedTopBar>
+      <FixedTopBar accountSlot="hidden">
         <Link href="/feed" aria-label="Volver" className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/5">
           <ArrowLeft className="h-5 w-5" />
         </Link>
