@@ -31,6 +31,7 @@ const MOBILE_VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 412, height: 915 },
 ] as const
+const FIXTURE_WARMUP_TIMEOUT_MS = 60_000
 
 type WorkspaceWindow = Window & {
   __ACCOUNT_WORKSPACE_READY__?: boolean
@@ -218,18 +219,37 @@ describe('account workspace responsive acceptance in a local browser', () => {
     }
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+
+    // Keep first-load Vite/Tailwind compilation outside the per-viewport
+    // acceptance timeout so a clean checkout still measures rendered behavior.
+    const warmupContext = await browser.newContext({ viewport: MOBILE_VIEWPORTS[0] })
+    const warmupPage = await warmupContext.newPage()
+    try {
+      await openFixture(
+        warmupPage,
+        'pathname=/dashboard&preferred=coach',
+        FIXTURE_WARMUP_TIMEOUT_MS,
+      )
+    } finally {
+      await warmupContext.close()
+    }
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()
     await viteServer?.close()
   }, 30_000)
 
-  async function openFixture(page: Page, query: string) {
+  async function openFixture(
+    page: Page,
+    query: string,
+    navigationTimeout = 30_000,
+  ) {
     const response = await page.goto(
       baseUrl
       + '/src/components/navigation/__tests__/fixtures/accountWorkspace.html?'
       + query,
+      { timeout: navigationTimeout },
     )
     if (!response?.ok()) {
       throw new Error(`Account workspace fixture returned ${response?.status() ?? 'no response'}.`)
