@@ -26,6 +26,30 @@ function readBlock(source: string, marker: string) {
   throw new Error(`Unclosed block for ${marker}`)
 }
 
+function readAllBlocks(source: string, marker: string) {
+  const blocks: string[] = []
+  let searchFrom = 0
+
+  while (searchFrom < source.length) {
+    const start = source.indexOf(marker, searchFrom)
+    if (start === -1) return blocks
+    const openingBrace = source.indexOf('{', start)
+    let depth = 0
+
+    for (let index = openingBrace; index < source.length; index += 1) {
+      if (source[index] === '{') depth += 1
+      if (source[index] === '}') depth -= 1
+      if (depth === 0) {
+        blocks.push(source.slice(openingBrace + 1, index))
+        searchFrom = index + 1
+        break
+      }
+    }
+  }
+
+  return blocks
+}
+
 describe('shared dialog layout contract', () => {
   it('uses a safe mobile bottom sheet with a 44px close control', () => {
     expect(dialog).toContain('fitai-dialog-content')
@@ -40,6 +64,22 @@ describe('shared dialog layout contract', () => {
     expect(css).toContain('padding-bottom: calc(1.5rem + var(--app-safe-area-bottom)) !important;')
     expect(css).toContain('fitai-dialog-sheet-in 280ms')
     expect(css).toContain('fitai-dialog-sheet-out 200ms')
+  })
+
+  it('keeps document safe-area padding outside the Tailwind base layer', () => {
+    const base = readAllBlocks(css, '@layer base').join('\n')
+    expect(base).not.toContain('padding-top: var(--app-safe-area-top);')
+    expect(base).not.toContain('padding-right: var(--app-safe-area-right);')
+    expect(base).not.toContain('padding-left: var(--app-safe-area-left);')
+
+    const documentSafeAreaStart = css.indexOf('/* Document safe-area insets must outrank Tailwind Preflight. */')
+    expect(documentSafeAreaStart).toBeGreaterThan(-1)
+    const documentSafeArea = readRule(css.slice(documentSafeAreaStart), 'body')
+    expect(documentSafeArea).toContain('padding-top: var(--app-safe-area-top);')
+    expect(documentSafeArea).toContain('padding-right: var(--app-safe-area-right);')
+    expect(documentSafeArea).toContain('padding-left: var(--app-safe-area-left);')
+    expect(documentSafeArea).not.toContain('padding-bottom:')
+    expect(documentSafeArea).not.toContain('!important')
   })
 
   it('keeps the close control outside an internal scrolling layout region', () => {

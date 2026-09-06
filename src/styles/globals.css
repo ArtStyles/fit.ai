@@ -140,10 +140,14 @@
   body {
     @apply bg-background text-foreground;
     min-height: 100dvh;
-    padding-top: var(--app-safe-area-top);
-    padding-right: var(--app-safe-area-right);
-    padding-left: var(--app-safe-area-left);
   }
+}
+
+/* Document safe-area insets must outrank Tailwind Preflight. */
+body {
+  padding-top: var(--app-safe-area-top);
+  padding-right: var(--app-safe-area-right);
+  padding-left: var(--app-safe-area-left);
 }
 
 @layer components {
