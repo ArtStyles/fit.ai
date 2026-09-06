@@ -237,6 +237,33 @@ describe('coaching context cross-flow acceptance', () => {
     },
     45_000,
   )
+
+  it('keeps the required training-consent action accessible while hovered', async () => {
+    const page = await openFixture(390)
+    try {
+      const consentSurface = page.locator('[data-acceptance-surface="consent"]')
+      const authorizeTraining = consentSurface.getByRole('button', {
+        name: 'Autorizar datos de entrenamiento',
+      })
+      await authorizeTraining.hover()
+      expect(await authorizeTraining.evaluate(element => element.matches(':hover'))).toBe(true)
+
+      const axeResult = await new AxeBuilder({ page })
+        .include('[data-acceptance-surface="consent"]')
+        .analyze()
+      expect(
+        axeResult.violations.map(violation => ({
+          help: violation.help,
+          id: violation.id,
+          impact: violation.impact,
+          targets: violation.nodes.map(node => node.target),
+        })),
+        'the hovered training-consent action has Axe violations',
+      ).toEqual([])
+    } finally {
+      await page.context().close()
+    }
+  }, 45_000)
 })
 
 declare global {

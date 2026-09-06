@@ -102,7 +102,7 @@ export function ConsentManager({ relationshipId, consents }: { relationshipId: s
         <h4 className="font-semibold text-foreground">Falta un paso para recibir tu rutina</h4>
         <p className="mt-2 text-sm text-muted-foreground">Confirma que tu entrenador puede consultar tus datos de entrenamiento mientras dure este acompañamiento. Tus medidas corporales no se incluyen.</p>
         <button type="button" onClick={() => void act('grant-training')} disabled={busy !== null}
-          className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 disabled:opacity-50">{busy === 'grant-training' ? 'Autorizando…' : 'Autorizar datos de entrenamiento'}</button>
+          className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 disabled:opacity-50">{busy === 'grant-training' ? 'Autorizando…' : 'Autorizar datos de entrenamiento'}</button>
       </div>}
     </article>
     <article className="rounded-2xl bg-muted/30 p-4">
