@@ -25,6 +25,7 @@ const browserFixtureTests = [
   'src/components/notifications/__tests__/dismissibleAttentionNoticeInteraction.test.tsx',
   'src/components/notifications/__tests__/notificationCenterInteraction.test.tsx',
   'src/components/notifications/__tests__/swipeDismissPlanNoticeInteraction.test.tsx',
+  'src/components/navigation/__tests__/AccountWorkspaceResponsive.test.ts',
 ]
 
 export default defineConfig({
