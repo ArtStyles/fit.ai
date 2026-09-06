@@ -5,6 +5,7 @@ type DashboardPrimaryFlowProps = {
   mainLabel: string
   mainClassName: string
   title: ReactNode
+  coaching: ReactNode
   music: ReactNode
   notice: ReactNode
   journey: ReactNode
@@ -15,6 +16,7 @@ export function DashboardPrimaryFlow({
   mainLabel,
   mainClassName,
   title,
+  coaching,
   music,
   notice,
   journey,
@@ -28,6 +30,7 @@ export function DashboardPrimaryFlow({
         data-marketing-capture="dashboard"
       >
         {title}
+        {coaching}
         {music}
         {notice}
         {journey}
