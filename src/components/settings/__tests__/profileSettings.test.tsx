@@ -36,6 +36,12 @@ async function renderProfileSettings(communityEnabled: boolean) {
 }
 
 describe('ProfilePage', () => {
+  it('keeps avatar editing in personal profile settings', async () => {
+    const html = await renderProfileSettings(false)
+
+    expect(html).toContain('aria-label="Foto de perfil"')
+  })
+
   it('hides every social control while Community is disabled', async () => {
     const html = await renderProfileSettings(false)
 

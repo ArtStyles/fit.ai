@@ -1,15 +1,28 @@
 import { ClientCoachingStatus } from '@/components/coaching/ClientCoachingStatus'
 import { ConsentManager, type CoachingConsentView } from '@/components/coaching/ConsentManager'
 import { ProposedProgramReview } from '@/components/coaching/ProposedProgramReview'
+import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { parseTrainerProgramSnapshot } from '@/lib/coaching/programs'
 import { selectLatestProposedAssignment } from '@/lib/coaching/proposals'
 
 const REQUEST_HISTORY_LIMIT = 20
 
+function CoachingHeader({ description }: { description?: string }) {
+  return (
+    <header className="mb-6 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold text-foreground">Acompañamiento</h1>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      <AccountWorkspaceMenu surface="topbar" />
+    </header>
+  )
+}
+
 function CoachingPageLoadError({ message }: { message: string }) {
   return <main className="mx-auto max-w-lg px-4 pb-24 pt-6">
-    <h1 className="text-2xl font-bold text-foreground">Acompañamiento</h1>
+    <CoachingHeader />
     <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">{message}</p>
   </main>
 }
@@ -168,10 +181,7 @@ export default async function CoachingPage() {
   }
 
   return <main className="mx-auto max-w-lg px-4 pb-24 pt-6">
-    <header className="mb-6">
-      <h1 className="text-2xl font-bold text-foreground">Acompañamiento</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Consulta el estado real de tus solicitudes. No se comparten datos de entrenamiento hasta que exista una relación aceptada.</p>
-    </header>
+    <CoachingHeader description="Consulta el estado real de tus solicitudes. No se comparten datos de entrenamiento hasta que exista una relación aceptada." />
     <ClientCoachingStatus requests={requests} relationship={relationshipView} />
     {serviceLookupFailures.size ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">Algunos servicios de acompañamiento no se pudieron cargar. Inténtalo de nuevo más tarde.</p> : null}
     {relationshipsError || consentsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus consentimientos.</p> : relationship?.status === 'active' ? <ConsentManager relationshipId={relationship.id} consents={((consents ?? []) as Array<{ scope: CoachingConsentView['scope']; text_version: string; granted_at: string; revoked_at: string | null }>).map(consent => ({

@@ -46,8 +46,10 @@ async function renderDashboardWithCommunityDisabled() {
     })),
   }))
   vi.doMock('@/lib/features/community', () => ({ isCommunityEnabled }))
-  vi.doMock('@/components/profile/AvatarUploader', () => ({
-    AvatarUploader: () => <span data-testid="avatar" />,
+  vi.doMock('@/components/navigation/AccountWorkspaceMenu', () => ({
+    AccountWorkspaceMenu: () => (
+      <button type="button" aria-label="Abrir cuenta y espacios">Cuenta</button>
+    ),
   }))
   vi.doMock('@/components/navigation/FixedTopBar', () => ({
     FixedTopBar: ({ children }: { children: ReactNode }) => <header>{children}</header>,
@@ -68,12 +70,13 @@ async function renderDashboardWithCommunityDisabled() {
 }
 
 describe('DashboardPage profile navigation', () => {
-  it('withholds the social profile link while retaining settings when Community is disabled', async () => {
+  it('withholds the social profile link and exposes account access when Community is disabled', async () => {
     const { html, isCommunityEnabled } = await renderDashboardWithCommunityDisabled()
 
     expect(isCommunityEnabled).toHaveBeenCalledTimes(1)
     expect(html).not.toContain('href="/u/ana"')
-    expect(html).toContain('href="/settings"')
-    expect(html).toContain('aria-label="Abrir ajustes"')
+    expect(html).not.toContain('href="/settings"')
+    expect(html).not.toContain('aria-label="Abrir ajustes"')
+    expect(html).toContain('aria-label="Abrir cuenta y espacios"')
   })
 })

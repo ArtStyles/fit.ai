@@ -594,7 +594,6 @@ export default async function DashboardPage() {
             greeting={getDashboardGreeting(language, referenceNow, tz)}
             firstName={firstName}
             dateLabel={dateLabel}
-            avatarUrl={profile?.avatar_url ?? null}
             profileHref={resolveDashboardProfileHref({
               communityEnabled,
               username: profile.username,

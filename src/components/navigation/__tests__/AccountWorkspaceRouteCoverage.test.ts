@@ -1,5 +1,7 @@
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium, expect as pwExpect, type Browser, type Page } from '@playwright/test'
@@ -33,6 +35,8 @@ type ChatHarness = Window & typeof globalThis & { __chatReady?: boolean }
 
 const mocks = vi.hoisted(() => ({ pathname: '/notifications' }))
 const originalCommunityEnabled = process.env.COMMUNITY_ENABLED
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
+const read = (relative: string) => readFileSync(path.join(root, relative), 'utf8')
 
 vi.mock('next/navigation', () => ({
   usePathname: () => mocks.pathname,
@@ -205,6 +209,14 @@ afterAll(async () => {
 })
 
 describe('top-bar account composition contract', () => {
+  it.each([
+    'src/components/coaching/TrainerDirectory.tsx',
+    'src/components/coaching/TrainerPublicProfile.tsx',
+    'src/app/(app)/coaching/page.tsx',
+  ])('%s exposes account access in its existing content header', source => {
+    expect(read(source)).toContain('<AccountWorkspaceMenu surface="topbar"')
+  })
+
   it('renders Feed destinations from the shared action region', async () => {
     const html = await renderFeedPage()
     await page.setContent(html)
@@ -239,4 +251,85 @@ describe('top-bar account composition contract', () => {
         .not.toContain('Abrir cuenta y espacios')
     },
   )
+})
+
+const pageTopBarSources = [
+  'src/app/(app)/plan/page.tsx',
+  'src/app/(app)/progress/page.tsx',
+  'src/app/(app)/notifications/page.tsx',
+  'src/components/settings/SettingsScreen.tsx',
+  'src/components/measurements/MeasurementsClient.tsx',
+  'src/app/(app)/exercises/[exerciseId]/page.tsx',
+  'src/app/(app)/calendario/page.tsx',
+  'src/app/(app)/history/page.tsx',
+  'src/app/(app)/history/[logId]/page.tsx',
+  'src/app/(app)/u/[username]/page.tsx',
+  'src/app/(app)/coach/page.tsx',
+  'src/app/(app)/coach/clients/page.tsx',
+  'src/app/(app)/coach/clients/[clientId]/page.tsx',
+  'src/app/(app)/coach/programs/page.tsx',
+  'src/app/(app)/coach/programs/new/page.tsx',
+  'src/app/(app)/coach/programs/[templateId]/page.tsx',
+  'src/app/(app)/coach/requests/page.tsx',
+  'src/app/(app)/coach/profile/page.tsx',
+  'src/app/(app)/coach/services/page.tsx',
+] as const
+
+const fixedTopBarSources = [
+  'src/app/(app)/feed/page.tsx',
+  'src/app/(app)/buscar/page.tsx',
+  'src/components/chat/ChatContainer.tsx',
+  'src/app/(app)/exercises/page.tsx',
+  'src/app/(app)/post/[id]/page.tsx',
+  'src/app/(app)/solicitudes/page.tsx',
+  'src/app/(app)/coach/apply/page.tsx',
+] as const
+
+describe('authenticated account-trigger route coverage', () => {
+  it.each(pageTopBarSources)('%s uses the shared PageTopBar slot', source => {
+    expect(read(source)).toContain('<PageTopBar')
+  })
+
+  it.each(fixedTopBarSources)('%s uses a non-immersive FixedTopBar slot', source => {
+    const content = read(source)
+    expect(content).toContain('<FixedTopBar')
+    expect(content).not.toContain('accountSlot="hidden"')
+  })
+
+  it.each([
+    'src/components/coaching/TrainerDirectory.tsx',
+    'src/components/coaching/TrainerPublicProfile.tsx',
+    'src/app/(app)/coaching/page.tsx',
+  ])('%s uses its existing content header', source => {
+    expect(read(source)).toContain('<AccountWorkspaceMenu surface="topbar"')
+  })
+
+  it('uses a custom dashboard trigger and preserves /entrenar as a redirect', () => {
+    expect(read('src/components/dashboard/DashboardHeader.tsx')).toContain('accountSlot="custom"')
+    expect(read('src/app/(app)/entrenar/page.tsx')).toContain('redirect(')
+  })
+
+  it('groups collision-prone actions and gives the exercise toolbar an explicit slot', () => {
+    expect(read('src/app/(app)/feed/page.tsx')).toContain('actions=')
+    expect(read('src/components/chat/ChatContainer.tsx')).toContain('actions=')
+    const exercises = read('src/app/(app)/exercises/page.tsx')
+    expect(exercises).toContain('accountSlot="custom"')
+    expect(exercises).toContain('<AccountWorkspaceMenu surface="topbar"')
+  })
+
+  it.each([
+    'src/components/session/SessionHeader.tsx',
+    'src/app/(app)/plans/generate/page.tsx',
+    'src/app/(app)/feed/new/page.tsx',
+  ])('%s opts out explicitly', source => {
+    expect(read(source)).toContain('accountSlot="hidden"')
+  })
+
+  it('keeps the session loading header immersive', () => {
+    const loading = read('src/components/feedback/RouteLoading.tsx')
+    const start = loading.indexOf('export function SessionLoading')
+    const end = loading.indexOf('export function ExercisesLoading')
+    const sessionLoading = loading.slice(start, end)
+    expect(sessionLoading).toContain('accountSlot="hidden"')
+  })
 })

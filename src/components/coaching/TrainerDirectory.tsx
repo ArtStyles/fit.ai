@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { CompactCategorySelect } from '@/components/ui/compact-category-select'
+import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
 import type { DirectoryFilters, PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 
 const modalityLabels: Record<PublicTrainerDirectoryRow['modalities'][number], string> = {
@@ -98,14 +99,17 @@ export function TrainerDirectory({
 
   return (
     <section aria-labelledby="trainer-directory-title" className="space-y-5">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Profesionales</p>
-        <h1 id="trainer-directory-title" className="mt-1 text-3xl font-bold tracking-tight text-foreground">
-          Encuentra tu entrenador
-        </h1>
-        <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-          Explora profesionales verificados y encuentra el acompañamiento que encaja contigo.
-        </p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Profesionales</p>
+          <h1 id="trainer-directory-title" className="mt-1 text-3xl font-bold tracking-tight text-foreground">
+            Encuentra tu entrenador
+          </h1>
+          <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+            Explora profesionales verificados y encuentra el acompañamiento que encaja contigo.
+          </p>
+        </div>
+        <AccountWorkspaceMenu surface="topbar" />
       </header>
 
       <form

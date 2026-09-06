@@ -349,6 +349,29 @@ describe('trainer accessibility acceptance in a local browser', () => {
     }
   }, 15_000)
 
+  it.each(['directory', 'public-profile'] as const)(
+    '%s exposes one touch-sized account trigger on mobile',
+    async surface => {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+      const page = await context.newPage()
+      try {
+        await page.goto(
+          `${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=${surface}`,
+        )
+        await page.waitForFunction(() => Boolean((window as Window & {
+          __TRAINER_ACCESSIBILITY_READY__?: boolean
+        }).__TRAINER_ACCESSIBILITY_READY__))
+        const trigger = page.getByRole('button', { name: 'Abrir cuenta y espacios' })
+        await pwExpect(trigger).toHaveCount(1)
+        await pwExpect(trigger).toBeVisible()
+        await expectActionTargetsAtLeast44(page)
+        await expectResponsiveGeometry(page)
+      } finally {
+        await context.close()
+      }
+    },
+  )
+
   it('selects a batch with Space and Enter and restores focus after keyboard close', async () => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const page = await context.newPage()
