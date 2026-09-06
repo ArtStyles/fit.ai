@@ -53,6 +53,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
           'lucide-react',
           '@radix-ui/react-avatar',
           '@radix-ui/react-dialog',
+          '@radix-ui/react-dropdown-menu',
           '@radix-ui/react-select',
         ],
       },
@@ -62,6 +63,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
         { find: '@/app/actions/trainerAssignments', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerAssignments.fixture.ts') },
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
         { find: '@/app/actions/workspace', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
+        { find: '@/app/(auth)/actions', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
         { find: '@/app/actions/exerciseCatalog', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/exerciseCatalog.fixture.ts') },
         { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
         { find: 'next/link', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextLink.fixture.tsx') },
@@ -306,7 +308,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
     }
   }, 15_000)
 
-  it.each(NARROW_PERSONAL_NAV_VIEWPORTS)('keeps six personal destinations and the workspace switcher usable at %i px', async width => {
+  it.each(NARROW_PERSONAL_NAV_VIEWPORTS)('keeps five personal destinations usable at %i px', async width => {
     const context = await browser.newContext({ viewport: { width, height: 844 } })
     const page = await context.newPage()
     try {
@@ -314,12 +316,13 @@ describe('trainer accessibility acceptance in a local browser', () => {
       await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
 
       const navigation = page.locator('nav.fitai-safe-bottom')
-      const expectedDestinations = ['Inicio', 'Plan', 'Entrenar', 'Progreso', 'Mi entrenador', 'Comunidad']
+      const expectedDestinations = ['Inicio', 'Plan', 'Entrenar', 'Progreso', 'Comunidad']
       await pwExpect(navigation.getByRole('link')).toHaveCount(expectedDestinations.length)
       for (const destination of expectedDestinations) {
         await pwExpect(navigation.getByRole('link', { name: destination, exact: true })).toBeVisible()
       }
-      await pwExpect(navigation.getByRole('button', { name: 'Cambiar al espacio Entrenador' })).toBeVisible()
+      await pwExpect(navigation.getByRole('link', { name: 'Mi entrenador', exact: true })).toHaveCount(0)
+      await pwExpect(navigation.getByRole('button', { name: 'Cambiar al espacio Entrenador' })).toHaveCount(0)
 
       await expectResponsiveGeometry(page)
       await expectActionTargetsAtLeast44(page)
@@ -337,7 +340,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
         }
       })
 
-      expect(geometry.iconBounds).toHaveLength(expectedDestinations.length + 1)
+      expect(geometry.iconBounds).toHaveLength(expectedDestinations.length)
       expect(geometry.targetBounds.every(({ left, right }) => left >= -0.5 && right <= width + 0.5)).toBe(true)
       expect(geometry.targetBounds.every((target, index, targets) => index === 0 || target.left >= targets[index - 1].right - 0.5)).toBe(true)
       expect(geometry.iconBounds.every((icon, index, icons) => index === 0 || icon.left >= icons[index - 1].right - 0.5)).toBe(true)

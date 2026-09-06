@@ -9,7 +9,8 @@ import { CoachRequestQueue } from '../../CoachRequestQueue'
 import { ProgramTemplateEditor } from '../../ProgramTemplateEditor'
 import { ProposedProgramReview } from '../../ProposedProgramReview'
 import { TrainerPublicProfile } from '../../TrainerPublicProfile'
-import { WorkspaceSwitcher } from '../../../navigation/WorkspaceSwitcher'
+import { AccountWorkspaceMenu } from '../../../navigation/AccountWorkspaceMenu'
+import { AccountWorkspaceProvider } from '../../../navigation/AccountWorkspaceProvider'
 import { ActiveWorkoutDockView } from '../../../navigation/BottomNav'
 import { AppShell } from '../../../navigation/AppShell'
 import { getCoachNavItems, getPersonalNavItems } from '../../../navigation/appNavigation'
@@ -18,6 +19,24 @@ import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 
 const surface = new URLSearchParams(window.location.search).get('surface')
+
+const coachAccountWorkspace = {
+  account: {
+    name: 'Ada Entrenadora',
+    email: 'ada@example.com',
+    avatarUrl: null,
+  },
+  trainerAccess: { granted: true as const },
+  preferredWorkspace: 'coach' as const,
+  personalNavItems: getPersonalNavItems({ communityEnabled: false }),
+  coachNavItems: getCoachNavItems(),
+}
+
+const personalAccountWorkspace = {
+  ...coachAccountWorkspace,
+  preferredWorkspace: 'personal' as const,
+  personalNavItems: getPersonalNavItems({ communityEnabled: true }),
+}
 
 const trainerRows: PublicTrainerDirectoryRow[] = [
   {
@@ -70,7 +89,7 @@ function DirectoryFixture() {
 
 function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
   if (!routeEditorOnly && surface === 'personal-shell') {
-    return <AppShell navItems={getPersonalNavItems({ communityEnabled: true })} workspace="personal">
+    return <AppShell accountWorkspace={personalAccountWorkspace}>
       <div className="min-h-screen bg-background pb-28">
         <main className="mx-auto max-w-6xl space-y-6 px-4 py-8" aria-label="Espacio personal con entrenador">
           <h1 className="text-2xl font-bold">Mi entrenamiento</h1>
@@ -79,7 +98,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
     </AppShell>
   }
   if (!routeEditorOnly && surface === 'editor-shell') {
-    return <AppShell navItems={getCoachNavItems()} workspace="coach">
+    return <AppShell accountWorkspace={coachAccountWorkspace}>
       <div className="min-h-screen bg-background pb-28">
         <main className="mx-auto max-w-6xl space-y-6 px-4 py-8" aria-label="Editor de rutina profesional">
           <Surface routeEditorOnly />
@@ -205,7 +224,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
     }} />
   }
   if (surface === 'workspace') {
-    return <WorkspaceSwitcher workspace="coach" variant="desktop" />
+    return <AccountWorkspaceMenu surface="dashboard" />
   }
   if (surface === 'public-profile') {
     return <TrainerPublicProfile trainer={{
@@ -291,9 +310,11 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
 
 function FixtureRoot() {
   if (surface === 'editor-shell' || surface === 'personal-shell') return <Surface />
-  return <main id="main-content" aria-label="Superficie profesional" className="mx-auto max-w-5xl px-4 py-6">
-    <Surface />
-  </main>
+  return <AccountWorkspaceProvider model={coachAccountWorkspace}>
+    <main id="main-content" aria-label="Superficie profesional" className="mx-auto max-w-5xl px-4 py-6">
+      <Surface />
+    </main>
+  </AccountWorkspaceProvider>
 }
 
 createRoot(document.getElementById('root')!).render(

@@ -14,8 +14,13 @@ type LayoutRenderOptions = {
 }
 
 type AppShellProps = {
-  navItems: unknown
-  workspace?: string
+  accountWorkspace: {
+    account: { name: string | null; email: string; avatarUrl: string | null }
+    trainerAccess: { granted: boolean; reason?: string }
+    preferredWorkspace: string
+    personalNavItems: unknown
+    coachNavItems: unknown
+  }
 }
 
 async function renderLayout({
@@ -28,8 +33,13 @@ async function renderLayout({
   const coachNavItems = [{ href: '/coach', label: 'Resumen' }]
   vi.doMock('@/lib/auth/server', () => ({
     requireAppUserContext: vi.fn(() => Promise.resolve({
-      profile: { language: 'es', timezone: 'America/Havana' },
-      user: { id: 'layout-test-user' },
+      profile: {
+        language: 'es',
+        timezone: 'America/Havana',
+        full_name: 'Ana Pérez',
+        avatar_url: '/avatar.jpg',
+      },
+      user: { id: 'layout-test-user', email: 'ana@example.com' },
       supabase: {},
     })),
   }))
@@ -51,8 +61,8 @@ async function renderLayout({
     I18nProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   }))
   vi.doMock('@/components/navigation/AppShell', () => ({
-    AppShell: ({ children, navItems, workspace }: { children: ReactNode } & AppShellProps) => {
-      appShellProps = { navItems, workspace }
+    AppShell: ({ children, accountWorkspace }: { children: ReactNode } & AppShellProps) => {
+      appShellProps = { accountWorkspace }
       return <section>{children}</section>
     },
   }))
@@ -91,7 +101,7 @@ describe('AppLayout push initialization', () => {
     expect(html).toContain('data-native-init="social-push"')
   })
 
-  it('keeps the approved coach cookie and passes the coach navigation plus selector workspace to AppShell', async () => {
+  it('keeps the approved coach cookie and passes the complete account workspace model to AppShell', async () => {
     const { appShellProps } = await renderLayout({
       communityEnabled: false,
       cookie: 'coach',
@@ -99,12 +109,21 @@ describe('AppLayout push initialization', () => {
     })
 
     expect(appShellProps).toEqual({
-      navItems: [{ href: '/coach', label: 'Resumen' }],
-      workspace: 'coach',
+      accountWorkspace: {
+        account: {
+          name: 'Ana Pérez',
+          email: 'ana@example.com',
+          avatarUrl: '/avatar.jpg',
+        },
+        trainerAccess: { granted: true },
+        preferredWorkspace: 'coach',
+        personalNavItems: [{ href: '/dashboard', label: 'Inicio' }],
+        coachNavItems: [{ href: '/coach', label: 'Resumen' }],
+      },
     })
   })
 
-  it('falls back from an obsolete coach cookie to personal navigation and does not expose the selector', async () => {
+  it('falls back from an obsolete coach cookie while preserving the inactive access reason', async () => {
     const { appShellProps } = await renderLayout({
       communityEnabled: false,
       cookie: 'coach',
@@ -112,12 +131,21 @@ describe('AppLayout push initialization', () => {
     })
 
     expect(appShellProps).toEqual({
-      navItems: [{ href: '/dashboard', label: 'Inicio' }],
-      workspace: undefined,
+      accountWorkspace: {
+        account: {
+          name: 'Ana Pérez',
+          email: 'ana@example.com',
+          avatarUrl: '/avatar.jpg',
+        },
+        trainerAccess: { granted: false, reason: 'inactive' },
+        preferredWorkspace: 'personal',
+        personalNavItems: [{ href: '/dashboard', label: 'Inicio' }],
+        coachNavItems: [{ href: '/coach', label: 'Resumen' }],
+      },
     })
   })
 
-  it('normalizes an invalid cookie to personal while retaining the active trainer selector', async () => {
+  it('normalizes an invalid cookie to personal while retaining active trainer access', async () => {
     const { appShellProps } = await renderLayout({
       communityEnabled: false,
       cookie: 'invalid',
@@ -125,8 +153,17 @@ describe('AppLayout push initialization', () => {
     })
 
     expect(appShellProps).toEqual({
-      navItems: [{ href: '/dashboard', label: 'Inicio' }],
-      workspace: 'personal',
+      accountWorkspace: {
+        account: {
+          name: 'Ana Pérez',
+          email: 'ana@example.com',
+          avatarUrl: '/avatar.jpg',
+        },
+        trainerAccess: { granted: true },
+        preferredWorkspace: 'personal',
+        personalNavItems: [{ href: '/dashboard', label: 'Inicio' }],
+        coachNavItems: [{ href: '/coach', label: 'Resumen' }],
+      },
     })
   })
 })

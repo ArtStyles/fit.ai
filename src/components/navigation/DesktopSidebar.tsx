@@ -4,19 +4,19 @@ import { usePathname } from 'next/navigation'
 import { VekiraLogo } from '@/components/branding/VekiraLogo'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { cn } from '@/lib/utils'
-import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigation'
+import { getAppNavIcon, isAppNavItemActive } from './appNavigation'
 import { PendingLink } from './PendingLink'
-import { WorkspaceSwitcher } from './WorkspaceSwitcher'
-import type { Workspace } from '@/lib/coaching/workspace'
+import { AccountWorkspaceMenu } from './AccountWorkspaceMenu'
+import { useAccountWorkspace } from './AccountWorkspaceContext'
+import { isImmersiveWorkspaceRoute } from './workspacePresentation'
 
-const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
-
-export function DesktopSidebar({ navItems, workspace }: { navItems: readonly AppNavItem[], workspace?: Workspace }) {
+export function DesktopSidebar() {
   const pathname = usePathname()
+  const { navItems, presentedWorkspace } = useAccountWorkspace()
   const { t } = useI18n()
-  const homeHref = workspace === 'coach' ? '/coach' : '/dashboard'
+  const homeHref = presentedWorkspace === 'coach' ? '/coach' : '/dashboard'
 
-  if (HIDDEN_PREFIXES.some(prefix => pathname.startsWith(prefix))) return null
+  if (isImmersiveWorkspaceRoute(pathname)) return null
 
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border/60 bg-[hsl(var(--surface-1))] lg:flex lg:flex-col">
@@ -53,7 +53,9 @@ export function DesktopSidebar({ navItems, workspace }: { navItems: readonly App
           )
         })}
       </nav>
-      {workspace ? <WorkspaceSwitcher workspace={workspace} variant="desktop" /> : null}
+      <div className="border-t border-border/60 p-4">
+        <AccountWorkspaceMenu surface="sidebar" />
+      </div>
     </aside>
   )
 }

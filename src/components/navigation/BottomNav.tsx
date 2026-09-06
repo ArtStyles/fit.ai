@@ -3,11 +3,10 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { PendingLink } from './PendingLink'
-import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigation'
+import { getAppNavIcon, isAppNavItemActive } from './appNavigation'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { hapticImpact } from '@/lib/native/haptics'
-import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 import type { Workspace } from '@/lib/coaching/workspace'
 import { ChevronUp, Trash2 } from 'lucide-react'
 import {
@@ -20,9 +19,14 @@ import { formatActiveWorkoutElapsed, summarizeActiveSession } from '@/components
 import { useSessionStore } from '@/store/sessionStore'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { releaseSessionAuthorization } from '@/app/actions/authorizeSession'
-
-// Routes where the bottom bar should be hidden (full-screen flows)
-const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
+import {
+  useAccountWorkspace,
+  useOptionalAccountWorkspace,
+} from './AccountWorkspaceContext'
+import {
+  isImmersiveWorkspaceRoute,
+  isRouteWithinPrefix,
+} from './workspacePresentation'
 
 type ActiveWorkoutDockViewProps = {
   workoutId: string
@@ -120,8 +124,23 @@ export function ActiveWorkoutDockView({
   )
 }
 
+export function shouldShowActiveWorkoutDock({
+  workspace,
+  snapshot,
+  pathname,
+}: {
+  workspace: Workspace
+  snapshot: RestorableSessionSnapshot | null
+  pathname: string
+}): boolean {
+  return workspace === 'personal'
+    && snapshot !== null
+    && !isRouteWithinPrefix(pathname, '/session')
+}
+
 export function ActiveWorkoutDock() {
   const pathname = usePathname()
+  const accountWorkspace = useOptionalAccountWorkspace()
   const [snapshot, setSnapshot] = useState<RestorableSessionSnapshot | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
@@ -146,7 +165,11 @@ export function ActiveWorkoutDock() {
     return () => window.clearInterval(interval)
   }, [snapshot])
 
-  if (!snapshot || pathname.startsWith('/session/')) return null
+  if (!snapshot || !shouldShowActiveWorkoutDock({
+    workspace: accountWorkspace?.presentedWorkspace ?? 'personal',
+    snapshot,
+    pathname,
+  })) return null
 
   const progress = summarizeActiveSession(snapshot.exercises)
 
@@ -218,18 +241,22 @@ export function ActiveWorkoutDock() {
   )
 }
 
-export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavItem[], workspace?: Workspace }) {
+export function BottomNav() {
   const pathname = usePathname()
+  const { navItems } = useAccountWorkspace()
   const { t } = useI18n()
 
-  if (HIDDEN_PREFIXES.some(p => pathname.startsWith(p))) return null
+  if (isImmersiveWorkspaceRoute(pathname)) return null
 
   return (
     <nav
       aria-label={t('Navegación principal')}
       className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-[hsl(var(--surface-1)/0.95)] backdrop-blur lg:hidden"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center px-1 min-[380px]:px-2">
+      <div className={cn(
+        'mx-auto grid h-16 max-w-lg items-center px-2',
+        navItems.length === 5 ? 'grid-cols-5' : 'grid-cols-4',
+      )}>
         {navItems.map(({ href, label }) => {
           const Icon = getAppNavIcon(href)
           const isActive = isAppNavItemActive(pathname, href)
@@ -238,12 +265,13 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
           return (
             <PendingLink
               key={href}
+              data-bottom-nav-item={href}
               href={href}
               showSpinner={false}
               aria-label={t(label)}
               aria-current={isActive ? 'page' : undefined}
               onClick={() => { void hapticImpact('light') }}
-              className="group relative flex w-11 min-w-11 flex-1 cursor-pointer touch-manipulation flex-col items-center justify-center px-0.5 py-1.5 outline-none [aria-busy=true]:opacity-100"
+              className="group relative flex min-w-0 cursor-pointer touch-manipulation flex-col items-center justify-center px-0 py-1.5 outline-none [aria-busy=true]:opacity-100"
             >
               <span
                 data-bottom-nav-icon
@@ -275,8 +303,10 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
                   />
                 )}
               </span>
-              <span className={cn(
-                'mt-0.5 max-w-full truncate text-[10px] font-semibold leading-none transition-colors',
+              <span
+                data-bottom-nav-label
+                className={cn(
+                'mt-0.5 inline-block w-max max-w-none whitespace-nowrap text-center font-display text-[10px] font-semibold leading-none tracking-[-0.03em] transition-colors',
                 isTrainAction ? '-mt-1 text-primary' : isActive ? 'text-primary' : 'text-muted-foreground',
               )}>
                 {t(label)}
@@ -284,7 +314,6 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
             </PendingLink>
           )
         })}
-        {workspace ? <WorkspaceSwitcher workspace={workspace} variant="mobile" /> : null}
       </div>
     </nav>
   )

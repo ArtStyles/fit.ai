@@ -3,11 +3,34 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import * as bottomNavigation from '../BottomNav'
+import type { RestorableSessionSnapshot } from '@/lib/session/persistSession'
 
-vi.mock('../WorkspaceSwitcher', () => ({ WorkspaceSwitcher: () => null }))
 vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard' }))
+vi.mock('@/app/actions/workspace', () => ({ setWorkspace: vi.fn() }))
+const accountWorkspace = vi.hoisted(() => ({ value: { presentedWorkspace: 'personal' as const } }))
+vi.mock('../AccountWorkspaceContext', () => ({
+  useOptionalAccountWorkspace: () => accountWorkspace.value,
+}))
+
+const snapshot: RestorableSessionSnapshot = {
+  clientSessionId: 'session-1',
+  workoutId: 'workout-1',
+  workoutName: 'Fuerza',
+  startedAt: Date.now(),
+  exercises: [],
+}
 
 describe('persistent active workout panel', () => {
+  it.each([
+    { workspace: 'personal', pathname: '/dashboard', expected: true },
+    { workspace: 'coach', pathname: '/coach', expected: false },
+    { workspace: 'personal', pathname: '/session/workout-1', expected: false },
+  ] as const)('resolves dock visibility for $workspace at $pathname', testCase => {
+    const { expected, ...input } = testCase
+    expect(bottomNavigation.shouldShowActiveWorkoutDock({ ...input, snapshot }))
+      .toBe(expected)
+  })
+
   it('renders a resume destination, live progress, and an explicit discard action', () => {
     const ActiveWorkoutDockView = (bottomNavigation as typeof bottomNavigation & {
       ActiveWorkoutDockView?: ComponentType<{

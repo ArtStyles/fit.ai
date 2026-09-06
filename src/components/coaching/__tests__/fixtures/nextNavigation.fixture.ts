@@ -25,5 +25,10 @@ export function useRouter() {
 }
 
 export function usePathname() {
-  return '/dashboard'
+  const fixtureSurface = new URLSearchParams(window.location.search).get('surface')
+  if (fixtureSurface === 'personal-shell') return '/dashboard'
+  if (fixtureSurface === 'directory') return '/trainers'
+  if (fixtureSurface === 'public-profile') return '/trainers/ada-entrenadora'
+  if (fixtureSurface === 'active-dock') return '/dashboard'
+  return '/coach'
 }
