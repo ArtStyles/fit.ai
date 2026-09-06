@@ -80,6 +80,13 @@ describe('shared dialog layout contract', () => {
     expect(documentSafeArea).toContain('padding-left: var(--app-safe-area-left);')
     expect(documentSafeArea).not.toContain('padding-bottom:')
     expect(documentSafeArea).not.toContain('!important')
+
+    const scrollLockedBody = readRule(css, 'html body[data-scroll-locked]')
+    expect(scrollLockedBody).toContain('padding-top: var(--app-safe-area-top);')
+    expect(scrollLockedBody).toContain('padding-right: var(--app-safe-area-right);')
+    expect(scrollLockedBody).toContain('padding-left: var(--app-safe-area-left);')
+    expect(scrollLockedBody).not.toContain('padding-bottom:')
+    expect(scrollLockedBody).not.toContain('!important')
   })
 
   it('keeps the close control outside an internal scrolling layout region', () => {

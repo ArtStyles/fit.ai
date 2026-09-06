@@ -150,6 +150,12 @@ body {
   padding-left: var(--app-safe-area-left);
 }
 
+html body[data-scroll-locked] {
+  padding-top: var(--app-safe-area-top);
+  padding-right: var(--app-safe-area-right);
+  padding-left: var(--app-safe-area-left);
+}
+
 @layer components {
   .fitai-dialog-content {
     inset-inline: 1rem;
