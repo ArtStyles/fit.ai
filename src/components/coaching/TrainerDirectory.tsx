@@ -229,7 +229,7 @@ export function TrainerDirectory({
                       {isContractedTrainer ? (
                         <div className="mt-2 space-y-0.5 rounded-xl bg-violet-500/10 px-2.5 py-2 text-xs text-violet-800 dark:text-violet-200">
                           <p className="font-bold">Tu entrenador</p>
-                          <p className="font-semibold">Acompañamiento activo</p>
+                          <p className="font-semibold">{coachingSummary.relationshipStatus === 'active' ? 'Acompañamiento activo' : 'Acompañamiento pausado'}</p>
                           <p className="text-violet-700/90 dark:text-violet-200/90">{coachingSummary.serviceName}</p>
                         </div>
                       ) : null}

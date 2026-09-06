@@ -116,6 +116,20 @@ describe('TrainerDirectory', () => {
     expect(html).toContain('href="/trainers/ada-lovelace"')
   })
 
+  it('labels a matching paused relationship as paused instead of active', () => {
+    const html = renderToStaticMarkup(
+      <TrainerDirectory
+        trainers={[TRAINER]}
+        filters={{}}
+        nextCursor={null}
+        coachingSummary={{ ...COACHING_SUMMARY, relationshipStatus: 'paused_by_platform' }}
+      />,
+    )
+
+    expect(html).toContain('Acompañamiento pausado')
+    expect(html).not.toContain('Acompañamiento activo')
+  })
+
   it('keeps nonmatching trainer cards free of the contracted-coaching state and CTA', () => {
     const otherTrainer = { ...TRAINER, userId: '22222222-2222-4222-8222-222222222222', slug: 'grace-hopper', professionalName: 'Grace Hopper' }
     const html = renderToStaticMarkup(<TrainerDirectory trainers={[otherTrainer]} filters={{}} nextCursor={null} coachingSummary={COACHING_SUMMARY} />)
