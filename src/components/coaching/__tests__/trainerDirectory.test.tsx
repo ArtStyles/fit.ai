@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import type { ClientCoachingSummary } from '@/lib/coaching/clientSummary'
 import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 import { TrainerDirectory } from '../TrainerDirectory'
 import { TrainerPublicProfile } from '../TrainerPublicProfile'
@@ -26,6 +27,20 @@ const TRAINER: PublicTrainerDirectoryRow = {
     durationMinutes: 60,
     content: 'Seguimiento de entrenamiento.',
   }],
+}
+
+const COACHING_SUMMARY: ClientCoachingSummary = {
+  relationshipId: 'relationship-1',
+  relationshipStatus: 'active',
+  trainerUserId: TRAINER.userId,
+  trainerName: TRAINER.professionalName,
+  trainerAvatarUrl: null,
+  trainerSlug: TRAINER.slug,
+  serviceId: 'service-1',
+  serviceName: 'Acompañamiento de fuerza',
+  startedAt: '2026-09-01T10:00:00.000Z',
+  trainingConsentActive: true,
+  assignmentStatus: 'active',
 }
 
 describe('TrainerDirectory', () => {
@@ -89,6 +104,25 @@ describe('TrainerDirectory', () => {
 
     expect(html).toContain('Mostrando 1 perfil')
     expect(html).not.toContain('1 entrenador disponible')
+  })
+
+  it('gives the matching trainer a contracted-coaching state and separate actions', () => {
+    const html = renderToStaticMarkup(<TrainerDirectory trainers={[TRAINER]} filters={{}} nextCursor={null} coachingSummary={COACHING_SUMMARY} />)
+
+    expect(html).toContain('Tu entrenador')
+    expect(html).toContain('Acompañamiento activo')
+    expect(html).toContain('Acompañamiento de fuerza')
+    expect(html).toContain('href="/coaching"')
+    expect(html).toContain('href="/trainers/ada-lovelace"')
+  })
+
+  it('keeps nonmatching trainer cards free of the contracted-coaching state and CTA', () => {
+    const otherTrainer = { ...TRAINER, userId: '22222222-2222-4222-8222-222222222222', slug: 'grace-hopper', professionalName: 'Grace Hopper' }
+    const html = renderToStaticMarkup(<TrainerDirectory trainers={[otherTrainer]} filters={{}} nextCursor={null} coachingSummary={COACHING_SUMMARY} />)
+
+    expect(html).not.toContain('Tu entrenador')
+    expect(html).not.toContain('href="/coaching"')
+    expect(html).toContain('href="/trainers/grace-hopper"')
   })
 
   it('gives the responsive two-column cards enough room on the real route', () => {
