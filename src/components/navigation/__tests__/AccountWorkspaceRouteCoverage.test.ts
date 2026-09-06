@@ -207,12 +207,16 @@ afterAll(async () => {
 describe('top-bar account composition contract', () => {
   it('renders Feed destinations from the shared action region', async () => {
     const html = await renderFeedPage()
+    await page.setContent(html)
+    const actionRegion = page.locator('[data-fixed-topbar-actions]')
 
     // Mutation caught: remove FeedPage actions or move them outside FixedTopBar.actions.
-    expect(html).toContain('data-fixed-topbar-actions')
-    expect(html).toContain('href="/solicitudes"')
-    expect(html).toContain('href="/buscar"')
-    expect(html).toContain('href="/feed/new"')
+    await pwExpect(actionRegion.getByRole('link', { name: 'Solicitudes de seguimiento' }))
+      .toHaveAttribute('href', '/solicitudes')
+    await pwExpect(actionRegion.getByRole('link', { name: 'Buscar usuarios' }))
+      .toHaveAttribute('href', '/buscar')
+    await pwExpect(actionRegion.getByRole('link', { name: 'Nueva publicación' }))
+      .toHaveAttribute('href', '/feed/new')
   })
 
   it('keeps Chat destinations and the New handler in the real top-bar action region', async () => {
