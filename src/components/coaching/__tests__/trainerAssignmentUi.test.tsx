@@ -65,7 +65,23 @@ describe('trainer assignment browser interaction', () => {
     if (!address || typeof address === 'string') throw new Error('Vite trainer assignment fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+
+    // Keep the first Vite transform outside the per-test timeout. On a clean
+    // checkout this fixture can take longer to compile than the interaction
+    // itself, while subsequent loads exercise the same rendered behavior.
+    const warmupPage = await browser.newPage()
+    try {
+      const response = await warmupPage.goto(
+        `${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html`,
+      )
+      expect(response?.ok(), 'the assignment fixture must be served').toBe(true)
+      await warmupPage.waitForFunction(() => Boolean(
+        (window as Window & { __ASSIGN_DIALOG_READY__?: boolean }).__ASSIGN_DIALOG_READY__,
+      ))
+    } finally {
+      await warmupPage.close()
+    }
+  }, 45_000)
 
   afterAll(async () => { await browser?.close(); await viteServer?.close() })
 

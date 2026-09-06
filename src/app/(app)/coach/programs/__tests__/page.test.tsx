@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import type CoachProgramsPage from '../page'
+
+type CoachProgramsPagePropsAreRequired =
+  undefined extends Parameters<typeof CoachProgramsPage>[0] ? false : true
+
+const coachProgramsPagePropsAreRequired: CoachProgramsPagePropsAreRequired = true
 
 const { requireActiveTrainerContext } = vi.hoisted(() => ({ requireActiveTrainerContext: vi.fn() }))
 
@@ -33,6 +39,10 @@ function supabaseForRelationship(relationshipData: unknown, relationshipError: u
 
 describe('CoachProgramsPage', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('keeps page props required for the Next.js route contract', () => {
+    expect(coachProgramsPagePropsAreRequired).toBe(true)
+  })
 
   it('drops an ineligible client without exposing its id in routine links', async () => {
     const supabase = supabaseForRelationship(null)
