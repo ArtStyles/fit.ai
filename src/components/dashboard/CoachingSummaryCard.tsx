@@ -16,6 +16,14 @@ const stateLabels: Record<CoachingSummaryDisplayState, string> = {
   awaiting_routine: 'Tu entrenador está preparando el siguiente paso',
 }
 
+const ctaLabels: Record<CoachingSummaryDisplayState, string> = {
+  paused: 'Revisar acompañamiento',
+  needs_consent: 'Completar autorización',
+  proposal_pending: 'Revisar rutina',
+  active_plan: 'Ver acompañamiento',
+  awaiting_routine: 'Ver acompañamiento',
+}
+
 export function getCoachingSummaryDisplayState(
   summary: ClientCoachingSummary,
 ): CoachingSummaryDisplayState {
@@ -55,6 +63,9 @@ export function CoachingSummaryCard({
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Tu acompañamiento
+          </p>
           <p className="truncate font-semibold text-foreground">{summary.trainerName}</p>
           <p className="truncate text-sm text-muted-foreground">{summary.serviceName}</p>
           <p className="mt-1 text-sm font-medium text-foreground" aria-label="Estado del acompañamiento">
@@ -66,7 +77,7 @@ export function CoachingSummaryCard({
         className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         href="/coaching"
       >
-        Ver acompañamiento
+        {ctaLabels[state]}
       </a>
     </article>
   )

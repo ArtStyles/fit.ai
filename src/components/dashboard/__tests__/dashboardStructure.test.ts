@@ -57,6 +57,17 @@ describe('dashboard structure', () => {
     expect(page).not.toMatch(/active_trainer_directory[^]*client_user_id/)
   })
 
+  it('keeps the persistent coaching load error out of live announcement semantics', () => {
+    const coachingStart = page.indexOf('coaching={')
+    const coachingEnd = page.indexOf('music={<MusicNowPlayingSlot', coachingStart)
+    const coachingSource = page.slice(coachingStart, coachingEnd)
+
+    expect(coachingStart).toBeGreaterThanOrEqual(0)
+    expect(coachingEnd).toBeGreaterThan(coachingStart)
+    expect(coachingSource).toContain('coachingSummaryError')
+    expect(coachingSource).not.toMatch(/role="status"|aria-live/)
+  })
+
   it('uses a real desktop grid without duplicating the current workout', () => {
     expect(journey).toContain('lg:grid-cols-[minmax(0,1fr)_22rem]')
     expect(page).not.toContain('<TodayActionCard')

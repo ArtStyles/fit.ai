@@ -11,12 +11,14 @@ const cases: Array<{
   name: string
   expectedState: CoachingSummaryDisplayState
   expectedLabel: string
+  expectedCta: string
   summary: ClientCoachingSummary
 }> = [
   {
     name: 'prioritizes a paused relationship over consent and assignment state',
     expectedState: 'paused',
     expectedLabel: 'Acompañamiento pausado',
+    expectedCta: 'Revisar acompañamiento',
     summary: {
       relationshipId: 'relationship-paused',
       relationshipStatus: 'paused_by_platform',
@@ -35,6 +37,7 @@ const cases: Array<{
     name: 'prioritizes missing consent over a pending proposal',
     expectedState: 'needs_consent',
     expectedLabel: 'Falta autorizar tus datos de entrenamiento',
+    expectedCta: 'Completar autorización',
     summary: {
       relationshipId: 'relationship-consent',
       relationshipStatus: 'active',
@@ -53,6 +56,7 @@ const cases: Array<{
     name: 'shows a proposed assignment as pending review',
     expectedState: 'proposal_pending',
     expectedLabel: 'Rutina pendiente de revisión',
+    expectedCta: 'Revisar rutina',
     summary: {
       relationshipId: 'relationship-proposal',
       relationshipStatus: 'active',
@@ -71,6 +75,7 @@ const cases: Array<{
     name: 'shows an active trainer plan',
     expectedState: 'active_plan',
     expectedLabel: 'Rutina activa con tu entrenador',
+    expectedCta: 'Ver acompañamiento',
     summary: {
       relationshipId: 'relationship-active',
       relationshipStatus: 'active',
@@ -89,6 +94,7 @@ const cases: Array<{
     name: 'shows that an active trainer without an assignment is preparing the next step',
     expectedState: 'awaiting_routine',
     expectedLabel: 'Tu entrenador está preparando el siguiente paso',
+    expectedCta: 'Ver acompañamiento',
     summary: {
       relationshipId: 'relationship-awaiting',
       relationshipStatus: 'active',
@@ -106,7 +112,7 @@ const cases: Array<{
 ]
 
 describe('CoachingSummaryCard', () => {
-  it.each(cases)('$name', ({ expectedState, expectedLabel, summary }) => {
+  it.each(cases)('$name', ({ expectedState, expectedLabel, expectedCta, summary }) => {
     const html = renderToStaticMarkup(<CoachingSummaryCard summary={summary} />)
 
     expect(getCoachingSummaryDisplayState(summary)).toBe(expectedState)
@@ -114,5 +120,13 @@ describe('CoachingSummaryCard', () => {
     expect(html).toContain(summary.trainerName)
     expect(html).toContain(summary.serviceName)
     expect(html).toContain('href="/coaching"')
+    expect(html).toContain(`>${expectedCta}</a>`)
+  })
+
+  it('renders the visible coaching section label', () => {
+    const html = renderToStaticMarkup(<CoachingSummaryCard summary={cases[0].summary} />)
+
+    expect(html).toContain('>Tu acompañamiento</p>')
+    expect(html).not.toContain('sr-only">Tu acompañamiento')
   })
 })

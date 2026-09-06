@@ -625,7 +625,7 @@ export default async function DashboardPage() {
         coaching={coachingSummary ? (
           <CoachingSummaryCard summary={coachingSummary} />
         ) : coachingSummaryError ? (
-          <p className="rounded-xl border border-border/70 px-4 py-3 text-sm text-muted-foreground" role="status">
+          <p className="rounded-xl border border-border/70 px-4 py-3 text-sm text-muted-foreground">
             {coachingSummaryError}
           </p>
         ) : null}
