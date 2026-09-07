@@ -125,6 +125,12 @@ try {
   const migrations = readdirSync(migrationDirectory).filter(name => name.endsWith('.sql')).sort()
   const baseline = migrations.find(name => name.endsWith('_remote_schema_baseline.sql'))
   check(sql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, baseline), 'utf8')}`), 'Load active baseline with postgres ownership')
+  const personalBoundarySql = `SELECT jsonb_agg(jsonb_build_array(oid::regprocedure::text,
+    proowner::regrole::text,prosecdef,proconfig,proacl::text,pronargdefaults) ORDER BY proname)
+    FROM pg_proc WHERE oid IN ('public.create_manual_plan_atomic(jsonb,jsonb,boolean)'::regprocedure,
+    'public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb)'::regprocedure);`
+  const personalBoundaryBefore = sql(personalBoundarySql)
+  check(personalBoundaryBefore, 'Capture original personal RPC ownership, invoker mode, search path, ACL and defaults')
   check(sql(phases.fixtures), 'Create fictional fixtures')
   const red = sql(phases.baseline)
   if (red.status === 0 || !red.stderr.includes('PLAN_DIRECT_LIFECYCLE_MUTATION_FORBIDDEN')) {
@@ -137,6 +143,13 @@ try {
     for (const migration of migrations.filter(name => name > baseline)) {
       check(sql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, migration), 'utf8')}`), `Apply ${migration}`)
     }
+    const personalBoundaryAfter = sql(personalBoundarySql)
+    check(personalBoundaryAfter, 'Read migrated personal RPC boundaries')
+    if (personalBoundaryBefore.stdout !== personalBoundaryAfter.stdout) throw new Error('Personal RPC migration changed original ownership, invoker mode, search path, ACL or defaults')
+    console.log('Personal creation preserves exact original RPC boundaries: OK')
+    const personalFixtures = phases.fixtures.replaceAll('59000000', '59400000')
+      .replaceAll('single-pending', 'personal-creation').replaceAll('@example.test', '+personal@example.test')
+    check(sql(phases.personal_creation.replace('-- PERSONAL_FIXTURES', personalFixtures)), 'Independent personal creation under API role', { tap: true })
     check(sql(phases.behavior), 'API role lifecycle assertions', { tap: true })
     check(sql(phases.permissions), 'Participant and permission boundaries', { tap: true })
     check(sql(phases.selection), 'Selection periods and historical adherence', { tap: true })

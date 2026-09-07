@@ -590,6 +590,386 @@ END;
 $$;
 
 
+-- Independent personal creation retains invoker RLS, validation, limits and
+-- logging. Only the validated selection RPC changes the principal professional
+-- copy; callers never gain authority to change its prescription.
+CREATE OR REPLACE FUNCTION public.create_engine_plan_v2(p_plan jsonb, p_metadata jsonb, p_week_number integer, p_plan_context text, p_expected_parent_plan_id uuid, p_generation_request_id uuid, p_profile_updates jsonb DEFAULT '{}'::jsonb) RETURNS uuid
+    LANGUAGE plpgsql SECURITY INVOKER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_existing_plan_id UUID;
+  v_plan_id UUID;
+  v_family_id UUID;
+  v_parent_plan workout_plans%ROWTYPE;
+  v_subscription_tier TEXT;
+  v_family_count INTEGER;
+  v_generation_count INTEGER;
+  v_workout_id UUID;
+  v_day JSONB;
+  v_exercise JSONB;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  IF p_generation_request_id IS NULL THEN
+    RAISE EXCEPTION 'PLAN_REQUEST_ID_REQUIRED';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
+  IF p_plan_context IS DISTINCT FROM 'first_plan' THEN
+    PERFORM public.assert_professional_plan_replaceable(v_user_id);
+  END IF;
+
+  -- A retry must win even after its parent was superseded by the first attempt.
+  SELECT id INTO v_existing_plan_id
+  FROM workout_plans
+  WHERE user_id = v_user_id
+    AND generation_request_id = p_generation_request_id
+  LIMIT 1;
+
+  IF v_existing_plan_id IS NOT NULL THEN
+    RETURN v_existing_plan_id;
+  END IF;
+
+  IF p_plan_context NOT IN ('first_plan', 'weekly_regeneration', 'manual_update') THEN
+    RAISE EXCEPTION 'Invalid plan context';
+  END IF;
+
+  IF jsonb_typeof(p_plan->'days') IS DISTINCT FROM 'array'
+    OR jsonb_array_length(p_plan->'days') = 0 THEN
+    RAISE EXCEPTION 'Plan has no days';
+  END IF;
+
+  IF p_plan_context = 'first_plan' THEN
+    IF p_expected_parent_plan_id IS NOT NULL THEN
+      RAISE EXCEPTION 'PLAN_INITIAL_PARENT_NOT_ALLOWED';
+    END IF;
+
+    SELECT subscription_tier INTO v_subscription_tier
+    FROM profiles
+    WHERE id = v_user_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Profile not found';
+    END IF;
+
+    IF COALESCE(v_subscription_tier, 'free') = 'free' THEN
+      SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+      FROM workout_plans
+      WHERE user_id = v_user_id
+        AND library_slot = 'personal'
+        AND retired_at IS NULL
+        AND superseded_at IS NULL;
+
+      IF v_family_count >= 2 THEN
+        RAISE EXCEPTION 'PLAN_FAMILY_LIMIT: free plan family limit reached';
+      END IF;
+    END IF;
+
+    SELECT COUNT(*)::INTEGER INTO v_generation_count
+    FROM plan_generation_events
+    WHERE user_id = v_user_id
+      AND mode = 'initial'
+      AND generator = 'evidence_engine'
+      AND success = TRUE
+      AND created_at >= NOW() - INTERVAL '24 hours';
+
+    IF v_generation_count >= 3 THEN
+      RAISE EXCEPTION 'PLAN_RATE_LIMIT: initial plan limit reached';
+    END IF;
+
+    v_family_id := gen_random_uuid();
+  ELSE
+    IF p_expected_parent_plan_id IS NULL THEN
+      RAISE EXCEPTION 'PLAN_STALE_PARENT: expected active parent is required';
+    END IF;
+
+    SELECT * INTO v_parent_plan
+    FROM workout_plans
+    WHERE id = p_expected_parent_plan_id
+      AND user_id = v_user_id
+      AND is_active = TRUE
+      AND retired_at IS NULL
+      AND superseded_at IS NULL
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'PLAN_STALE_PARENT: active plan changed';
+    END IF;
+
+    v_family_id := v_parent_plan.family_id;
+
+    IF p_plan_context = 'weekly_regeneration' THEN
+      SELECT COUNT(*)::INTEGER INTO v_generation_count
+      FROM plan_generation_events
+      WHERE user_id = v_user_id
+        AND mode = 'weekly_regeneration'
+        AND generator = 'evidence_engine'
+        AND success = TRUE
+        AND created_at >= NOW() - INTERVAL '7 days';
+
+      IF v_generation_count >= 2 THEN
+        RAISE EXCEPTION 'PLAN_RATE_LIMIT: weekly regeneration limit reached';
+      END IF;
+    END IF;
+  END IF;
+
+  INSERT INTO workout_plans (
+    user_id,
+    name,
+    goal,
+    duration_weeks,
+    days_per_week,
+    difficulty,
+    is_active,
+    generated_by_ai,
+    ai_notes,
+    week_number,
+    plan_context,
+    parent_plan_id,
+    source_type,
+    generation_metadata,
+    family_id,
+    generation_request_id,
+    library_slot
+  ) VALUES (
+    v_user_id,
+    p_plan->>'display_name',
+    p_plan->>'goal',
+    1,
+    jsonb_array_length(p_plan->'days'),
+    NULLIF(p_plan->>'difficulty', ''),
+    FALSE,
+    FALSE,
+    p_plan->>'ai_notes',
+    GREATEST(1, p_week_number),
+    p_plan_context,
+    p_expected_parent_plan_id,
+    'engine',
+    COALESCE(p_metadata, '{}'::jsonb),
+    v_family_id,
+    p_generation_request_id,
+    'personal'
+  )
+  RETURNING id INTO v_plan_id;
+
+  FOR v_day IN SELECT value FROM jsonb_array_elements(p_plan->'days')
+  LOOP
+    IF jsonb_typeof(v_day->'exercises') IS DISTINCT FROM 'array'
+      OR jsonb_array_length(v_day->'exercises') = 0 THEN
+      RAISE EXCEPTION 'Workout day has no exercises';
+    END IF;
+
+    INSERT INTO workouts (
+      user_id,
+      plan_id,
+      name,
+      focus,
+      day_of_week,
+      order_in_plan,
+      estimated_duration_minutes
+    ) VALUES (
+      v_user_id,
+      v_plan_id,
+      v_day->>'display_name',
+      NULLIF(v_day->>'focus', ''),
+      (v_day->>'day_of_week')::INTEGER,
+      (v_day->>'day_number')::INTEGER,
+      (v_day->>'estimated_duration_minutes')::INTEGER
+    )
+    RETURNING id INTO v_workout_id;
+
+    FOR v_exercise IN SELECT value FROM jsonb_array_elements(v_day->'exercises')
+    LOOP
+      INSERT INTO workout_exercises (
+        workout_id,
+        exercise_id,
+        order_index,
+        sets,
+        reps,
+        duration_seconds,
+        rest_seconds,
+        target_rpe,
+        weight_kg,
+        notes,
+        weight_suggestion_basis
+      ) VALUES (
+        v_workout_id,
+        (v_exercise->>'exercise_id')::UUID,
+        COALESCE((v_exercise->>'order_index')::INTEGER, 1),
+        (v_exercise->>'sets')::INTEGER,
+        NULLIF(v_exercise->>'reps', '')::INTEGER,
+        NULLIF(v_exercise->>'duration_seconds', '')::INTEGER,
+        (v_exercise->>'rest_seconds')::INTEGER,
+        NULLIF(v_exercise->>'target_rpe', '')::INTEGER,
+        NULLIF(v_exercise->>'weight_kg', '')::NUMERIC,
+        NULLIF(v_exercise->>'notes', ''),
+        v_exercise->>'weight_suggestion_basis'
+      );
+    END LOOP;
+  END LOOP;
+
+  UPDATE profiles SET
+    days_per_week = CASE WHEN p_profile_updates ? 'days_per_week'
+      THEN (p_profile_updates->>'days_per_week')::INTEGER ELSE days_per_week END,
+    session_duration_minutes = CASE WHEN p_profile_updates ? 'session_duration_minutes'
+      THEN (p_profile_updates->>'session_duration_minutes')::INTEGER ELSE session_duration_minutes END,
+    preferred_workout_days = CASE WHEN p_profile_updates ? 'preferred_workout_days'
+      THEN ARRAY(
+        SELECT jsonb_array_elements_text(
+          COALESCE(p_profile_updates->'preferred_workout_days', '[]'::jsonb)
+        )::INTEGER
+      ) ELSE preferred_workout_days END,
+    available_equipment = CASE WHEN p_profile_updates ? 'available_equipment'
+      THEN ARRAY(SELECT jsonb_array_elements_text(p_profile_updates->'available_equipment'))
+      ELSE available_equipment END,
+    cardio_preferences = CASE WHEN p_profile_updates ? 'cardio_preferences'
+      THEN ARRAY(SELECT jsonb_array_elements_text(p_profile_updates->'cardio_preferences'))
+      ELSE cardio_preferences END
+  WHERE id = v_user_id;
+
+  IF p_plan_context <> 'first_plan' THEN
+    UPDATE workout_plans
+    SET is_active = FALSE, superseded_at = NOW()
+    WHERE id = p_expected_parent_plan_id
+      AND user_id = v_user_id
+      AND is_active = TRUE
+      AND retired_at IS NULL
+      AND superseded_at IS NULL;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'PLAN_STALE_PARENT: active plan changed';
+    END IF;
+  END IF;
+
+  -- Selecting a new personal family can deselect a locked professional copy.
+  -- The existing RPC validates ownership and availability under its real role.
+  PERFORM public.activate_plan_version(v_plan_id);
+
+  PERFORM public.record_plan_generation_success(v_plan_id);
+
+  RETURN v_plan_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_manual_plan_atomic(p_plan jsonb, p_workouts jsonb, p_make_active boolean DEFAULT true) RETURNS uuid
+    LANGUAGE plpgsql SECURITY INVOKER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_plan_id UUID;
+  v_family_id UUID := gen_random_uuid();
+  v_subscription_tier TEXT;
+  v_family_count INTEGER;
+  v_workout JSONB;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  IF NULLIF(BTRIM(p_plan->>'name'), '') IS NULL THEN
+    RAISE EXCEPTION 'Manual plan name is required';
+  END IF;
+
+  IF jsonb_typeof(p_workouts) IS DISTINCT FROM 'array'
+    OR jsonb_array_length(p_workouts) = 0 THEN
+    RAISE EXCEPTION 'Manual plan has no workouts';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(v_user_id::TEXT, 0));
+  PERFORM set_config('app.plan_lifecycle_actor', v_user_id::TEXT, TRUE);
+
+  SELECT subscription_tier INTO v_subscription_tier
+  FROM profiles
+  WHERE id = v_user_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Profile not found';
+  END IF;
+
+  IF COALESCE(v_subscription_tier, 'free') = 'free' THEN
+    SELECT COUNT(DISTINCT family_id)::INTEGER INTO v_family_count
+    FROM workout_plans
+    WHERE user_id = v_user_id
+      AND library_slot = 'personal'
+      AND retired_at IS NULL
+      AND superseded_at IS NULL;
+
+    IF v_family_count >= 2 THEN
+      RAISE EXCEPTION 'PLAN_FAMILY_LIMIT: free plan family limit reached';
+    END IF;
+  END IF;
+
+  INSERT INTO workout_plans (
+    user_id,
+    name,
+    goal,
+    duration_weeks,
+    days_per_week,
+    difficulty,
+    is_active,
+    generated_by_ai,
+    plan_context,
+    source_type,
+    manually_updated_at,
+    family_id,
+    library_slot
+  ) VALUES (
+    v_user_id,
+    BTRIM(p_plan->>'name'),
+    NULLIF(BTRIM(p_plan->>'goal'), ''),
+    COALESCE((p_plan->>'duration_weeks')::INTEGER, 1),
+    jsonb_array_length(p_workouts),
+    NULLIF(p_plan->>'difficulty', ''),
+    FALSE,
+    FALSE,
+    'manual_update',
+    'manual',
+    NOW(),
+    v_family_id,
+    'personal'
+  )
+  RETURNING id INTO v_plan_id;
+
+  FOR v_workout IN
+    SELECT value FROM jsonb_array_elements(COALESCE(p_workouts, '[]'::jsonb))
+  LOOP
+    IF NULLIF(BTRIM(v_workout->>'name'), '') IS NULL THEN
+      RAISE EXCEPTION 'Manual workout name is required';
+    END IF;
+
+    INSERT INTO workouts (
+      user_id,
+      plan_id,
+      name,
+      focus,
+      day_of_week,
+      order_in_plan,
+      estimated_duration_minutes
+    ) VALUES (
+      v_user_id,
+      v_plan_id,
+      BTRIM(v_workout->>'name'),
+      NULLIF(BTRIM(v_workout->>'focus'), ''),
+      (v_workout->>'day_of_week')::INTEGER,
+      (v_workout->>'order_in_plan')::INTEGER,
+      COALESCE((v_workout->>'estimated_duration_minutes')::INTEGER, 60)
+    );
+  END LOOP;
+
+  IF p_make_active THEN
+    PERFORM public.activate_plan_version(v_plan_id);
+  END IF;
+
+  RETURN v_plan_id;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.remove_trainer_assignment(p_plan_id uuid) RETURNS uuid
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE
@@ -1960,6 +2340,16 @@ BEGIN
 
   IF to_regprocedure('public.assign_trainer_program(uuid,uuid,text,text)') IS NULL
     OR to_regprocedure('public.remove_trainer_assignment(uuid)') IS NULL
+    OR to_regprocedure('public.create_manual_plan_atomic(jsonb,jsonb,boolean)') IS NULL
+    OR to_regprocedure('public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb)') IS NULL
+    OR EXISTS (
+      SELECT 1 FROM pg_proc procedure JOIN pg_roles owner_role ON owner_role.oid=procedure.proowner
+      WHERE procedure.oid IN (
+        'public.create_manual_plan_atomic(jsonb,jsonb,boolean)'::regprocedure,
+        'public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb)'::regprocedure
+      ) AND (procedure.prosecdef OR owner_role.rolname<>'postgres'
+        OR procedure.proconfig IS DISTINCT FROM ARRAY['search_path=public']::TEXT[])
+    )
     OR has_function_privilege('anon','public.assign_trainer_program(uuid,uuid,text,text)','EXECUTE')
     OR has_function_privilege('anon','public.remove_trainer_assignment(uuid)','EXECUTE')
     OR NOT has_function_privilege('authenticated','public.assign_trainer_program(uuid,uuid,text,text)','EXECUTE')

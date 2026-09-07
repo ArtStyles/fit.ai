@@ -97,6 +97,161 @@ UPDATE public.trainer_template_workouts SET day_of_week=extract(isodow from now(
 INSERT INTO public.workout_plans (id,user_id,name,days_per_week,is_active,source_type,family_id,library_slot)
 VALUES ('59000000-0000-4000-8000-000000000091','59000000-0000-4000-8000-000000000002','Personal',1,true,'manual','59000000-0000-4000-8000-000000000091','personal');
 
+-- phase: personal_creation
+BEGIN;
+-- PERSONAL_FIXTURES
+CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
+SET search_path=public,extensions;
+SELECT no_plan();
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT set_config('request.jwt.claim.sub','59400000-0000-4000-8000-000000000001',true);
+SELECT workout_plan_id AS manual_professional FROM assign_trainer_program('59400000-0000-4000-8000-000000000041','59400000-0000-4000-8000-000000000061',NULL,'personal-manual') \gset
+SELECT workout_plan_id AS engine_professional FROM assign_trainer_program('59400000-0000-4000-8000-000000000042','59400000-0000-4000-8000-000000000061',NULL,'personal-engine') \gset
+SELECT set_config('request.jwt.claim.sub','59400000-0000-4000-8000-000000000003',true);
+SELECT activate_plan_version(:'engine_professional');
+SELECT set_config('request.jwt.claim.sub','59400000-0000-4000-8000-000000000002',true);
+SELECT activate_plan_version(:'manual_professional');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT jsonb_build_array(
+  (SELECT jsonb_agg(to_jsonb(p)-'is_active'-'updated_at' ORDER BY p.id) FROM workout_plans p WHERE id IN (:'manual_professional',:'engine_professional')),
+  (SELECT jsonb_agg(to_jsonb(w) ORDER BY w.id) FROM workouts w WHERE plan_id IN (:'manual_professional',:'engine_professional')),
+  (SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM workout_exercises e JOIN workouts w ON w.id=e.workout_id WHERE w.plan_id IN (:'manual_professional',:'engine_professional')),
+  (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM trainer_plan_assignments a WHERE trainer_user_id='59400000-0000-4000-8000-000000000001'),
+  (SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM trainer_assignment_versions v WHERE materialized_plan_id IN (:'manual_professional',:'engine_professional'))
+) AS professional_snapshot \gset
+SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) AS manual_periods FROM private.trainer_plan_selection_periods p WHERE client_user_id='59400000-0000-4000-8000-000000000002' \gset
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT is(session_user::text,'authenticator','personal creation uses an actual API session');
+SELECT is(current_user::text,'authenticated','personal creation uses the authenticated role');
+SELECT '{"display_name":"Independent engine","days":[{"display_name":"Engine day","day_of_week":1,"day_number":1,"estimated_duration_minutes":30,"exercises":[{"exercise_id":"59400000-0000-4000-8000-000000000051","sets":3,"reps":8,"rest_seconds":60}]}]}' AS engine_payload \gset
+SELECT throws_ok($$SELECT create_manual_plan_atomic('{"name":" "}','[{"name":"Day"}]',true)$$,'P0001','Manual plan name is required','manual creation still validates its name');
+SELECT throws_ok($$SELECT create_manual_plan_atomic('{"name":"Invalid"}','[]',true)$$,'P0001','Manual plan has no workouts','manual creation still requires workouts');
+SELECT throws_ok($$SELECT create_manual_plan_atomic('{"name":"Invalid"}','[{"name":"Day","day_of_week":1,"order_in_plan":1},{"name":" "}]',false)$$,'P0001','Manual workout name is required','late invalid workout rejects the complete manual creation');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE library_slot='personal'),1,'failed manual creation leaves no partial family');
+SELECT create_manual_plan_atomic('{"name":"Library only","user_id":"59400000-0000-4000-8000-000000000003"}','[{"name":"Saved day","day_of_week":1,"order_in_plan":1}]',false) AS manual_saved \gset
+SELECT ok((SELECT NOT is_active AND library_slot='personal' AND parent_plan_id IS NULL AND user_id='59400000-0000-4000-8000-000000000002' FROM workout_plans WHERE id=:'manual_saved'),'manual false saves an independent family owned by the caller');
+SELECT ok((SELECT is_active FROM workout_plans WHERE id=:'manual_professional'),'manual false keeps the professional principal');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT is((SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM private.trainer_plan_selection_periods p WHERE client_user_id='59400000-0000-4000-8000-000000000002'),:'manual_periods'::jsonb,'manual false preserves exact open selection history');
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT retire_plan_family(:'manual_saved');
+SELECT lives_ok($$SELECT create_manual_plan_atomic('{"name":"Independent manual"}','[{"name":"Manual day","day_of_week":1,"order_in_plan":1}]',true)$$,'manual creation can select a new personal family while a professional plan is principal');
+SELECT id AS manual_personal FROM workout_plans WHERE name='Independent manual' \gset
+SELECT ok((SELECT is_active AND library_slot='personal' AND source_type='manual' AND parent_plan_id IS NULL AND family_id<>(SELECT family_id FROM workout_plans WHERE id=:'manual_professional') FROM workout_plans WHERE id=:'manual_personal'),'manual true selects a separate personal family without a professional parent');
+SELECT ok((SELECT NOT is_active AND retired_at IS NULL AND superseded_at IS NULL FROM workout_plans WHERE id=:'manual_professional'),'manual selection leaves professional copy available and unsuperseded');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),1,'manual creation leaves exactly one principal');
+SELECT ok((SELECT retired_at IS NULL AND superseded_at IS NULL FROM workout_plans WHERE id='59400000-0000-4000-8000-000000000091'),'manual creation preserves the other personal family');
+SELECT throws_ok($$SELECT create_manual_plan_atomic('{"name":"Excess"}','[{"name":"Day","day_of_week":1,"order_in_plan":1}]',false)$$,'P0001','PLAN_FAMILY_LIMIT: free plan family limit reached','manual creation retains the free personal-family cap');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',1,''first_plan'',NULL,''59400000-0000-4000-8000-000000000109'')',:'engine_payload'),'P0001','PLAN_FAMILY_LIMIT: free plan family limit reached','engine creation retains the shared personal-family cap');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT is((SELECT count(*)::int FROM private.trainer_plan_selection_periods WHERE client_user_id='59400000-0000-4000-8000-000000000002' AND ended_at IS NOT NULL),1,'manual switch closes the professional selection period once');
+SELECT is((SELECT count(*)::int FROM private.trainer_plan_selection_periods WHERE client_user_id='59400000-0000-4000-8000-000000000002' AND ended_at IS NULL),0,'manual switch leaves no open professional period');
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59400000-0000-4000-8000-000000000003',true);
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',1,''first_plan'',NULL,NULL)',:'engine_payload'),'P0001','PLAN_REQUEST_ID_REQUIRED','engine still requires an idempotency request');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',1,''first_plan'',%L,''59400000-0000-4000-8000-000000000110'')',:'engine_payload',:'engine_professional'),'P0001','PLAN_INITIAL_PARENT_NOT_ALLOWED','initial mode cannot smuggle a professional parent');
+SELECT throws_ok($$SELECT create_engine_plan_v2('{"display_name":"Invalid","days":[{"display_name":"Day","exercises":[]}]}','{}',1,'first_plan',NULL,'59400000-0000-4000-8000-000000000110')$$,'P0001','Workout day has no exercises','engine rejects a malformed workout after attempting a plan insert');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE library_slot='personal'),0,'failed engine creation rolls back the partial plan');
+SELECT lives_ok(format('SELECT create_engine_plan_v2(%L,''{"engineVersion":"personal-integration"}'',1,''first_plan'',NULL,''59400000-0000-4000-8000-000000000101'',''{"days_per_week":2,"session_duration_minutes":30,"preferred_workout_days":[1],"available_equipment":["barbell"],"cardio_preferences":["walking"]}'')',:'engine_payload'),'first engine creation can select a new personal family while a professional plan is principal');
+SELECT id AS engine_personal,family_id AS engine_family FROM workout_plans WHERE generation_request_id='59400000-0000-4000-8000-000000000101' \gset
+SELECT ok((SELECT is_active AND library_slot='personal' AND source_type='engine' AND parent_plan_id IS NULL AND family_id<>(SELECT family_id FROM workout_plans WHERE id=:'engine_professional') FROM workout_plans WHERE id=:'engine_personal'),'first engine plan is principal in a separate family without a professional parent');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),1,'engine first creation leaves exactly one principal');
+SELECT ok((SELECT days_per_week=2 AND session_duration_minutes=30 AND preferred_workout_days=ARRAY[1] AND available_equipment=ARRAY['barbell'] AND cardio_preferences=ARRAY['walking'] FROM profiles WHERE id='59400000-0000-4000-8000-000000000003'),'engine creation retains all profile update semantics');
+SELECT activate_plan_version(:'engine_professional');
+SELECT is(create_engine_plan_v2(:'engine_payload','{}',1,'first_plan',NULL,'59400000-0000-4000-8000-000000000101','{"days_per_week":3}'),:'engine_personal'::uuid,'retry returns its original personal plan while professional is selected');
+SELECT ok((SELECT is_active FROM workout_plans WHERE id=:'engine_professional'),'idempotent retry does not replace the newer principal choice');
+SELECT is((SELECT days_per_week FROM profiles WHERE id='59400000-0000-4000-8000-000000000003'),2,'idempotent retry does not apply profile updates again');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',2,''weekly_regeneration'',%L,''59400000-0000-4000-8000-000000000102'')',:'engine_payload',:'engine_professional'),'P0001','PROFESSIONAL_PLAN_REPLACEMENT_FORBIDDEN','direct weekly RPC cannot regenerate the professional principal');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',2,''manual_update'',%L,''59400000-0000-4000-8000-000000000103'')',:'engine_payload',:'engine_professional'),'P0001','PROFESSIONAL_PLAN_REPLACEMENT_FORBIDDEN','direct manual-update RPC cannot replace the professional principal');
+SELECT w.id AS professional_workout,e.id AS professional_exercise FROM workouts w JOIN workout_exercises e ON e.workout_id=w.id WHERE w.plan_id=:'engine_professional' \gset
+SELECT throws_ok(format('SELECT apply_workout_adjustment_atomic(%L,%L)',:'professional_workout',jsonb_build_array(jsonb_build_object('type','update_exercise','workoutExerciseId',:'professional_exercise','sets',5))::text),'P0001','WORKOUT_ADJUSTMENT_NOT_EDITABLE','direct adjustment RPC cannot mutate a professional prescription');
+SELECT throws_ok(format('UPDATE workout_plans SET name=''Forged after creation'' WHERE id=%L',:'engine_professional'),'P0001','TRAINER_PRESCRIPTION_LOCKED','successful creation and selection never grant invoker prescription privileges');
+SELECT activate_plan_version(:'engine_personal');
+SELECT create_engine_plan_v2(:'engine_payload','{}',2,'weekly_regeneration',:'engine_personal','59400000-0000-4000-8000-000000000104') AS weekly_personal \gset
+SELECT ok((SELECT is_active AND family_id=:'engine_family' AND parent_plan_id=:'engine_personal' FROM workout_plans WHERE id=:'weekly_personal'),'personal weekly regeneration keeps its family and direct parent');
+SELECT ok((SELECT NOT is_active AND superseded_at IS NOT NULL FROM workout_plans WHERE id=:'engine_personal'),'personal regeneration still supersedes the original version');
+SELECT is(create_engine_plan_v2(:'engine_payload','{}',2,'weekly_regeneration',:'engine_personal','59400000-0000-4000-8000-000000000104'),:'weekly_personal'::uuid,'weekly retry succeeds even though its parent was superseded');
+SELECT create_engine_plan_v2(:'engine_payload','{}',2,'manual_update',:'weekly_personal','59400000-0000-4000-8000-000000000105') AS adjusted_personal \gset
+SELECT ok((SELECT is_active AND family_id=:'engine_family' AND parent_plan_id=:'weekly_personal' FROM workout_plans WHERE id=:'adjusted_personal'),'personal manual-update generation keeps family and parent');
+SELECT w.id AS personal_workout,e.id AS personal_exercise FROM workouts w JOIN workout_exercises e ON e.workout_id=w.id WHERE w.plan_id=:'adjusted_personal' \gset
+SELECT is(apply_workout_adjustment_atomic(:'personal_workout',jsonb_build_array(jsonb_build_object('type','update_exercise','workoutExerciseId',:'personal_exercise','sets',5))),1,'normal personal adjustment remains available');
+SELECT is((SELECT sets FROM workout_exercises WHERE id=:'personal_exercise'),5,'personal adjustment persists the requested prescription change');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',2,''manual_update'',%L,''59400000-0000-4000-8000-000000000106'')',:'engine_payload',:'weekly_personal'),'P0001','PLAN_STALE_PARENT: active plan changed','regeneration still rejects a stale personal parent');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+-- The event ledger intentionally has no API SELECT policy; inspect persisted
+-- evidence administratively, without substituting the RPC caller's API role.
+SELECT ok((SELECT mode='initial' AND generator='evidence_engine' AND success AND engine_version='personal-integration' AND metadata='{"weekNumber":1}'::jsonb FROM plan_generation_events WHERE plan_id=:'engine_personal'),'engine creation records its original generation metadata');
+SELECT is((SELECT count(*)::int FROM plan_generation_events WHERE plan_id=:'engine_personal'),1,'retry records no duplicate generation success');
+SELECT is((SELECT mode FROM plan_generation_events WHERE plan_id=:'adjusted_personal'),'plan_adjustment','manual-update generation retains event classification');
+SELECT is(jsonb_build_array(
+  (SELECT jsonb_agg(to_jsonb(p)-'is_active'-'updated_at' ORDER BY p.id) FROM workout_plans p WHERE id IN (:'manual_professional',:'engine_professional')),
+  (SELECT jsonb_agg(to_jsonb(w) ORDER BY w.id) FROM workouts w WHERE plan_id IN (:'manual_professional',:'engine_professional')),
+  (SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM workout_exercises e JOIN workouts w ON w.id=e.workout_id WHERE w.plan_id IN (:'manual_professional',:'engine_professional')),
+  (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM trainer_plan_assignments a WHERE trainer_user_id='59400000-0000-4000-8000-000000000001'),
+  (SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM trainer_assignment_versions v WHERE materialized_plan_id IN (:'manual_professional',:'engine_professional'))
+),:'professional_snapshot'::jsonb,'personal creation, regeneration and adjustment preserve exact professional prescriptions, workouts, exercises, assignments and versions');
+SELECT is((SELECT count(*)::int FROM private.trainer_plan_selection_periods WHERE client_user_id='59400000-0000-4000-8000-000000000003' AND ended_at IS NOT NULL),2,'engine selection switches close precisely the two professional periods');
+SELECT is((SELECT count(*)::int FROM private.trainer_plan_selection_periods WHERE client_user_id='59400000-0000-4000-8000-000000000003' AND ended_at IS NULL),0,'personal engine principal leaves no open professional period');
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59400000-0000-4000-8000-000000000001',true);
+SELECT create_manual_plan_atomic('{"name":"Ordinary manual one"}','[{"name":"Day","day_of_week":1,"order_in_plan":1}]') AS ordinary_first \gset
+SELECT create_manual_plan_atomic('{"name":"Ordinary manual two"}','[{"name":"Day","day_of_week":1,"order_in_plan":1}]') AS ordinary_second \gset
+SELECT ok((SELECT is_active AND parent_plan_id IS NULL FROM workout_plans WHERE id=:'ordinary_second'),'default manual creation still selects a new personal plan for an ordinary personal library');
+SELECT ok((SELECT NOT is_active AND retired_at IS NULL AND superseded_at IS NULL FROM workout_plans WHERE id=:'ordinary_first'),'ordinary manual selection preserves its existing personal family');
+SELECT set_config('request.jwt.claim.sub','59400000-0000-4000-8000-000000000003',true);
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',1,''first_plan'',NULL,''59400000-0000-4000-8000-000000000111'',''{"days_per_week":1}'')',:'engine_payload'),'23514',NULL,'late invalid profile update rejects the complete engine creation');
+SELECT ok((SELECT is_active FROM workout_plans WHERE id=:'adjusted_personal'),'late engine failure preserves the selected personal version');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE generation_request_id='59400000-0000-4000-8000-000000000111'),0,'late engine failure leaves no plan or reusable request result');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE profiles SET account_status='suspended' WHERE id='59400000-0000-4000-8000-000000000003';
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT ok(NOT is_account_active('59400000-0000-4000-8000-000000000003'),'account-boundary fixture is suspended');
+SELECT throws_ok($$SELECT create_manual_plan_atomic('{"name":"Inactive"}','[{"name":"Day","day_of_week":1,"order_in_plan":1}]',false)$$,'42501',NULL,'inactive client cannot create a manual library entry through invoker RLS');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',1,''first_plan'',NULL,''59400000-0000-4000-8000-000000000112'')',:'engine_payload'),'42501',NULL,'inactive client cannot create an engine plan through invoker RLS');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE profiles SET account_status='active' WHERE id='59400000-0000-4000-8000-000000000003';
+UPDATE coaching_relationships SET status='paused_by_platform',paused_at=now() WHERE id='59400000-0000-4000-8000-000000000042';
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT activate_plan_version(:'engine_professional');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',2,''weekly_regeneration'',%L,''59400000-0000-4000-8000-000000000113'')',:'engine_payload',:'engine_professional'),'P0001','TRAINER_PRESCRIPTION_LOCKED','weekly regeneration cannot modify even a frozen professional prescription');
+SELECT throws_ok(format('SELECT create_engine_plan_v2(%L,''{}'',2,''manual_update'',%L,''59400000-0000-4000-8000-000000000114'')',:'engine_payload',:'engine_professional'),'P0001','TRAINER_PRESCRIPTION_LOCKED','manual-update generation cannot modify even a frozen professional prescription');
+SELECT throws_ok(format('SELECT apply_workout_adjustment_atomic(%L,%L)',:'professional_workout',jsonb_build_array(jsonb_build_object('type','update_exercise','workoutExerciseId',:'professional_exercise','sets',5))::text),'P0001','WORKOUT_ADJUSTMENT_NOT_EDITABLE','frozen professional prescriptions remain unavailable to adjustment RPC');
+SELECT ok((SELECT is_active AND superseded_at IS NULL FROM workout_plans WHERE id=:'engine_professional'),'failed frozen replacement leaves the professional principal intact');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT is((SELECT count(*)::int FROM plan_generation_events WHERE user_id='59400000-0000-4000-8000-000000000003'),3,'failed replacements and retries leave exactly the three successful generation events');
+SELECT ok(NOT (SELECT prosecdef FROM pg_proc WHERE oid='public.create_manual_plan_atomic(jsonb,jsonb,boolean)'::regprocedure),'manual creation stays invoker');
+SELECT ok(NOT (SELECT prosecdef FROM pg_proc WHERE oid='public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb)'::regprocedure),'engine creation stays invoker');
+ALTER FUNCTION public.create_manual_plan_atomic(jsonb,jsonb,boolean) SECURITY DEFINER;
+SELECT throws_ok('SELECT trainer_security_preflight()','P0001','TRAINER_SECURITY_PREFLIGHT_FAILED','preflight rejects privileged manual creation');
+ALTER FUNCTION public.create_manual_plan_atomic(jsonb,jsonb,boolean) SECURITY INVOKER;
+ALTER FUNCTION public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb) SECURITY DEFINER;
+SELECT throws_ok('SELECT trainer_security_preflight()','P0001','TRAINER_SECURITY_PREFLIGHT_FAILED','preflight rejects privileged engine creation');
+ALTER FUNCTION public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb) SECURITY INVOKER;
+SELECT is(trainer_security_preflight(),60,'preflight remains 60 after restoring original invoker boundaries');
+-- Validate the same deferred integrity checks that a real commit must satisfy.
+SET CONSTRAINTS ALL IMMEDIATE;
+SELECT * FROM finish();
+ROLLBACK;
+
 -- phase: baseline
 BEGIN;
 SET SESSION AUTHORIZATION authenticator;
