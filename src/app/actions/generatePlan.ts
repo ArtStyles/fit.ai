@@ -387,7 +387,8 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
     return { success: false, error: 'El plan activo cambió. Recarga e inténtalo nuevamente.' }
   }
 
-  if (activePlan) {
+  // Initial generation creates a separate personal family; only revisions edit the selected plan.
+  if (activePlan && mode !== 'initial') {
     try {
       await requireEditableOwnedPlan(supabase, user.id, activePlan.id)
     } catch {

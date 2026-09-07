@@ -58,7 +58,7 @@ function lockedClient(prescriptionLocked = true) {
   }
 }
 
-function lockedInitialGenerationClient() {
+function lockedGenerationClient() {
   const metrics = {
     generationRequestLookups: 0,
     profileReads: 0,
@@ -311,12 +311,12 @@ describe('trainer prescription action barriers', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
-  it('rejects a locked initial retry before idempotency lookup, filtering, engine execution, or RPC writes', async () => {
-    const { supabase, metrics } = lockedInitialGenerationClient()
+  it.each(['weekly_regeneration', 'plan_adjustment'] as const)('rejects locked %s before idempotency lookup, filtering, engine execution, or RPC writes', async (mode) => {
+    const { supabase, metrics } = lockedGenerationClient()
     createClient.mockResolvedValue(supabase)
     const { generatePlan } = await import('../generatePlan')
 
-    await expect(generatePlan({ mode: 'initial', requestId: '00000000-0000-4000-8000-000000000004' })).resolves.toMatchObject({ success: false })
+    await expect(generatePlan({ mode, adjustmentIntent: { type: 'change_duration', sessionDurationMinutes: 45 }, requestId: '00000000-0000-4000-8000-000000000004' })).resolves.toMatchObject({ success: false })
     expect(requireEditableOwnedPlan).toHaveBeenCalledWith(supabase, 'locked-client', 'locked-plan')
     expect(metrics.generationRequestLookups).toBe(0)
     expect(metrics.profileReads).toBe(0)
