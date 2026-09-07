@@ -80,9 +80,13 @@ Validar solo presencia y alcance; nunca imprimir valores:
 
 6. Eliminar `trainer-predeploy.catalog` al cerrar la verificación conforme a la política temporal aprobada. Si descifrado, catálogo, restauración o controles de acceso/cifrado fallan, detener el despliegue.
 
-## Orden de migración 040–059
+## Historial legado 040–059 (solo contexto)
 
-Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
+Esta secuencia documenta cómo se construyó el contrato profesional que hoy está
+consolidado en el baseline canónico. Se conserva para auditoría y para los
+harnesses históricos; no se aplica archivo por archivo ni se entrega a
+`db push`. Los párrafos siguientes describen dependencias y precauciones del
+despliegue original, no un procedimiento para reproducirlo en producción:
 
 1. `040_trainer_foundations.sql`
 2. `041_trainer_verification.sql`
@@ -107,16 +111,17 @@ Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 
 La 053 reemplaza hacia delante el RPC `save_trainer_application_draft` para
 eliminar el uso de `jsonb_object_length(jsonb)`, que PostgreSQL no ofrece.
-Después de aplicarla, guardar un borrador autenticado y confirmar que el RPC
-devuelve `status = draft` y que la fila aparece en `trainer_applications` antes
-de desplegar o reabrir el formulario.
+Tras su despliegue original, se debía guardar un borrador autenticado y confirmar
+que el RPC devuelve `status = draft` y que la fila aparece en
+`trainer_applications` antes de desplegar o reabrir el formulario.
 
 La 054 conserva el historial de `product_notifications` y permite que cada
 usuario archive únicamente sus propias filas mediante `dismissed_at`.
 
 La 055 añade el RPC autenticado que valida y registra en una sola transacción la
-versión vigente de los avisos de plan, revisión del perfil y promoción. Desplegar
-054 y 055 antes que la aplicación que expone los nuevos controles de descarte.
+versión vigente de los avisos de plan, revisión del perfil y promoción. La
+compatibilidad exige que 054 y 055 precedan a la aplicación que expone los
+nuevos controles de descarte.
 
 La 056 añade `append_trainer_template_exercises(uuid, jsonb)` para incorporar
 un lote de ejercicios a un día existente de plantilla de forma atómica. La 057
@@ -128,29 +133,28 @@ nueva fila versionada, auditoría y notificación deduplicada al entrenador. La
 059 conserva el reintento exacto de una propuesta y, bajo el bloqueo canónico
 cliente → entrenador, rechaza cualquier otra propuesta pendiente o rutina
 profesional activa del mismo cliente.
-Aplicar las migraciones de producción 040–059 completas y en este orden numérico; el
-hecho de que un archivo esté confirmado en Git no demuestra que se haya aplicado
-en el proyecto remoto.
+El despliegue histórico requería 040–059 completas y en ese orden numérico. En
+la línea activa, ese estado ya forma parte de
+`20260906233340_remote_schema_baseline.sql`; que un archivo legado esté en Git no
+autoriza ni demuestra su reaplicación en el proyecto remoto.
 
-Programar la 050 en una ventana de bajo tráfico o mantenimiento. La migración
-toma un bloqueo `SHARE ROW EXCLUSIVE` sobre `public.progress_logs` antes del
-backfill y la instalación del trigger, por lo que las escrituras de sesiones
-activas pueden quedar en espera o agotar su timeout hasta que termine la
-transacción. Durante la ejecución, vigilar sesiones en espera y bloqueos de
-`progress_logs` mediante `pg_stat_activity` y `pg_locks`; si la migración falla,
-dejar que la transacción revierta por completo antes de reintentar. Los guardados
-de sesión y la propia 050 son idempotentes, así que una operación interrumpida
-puede reintentarse con seguridad una vez liberado el bloqueo.
+La aplicación histórica de la 050 requería una ventana de bajo tráfico o
+mantenimiento. La migración toma un bloqueo `SHARE ROW EXCLUSIVE` sobre
+`public.progress_logs` antes del backfill y la instalación del trigger, por lo
+que las escrituras de sesiones activas podían quedar en espera o agotar su
+timeout hasta que terminara la transacción. Durante una investigación de aquel
+despliegue, revisar sesiones en espera y bloqueos de `progress_logs` mediante
+`pg_stat_activity` y `pg_locks`. Esta nota no autoriza a volver a ejecutar la
+050.
 
-Antes de aplicar la 049, pausar nuevas propuestas y publicaciones de revisiones
-profesionales, y mantener suspendidas las invitaciones. Esperar a que concluyan
-las publicaciones que ya estaban en curso. La 049 ejecuta un preflight
+Durante el despliegue histórico de la 049 se debían pausar nuevas propuestas,
+publicaciones de revisiones profesionales e invitaciones hasta concluir las
+operaciones en curso. La 049 ejecuta un preflight
 estructural agregado y, si detecta una relación o snapshot no reparable, aborta
 la transacción con `TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED`; sus
 postcondiciones usan `TRAINER_ISO_WEEKDAY_REPAIR_POSTCONDITION_FAILED`. Ambos
-errores exponen solo el tipo de anomalía y su conteo agregado. Investigar y
-corregir hacia delante antes de reintentar; no modificar las migraciones 043 o
-045 ya desplegadas.
+errores exponen solo el tipo de anomalía y su conteo agregado. Las migraciones
+043, 045 y 049 permanecen inmutables como historial.
 
 En local o CI, ejecutar antes del remoto:
 
