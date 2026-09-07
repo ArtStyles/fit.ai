@@ -159,8 +159,8 @@ describe('supabase migration workdir contract', () => {
     const config = readFileSync(new URL('../../infra/supabase/config.toml', import.meta.url), 'utf8')
     const seedSection = config.match(/\[db\.seed\][\s\S]*?(?=\r?\n\[|$)/)?.[0]
 
-    expect(gitignore).toContain('**/supabase/.temp/')
-    expect(gitignore).toContain('**/supabase/.branches/')
-    expect(seedSection).toContain('enabled = false')
+    expect(gitignore).toMatch(/^\*\*\/supabase\/\.temp\/\s*$/m)
+    expect(gitignore).toMatch(/^\*\*\/supabase\/\.branches\/\s*$/m)
+    expect(seedSection).toMatch(/^\s*enabled\s*=\s*false\s*(?:#.*)?$/m)
   })
 })
