@@ -7,7 +7,7 @@ createRoot(document.getElementById('root')!).render(
   <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
     <main>
       <CoachingRequestForm service={{ id: '11111111-1111-4111-8111-111111111111', name: 'Servicio de prueba' }} />
-      <ClientCoachingStatus requests={[{ id: 'request-1', status: 'pending', createdAt: '2026-08-08T12:00:00.000Z' }]} />
+      <ClientCoachingStatus requests={[{ id: 'request-1', status: 'pending', createdAt: '2026-08-08T12:00:00.000Z', trainerName: 'Marina Pérez', trainerAvatarUrl: null, serviceName: 'Servicio de prueba' }]} />
     </main>
   </I18nProvider>,
 )

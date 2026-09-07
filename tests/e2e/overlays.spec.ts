@@ -20,6 +20,7 @@ test('dialogs are bottom sheets on mobile and centered panels on desktop', async
   })
 
   await page.getByLabel(/acciones del plan|plan actions/i, { exact: true }).click()
+  await expect(page.getByRole('button', { name: /regenerar semana|regenerate week/i })).toHaveCount(0)
   await page.getByRole('button', { name: /ajustar plan|adjust plan/i }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()

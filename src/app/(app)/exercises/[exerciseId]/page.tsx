@@ -66,7 +66,7 @@ type WorkoutRow = {
 }
 
 interface PageProps {
-  params: { exerciseId: string }
+  params: Promise<{ exerciseId: string }>
 }
 
 type AppSupabaseClient = Awaited<ReturnType<typeof requireAppUserContext>>['supabase']
@@ -201,7 +201,8 @@ function trendCopy(trend: 'up' | 'same' | 'down' | 'baseline', language: 'es' | 
   return language === 'en' ? 'More valid load data is needed to establish a trend.' : 'Se necesitan más cargas válidas para establecer una tendencia.'
 }
 
-export default async function ExerciseDetailPage({ params }: PageProps) {
+export default async function ExerciseDetailPage({ params: paramsPromise }: PageProps) {
+  const params = await paramsPromise
   const { supabase, user, profile } = await requireAppUserContext()
   const language = exerciseLanguage(profile.language)
   const t = createTranslator(language)

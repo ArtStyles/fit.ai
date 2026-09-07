@@ -527,7 +527,7 @@ export async function endSuspendReinstateAndResumeTrainerRelationship(
   return relationshipId
 }
 
-/** Probes 043 before fixture writes so a partially deployed database never
+/** Probes direct assignment and preflight 60 before fixture writes so a partially deployed database never
  * receives an unrecoverable professional materialization from E2E. */
 export async function assertTrainerProgrammingE2EReady(): Promise<void> {
   if (!isTrainerProgrammingE2EEnabled(process.env)) {
@@ -536,26 +536,27 @@ export async function assertTrainerProgrammingE2EReady(): Promise<void> {
   await assertTrainerRelationshipsE2EReady()
   const config = requireE2EConfig(process.env)
   const service = adminClient(config)
-  const [tables, propose, save] = await Promise.all([
+  const [tables, propose, save, marker] = await Promise.all([
     Promise.all([
       service.from('trainer_program_templates').select('id').limit(1),
       service.from('trainer_plan_assignments').select('id').limit(1),
       service.from('trainer_assignment_versions').select('id, materialized_plan_id').limit(1),
       service.from('workout_plans').select('id, prescription_locked').limit(1),
     ]),
-    (service.rpc as any)('propose_trainer_assignment', {
+    (service.rpc as any)('assign_trainer_program', {
       p_relationship_id: null, p_template_id: null, p_change_summary: null, p_idempotency_key: null,
     }),
     (service.rpc as any)('save_session_log_atomic_v3', {
       p_client_session_id: null, p_workout_id: null, p_completed_at: null,
       p_duration_minutes: null, p_mood_rating: null, p_exercise_logs: [], p_result_snapshot: {},
     }),
+    (service.rpc as any)('trainer_security_preflight'),
   ])
   const tableError = tables.find(result => result.error)?.error
   const missingRpc = [propose.error, save.error].some(error =>
     /Could not find the function|PGRST202/i.test(error?.message ?? ''))
-  if (tableError || missingRpc) {
-    throw new Error('Trainer programming migration 043 must be deployed to the dedicated E2E project')
+  if (tableError || missingRpc || marker.error || marker.data !== 60) {
+    throw new Error('Trainer direct assignment (preflight 60) must be deployed to the dedicated E2E project')
   }
 }
 
@@ -667,7 +668,7 @@ async function createTrainerProgrammingPersonalPlan(
     library_slot: 'personal',
     prescription_locked: false,
   })
-  assertNoError(error, 'Creating customer personal plan before professional acceptance')
+  assertNoError(error, 'Creating customer personal plan before professional assignment')
   return planId
 }
 
@@ -742,14 +743,14 @@ export async function seedTrainerProgrammingFixture(
         ])
         assertNoError(createdExercises.error, 'Creating trainer template exercises')
         const proposalIdempotencyKey = requestedIdempotencyKey ?? randomUUID()
-        const proposed = await (fixture.trainerA.client.rpc as any)('propose_trainer_assignment', {
+        const proposed = await (fixture.trainerA.client.rpc as any)('assign_trainer_program', {
           p_relationship_id: relationshipId,
           p_template_id: templateId,
           p_change_summary: 'Primera prescripción profesional.',
           p_idempotency_key: proposalIdempotencyKey,
         })
-        assertNoError(proposed.error, 'Proposing trainer assignment')
-        const row = requireRpcRow<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>(proposed.data, 'Proposing trainer assignment')
+        assertNoError(proposed.error, 'Assigning trainer program')
+        const row = requireRpcRow<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>(proposed.data, 'Assigning trainer program')
         latestProposal = { templateId, assignmentId: row.assignment_id, assignmentVersionId: row.assignment_version_id, planId: row.workout_plan_id, proposalIdempotencyKey }
         programmingPublished = true
         return latestProposal
@@ -757,12 +758,12 @@ export async function seedTrainerProgrammingFixture(
       async readAcceptedAssignment(assignmentId) {
         const { data: assignment, error: assignmentError } = await (fixture.service.from('trainer_plan_assignments') as any)
           .select('status, active_version_id').eq('id', assignmentId).maybeSingle()
-        assertNoError(assignmentError, 'Reading accepted trainer assignment')
-        if (assignment?.status !== 'active' || !assignment.active_version_id) throw new Error('Assignment was not atomically accepted')
+        assertNoError(assignmentError, 'Reading retained trainer assignment')
+        if (assignment?.status !== 'active' || !assignment.active_version_id) throw new Error('Assignment is not available')
         const { data: version, error: versionError } = await (fixture.service.from('trainer_assignment_versions') as any)
           .select('materialized_plan_id, snapshot').eq('id', assignment.active_version_id).maybeSingle()
-        assertNoError(versionError, 'Reading accepted assignment version')
-        if (!version?.materialized_plan_id || !version.snapshot || typeof version.snapshot.name !== 'string') throw new Error('Accepted assignment version is incomplete')
+        assertNoError(versionError, 'Reading retained assignment version')
+        if (!version?.materialized_plan_id || !version.snapshot || typeof version.snapshot.name !== 'string') throw new Error('Retained assignment version is incomplete')
         const { data: personal, error: personalError } = await (fixture.service.from('workout_plans') as any)
           .select('id, is_active').eq('id', personalPlanId).maybeSingle()
         assertNoError(personalError, 'Reading preserved personal plan')
@@ -798,7 +799,7 @@ export async function seedTrainerProgrammingFixture(
         throw new Error(saved.error.message)
       },
       async publishRevision(name, changeSummary) {
-        if (!latestProposal) throw new Error('A proposal must be accepted before publishing a revision')
+        if (!latestProposal) throw new Error('A routine must be assigned before publishing a revision')
         if (!latestTemplateWorkoutId) throw new Error('Revision template workout is missing')
         const changedTemplate = await (fixture.trainerA.client.from('trainer_program_templates') as any)
           .update({ name }).eq('id', latestProposal.templateId).eq('trainer_user_id', fixture.trainerA.id)
@@ -908,8 +909,8 @@ export async function seedTrainerProgrammingFixture(
 }
 
 /** Adds the exact personal, versioned professional, and measurement rows used
- * by the insights browser journey. It is intentionally callable only after a
- * real client acceptance, so every professional log has a consumed lease. */
+ * by the insights browser journey. It is intentionally callable only after
+ * explicit client selection, so every professional log has a consumed lease. */
 export async function seedTrainerInsightsFixture(
   scope: string,
   options: TrainerFixtureSeedOptions = {},

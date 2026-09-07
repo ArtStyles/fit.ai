@@ -1,6 +1,9 @@
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
+import { CoachingSummaryCard } from '@/components/dashboard/CoachingSummaryCard'
+import { DashboardPrimaryFlow } from '@/components/dashboard/DashboardPrimaryFlow'
 import { DashboardMainNotice } from '@/components/dashboard/DashboardNotice'
 import { DashboardWeekJourney } from '@/components/dashboard/DashboardWeekJourney'
+import { MusicNowPlayingSlot } from '@/components/dashboard/MusicNowPlayingSlot'
 import { buildDashboardViewModel } from '@/components/dashboard/dashboardViewModel'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
@@ -30,6 +33,12 @@ import {
   type DashboardBannerData,
 } from '@/lib/dashboard/banner'
 import { getDashboardGreeting } from '@/components/dashboard/dashboardFormatters'
+import {
+  hasDashboardNotificationAttention,
+  loadUnreadProductNotificationAttention,
+  type UnreadProductNotificationClient,
+} from '@/lib/dashboard/notificationAttention'
+import { loadClientCoachingSummary } from '@/lib/coaching/clientSummary'
 
 export const metadata = { title: 'Dashboard · Vekira' }
 
@@ -399,7 +408,12 @@ export default async function DashboardPage() {
   }).format(referenceNow)
 
   // ── Plan activo ────────────────────────────────────────────────────────────
-  const [dashboardPayload, { data: bannerRaw }] = await Promise.all([
+  const [
+    dashboardPayload,
+    { data: bannerRaw },
+    hasUnreadProductNotifications,
+    { summary: coachingSummary, error: coachingSummaryError },
+  ] = await Promise.all([
     loadDashboardPayload(
       supabase,
       user.id,
@@ -411,6 +425,8 @@ export default async function DashboardPage() {
       .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
       .eq('slot', DASHBOARD_BANNER_SLOT)
       .maybeSingle(),
+    loadUnreadProductNotificationAttention(supabase as unknown as UnreadProductNotificationClient, user.id),
+    loadClientCoachingSummary(supabase, user.id),
   ])
   const bannerCandidate = bannerRaw as DashboardBannerData | null
   const dashboardBanner = isDashboardBannerVisible(bannerCandidate, todayStr)
@@ -580,21 +596,34 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <DashboardHeader
-        greeting={getDashboardGreeting(language, referenceNow, tz)}
-        firstName={firstName}
-        dateLabel={dateLabel}
-        avatarUrl={profile?.avatar_url ?? null}
-        profileHref={resolveDashboardProfileHref({
-          communityEnabled,
-          username: profile.username,
-        })}
-        hasNotificationAttention={dashboard.noticePlacement === 'hub'}
-      />
-
-      <main aria-label={t('Dashboard')} data-marketing-capture="dashboard" className="mx-auto max-w-6xl space-y-6 px-4 pt-5 sm:px-6">
-        <h1 className="sr-only">{t('Dashboard')}</h1>
-        {dashboard.noticePlacement !== 'hub' && (
+      <DashboardPrimaryFlow
+        header={(
+          <DashboardHeader
+            greeting={getDashboardGreeting(language, referenceNow, tz)}
+            firstName={firstName}
+            dateLabel={dateLabel}
+            profileHref={resolveDashboardProfileHref({
+              communityEnabled,
+              username: profile.username,
+            })}
+            hasNotificationAttention={hasDashboardNotificationAttention({
+              hasDashboardNotice: dashboard.noticePlacement === 'hub',
+              hasUnreadProductNotifications,
+            })}
+          />
+        )}
+        mainLabel={t('Dashboard')}
+        mainClassName="mx-auto max-w-6xl space-y-6 px-4 pt-5 sm:px-6"
+        title={<h1 className="sr-only">{t('Dashboard')}</h1>}
+        coaching={coachingSummary ? (
+          <CoachingSummaryCard summary={coachingSummary} />
+        ) : coachingSummaryError ? (
+          <p className="rounded-xl border border-border/70 px-4 py-3 text-sm text-muted-foreground">
+            {coachingSummaryError}
+          </p>
+        ) : null}
+        music={<MusicNowPlayingSlot />}
+        notice={dashboard.noticePlacement !== 'hub' ? (
           <DashboardMainNotice
             notice={dashboard.notice}
             aiNotes={showAiBanner ? planRaw?.ai_notes ?? null : null}
@@ -603,9 +632,9 @@ export default async function DashboardPage() {
             promo={dashboardBanner}
             placement={dashboard.noticePlacement ?? 'inline'}
           />
-        )}
-        <DashboardWeekJourney dashboard={dashboard} />
-      </main>
+        ) : null}
+        journey={<DashboardWeekJourney dashboard={dashboard} />}
+      />
     </div>
   )
 }

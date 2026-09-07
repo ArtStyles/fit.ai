@@ -67,7 +67,7 @@ type PreviousExerciseLogRow = {
 }
 
 interface PageProps {
-  params: { logId: string }
+  params: Promise<{ logId: string }>
 }
 
 function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
@@ -102,7 +102,8 @@ function formatVolume(value: number, language: 'es' | 'en'): string {
   return `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 0 }).format(value)} kg`
 }
 
-export default async function HistoryDetailPage({ params }: PageProps) {
+export default async function HistoryDetailPage({ params: paramsPromise }: PageProps) {
+  const params = await paramsPromise
   const { supabase, user, profile } = await requireAppUserContext()
   const communityEnabled = isCommunityEnabled()
   const language = exerciseLanguage(profile.language)

@@ -9,6 +9,7 @@ interface PageTopBarProps {
   backLabel?: string
   icon?: React.ReactNode
   right?: React.ReactNode
+  accountSlot?: 'default' | 'hidden'
 }
 
 export function PageTopBar({
@@ -18,9 +19,16 @@ export function PageTopBar({
   backLabel,
   icon,
   right,
+  accountSlot = 'default',
 }: PageTopBarProps) {
   return (
-    <FixedTopBar contentClassName="justify-between">
+    <FixedTopBar
+      accountSlot={accountSlot}
+      contentClassName="justify-between"
+      actions={right ? (
+        <span data-page-topbar-actions className="contents">{right}</span>
+      ) : undefined}
+    >
       <div className="flex min-w-0 items-center gap-2.5">
         {backHref && backLabel ? (
           <PendingLink
@@ -33,19 +41,17 @@ export function PageTopBar({
           </PendingLink>
         ) : null}
 
-        {icon && (
+        {icon ? (
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
             {icon}
           </span>
-        )}
+        ) : null}
 
         <div className="min-w-0">
           <h1 className="truncate font-display text-lg font-bold leading-tight text-foreground">{title}</h1>
-          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+          {subtitle ? <p className="truncate text-xs text-muted-foreground">{subtitle}</p> : null}
         </div>
       </div>
-
-      {right && <div className="shrink-0">{right}</div>}
     </FixedTopBar>
   )
 }

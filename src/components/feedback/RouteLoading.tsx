@@ -13,6 +13,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { useI18n } from '@/components/i18n/I18nProvider'
 
@@ -62,8 +63,8 @@ export function BackHeader({
   right,
 }: BackHeaderProps) {
   return (
-    <FixedTopBar contentClassName="justify-between">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <FixedTopBar actions={right}>
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground">
           <ArrowLeft className="h-5 w-5" />
           <span className="sr-only">{backLabel}</span>
@@ -73,10 +74,9 @@ export function BackHeader({
         </div>
         <div className="min-w-0">
           <h1 className="truncate font-display text-lg font-bold leading-tight text-foreground">{title}</h1>
-          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+          {subtitle ? <p className="truncate text-xs text-muted-foreground">{subtitle}</p> : null}
         </div>
       </div>
-      {right}
     </FixedTopBar>
   )
 }
@@ -215,18 +215,21 @@ export function DashboardLoading() {
 
   return (
     <div className="min-h-screen bg-background pb-28">
-      <FixedTopBar initialHeight={104} contentClassName="max-w-3xl sm:px-6">
-        <div className="relative h-20 w-20 shrink-0 rounded-full">
-          <Shimmer className="h-20 w-20 rounded-full bg-violet-500/15" />
+      <FixedTopBar
+        accountSlot="custom"
+        initialHeight={92}
+        contentClassName="max-w-6xl flex-col items-stretch gap-0 sm:px-6"
+      >
+        <div className="flex items-center gap-3">
+          <AccountWorkspaceMenu surface="dashboard" />
+          <div className="min-w-0 flex-1">
+            <Shimmer className="h-4 w-24 rounded bg-muted/40" />
+            <Shimmer className="mt-2 h-8 w-36 rounded" />
+          </div>
           <Shimmer
-            data-loading-slot="dashboard-avatar-badge"
-            className="absolute bottom-0 right-0 h-6 w-6 rounded-full border-2 border-background bg-violet-500/30"
+            data-loading-slot="dashboard-notification"
+            className="h-11 w-11 shrink-0 rounded-xl bg-muted/40"
           />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <Shimmer className="h-4 w-24 rounded bg-muted/40" />
-          <Shimmer className="mt-2 h-8 w-36 rounded" />
         </div>
       </FixedTopBar>
 
@@ -445,17 +448,20 @@ export function MeasurementsLoading() {
 export function ChatLoading() {
   return (
     <div className="min-h-screen bg-background pb-20">
-      <FixedTopBar contentClassName="justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground">
-              <ArrowLeft className="h-5 w-5" />
-            </div>
-            <h1 className="font-display text-xl font-bold text-foreground">Coach IA</h1>
-          </div>
-          <div className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-violet-600/70 px-4 py-2 text-sm font-medium text-white">
+      <FixedTopBar
+        actions={(
+          <div className="flex min-h-11 items-center gap-1.5 rounded-lg bg-violet-600/70 px-3 text-sm font-medium text-white">
             <PlusCircle className="h-4 w-4" />
             Nueva
           </div>
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground">
+            <ArrowLeft className="h-5 w-5" />
+          </div>
+          <h1 className="truncate font-display text-xl font-bold text-foreground">Coach IA</h1>
+        </div>
       </FixedTopBar>
       <main className="mx-auto max-w-lg px-4 pt-6">
         <RowSkeletons count={4} avatar />
@@ -467,16 +473,16 @@ export function ChatLoading() {
 export function SocialFeedLoading() {
   return (
     <div className="mx-auto max-w-lg pb-24">
-      <FixedTopBar contentClassName="justify-between">
-        <h1 className="text-lg font-bold">Comunidad</h1>
-        <div className="flex items-center gap-1 text-muted-foreground">
-          <Bell className="h-5 w-5" />
-          <Search className="h-5 w-5" />
-          <div className="inline-flex h-11 items-center gap-1.5 text-sm font-medium text-primary">
-            <PlusCircle className="h-5 w-5" />
-            Publicar
+      <FixedTopBar
+        actions={(
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <span className="flex h-11 w-11 items-center justify-center"><Bell className="h-5 w-5" /></span>
+            <span className="flex h-11 w-11 items-center justify-center"><Search className="h-5 w-5" /></span>
+            <span className="flex h-11 w-11 items-center justify-center text-primary"><PlusCircle className="h-5 w-5" /></span>
           </div>
-        </div>
+        )}
+      >
+        <h1 className="min-w-0 flex-1 text-lg font-bold">Comunidad</h1>
       </FixedTopBar>
       <div className="grid grid-cols-2 border-b border-border/40">
         <p className="py-3 text-center text-sm font-semibold text-foreground">Descubrir</p>
@@ -796,16 +802,19 @@ export function LanguageSettingsLoading() {
 export function SessionLoading() {
   return (
     <div className="flex min-h-screen flex-col bg-background pb-24">
-      <FixedTopBar contentClassName="justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
-              Sesion en curso
-            </p>
-            <h1 className="mt-1 truncate font-display text-xl font-bold text-foreground">
-              Cargando rutina
-            </h1>
-          </div>
-          <Shimmer className="h-10 w-20 rounded-lg bg-violet-500/15" />
+      <FixedTopBar
+        accountSlot="hidden"
+        contentClassName="justify-between"
+        actions={<Shimmer className="h-10 w-20 rounded-lg bg-violet-500/15" />}
+      >
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
+            Sesion en curso
+          </p>
+          <h1 className="mt-1 truncate font-display text-xl font-bold text-foreground">
+            Cargando rutina
+          </h1>
+        </div>
       </FixedTopBar>
       <main className="mx-auto w-full max-w-lg px-4 py-5">
         <section className="rounded-2xl border border-border/60 bg-muted/10 p-4">
@@ -824,29 +833,31 @@ export function ExercisesLoading() {
   return (
     <div className="min-h-screen bg-[#0e0e10] text-white">
       <FixedTopBar
+        accountSlot="custom"
         className="border-zinc-800/50 bg-[#0e0e10]/95"
-        contentClassName="mx-auto block max-w-7xl px-4 py-4 sm:px-6"
-        initialHeight={116}
+        contentClassName="mx-auto block max-w-7xl px-4 py-3 sm:px-6"
+        initialHeight={156}
       >
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="shrink-0 text-xl font-bold tracking-tight">Exercise Library</h1>
-            <div className="flex items-center gap-5">
-              <div className="text-center">
-                <Shimmer className="mx-auto h-7 w-14 rounded bg-zinc-800" />
-                <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">Exercises</div>
-              </div>
-              <div className="h-8 w-px bg-zinc-800" />
-              <div className="text-center">
-                <Shimmer className="mx-auto h-7 w-12 rounded bg-zinc-800" />
-                <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">Page</div>
-              </div>
-            </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <h1 className="min-w-0 truncate text-xl font-bold tracking-tight">Exercise Library</h1>
+          <AccountWorkspaceMenu surface="topbar" />
+        </div>
+        <div className="mt-2 flex min-h-11 items-center justify-end gap-5">
+          <div className="text-center">
+            <Shimmer className="mx-auto h-7 w-14 rounded bg-zinc-800" />
+            <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">Exercises</div>
           </div>
-          <div className="mt-4 flex gap-2 overflow-hidden">
-            <Shimmer className="h-10 w-48 rounded-xl bg-zinc-800" />
-            <Shimmer className="h-10 w-32 rounded-xl bg-zinc-800" />
-            <Shimmer className="h-10 w-32 rounded-xl bg-zinc-800" />
+          <div className="h-8 w-px bg-zinc-800" />
+          <div className="text-center">
+            <Shimmer className="mx-auto h-7 w-12 rounded bg-zinc-800" />
+            <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">Page</div>
           </div>
+        </div>
+        <div className="mt-2 flex gap-2 overflow-hidden pb-3">
+          <Shimmer className="h-10 w-48 rounded-xl bg-zinc-800" />
+          <Shimmer className="h-10 w-32 rounded-xl bg-zinc-800" />
+          <Shimmer className="h-10 w-32 rounded-xl bg-zinc-800" />
+        </div>
       </FixedTopBar>
 
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 px-4 py-6 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 xl:grid-cols-4">

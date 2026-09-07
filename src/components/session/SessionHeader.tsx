@@ -88,7 +88,12 @@ export function SessionHeader({ onFinish, syncState, onSyncRetry }: Props) {
 
   return (
     <>
-      <FixedTopBar className="bg-background/95" contentClassName="block max-w-lg p-0" initialHeight={73}>
+      <FixedTopBar
+        accountSlot="hidden"
+        className="bg-background/95"
+        contentClassName="block max-w-lg p-0"
+        initialHeight={73}
+      >
         <div className="flex items-center gap-3 px-4 py-3">
         {/* Botón atrás */}
         <button

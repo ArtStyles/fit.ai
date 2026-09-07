@@ -24,8 +24,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const language = normalizeLanguage(profile.language)
   const timeZone = resolveUserTimeZone(profile.timezone)
   const trainerAccess = await getTrainerAccess(user.id, supabase)
-  const workspace = normalizeWorkspace(cookies().get(WORKSPACE_COOKIE)?.value, trainerAccess.granted)
-  const navItems = workspace === 'coach' ? getCoachNavItems() : getPersonalNavItems({ communityEnabled })
+  const preferredWorkspace = normalizeWorkspace(
+    (await cookies()).get(WORKSPACE_COOKIE)?.value,
+    trainerAccess.granted,
+  )
+  const accountWorkspace = {
+    account: {
+      id: user.id,
+      name: profile.full_name,
+      email: user.email ?? '',
+      avatarUrl: profile.avatar_url,
+    },
+    trainerAccess: trainerAccess.granted
+      ? { granted: true as const }
+      : trainerAccess,
+    preferredWorkspace,
+    personalNavItems: getPersonalNavItems({ communityEnabled }),
+    coachNavItems: getCoachNavItems(),
+  }
 
   return (
     <I18nProvider language={language} timeZone={timeZone}>
@@ -33,7 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <ProductPushNotificationsInit />
       {communityEnabled ? <SocialPushNotificationsInit /> : null}
       <TimezoneSync current={profile.timezone} />
-      <AppShell navItems={navItems} workspace={trainerAccess.granted ? workspace : undefined}>{children}</AppShell>
+      <AppShell accountWorkspace={accountWorkspace}>{children}</AppShell>
     </I18nProvider>
   )
 }

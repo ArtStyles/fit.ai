@@ -35,7 +35,7 @@ it('renders the private record with the route-local return link', async () => {
   getApplicationMock.mockResolvedValue({ professionalName: 'Ada Entrenadora' })
 
   const detailHtml = renderToStaticMarkup(
-    await AdminTrainerApplicationPage({ params: { applicationId: APPLICATION_ID } }),
+    await AdminTrainerApplicationPage({ params: Promise.resolve({ applicationId: APPLICATION_ID }) }),
   )
 
   expect(detailHtml).toContain('Entrenadores')
@@ -48,7 +48,7 @@ it('renders the private record with the route-local return link', async () => {
 it('preserves notFound for an unknown application', async () => {
   getApplicationMock.mockResolvedValue(null)
 
-  await expect(AdminTrainerApplicationPage({ params: { applicationId: APPLICATION_ID } }))
+  await expect(AdminTrainerApplicationPage({ params: Promise.resolve({ applicationId: APPLICATION_ID }) }))
     .rejects.toThrow('NEXT_NOT_FOUND')
   expect(notFoundMock).toHaveBeenCalledOnce()
 })

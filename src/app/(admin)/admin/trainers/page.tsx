@@ -11,10 +11,11 @@ import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 export const metadata: Metadata = { title: 'Solicitudes de entrenadores' }
 
 export default async function AdminTrainersPage({
-  searchParams,
+  searchParams: searchParamsPromise,
 }: {
-  searchParams?: { status?: string }
+  searchParams?: Promise<{ status?: string }>
 }) {
+  const searchParams = await searchParamsPromise
   const selectedStatus = normalizeAdminTrainerStatus(searchParams?.status)
   const [applications, { profile }] = await Promise.all([
     listAdminTrainerApplications(selectedStatus),

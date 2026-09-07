@@ -312,7 +312,7 @@ git commit -m "feat: validate Vekira motion catalog assets"
 
 **Files:**
 
-- Create: `supabase/migrations/057_exercise_motion_previews.sql`
+- Create: `supabase/migrations/062_exercise_motion_previews.sql`
 - Modify: `src/types/database.ts`
 - Create: `src/lib/exercises/motionPreviewMapping.ts`
 - Create: `src/lib/exercises/__tests__/motionPreviewMapping.test.ts`
@@ -329,7 +329,7 @@ Run:
 Get-ChildItem supabase/migrations -File | Sort-Object Name | Select-Object -Last 5 -ExpandProperty Name
 ```
 
-Expected: el ultimo archivo es `056_exercise_visual_sources_bucket.sql`. Si ya existe un 057 por trabajo concurrente, usar el siguiente numero libre y actualizar en esta tarea tanto la ruta como el test de contrato.
+Expected after integration with current `main`: `061_exercise_visual_sources_bucket.sql` is followed by `062_exercise_motion_previews.sql`; the earlier 056/057 numbers were renumbered because concurrent trainer migrations now occupy 056–060.
 
 **Step 2: Escribir pruebas rojas del contrato SQL/tipos**
 
@@ -478,7 +478,7 @@ Run con el numero de migracion realmente elegido:
 
 ```powershell
 git diff --check
-git add package.json supabase/migrations/057_exercise_motion_previews.sql src/types/database.ts src/lib/exercises/motionPreviewMapping.ts src/lib/exercises/__tests__/motionPreviewMapping.test.ts src/lib/exercises/__tests__/motionPreviewDatabaseContract.test.ts scripts/map-exercise-motion-previews.ts scripts/__tests__/mapExerciseMotionPreviews.test.ts
+git add package.json supabase/migrations/062_exercise_motion_previews.sql src/types/database.ts src/lib/exercises/motionPreviewMapping.ts src/lib/exercises/__tests__/motionPreviewMapping.test.ts src/lib/exercises/__tests__/motionPreviewDatabaseContract.test.ts scripts/map-exercise-motion-previews.ts scripts/__tests__/mapExerciseMotionPreviews.test.ts
 git diff --cached --check
 git commit -m "feat: prepare Vekira motion preview data contract"
 ```

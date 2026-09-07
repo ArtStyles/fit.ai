@@ -36,7 +36,7 @@
 - `scripts/exercise_visual_assets.py`: deterministic source-to-poster conversion and group contact-sheet generation.
 - `scripts/validate_exercise_visual_assets.py`: Pillow format/dimension validation for approved or complete entries.
 - `scripts/__tests__/test_exercise_visual_assets.py`: Python unit tests for conversion, size enforcement, contact sheets, and invalid dimensions.
-- `supabase/migrations/056_exercise_visual_sources_bucket.sql`: private PNG-only source archive definition; no `exercises` changes.
+- `supabase/migrations/061_exercise_visual_sources_bucket.sql`: private PNG-only source archive definition; no `exercises` changes.
 - `scripts/archive-exercise-visual-sources.ts`: dry-run-first, service-role-only uploader with remote digest verification and no deletion.
 - `scripts/__tests__/archiveExerciseVisualSources.test.ts`: pure key/digest tests and mocked upload/download behavior.
 - `.artifacts/exercises/catalog-v1/{slug}/source.png`: untracked production masters.
@@ -494,7 +494,7 @@ git commit -m "feat: promote exercise pilot into catalog v1"
 ### Task 5: Add the private source archive boundary
 
 **Files:**
-- Create: `supabase/migrations/056_exercise_visual_sources_bucket.sql`
+- Create: `supabase/migrations/061_exercise_visual_sources_bucket.sql`
 - Create: `scripts/archive-exercise-visual-sources.ts`
 - Create: `scripts/__tests__/archiveExerciseVisualSources.test.ts`
 - Modify: `package.json`
@@ -593,7 +593,7 @@ Expected: tests/type-check pass; dry run reports five planned pilot objects and 
 - [ ] **Step 6: Commit the archive boundary**
 
 ```powershell
-git add -- supabase/migrations/056_exercise_visual_sources_bucket.sql scripts/archive-exercise-visual-sources.ts scripts/__tests__/archiveExerciseVisualSources.test.ts package.json
+git add -- supabase/migrations/061_exercise_visual_sources_bucket.sql scripts/archive-exercise-visual-sources.ts scripts/__tests__/archiveExerciseVisualSources.test.ts package.json
 git commit -m "feat: add private exercise visual source archive"
 ```
 

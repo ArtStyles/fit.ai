@@ -3,26 +3,31 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { PendingLink } from './PendingLink'
-import { getAppNavIcon, isAppNavItemActive, type AppNavItem } from './appNavigation'
+import { getAppNavIcon, isAppNavItemActive } from './appNavigation'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { hapticImpact } from '@/lib/native/haptics'
-import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 import type { Workspace } from '@/lib/coaching/workspace'
 import { ChevronUp, Trash2 } from 'lucide-react'
 import {
   ACTIVE_SESSION_CHANGED_EVENT,
-  clearActiveSession,
+  clearBackup,
   loadActiveSession,
+  recoverSessionBackup,
   type RestorableSessionSnapshot,
 } from '@/lib/session/persistSession'
 import { formatActiveWorkoutElapsed, summarizeActiveSession } from '@/components/session/sessionViewModel'
 import { useSessionStore } from '@/store/sessionStore'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { releaseSessionAuthorization } from '@/app/actions/authorizeSession'
-
-// Routes where the bottom bar should be hidden (full-screen flows)
-const HIDDEN_PREFIXES = ['/session', '/plans/generate', '/feed/new']
+import { releaseSessionAuthorization, verifySessionBackupOwner } from '@/app/actions/authorizeSession'
+import {
+  useAccountWorkspace,
+  useOptionalAccountWorkspace,
+} from './AccountWorkspaceContext'
+import {
+  isImmersiveWorkspaceRoute,
+  isRouteWithinPrefix,
+} from './workspacePresentation'
 
 type ActiveWorkoutDockViewProps = {
   workoutId: string
@@ -36,14 +41,14 @@ type ActiveWorkoutDockViewProps = {
 
 type DiscardSessionDependencies = {
   releaseAuthorization: typeof releaseSessionAuthorization
-  clearPersistedSession: typeof clearActiveSession
+  clearPersistedSession: typeof clearBackup
 }
 
 export async function discardActiveWorkoutSession(
-  session: Pick<RestorableSessionSnapshot, 'clientSessionId' | 'workoutId'>,
+  session: Pick<RestorableSessionSnapshot, 'userId' | 'clientSessionId' | 'workoutId'>,
   dependencies: DiscardSessionDependencies = {
     releaseAuthorization: releaseSessionAuthorization,
-    clearPersistedSession: clearActiveSession,
+    clearPersistedSession: clearBackup,
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (session.clientSessionId) {
@@ -56,7 +61,7 @@ export async function discardActiveWorkoutSession(
     if (!released.success) return { ok: false, error: released.error }
   }
 
-  const cleared = dependencies.clearPersistedSession()
+  const cleared = dependencies.clearPersistedSession(session.userId, session.workoutId)
   if (!cleared.ok) {
     return { ok: false, error: 'No se pudo descartar el entrenamiento. Inténtalo nuevamente.' }
   }
@@ -120,8 +125,24 @@ export function ActiveWorkoutDockView({
   )
 }
 
+export function shouldShowActiveWorkoutDock({
+  workspace,
+  snapshot,
+  pathname,
+}: {
+  workspace: Workspace
+  snapshot: RestorableSessionSnapshot | null
+  pathname: string
+}): boolean {
+  return workspace === 'personal'
+    && snapshot !== null
+    && !isRouteWithinPrefix(pathname, '/session')
+}
+
 export function ActiveWorkoutDock() {
   const pathname = usePathname()
+  const accountWorkspace = useOptionalAccountWorkspace()
+  const userId = accountWorkspace?.account.id
   const [snapshot, setSnapshot] = useState<RestorableSessionSnapshot | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
@@ -129,15 +150,28 @@ export function ActiveWorkoutDock() {
   const [discarding, setDiscarding] = useState(false)
 
   useEffect(() => {
-    const refresh = () => setSnapshot(loadActiveSession())
+    let current = true
+    let refreshAttempt = 0
+    const refresh = () => {
+      const attempt = ++refreshAttempt
+      if (!userId) { setSnapshot(null); return }
+      const scoped = loadActiveSession(userId)
+      setSnapshot(scoped)
+      if (!scoped) void recoverSessionBackup(userId, null, verifySessionBackupOwner)
+        .then(recovered => { if (current && attempt === refreshAttempt) setSnapshot(recovered) })
+        .catch(() => { /* Keep unknown legacy evidence until verification can succeed. */ })
+    }
     refresh()
     window.addEventListener(ACTIVE_SESSION_CHANGED_EVENT, refresh)
     window.addEventListener('storage', refresh)
+    window.addEventListener('online', refresh)
     return () => {
+      current = false
       window.removeEventListener(ACTIVE_SESSION_CHANGED_EVENT, refresh)
       window.removeEventListener('storage', refresh)
+      window.removeEventListener('online', refresh)
     }
-  }, [])
+  }, [userId])
 
   useEffect(() => {
     if (!snapshot) return
@@ -146,7 +180,11 @@ export function ActiveWorkoutDock() {
     return () => window.clearInterval(interval)
   }, [snapshot])
 
-  if (!snapshot || pathname.startsWith('/session/')) return null
+  if (!snapshot || snapshot.userId !== userId || !shouldShowActiveWorkoutDock({
+    workspace: accountWorkspace?.presentedWorkspace ?? 'personal',
+    snapshot,
+    pathname,
+  })) return null
 
   const progress = summarizeActiveSession(snapshot.exercises)
 
@@ -156,7 +194,7 @@ export function ActiveWorkoutDock() {
       <ActiveWorkoutDockView
         workoutId={snapshot.workoutId}
         workoutName={snapshot.workoutName}
-        elapsedLabel={formatActiveWorkoutElapsed(snapshot.startedAt, now)}
+        elapsedLabel={formatActiveWorkoutElapsed(snapshot.startedAt, snapshot.finishedAt || now)}
         completedSets={progress.completedSets}
         totalSets={progress.totalSets}
         percentage={progress.percentage}
@@ -201,7 +239,8 @@ export function ActiveWorkoutDock() {
                     setDiscardError(result.error)
                     return
                   }
-                  useSessionStore.getState().clearSession()
+                  const state = useSessionStore.getState()
+                  if (state.userId === snapshot.userId && state.clientSessionId === snapshot.clientSessionId) state.clearSession()
                   setSnapshot(null)
                   setConfirmingDiscard(false)
                 })
@@ -218,18 +257,22 @@ export function ActiveWorkoutDock() {
   )
 }
 
-export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavItem[], workspace?: Workspace }) {
+export function BottomNav() {
   const pathname = usePathname()
+  const { navItems } = useAccountWorkspace()
   const { t } = useI18n()
 
-  if (HIDDEN_PREFIXES.some(p => pathname.startsWith(p))) return null
+  if (isImmersiveWorkspaceRoute(pathname)) return null
 
   return (
     <nav
       aria-label={t('Navegación principal')}
-      className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-background/95 backdrop-blur lg:hidden"
+      className="fitai-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-border/50 bg-[hsl(var(--surface-1)/0.95)] backdrop-blur lg:hidden"
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center px-2">
+      <div className={cn(
+        'mx-auto grid h-16 max-w-lg items-center px-2',
+        navItems.length === 5 ? 'grid-cols-5' : 'grid-cols-4',
+      )}>
         {navItems.map(({ href, label }) => {
           const Icon = getAppNavIcon(href)
           const isActive = isAppNavItemActive(pathname, href)
@@ -238,18 +281,20 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
           return (
             <PendingLink
               key={href}
+              data-bottom-nav-item={href}
               href={href}
               showSpinner={false}
               aria-label={t(label)}
               aria-current={isActive ? 'page' : undefined}
               onClick={() => { void hapticImpact('light') }}
-              className="group relative flex min-w-0 flex-1 cursor-pointer touch-manipulation flex-col items-center justify-center px-1 py-1.5 outline-none [aria-busy=true]:opacity-100"
+              className="group relative flex min-w-0 cursor-pointer touch-manipulation flex-col items-center justify-center px-0 py-1.5 outline-none [aria-busy=true]:opacity-100"
             >
               <span
+                data-bottom-nav-icon
                 className={cn(
                   'flex items-center justify-center transition-[color,background-color,transform,box-shadow] duration-200 ease-out group-active:scale-90 group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background',
                   isTrainAction
-                    ? '-translate-y-2 h-14 w-14 rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/30 group-hover:bg-primary/90'
+                    ? '-translate-y-1 h-11 w-11 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30 group-hover:bg-primary/90 min-[480px]:-translate-y-2 min-[480px]:h-14 min-[480px]:w-14 min-[480px]:rounded-2xl'
                     : 'h-10 w-10 rounded-xl',
                   !isTrainAction && isActive
                     ? 'fitai-nav-selected text-primary'
@@ -274,8 +319,10 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
                   />
                 )}
               </span>
-              <span className={cn(
-                'mt-0.5 max-w-full truncate text-[10px] font-semibold leading-none transition-colors',
+              <span
+                data-bottom-nav-label
+                className={cn(
+                'mt-0.5 inline-block w-max max-w-none whitespace-nowrap text-center font-display text-[10px] font-semibold leading-none tracking-[-0.03em] transition-colors',
                 isTrainAction ? '-mt-1 text-primary' : isActive ? 'text-primary' : 'text-muted-foreground',
               )}>
                 {t(label)}
@@ -283,7 +330,6 @@ export function BottomNav({ navItems, workspace }: { navItems: readonly AppNavIt
             </PendingLink>
           )
         })}
-        {workspace ? <WorkspaceSwitcher workspace={workspace} variant="mobile" /> : null}
       </div>
     </nav>
   )

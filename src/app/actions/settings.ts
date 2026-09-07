@@ -170,7 +170,8 @@ export async function updateLanguage(language: string): Promise<ActionResult> {
 
   if (error) return { ok: false, error: 'No se pudo guardar el idioma.' }
 
-  cookies().set('fitai-language', language, {
+  const cookieStore = await cookies()
+  cookieStore.set('fitai-language', language, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',

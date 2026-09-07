@@ -30,15 +30,80 @@ function supabaseFixture(result = { assignment_id: ids.assignment, assignment_ve
   return { rpc }
 }
 
+describe('trainer assignment proposal errors', () => {
+  it.each([
+    [
+      'TRAINER_ASSIGNMENT_CONSENT_REQUIRED',
+      { message: 'TRAINER_ASSIGNMENT_CONSENT_REQUIRED' },
+      'No se puede enviar la rutina porque la autorización de datos de entrenamiento del cliente no está activa. Pídele que revise Acompañamiento.',
+    ],
+    [
+      'COACHING_RELATIONSHIP_NOT_ACTIVE',
+      { details: 'COACHING_RELATIONSHIP_NOT_ACTIVE' },
+      'El acompañamiento está pausado o finalizado. Revísalo antes de enviar la rutina.',
+    ],
+    [
+      'TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED',
+      { hint: 'TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED' },
+      'Este cliente ya tiene esta rutina asignada.',
+    ],
+    [
+      'TRAINER_ASSIGNMENT_IDEMPOTENCY_MISMATCH',
+      { message: 'TRAINER_ASSIGNMENT_IDEMPOTENCY_MISMATCH' },
+      'Este envío corresponde a otra selección o a una rutina eliminada. Inicia un nuevo envío.',
+    ],
+    [
+      'TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE',
+      'TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE',
+      'Completa todos los días y añade al menos un ejercicio por día antes de enviar la rutina.',
+    ],
+    [
+      'TRAINER_ASSIGNMENT_TEMPLATE_NOT_AVAILABLE',
+      { message: 'Postgres: TRAINER_ASSIGNMENT_TEMPLATE_NOT_AVAILABLE' },
+      'Esta rutina ya no está disponible para enviarla.',
+    ],
+    [
+      'TRAINER_ASSIGNMENT_TRAINER_INACTIVE',
+      { details: 'TRAINER_ASSIGNMENT_TRAINER_INACTIVE' },
+      'Tu perfil de entrenador no está activo.',
+    ],
+    [
+      'TRAINER_ASSIGNMENT_CLIENT_INACTIVE',
+      { hint: 'TRAINER_ASSIGNMENT_CLIENT_INACTIVE' },
+      'La cuenta del cliente no está activa.',
+    ],
+  ])('maps %s to an actionable tenant-safe message', async (_token, error, expected) => {
+    const { mapTrainerAssignmentProposalError } = await import('@/lib/coaching/trainerAssignmentProposalErrors')
+
+    expect(mapTrainerAssignmentProposalError(error)).toBe(expected)
+  })
+
+  it('does not expose unknown database text', async () => {
+    const { mapTrainerAssignmentProposalError } = await import('@/lib/coaching/trainerAssignmentProposalErrors')
+    const rawDatabaseText = 'private row 8dd20be2 violated internal_policy'
+
+    const message = mapTrainerAssignmentProposalError({
+      message: rawDatabaseText,
+      details: 'tenant@example.test',
+      hint: 'SELECT * FROM private_table',
+    })
+
+    expect(message).toBe('No se pudo enviar la rutina. Inténtalo de nuevo.')
+    expect(message).not.toContain(rawDatabaseText)
+    expect(message).not.toContain('tenant@example.test')
+    expect(message).not.toContain('private_table')
+  })
+})
+
 describe('trainer assignment actions', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('proposes through the atomic RPC and derives the trainer from the active session', async () => {
+  it('assigns directly through the atomic RPC and derives the trainer from the active session', async () => {
     const supabase = supabaseFixture()
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
-    const { proposeTrainerAssignment } = await import('../trainerAssignments')
+    const { assignTrainerProgram } = await import('../trainerAssignments')
 
-    await expect(proposeTrainerAssignment(form({
+    await expect(assignTrainerProgram(form({
       relationshipId: ids.relationship,
       templateId: ids.template,
       changeSummary: 'Rutina inicial',
@@ -46,7 +111,7 @@ describe('trainer assignment actions', () => {
       trainerUserId: 'attacker',
     }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, assignmentVersionId: ids.version, workoutPlanId: ids.plan })
 
-    expect(supabase.rpc).toHaveBeenCalledWith('propose_trainer_assignment', {
+    expect(supabase.rpc).toHaveBeenCalledWith('assign_trainer_program', {
       p_relationship_id: ids.relationship,
       p_template_id: ids.template,
       p_change_summary: 'Rutina inicial',
@@ -54,6 +119,7 @@ describe('trainer assignment actions', () => {
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
     expect(revalidatePath).toHaveBeenCalledWith('/coaching')
+    expect(revalidatePath).toHaveBeenCalledWith('/plan')
   })
 
   it('rejects malformed identifiers and does not call the RPC', async () => {
@@ -75,7 +141,18 @@ describe('trainer assignment actions', () => {
 
     await expect(proposeTrainerAssignment(form({ relationshipId: ids.relationship, templateId: ids.template, changeSummary: '', idempotencyKey: 'key' }))).resolves.toEqual({
       ok: false,
-      error: 'No se pudo enviar la rutina. Verifica que el acompañamiento siga activo y que el cliente haya dado su consentimiento.',
+      error: 'No se puede enviar la rutina porque la autorización de datos de entrenamiento del cliente no está activa. Pídele que revise Acompañamiento.',
+    })
+  })
+
+  it('uses the generic tenant-safe message when the proposal response is malformed', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: { assignment_id: ids.assignment }, error: null })) }
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { proposeTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(proposeTrainerAssignment(form({ relationshipId: ids.relationship, templateId: ids.template, changeSummary: '', idempotencyKey: 'key' }))).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo enviar la rutina. Inténtalo de nuevo.',
     })
   })
 
@@ -110,6 +187,79 @@ describe('trainer assignment actions', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+  it('declines through the atomic RPC derived from the client session and trims every payload field', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: { assignment_id: ids.assignment, changed: true }, error: null })) }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(declineTrainerAssignment(form({
+      assignmentId: `  ${ids.assignment}  `,
+      reason: '  Necesito otra progresion.  ',
+      idempotencyKey: '  decline-attempt-1  ',
+      clientUserId: 'attacker',
+    }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, changed: true })
+
+    expect(requireActiveTrainerContext).not.toHaveBeenCalled()
+    expect(supabase.rpc).toHaveBeenCalledWith('decline_trainer_assignment', {
+      p_assignment_id: ids.assignment,
+      p_reason: 'Necesito otra progresion.',
+      p_idempotency_key: 'decline-attempt-1',
+    })
+    expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+    expect(revalidatePath).toHaveBeenCalledWith('/coaching')
+    expect(revalidatePath).toHaveBeenCalledWith('/coach/programs', 'layout')
+  })
+
+  it('sends a blank optional decline reason as null', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: [{ assignment_id: ids.assignment, changed: false }], error: null })) }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(declineTrainerAssignment(form({
+      assignmentId: ids.assignment,
+      reason: '   ',
+      idempotencyKey: 'decline-retry-1',
+    }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, changed: false })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('decline_trainer_assignment', expect.objectContaining({ p_reason: null }))
+  })
+
+  it('rejects malformed decline fields before authentication or RPC dispatch', async () => {
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+
+    await expect(declineTrainerAssignment(form({
+      assignmentId: 'not-a-uuid',
+      reason: 'r'.repeat(501),
+      idempotencyKey: 'k'.repeat(201),
+    }))).resolves.toMatchObject({
+      ok: false,
+      fieldErrors: {
+        assignmentId: expect.any(String),
+        reason: expect.any(String),
+        idempotencyKey: expect.any(String),
+      },
+    })
+    expect(requireAppUserContext).not.toHaveBeenCalled()
+  })
+
+  it('returns a safe decline error when the RPC fails or omits a boolean changed flag', async () => {
+    const supabase = { rpc: vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'private provider details' } })
+      .mockResolvedValueOnce({ data: { assignment_id: ids.assignment, changed: 'true' }, error: null }) }
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-user-1' }, supabase })
+    const { declineTrainerAssignment } = await import('../trainerAssignments')
+    const payload = form({ assignmentId: ids.assignment, reason: '', idempotencyKey: 'decline-safe-error' })
+
+    await expect(declineTrainerAssignment(payload)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo rechazar la rutina. Verifica que la propuesta siga pendiente e inténtalo de nuevo.',
+    })
+    await expect(declineTrainerAssignment(payload)).resolves.toEqual({
+      ok: false,
+      error: 'No se pudo rechazar la rutina. Verifica que la propuesta siga pendiente e inténtalo de nuevo.',
+    })
+  })
+
   it('publishes a future-only revision through the atomic RPC', async () => {
     const supabase = {
       rpc: vi.fn(async () => ({
@@ -141,6 +291,15 @@ describe('trainer assignment actions', () => {
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
     expect(revalidatePath).toHaveBeenCalledWith('/plan')
+  })
+
+  it.each([
+    ['TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED', 'Este cliente ya tiene esta rutina asignada.'],
+    ['TRAINER_ASSIGNMENT_NOT_ACTIVE', 'Esta rutina ya no está asignada. Actualiza la lista antes de publicar una revisión.'],
+  ])('explains a revision rejected with %s', async (token, error) => {
+    requireActiveTrainerContext.mockResolvedValue({ supabase: { rpc: vi.fn(async () => ({ data: null, error: { message: token } })) } })
+    const { publishTrainerAssignmentRevision } = await import('../trainerAssignments')
+    await expect(publishTrainerAssignmentRevision(form({ assignmentId: ids.assignment, templateId: ids.template, changeSummary: 'Revisión', idempotencyKey: 'revision-rejected' }))).resolves.toEqual({ ok: false, error })
   })
 
   it('requires a non-blank summary before publishing a revision', async () => {

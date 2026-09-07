@@ -161,4 +161,18 @@ describe('coaching request actions', () => {
       request_id: '33333333-3333-4333-8333-333333333333', reason: 'No tengo disponibilidad esta semana.',
     })
   })
+
+  it('maps a decline race conflict to a refreshed terminal state', async () => {
+    const supabase = requestSupabase({ decline: { data: null, error: { message: 'COACHING_REQUEST_NOT_PENDING' } } })
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
+    const formData = new FormData()
+    formData.set('requestId', '33333333-3333-4333-8333-333333333333')
+    const { declineCoachingRequest } = await import('../coachingRequests')
+
+    await expect(declineCoachingRequest(formData)).resolves.toEqual({
+      ok: false,
+      error: 'La solicitud se actualizó. Recarga la bandeja.',
+      refreshed: true,
+    })
+  })
 })

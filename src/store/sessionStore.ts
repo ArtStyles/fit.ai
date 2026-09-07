@@ -69,6 +69,7 @@ export interface RestTimerState {
 export interface SessionState {
   // ── Datos ──────────────────────────────────────────────────────────────────
   clientSessionId: string
+  userId: string
   workoutId:   string
   workoutName: string
   startedAt:   number            // Date.now()
@@ -79,8 +80,8 @@ export interface SessionState {
   isFinished:  boolean
 
   // ── Acciones ───────────────────────────────────────────────────────────────
-  initSession:     (workoutId: string, workoutName: string, exercises: ExerciseSession[], prescriptionLocked?: boolean) => void
-  restoreSession:  (snapshot: { clientSessionId?: string; workoutId: string; workoutName: string; startedAt: number; exercises: ExerciseSession[] }, prescriptionLocked?: boolean) => void
+  initSession:     (workoutId: string, workoutName: string, exercises: ExerciseSession[], prescriptionLocked?: boolean, userId?: string) => void
+  restoreSession:  (snapshot: { userId?: string; clientSessionId?: string; workoutId: string; workoutName: string; startedAt: number; finishedAt?: number; exercises: ExerciseSession[] }, prescriptionLocked?: boolean) => void
   toggleExpanded:  (workoutExerciseId: string) => void
   updateSetField:  (weId: string, setIdx: number, field: 'weightKg' | 'reps', value: string) => void
   updateSetDuration: (weId: string, setIdx: number, seconds: number) => void
@@ -204,6 +205,7 @@ function buildFlexibleExercise(
 export const useSessionStore = create<SessionState>((set, get) => ({
   // ── Estado inicial ─────────────────────────────────────────────────────────
   clientSessionId: '',
+  userId: '',
   workoutId:   '',
   workoutName: '',
   startedAt:   0,
@@ -214,7 +216,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   isFinished:  false,
 
   // ── initSession ───────────────────────────────────────────────────────────
-  initSession(workoutId, workoutName, exercises, prescriptionLocked = false) {
+  initSession(workoutId, workoutName, exercises, prescriptionLocked = false, userId = '') {
     // Activar el primer ejercicio automáticamente
     const initialExercises = exercises.map((ex, i) => ({
       ...ex,
@@ -223,6 +225,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }))
     set({
       clientSessionId: createClientSessionId(),
+      userId,
       workoutId,
       workoutName,
       startedAt:  Date.now(),
@@ -236,13 +239,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── restoreSession ────────────────────────────────────────────────────────
   // Restaura el estado completo desde un backup (localStorage) sin resetear
-  restoreSession({ clientSessionId, workoutId, workoutName, startedAt, exercises }, prescriptionLocked = false) {
+  restoreSession({ userId = '', clientSessionId, workoutId, workoutName, startedAt, finishedAt = 0, exercises }, prescriptionLocked = false) {
     set({
       clientSessionId: isClientSessionId(clientSessionId) ? clientSessionId : createClientSessionId(),
       workoutId,
+      userId,
       workoutName,
       startedAt,
-      finishedAt: 0,
+      finishedAt,
       exercises: exercises
         .filter(exercise => !prescriptionLocked || (exercise.source ?? 'planned') === 'planned')
         .map(exercise => ({
@@ -255,7 +259,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         })),
       prescriptionLocked,
       restTimer:  null,
-      isFinished: false,
+      isFinished: finishedAt > 0,
     })
   },
 
@@ -508,6 +512,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   // ── finishSession ─────────────────────────────────────────────────────────
   finishSession() {
     const state = get()
+    if (state.isFinished) return
     if (state.prescriptionLocked && !canFinishSession(state.exercises, true)) return
     set({ isFinished: true, finishedAt: Date.now(), restTimer: null })
   },
@@ -516,6 +521,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearSession() {
     set({
       clientSessionId: '',
+      userId: '',
       workoutId:   '',
       workoutName: '',
       startedAt:   0,

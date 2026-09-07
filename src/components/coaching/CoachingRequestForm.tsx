@@ -23,19 +23,22 @@ export async function performCoachingRequestSubmit(
     setPending: (pending: boolean) => void
     setFieldErrors: (errors: Record<string, string>) => void
     setAnnouncement: (message: string, isError?: boolean) => void
+    setRequestSubmitted?: (submitted: boolean) => void
     rotateIdempotencyKey: () => void
   },
 ) {
   update.setPending(true)
   update.setFieldErrors({})
+  update.setRequestSubmitted?.(false)
   try {
     const result = await action(formData)
     if (!result.ok) {
       update.setFieldErrors(result.fieldErrors ?? {})
-      update.setAnnouncement('No se pudo enviar la solicitud.', true)
+      update.setAnnouncement(result.error, true)
       return
     }
     update.setAnnouncement(result.created ? 'Tu solicitud quedó pendiente de respuesta.' : 'Tu solicitud ya estaba registrada.', false)
+    update.setRequestSubmitted?.(true)
     update.rotateIdempotencyKey()
   } catch {
     update.setAnnouncement('No se pudo enviar la solicitud.', true)
@@ -46,6 +49,7 @@ export async function performCoachingRequestSubmit(
 
 export function CoachingRequestForm({ service }: { service: { id: string; name: string } }) {
   const [pending, setPending] = useState(false)
+  const [requestSubmitted, setRequestSubmitted] = useState(false)
   const [announcement, setAnnouncement] = useState({ message: '', isError: false })
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey)
@@ -56,6 +60,7 @@ export function CoachingRequestForm({ service }: { service: { id: string; name: 
       setPending,
       setFieldErrors,
       setAnnouncement: (message, isError = false) => setAnnouncement({ message, isError }),
+      setRequestSubmitted,
       rotateIdempotencyKey: () => setIdempotencyKey(newIdempotencyKey()),
     })
   }
@@ -81,6 +86,7 @@ export function CoachingRequestForm({ service }: { service: { id: string; name: 
         {pending ? 'Enviando…' : 'Enviar solicitud'}
       </button>
       <CoachingActionAnnouncement message={announcement.message} isError={announcement.isError} />
+      {requestSubmitted ? <a href="/coaching" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-violet-700 underline underline-offset-4">Ver estado</a> : null}
     </form>
   )
 }

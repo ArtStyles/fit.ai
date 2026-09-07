@@ -1,12 +1,40 @@
-<!doctype html><html><body><div id="root"></div><script type="module">
+<!doctype html><html class="dark" lang="es" style="--font-sans: Arial; --font-display: Arial"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body><main id="root" class="mx-auto max-w-3xl p-4"></main><script type="module">
   import React from 'react'
+  import '@/styles/globals.css'
   import { createRoot } from 'react-dom/client'
   import { AssignProgramDialog } from '../../AssignProgramDialog'
   createRoot(document.getElementById('root')).render(React.createElement(AssignProgramDialog, {
     templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    relationships: [
-      { id: '11111111-1111-4111-8111-111111111111', label: 'Servicio Fuerza · iniciado 1 ene 2026 · ref. 11111111' },
-      { id: '22222222-2222-4222-8222-222222222222', label: 'Servicio Movilidad · iniciado 2 ene 2026 · ref. 22222222' },
+    selectedRelationshipId: '22222222-2222-4222-8222-222222222222',
+    relationships: new URLSearchParams(window.location.search).get('empty') === '1' ? [] : [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        clientUserId: 'aaaaaaaa-1111-4111-8111-111111111111',
+        clientName: 'Ana Lista',
+        serviceName: 'Servicio Fuerza',
+        startedAt: '1 ene 2026',
+        state: 'Listo para recibir rutina',
+        canReceiveAssignment: true,
+      },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        clientUserId: 'aaaaaaaa-2222-4222-8222-222222222222',
+        clientName: 'Luis Pendiente',
+        serviceName: 'Servicio Movilidad',
+        startedAt: '2 ene 2026',
+        state: 'Rutina asignada',
+        canReceiveAssignment: false,
+        blockingReason: 'Este cliente ya tiene esta rutina asignada.',
+      },
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        clientUserId: 'aaaaaaaa-3333-4333-8333-333333333333',
+        clientName: 'Eva Activa',
+        serviceName: 'Servicio Resistencia',
+        startedAt: '3 ene 2026',
+        state: 'Puede recibir otra rutina distinta.',
+        canReceiveAssignment: true,
+      },
     ],
   }))
   window.__ASSIGN_DIALOG_READY__ = true

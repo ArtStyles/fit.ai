@@ -1,4 +1,4 @@
-import { createElement, type ComponentType } from 'react'
+import { createElement, type ComponentType, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
@@ -73,6 +73,10 @@ describe('professional exercise picker search', () => {
         onEquipmentChange: (value: string) => void
         onToggle: (id: string) => void
         onConfirm: () => void
+        confirming?: boolean
+        confirmationError?: string | null
+        invalidIds?: string[]
+        confirmationDetails?: ReactNode
       }>
     }).ExerciseCatalogDialogView
 
@@ -88,6 +92,10 @@ describe('professional exercise picker search', () => {
         onEquipmentChange: () => undefined,
         onToggle: () => undefined,
         onConfirm: () => undefined,
+        confirming: true,
+        confirmationError: 'No se pudieron agregar los ejercicios.',
+        invalidIds: ['curl'],
+        confirmationDetails: createElement('p', null, '3 × 10 · RPE 7 · 60 s'),
       }))
       : ''
 
@@ -97,7 +105,13 @@ describe('professional exercise picker search', () => {
     expect(html).toContain('Todos los músculos')
     expect(html).toContain('Curl de bíceps')
     expect(html).toContain('aria-pressed="true"')
-    expect(html).toContain('Agregar 1 ejercicio')
+    expect(html).toContain('Agregando…')
+    expect(html).toContain('aria-disabled="true"')
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No se pudieron agregar los ejercicios.')
+    expect(html).toContain('aria-invalid="true"')
+    expect(html).toContain('ID curl ya no disponible')
+    expect(html).toContain('3 × 10 · RPE 7 · 60 s')
   })
 
   it('preserves exercise thumbnails while adapting plan options to the catalog', () => {

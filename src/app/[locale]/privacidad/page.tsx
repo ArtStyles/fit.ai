@@ -13,10 +13,12 @@ export const metadata = buildLocalizedMetadata({
 })
 
 type SpanishPrivacyPageProps = {
-  params: { locale: string }
-  searchParams?: { from?: string | string[] }
+  params: Promise<{ locale: string }>
+  searchParams?: Promise<{ from?: string | string[] }>
 }
 
-export default function SpanishPrivacyPage({ params, searchParams }: SpanishPrivacyPageProps) {
+export default async function SpanishPrivacyPage({ params: paramsPromise, searchParams: searchParamsPromise }: SpanishPrivacyPageProps) {
+  const params = await paramsPromise
+  const searchParams = await searchParamsPromise
   return <LegalDocumentPage paramsLocale={params.locale} expectedLocale="es" document="privacy" returnTo={searchParams?.from} />
 }

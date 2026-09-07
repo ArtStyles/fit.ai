@@ -14,7 +14,7 @@ type AcceptCoachingRequestResult = {
   acceptedRequestId: string
   cancelledRequestIds: string[]
 } | (CoachingRequestFailure & { refreshed?: boolean })
-type DeclineCoachingRequestResult = { ok: true; requestId: string } | CoachingRequestFailure
+type DeclineCoachingRequestResult = { ok: true; requestId: string } | (CoachingRequestFailure & { refreshed?: boolean })
 
 const requestErrors: Record<string, string> = {
   COACHING_SERVICE_NOT_AVAILABLE: 'Este servicio ya no está disponible.',
@@ -118,7 +118,16 @@ export async function declineCoachingRequest(formData: FormData): Promise<Declin
 
   const { data, error } = await (supabase as any).rpc('decline_coaching_request', { request_id: requestId, reason })
   const result = Array.isArray(data) ? data[0] : data
-  if (error || !result?.declined_request_id) return { ok: false, error: 'La solicitud ya no está pendiente.' }
+  if (error || !result?.declined_request_id) {
+    const message = typeof (error as { message?: unknown } | null)?.message === 'string'
+      ? (error as { message: string }).message
+      : ''
+    if (message === 'COACHING_REQUEST_NOT_PENDING') {
+      revalidateCoachingPaths()
+      return { ok: false, error: 'La solicitud se actualizó. Recarga la bandeja.', refreshed: true }
+    }
+    return { ok: false, error: 'La solicitud ya no está pendiente.' }
+  }
 
   revalidateCoachingPaths()
   return { ok: true, requestId: result.declined_request_id }

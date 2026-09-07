@@ -12,6 +12,7 @@ import ExerciseGrid from './ExerciseGrid'
 import type { Difficulty, ExerciseType } from '@/types/exercise'
 import { exerciseLanguage, localizeEquipment, localizeMuscleGroup } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
+import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 
 // ─── Dev guard ────────────────────────────────────────────────────────────────
@@ -142,22 +143,28 @@ export default async function ExercisesPage({
 
       {/* ── Sticky toolbar ───────────────────────────────────────────────── */}
       <FixedTopBar
+        accountSlot="custom"
         className="border-zinc-800/50 bg-[#0e0e10]/95"
-        contentClassName="mx-auto block max-w-7xl px-4 py-0 sm:px-6"
-        initialHeight={116}
+        contentClassName="mx-auto block max-w-7xl px-4 py-3 sm:px-6"
+        initialHeight={156}
       >
-          <div className="flex items-center justify-between py-4 gap-4">
-            <h1 className="text-xl font-bold tracking-tight shrink-0">{t('Biblioteca de ejercicios')}</h1>
-            <StatStrip total={total} page={page} totalPages={totalPages} t={t} />
-          </div>
-          <div className="pb-3">
-            <ExerciseFilters
-              muscleGroups={muscleGroups.map(value => ({ value, label: localizeMuscleGroup(value, language) }))}
-              equipmentList={equipmentList.map(value => ({ value, label: localizeEquipment(value, language) }))}
-              current={{ search, difficulty, exercise_type, muscle_group, equipment }}
-              total={total}
-            />
-          </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <h1 className="min-w-0 truncate text-xl font-bold tracking-tight">
+            {t('Biblioteca de ejercicios')}
+          </h1>
+          <AccountWorkspaceMenu surface="topbar" />
+        </div>
+        <div className="mt-2 flex min-h-11 items-center justify-end">
+          <StatStrip total={total} page={page} totalPages={totalPages} t={t} />
+        </div>
+        <div className="pb-3">
+          <ExerciseFilters
+            muscleGroups={muscleGroups.map(value => ({ value, label: localizeMuscleGroup(value, language) }))}
+            equipmentList={equipmentList.map(value => ({ value, label: localizeEquipment(value, language) }))}
+            current={{ search, difficulty, exercise_type, muscle_group, equipment }}
+            total={total}
+          />
+        </div>
       </FixedTopBar>
 
       {/* ── Grid + Modal ─────────────────────────────────────────────────── */}

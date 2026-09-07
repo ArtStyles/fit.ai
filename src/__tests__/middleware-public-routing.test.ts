@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { isPublicPath, middleware } from '../middleware'
+import { isPublicPath, proxy } from '../proxy'
 
 vi.mock('@supabase/ssr', () => ({
   createServerClient: vi.fn(),
@@ -24,7 +24,7 @@ function mockSupabaseUser(user: { id: string; email?: string } | null) {
   } as never)
 }
 
-describe('public middleware routing', () => {
+describe('public proxy routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -42,7 +42,7 @@ describe('public middleware routing', () => {
   it('allows unauthenticated requests to reach the legacy language selector alias', async () => {
     mockSupabaseUser(null)
 
-    const response = await middleware(new NextRequest('https://vekira.test/language-selector'))
+    const response = await proxy(new NextRequest('https://vekira.test/language-selector'))
 
     expect(response.status).toBe(200)
     expect(response.headers.get('location')).toBeNull()
@@ -51,7 +51,7 @@ describe('public middleware routing', () => {
   it('forwards and persists the locale on a localized public request', async () => {
     mockSupabaseUser(null)
 
-    const response = await middleware(new NextRequest('https://vekira.test/en'))
+    const response = await proxy(new NextRequest('https://vekira.test/en'))
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('en')
@@ -63,7 +63,7 @@ describe('public middleware routing', () => {
     async locale => {
       mockSupabaseUser(null)
 
-      const response = await middleware(
+      const response = await proxy(
         new NextRequest(`https://vekira.test/register?locale=${locale}`),
       )
 
@@ -82,7 +82,7 @@ describe('public middleware routing', () => {
       },
     })
 
-    const response = await middleware(request)
+    const response = await proxy(request)
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('en')
@@ -95,7 +95,7 @@ describe('public middleware routing', () => {
       headers: { 'x-public-locale': 'en' },
     })
 
-    const response = await middleware(request)
+    const response = await proxy(request)
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('es')
@@ -107,7 +107,7 @@ describe('public middleware routing', () => {
       headers: { 'x-public-locale': 'en' },
     })
 
-    const response = await middleware(request)
+    const response = await proxy(request)
 
     expect(response.status).toBe(200)
     expect(response.headers.get('x-middleware-request-x-public-locale')).toBeNull()
@@ -116,17 +116,37 @@ describe('public middleware routing', () => {
   it('allows authenticated users to visit localized public pages', async () => {
     mockSupabaseUser({ id: 'user-1', email: 'user@example.com' })
 
-    const response = await middleware(new NextRequest('https://vekira.test/es'))
+    const response = await proxy(new NextRequest('https://vekira.test/es'))
 
     expect(response.status).toBe(200)
     expect(response.headers.get('location')).toBeNull()
     expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('es')
   })
 
+  it('never forwards a visitor-supplied identity without a verified session', async () => {
+    mockSupabaseUser(null)
+    const response = await proxy(new NextRequest('https://vekira.test/en', {
+      headers: { 'x-fitai-user-id': 'forged-user', 'x-fitai-user-email': 'forged@example.test' },
+    }))
+
+    expect(response.headers.get('x-middleware-request-x-fitai-user-id')).toBeNull()
+    expect(response.headers.get('x-middleware-request-x-fitai-user-email')).toBeNull()
+  })
+
+  it('does not retain a forged email when the verified session has no email', async () => {
+    mockSupabaseUser({ id: 'verified-user' })
+    const response = await proxy(new NextRequest('https://vekira.test/dashboard', {
+      headers: { 'x-fitai-user-id': 'forged-user', 'x-fitai-user-email': 'forged@example.test' },
+    }))
+
+    expect(response.headers.get('x-middleware-request-x-fitai-user-id')).toBe('verified-user')
+    expect(response.headers.get('x-middleware-request-x-fitai-user-email')).toBeNull()
+  })
+
   it('retains the authenticated redirect on the neutral root', async () => {
     mockSupabaseUser({ id: 'user-1' })
 
-    const response = await middleware(new NextRequest('https://vekira.test/'))
+    const response = await proxy(new NextRequest('https://vekira.test/'))
 
     expect(response.status).toBe(307)
     expect(response.headers.get('location')).toBe('https://vekira.test/dashboard')

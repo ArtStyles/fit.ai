@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { useFormState } from 'react-dom'
+import { useState, useActionState } from 'react'
 import { updateTrainingSettings } from '@/app/actions/settings'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import {
@@ -88,7 +87,7 @@ export function TrainingSettingsForm({
     preferredWorkoutDays: Array.from(new Set(initial.preferredWorkoutDays)).sort((a, b) => a - b),
     availableEquipment: initial.gymType === 'home_no_equipment' ? [] : initial.availableEquipment,
   })
-  const [state, action] = useFormState(updateTrainingSettings, INITIAL_TRAINING_SETTINGS_STATE)
+  const [state, action] = useActionState(updateTrainingSettings, INITIAL_TRAINING_SETTINGS_STATE)
   const dayMessage = daySelectionMessage(form.daysPerWeek, form.preferredWorkoutDays, t)
   const dayCountValid = dayMessage === null
   const readiness = readinessCopy(readinessStatus)

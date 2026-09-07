@@ -9,7 +9,7 @@ Durante esta etapa:
 - `COMMUNITY_ENABLED` debe permanecer en `false`.
 - Los servicios son gratuitos; precio, moneda, intervalo, checkout y claves de pago no se muestran ni se configuran.
 - No existen chat privado ni reseñas del marketplace. La entrevista se coordina por el contacto externo declarado en la solicitud y visible solo para administración.
-- Las rutinas profesionales aceptadas son inmutables para el cliente; el cliente solo puede ejecutarlas. Los cambios llegan como una nueva revisión del entrenador.
+- Las rutinas profesionales asignadas llegan a la biblioteca sin cambiar la principal. El cliente puede elegirlas y retirarlas; la prescripción de ejercicios permanece bloqueada. Los cambios llegan como una nueva revisión del entrenador. La migración y su verificación están en [asignación directa](trainer-direct-assignment-migration.md).
 - Los planes comerciales futuros permanecen ocultos hasta integrar y aprobar la pasarela de pago.
 
 ## Responsables y evidencia
@@ -80,9 +80,13 @@ Validar solo presencia y alcance; nunca imprimir valores:
 
 6. Eliminar `trainer-predeploy.catalog` al cerrar la verificación conforme a la política temporal aprobada. Si descifrado, catálogo, restauración o controles de acceso/cifrado fallan, detener el despliegue.
 
-## Orden de migración 040–053
+## Historial legado 040–059 (solo contexto)
 
-Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
+Esta secuencia documenta cómo se construyó el contrato profesional que hoy está
+consolidado en el baseline canónico. Se conserva para auditoría y para los
+harnesses históricos; no se aplica archivo por archivo ni se entrega a
+`db push`. Los párrafos siguientes describen dependencias y precauciones del
+despliegue original, no un procedimiento para reproducirlo en producción:
 
 1. `040_trainer_foundations.sql`
 2. `041_trainer_verification.sql`
@@ -100,39 +104,57 @@ Aplicar en orden ascendente y sin editar migraciones ya desplegadas:
 14. `053_trainer_draft_rpc_json_repair.sql`
 15. `054_product_notification_archiving.sql`
 16. `055_atomic_notification_attention_dismissal.sql`
+17. `056_trainer_template_exercise_batch_append.sql`
+18. `057_trainer_assignment_decline.sql`
+19. `058_training_profile_consent_regrant.sql`
+20. `059_trainer_assignment_single_pending.sql`
 
 La 053 reemplaza hacia delante el RPC `save_trainer_application_draft` para
 eliminar el uso de `jsonb_object_length(jsonb)`, que PostgreSQL no ofrece.
-Después de aplicarla, guardar un borrador autenticado y confirmar que el RPC
-devuelve `status = draft` y que la fila aparece en `trainer_applications` antes
-de desplegar o reabrir el formulario.
+Tras su despliegue original, se debía guardar un borrador autenticado y confirmar
+que el RPC devuelve `status = draft` y que la fila aparece en
+`trainer_applications` antes de desplegar o reabrir el formulario.
 
 La 054 conserva el historial de `product_notifications` y permite que cada
 usuario archive únicamente sus propias filas mediante `dismissed_at`.
 
 La 055 añade el RPC autenticado que valida y registra en una sola transacción la
-versión vigente de los avisos de plan, revisión del perfil y promoción. Desplegar
-054 y 055 antes que la aplicación que expone los nuevos controles de descarte.
+versión vigente de los avisos de plan, revisión del perfil y promoción. La
+compatibilidad exige que 054 y 055 precedan a la aplicación que expone los
+nuevos controles de descarte.
 
-Programar la 050 en una ventana de bajo tráfico o mantenimiento. La migración
-toma un bloqueo `SHARE ROW EXCLUSIVE` sobre `public.progress_logs` antes del
-backfill y la instalación del trigger, por lo que las escrituras de sesiones
-activas pueden quedar en espera o agotar su timeout hasta que termine la
-transacción. Durante la ejecución, vigilar sesiones en espera y bloqueos de
-`progress_logs` mediante `pg_stat_activity` y `pg_locks`; si la migración falla,
-dejar que la transacción revierta por completo antes de reintentar. Los guardados
-de sesión y la propia 050 son idempotentes, así que una operación interrumpida
-puede reintentarse con seguridad una vez liberado el bloqueo.
+La 056 añade `append_trainer_template_exercises(uuid, jsonb)` para incorporar
+un lote de ejercicios a un día existente de plantilla de forma atómica. La 057
+añade el cierre idempotente de propuestas no aceptadas, conserva intacto el
+snapshot, serializa aceptación frente a rechazo y notifica al entrenador sin
+guardar el motivo libre en auditoría. La 058 permite que solo el cliente repare
+un consentimiento `training_profile` ausente en una relación activa, con una
+nueva fila versionada, auditoría y notificación deduplicada al entrenador. La
+059 conserva el reintento exacto de una propuesta y, bajo el bloqueo canónico
+cliente → entrenador, rechaza cualquier otra propuesta pendiente o rutina
+profesional activa del mismo cliente.
+El despliegue histórico requería 040–059 completas y en ese orden numérico. En
+la línea activa, ese estado ya forma parte de
+`20260906233340_remote_schema_baseline.sql`; que un archivo legado esté en Git no
+autoriza ni demuestra su reaplicación en el proyecto remoto.
 
-Antes de aplicar la 049, pausar nuevas propuestas y publicaciones de revisiones
-profesionales, y mantener suspendidas las invitaciones. Esperar a que concluyan
-las publicaciones que ya estaban en curso. La 049 ejecuta un preflight
+La aplicación histórica de la 050 requería una ventana de bajo tráfico o
+mantenimiento. La migración toma un bloqueo `SHARE ROW EXCLUSIVE` sobre
+`public.progress_logs` antes del backfill y la instalación del trigger, por lo
+que las escrituras de sesiones activas podían quedar en espera o agotar su
+timeout hasta que terminara la transacción. Durante una investigación de aquel
+despliegue, revisar sesiones en espera y bloqueos de `progress_logs` mediante
+`pg_stat_activity` y `pg_locks`. Esta nota no autoriza a volver a ejecutar la
+050.
+
+Durante el despliegue histórico de la 049 se debían pausar nuevas propuestas,
+publicaciones de revisiones profesionales e invitaciones hasta concluir las
+operaciones en curso. La 049 ejecuta un preflight
 estructural agregado y, si detecta una relación o snapshot no reparable, aborta
 la transacción con `TRAINER_ISO_WEEKDAY_REPAIR_PREFLIGHT_FAILED`; sus
 postcondiciones usan `TRAINER_ISO_WEEKDAY_REPAIR_POSTCONDITION_FAILED`. Ambos
-errores exponen solo el tipo de anomalía y su conteo agregado. Investigar y
-corregir hacia delante antes de reintentar; no modificar las migraciones 043 o
-045 ya desplegadas.
+errores exponen solo el tipo de anomalía y su conteo agregado. Las migraciones
+043, 045 y 049 permanecen inmutables como historial.
 
 En local o CI, ejecutar antes del remoto:
 
@@ -145,19 +167,31 @@ pnpm lint
 
 Usar `pnpm test:db:trainers` como puerta funcional y de autorización, y
 `pnpm test:db:trainer-security` como puerta de seguridad repetida tres veces.
-Ambos ejercitan el conjunto profesional 040–051 y 053; la 052, independiente
-del dominio de entrenadores, permanece obligatoria en el orden remoto 040–053.
+Ambos harnesses reconstruyen capas concretas del historial legado: el conjunto
+profesional 040–051 y 053, además de 056–059. Ese subconjunto sirve para probar
+rerunnabilidad y contratos; no representa el ledger remoto ni autoriza a
+reaplicar 052, 054 o 055. El estado integrado de todas esas capas se verifica en
+producción mediante el baseline canónico y el preflight, no por su numeración
+histórica.
 
 En el proyecto enlazado de staging:
 
 ```bash
-supabase migration list --linked
-supabase db push --linked --dry-run
-supabase db push --linked
-supabase migration list --linked
+pnpm run check:supabase-migrations
+pnpm run supabase:migrations:list
+pnpm run supabase:migrations:dry-run
+pnpm run supabase:migrations:push
+pnpm run supabase:migrations:list
 ```
 
-El `dry-run` y la lista final deben mostrar 040–053 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
+Estos scripts fijan el CLI y `--workdir infra`; no ejecutes el CLI global desde
+la raíz. Las migraciones 040–059 son parte del historial legado y no aparecen
+como entradas independientes del ledger canónico. Antes de aplicar un cambio,
+la lista debe alinear local/remoto desde el baseline
+`20260906233340_remote_schema_baseline`; el dry-run solo debe mostrar las nuevas
+migraciones timestamped ya revisadas. No continuar si aparece una versión
+desconocida, una migración inesperadamente pendiente o un cambio destructivo no
+revisado.
 
 ## Preflight remoto de solo lectura
 
@@ -167,7 +201,16 @@ Después de migrar y antes de crear fixtures o invitar usuarios, ejecutar con un
 SELECT public.trainer_security_preflight() AS schema_marker;
 ```
 
-El único resultado válido es `49`. La función es de solo lectura y valida las rutinas críticas, incluida la capa ISO de la 049. A continuación, en una sesión operativa privilegiada con acceso de lectura, ejecutar esta auditoría exclusivamente de conteo:
+El único resultado válido es `59`: `trainer_security_preflight() = 59`. La
+función es de solo lectura e incluye la capa ISO y los contratos de la 056, la
+057, la 058 y la 059. Confirmar también que
+`append_trainer_template_exercises(uuid, jsonb)`,
+`decline_trainer_assignment(uuid, text, text)`,
+`grant_training_profile_consent(uuid, text, uuid)` y
+`propose_trainer_assignment(uuid, uuid, text, text)` existen, que solo
+`authenticated` y `service_role` tienen `EXECUTE`, y que `anon` no lo tiene. A
+continuación, en una sesión operativa privilegiada con acceso de lectura, ejecutar
+esta auditoría exclusivamente de conteo:
 
 ```sql
 SELECT count(*) AS iso_weekday_divergences
@@ -186,7 +229,7 @@ WHERE plan.source_type = 'trainer_assigned'
 Resultados obligatorios:
 
 ```text
-trainer_security_preflight = 49
+trainer_security_preflight = 59
 iso_weekday_divergences = 0
 ```
 
@@ -207,7 +250,8 @@ Esperado: RLS y FORCE RLS activos; `can_append=true`; las tres mutaciones restan
 
 ## Despliegue de aplicación y smoke tests
 
-Desplegar primero el esquema compatible y luego la aplicación. Con cuentas sintéticas o del proyecto E2E dedicado, verificar:
+Desplegar la aplicación solo después de que el esquema remoto y su smoke pasen.
+Con cuentas sintéticas o del proyecto E2E dedicado, verificar:
 
 ```bash
 pnpm test:e2e:trainer-marketplace
@@ -225,6 +269,20 @@ Este es el único comando autorizado para el journey destructivo del marketplace
 8. Las vistas del entrenador muestran solo clientes con relación y alcance vigentes.
 9. Analíticas aceptan únicamente eventos allowlisted; los errores devuelven código de dominio y `correlationId`, nunca payloads internos.
 10. Navegación no muestra Comunidad, checkout, precios, chat, reseñas ni edición de la rutina profesional.
+
+El journey E2E remoto actual no ejecuta el rechazo de rutina. La idempotencia del
+rechazo, el único audit/aviso y la carrera aceptar frente a rechazar pertenecen a
+la puerta local `pnpm test:db:trainers`; no atribuir esas garantías al comando E2E
+hasta ampliar explícitamente `trainer-marketplace.spec.ts`. Antes del piloto,
+conservar esta diferencia en la evidencia de aprobación y validar ambas puertas.
+
+Antes del despliegue de UI, y sin mutar producción durante el smoke local,
+verificar en una plantilla existente: abrir Day A; añadir Prensa y Gemelos en una
+primera confirmación; añadir Zancada en una segunda; editar Zancada a 4 × 8, RPE
+8 y 90 s; reordenarla encima de Gemelos; recargar y confirmar filas y orden;
+editar el nombre de la rutina y confirmar que la asignación se bloquea hasta
+«Guardar detalles»; guardar, abrir asignación y luego publicación de revisión;
+repetir la comprobación de tarjetas a 390 px sin desbordamiento horizontal.
 
 Reanudar propuestas, publicaciones de revisiones e invitaciones solo cuando el
 preflight, la auditoría ISO y los dos smoke sintéticos estén en verde.
@@ -305,17 +363,22 @@ La retención futura requiere diseño y migración independiente con revisión l
 2. Verificar backup/PITR, ACL, trigger append-only y hashes de migración.
 3. Restaurar en aislamiento para calcular alcance. No restaurar producción hasta aprobación del responsable de incidente y base de datos.
 
-## Rollback
+## Rollback hacia delante
 
-Las migraciones 040–053 son aditivas. Tras un despliegue exitoso de la 053,
-el rollback es solo hacia delante: no ejecutar una down migration destructiva,
-no eliminar tablas/columnas, no borrar auditoría y nunca restaurar la
-sustracción defectuosa de días.
+El contrato consolidado en el baseline incluye las capas aditivas 040–059. Tras
+un despliegue canónico, el rollback es solo hacia delante: no ejecutar una down
+migration destructiva, no eliminar tablas/columnas, no borrar auditoría, no
+eliminar ejercicios anexados y nunca restaurar la sustracción defectuosa de
+días. Tampoco se debe volver a ejecutar la migración histórica 045 ni la
+secuencia 040–059 sobre datos actuales. Cualquier reparación se entrega como una
+migración timestamped nueva, revisada y solo hacia delante; las reaplicaciones
+aisladas de 057–059 se reservan para sus pruebas de rerunnabilidad en una base
+descartable.
 
-Procedimiento posterior a la 053:
+Procedimiento posterior a un despliegue canónico:
 
 1. Detener invitaciones, nuevas propuestas y publicaciones de revisiones.
-2. Mantener aplicadas las migraciones hasta la 053 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
+2. Mantener alineado el ledger desde el baseline y preservar los datos reparados; volver solo a una versión de aplicación compatible con el esquema vigente si hace falta.
 3. Confirmar que Comunidad sigue apagada y que pagos, precios, chat, reseñas y planes comerciales permanecen ocultos.
 4. Investigar con conteos agregados y ensayar cualquier restauración de respaldo en aislamiento; no restaurar producción sin la decisión explícita por la posible pérdida de cambios posteriores.
 5. Corregir hacia delante con una migración revisada y repetir preflight, auditoría ISO y smoke antes de reabrir publicaciones.
@@ -324,4 +387,9 @@ Esta versión no define una bandera global del marketplace. No asumir que una va
 
 ## Cierre del despliegue
 
-El responsable firma la salida solo si respaldo/restauración, orden 040–053, preflight 49, divergencias ISO profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de plan, pérdida de evidencia o fallo de revocación detiene el piloto.
+El responsable firma la salida solo si respaldo/restauración, ledger canónico y
+dry-run esperado, `trainer_security_preflight() = 59`, divergencias ISO
+profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría
+append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado,
+corrupción de plan, pérdida de evidencia o fallo de revocación detiene el
+piloto.

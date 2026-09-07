@@ -77,7 +77,6 @@ export function ExerciseMotionPreview({
       {isCurrentMotionPlaying ? (
         <div className="relative aspect-[16/10] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
           {/* Animated WebP requires a native img: Next/Image optimization can strip its animation. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={`${motionSrc}-${revision}`}
             data-motion-preview

@@ -9,13 +9,34 @@ import { CoachRequestQueue } from '../../CoachRequestQueue'
 import { ProgramTemplateEditor } from '../../ProgramTemplateEditor'
 import { ProposedProgramReview } from '../../ProposedProgramReview'
 import { TrainerPublicProfile } from '../../TrainerPublicProfile'
-import { WorkspaceSwitcher } from '../../../navigation/WorkspaceSwitcher'
+import { AccountWorkspaceMenu } from '../../../navigation/AccountWorkspaceMenu'
+import { AccountWorkspaceProvider } from '../../../navigation/AccountWorkspaceProvider'
 import { ActiveWorkoutDockView } from '../../../navigation/BottomNav'
+import { AppShell } from '../../../navigation/AppShell'
+import { getCoachNavItems, getPersonalNavItems } from '../../../navigation/appNavigation'
 import { ExerciseCatalogDialog } from '../../../plan/ExercisePicker'
 import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 
 const surface = new URLSearchParams(window.location.search).get('surface')
+
+const coachAccountWorkspace = {
+  account: { id: 'account-a',
+    name: 'Ada Entrenadora',
+    email: 'ada@example.com',
+    avatarUrl: null,
+  },
+  trainerAccess: { granted: true as const },
+  preferredWorkspace: 'coach' as const,
+  personalNavItems: getPersonalNavItems({ communityEnabled: false }),
+  coachNavItems: getCoachNavItems(),
+}
+
+const personalAccountWorkspace = {
+  ...coachAccountWorkspace,
+  preferredWorkspace: 'personal' as const,
+  personalNavItems: getPersonalNavItems({ communityEnabled: true }),
+}
 
 const trainerRows: PublicTrainerDirectoryRow[] = [
   {
@@ -66,7 +87,25 @@ function DirectoryFixture() {
   return <TrainerDirectory filters={filters} nextCursor={null} trainers={trainerRows} />
 }
 
-function Surface() {
+function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
+  if (!routeEditorOnly && surface === 'personal-shell') {
+    return <AppShell accountWorkspace={personalAccountWorkspace}>
+      <div className="min-h-screen bg-background pb-28">
+        <main className="mx-auto max-w-6xl space-y-6 px-4 py-8" aria-label="Espacio personal con entrenador">
+          <h1 className="text-2xl font-bold">Mi entrenamiento</h1>
+        </main>
+      </div>
+    </AppShell>
+  }
+  if (!routeEditorOnly && surface === 'editor-shell') {
+    return <AppShell accountWorkspace={coachAccountWorkspace}>
+      <div className="min-h-screen bg-background pb-28">
+        <main className="mx-auto max-w-6xl space-y-6 px-4 py-8" aria-label="Editor de rutina profesional">
+          <Surface routeEditorOnly />
+        </main>
+      </div>
+    </AppShell>
+  }
   if (surface === 'directory') {
     return <DirectoryFixture />
   }
@@ -114,9 +153,12 @@ function Surface() {
   if (surface === 'requests') {
     return <CoachRequestQueue requests={[{
       id: '11111111-1111-4111-8111-111111111111',
+      clientId: '22222222-2222-4222-8222-222222222222',
       serviceName: 'Servicio de fuerza',
       message: 'Quiero mejorar mi técnica.',
       createdAt: '2026-08-08T12:00:00.000Z',
+      clientName: 'Ana Pérez',
+      clientAvatarUrl: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2248%22 height=%2248%22%3E%3Crect width=%2248%22 height=%2248%22 fill=%22%237c3aed%22/%3E%3C/svg%3E',
     }]} />
   }
   if (surface === 'assignment') {
@@ -124,7 +166,13 @@ function Surface() {
       templateId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
       relationships={[{
         id: '11111111-1111-4111-8111-111111111111',
-        label: 'Servicio Fuerza · iniciado 1 ene 2026 · ref. 11111111',
+        clientUserId: '22222222-2222-4222-8222-222222222222',
+        clientName: 'Ana Rivera',
+        clientAvatarUrl: null,
+        serviceName: 'Servicio Fuerza',
+        startedAt: '1 ene 2026',
+        state: 'Listo para recibir rutina',
+        canReceiveAssignment: true,
       }]}
     />
   }
@@ -146,6 +194,9 @@ function Surface() {
     return <ProposedProgramReview proposal={{
       assignmentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       versionNumber: 1,
+      canAccept: true,
+      exerciseDetailsAvailable: true,
+      changeSummary: 'Prioriza el control técnico en cada repetición.',
       trainerName: 'Ada Entrenadora',
       snapshot: {
         schemaVersion: 1,
@@ -153,13 +204,29 @@ function Surface() {
         goal: 'Aprender la técnica',
         description: null,
         daysPerWeek: 1,
-        workouts: [],
+        workouts: [{
+          sourceTemplateWorkoutId: '11111111-1111-4111-8111-111111111111',
+          name: 'Día de fuerza',
+          dayOfWeek: 1,
+          orderInPlan: 1,
+          exercises: [{
+            sourceTemplateExerciseId: '22222222-2222-4222-8222-222222222222',
+            exerciseId: '33333333-3333-4333-8333-333333333333',
+            orderIndex: 1,
+            sets: 3,
+            reps: 8,
+            weightKg: null,
+            targetRpe: 7,
+            restSeconds: 90,
+            notes: 'Controla la bajada.',
+          }],
+        }],
       },
-      exerciseNames: {},
+      exerciseNames: { '33333333-3333-4333-8333-333333333333': 'Sentadilla' },
     }} />
   }
   if (surface === 'workspace') {
-    return <WorkspaceSwitcher workspace="coach" variant="desktop" />
+    return <AccountWorkspaceMenu surface="dashboard" />
   }
   if (surface === 'public-profile') {
     return <TrainerPublicProfile trainer={{
@@ -180,31 +247,83 @@ function Surface() {
   return <ProgramTemplateEditor
     template={{
       id: '11111111-1111-4111-8111-111111111111',
-      name: 'Fuerza', goal: null, description: null, days_per_week: 2, status: 'draft',
+      name: 'Fuerza', goal: 'Fuerza general', description: 'Rutina progresiva de dos días.', days_per_week: 2, status: 'draft',
     }}
-    workouts={[{
-      id: '22222222-2222-4222-8222-222222222222',
-      name: 'Día A', day_of_week: 1, order_in_plan: 1,
-      exercises: [{
-        id: '33333333-3333-4333-8333-333333333333',
-        exercise_id: '44444444-4444-4444-8444-444444444444',
-        order_index: 1, sets: 3, reps: 10, weight_kg: null, target_rpe: null,
-        rest_seconds: 60, notes: null, exercise: { name: 'Sentadilla' },
-      }],
+    workouts={[
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        name: 'Día A', day_of_week: 1, order_in_plan: 1,
+        exercises: [
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            exercise_id: '44444444-4444-4444-8444-444444444444',
+            order_index: 1, sets: 3, reps: 10, weight_kg: null, target_rpe: 7,
+            rest_seconds: 60, notes: null,
+            exercise: { name: 'Sentadilla con barra', muscle_groups: ['Piernas'], equipment: ['Barra'] },
+          },
+          {
+            id: '55555555-5555-4555-8555-555555555555',
+            exercise_id: '66666666-6666-4666-8666-666666666666',
+            order_index: 2, sets: 4, reps: 8, weight_kg: null, target_rpe: 8,
+            rest_seconds: 90, notes: null,
+            exercise: { name: 'Peso muerto rumano', muscle_groups: ['Isquiotibiales'], equipment: ['Barra'] },
+          },
+        ],
+      },
+      {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        name: 'Día B', day_of_week: 4, order_in_plan: 2,
+        exercises: [{
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          exercise_id: '77777777-7777-4777-8777-777777777777',
+          order_index: 1, sets: 3, reps: 12, weight_kg: null, target_rpe: 7,
+          rest_seconds: 60, notes: null,
+          exercise: { name: 'Prensa inclinada', muscle_groups: ['Cuádriceps'], equipment: ['Máquina'] },
+        }],
+      },
+    ]}
+    options={[
+      {
+        id: '44444444-4444-4444-8444-444444444444', name: 'Sentadilla con barra',
+        muscle_groups: ['Piernas'], equipment: ['Barra'], difficulty: 'beginner',
+        exercise_type: 'strength', is_compound: true,
+      },
+      {
+        id: '66666666-6666-4666-8666-666666666666', name: 'Peso muerto rumano',
+        muscle_groups: ['Isquiotibiales'], equipment: ['Barra'], difficulty: 'intermediate',
+        exercise_type: 'strength', is_compound: true,
+      },
+      {
+        id: '77777777-7777-4777-8777-777777777777', name: 'Prensa inclinada',
+        muscle_groups: ['Cuádriceps'], equipment: ['Máquina'], difficulty: 'beginner',
+        exercise_type: 'strength', is_compound: true,
+      },
+    ]}
+    relationships={[{
+      id: 'relationship-a',
+      clientUserId: 'client-a',
+      canReceiveAssignment: true,
+      label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a',
     }]}
-    options={[{
-      id: '44444444-4444-4444-8444-444444444444', name: 'Sentadilla',
-      muscle_groups: ['piernas'], equipment: [], difficulty: 'beginner',
-      exercise_type: 'strength', is_compound: true,
+    assignments={[{
+      id: 'assignment-a',
+      label: 'Entrenamiento personal · asignación assignment-a',
     }]}
   />
 }
 
-createRoot(document.getElementById('root')!).render(
-  <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
+function FixtureRoot() {
+  if (surface === 'editor-shell' || surface === 'personal-shell') return <Surface />
+  return <AccountWorkspaceProvider model={coachAccountWorkspace}>
     <main id="main-content" aria-label="Superficie profesional" className="mx-auto max-w-5xl px-4 py-6">
       <Surface />
     </main>
+  </AccountWorkspaceProvider>
+}
+
+createRoot(document.getElementById('root')!).render(
+  <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
+    <FixtureRoot />
   </I18nProvider>,
 )
 

@@ -1,3 +1,4 @@
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { chromium, type Browser } from '@playwright/test'
@@ -36,8 +37,8 @@ describe('coaching request UI', () => {
   it('shows real request states and exposes cancellation only for pending requests', () => {
     const html = renderStatus(
       <ClientCoachingStatus requests={[
-        { id: 'request-1', status: 'pending', createdAt: '2026-08-08T12:00:00.000Z' },
-        { id: 'request-2', status: 'declined', createdAt: '2026-08-07T12:00:00.000Z' },
+        { id: 'request-1', status: 'pending', createdAt: '2026-08-08T12:00:00.000Z', trainerName: 'Marina Pérez', trainerAvatarUrl: null, serviceName: 'Fuerza guiada' },
+        { id: 'request-2', status: 'declined', createdAt: '2026-08-07T12:00:00.000Z', trainerName: 'Luis Sosa', trainerAvatarUrl: null, serviceName: 'Movilidad' },
       ]} />,
     )
 
@@ -47,14 +48,46 @@ describe('coaching request UI', () => {
   })
 
   it('shows a client-controlled accessible confirmation before ending or resuming a relationship', () => {
-    const active = renderStatus(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-1', status: 'active' }} />)
-    const paused = renderStatus(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-2', status: 'paused_by_platform' }} />)
+    const active = renderStatus(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-1', status: 'active', startedAt: '2026-08-08T12:00:00.000Z', sourceRequestId: null, trainerName: 'Marina Pérez', trainerAvatarUrl: null, serviceName: 'Fuerza guiada' }} />)
+    const paused = renderStatus(<ClientCoachingStatus requests={[]} relationship={{ id: 'relationship-2', status: 'paused_by_platform', startedAt: '2026-08-08T12:00:00.000Z', sourceRequestId: null, trainerName: 'Luis Sosa', trainerAvatarUrl: null, serviceName: 'Movilidad' }} />)
 
     expect(active).toContain('Acompañamiento activo')
     expect(active).toContain('Finalizar acompañamiento')
     expect(active).toContain('aria-controls="client-relationship-confirmation"')
     expect(paused).toContain('Acompañamiento pausado')
     expect(paused).toContain('Reanudar acompañamiento')
+  })
+
+  it('puts a named current trainer before differentiated request history and explains when an accepted request is older', () => {
+    const html = renderStatus(<ClientCoachingStatus
+      relationship={{
+        id: 'relationship-current',
+        status: 'active',
+        trainerName: 'Marina Pérez',
+        trainerAvatarUrl: 'https://example.test/marina.jpg',
+        serviceName: 'Fuerza guiada',
+        startedAt: '2026-08-12T12:00:00.000Z',
+        sourceRequestId: 'current-request',
+      }}
+      requests={[
+        { id: 'old-accepted', status: 'accepted', createdAt: '2026-08-01T12:00:00.000Z', trainerName: 'Luis Sosa', trainerAvatarUrl: null, serviceName: 'Movilidad' },
+        { id: 'current-request', status: 'accepted', createdAt: '2026-08-12T12:00:00.000Z', trainerName: 'Marina Pérez', trainerAvatarUrl: 'https://example.test/marina.jpg', serviceName: 'Fuerza guiada' },
+      ]}
+    />)
+
+    expect(html).toContain('Marina Pérez')
+    expect(html).toContain('Fuerza guiada')
+    expect(html).toContain('Iniciado el')
+    expect(html).toContain('Esta solicitud aceptada corresponde a un acompañamiento anterior.')
+    expect(html.indexOf('Marina Pérez')).toBeLessThan(html.indexOf('Tus solicitudes'))
+  })
+
+  it('guides a client without a trainer to the public directory', () => {
+    const html = renderStatus(<ClientCoachingStatus requests={[]} />)
+
+    expect(html).toContain('Aún no tienes un entrenador conectado.')
+    expect(html).toContain('href="/trainers"')
+    expect(html).toContain('Buscar entrenadores')
   })
 })
 
@@ -113,7 +146,10 @@ describe('coaching request browser interactions', () => {
       appType: 'spa',
       cacheDir: path.join(repoRoot, 'node_modules', '.vite-coaching-request-test'),
       oxc: { jsx: { runtime: 'automatic' } },
-      resolve: { alias: [
+      optimizeDeps: {
+        include: ['react', 'react-dom', 'react-dom/client', '@radix-ui/react-avatar'],
+      },
+      resolve: { dedupe: ['react', 'react-dom'], alias: [
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
         { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
         { find: '@', replacement: path.join(repoRoot, 'src') },
@@ -125,7 +161,8 @@ describe('coaching request browser interactions', () => {
     if (!address || typeof address === 'string') throw new Error('Vite coaching request fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/coaching/__tests__/fixtures/coachingRequestInteraction.html?request=failure&cancel=failure', '__COACHING_REQUEST_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()
@@ -139,9 +176,8 @@ describe('coaching request browser interactions', () => {
       await page.waitForFunction(() => Boolean((window as Window & { __COACHING_REQUEST_READY__?: boolean }).__COACHING_REQUEST_READY__))
       await page.getByRole('checkbox').check()
       await page.getByRole('button', { name: 'Enviar solicitud' }).click()
-      await page.getByRole('alert').filter({ hasText: 'No se pudo enviar la solicitud.' }).waitFor({ state: 'visible' })
-      expect(await page.getByRole('alert').filter({ hasText: 'No se pudo enviar la solicitud.' }).textContent()).toBe('No se pudo enviar la solicitud.')
-      expect(await page.locator('main').innerText()).not.toContain('Internal failure detail')
+      await page.getByRole('alert').filter({ hasText: 'Este servicio ya no está disponible.' }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('alert').filter({ hasText: 'Este servicio ya no está disponible.' }).textContent()).toBe('Este servicio ya no está disponible.')
       await page.waitForFunction(() => !(document.querySelector('button[type="submit"]') as HTMLButtonElement | null)?.disabled)
       await page.getByRole('button', { name: 'Cancelar solicitud' }).click()
       await page.getByRole('alert').filter({ hasText: 'No se pudo cancelar la solicitud.' }).waitFor({ state: 'visible' })
@@ -159,10 +195,101 @@ describe('coaching request browser interactions', () => {
       await page.getByRole('checkbox').check()
       await page.getByRole('button', { name: 'Enviar solicitud' }).click()
       await page.getByText('Tu solicitud quedó pendiente de respuesta.').waitFor({ state: 'visible' })
+      await page.getByRole('link', { name: 'Ver estado' }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('link', { name: 'Ver estado' }).getAttribute('href')).toBe('/coaching')
       await page.getByRole('button', { name: 'Cancelar solicitud' }).click()
       await page.getByText('La solicitud fue cancelada.').waitFor({ state: 'visible' })
       expect(await page.getByRole('alert').count()).toBe(0)
       expect(await page.locator('[aria-live="polite"]').count()).toBeGreaterThanOrEqual(2)
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('replaces a successfully accepted request with actions for that named client', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=success`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      await page.getByRole('button', { name: 'Aceptar' }).click()
+      await page.getByRole('status').filter({ hasText: 'Ana Pérez ya forma parte de tu acompañamiento.' }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('link', { name: 'Ver cliente' }).getAttribute('href')).toBe('/coach/clients/11111111-1111-4111-8111-111111111111')
+      expect(await page.getByRole('link', { name: 'Preparar rutina' }).getAttribute('href')).toBe('/coach/programs?clientId=11111111-1111-4111-8111-111111111111')
+      expect(await page.getByRole('button', { name: 'Aceptar' }).count()).toBe(0)
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('keeps the accepted-client continuation visible beside remaining pending requests', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=success&two=1`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      await page.getByRole('button', { name: 'Aceptar' }).first().click()
+      await page.getByRole('status').filter({ hasText: 'Ana Pérez ya forma parte de tu acompañamiento.' }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('link', { name: 'Ver cliente' }).getAttribute('href')).toBe('/coach/clients/11111111-1111-4111-8111-111111111111')
+      expect(await page.getByRole('link', { name: 'Preparar rutina' }).getAttribute('href')).toBe('/coach/programs?clientId=11111111-1111-4111-8111-111111111111')
+      await page.getByText('Beatriz Núñez').waitFor({ state: 'visible' })
+      await page.getByText('Servicio restante').waitFor({ state: 'visible' })
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('removes sibling requests cancelled atomically when accepting the same client', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=success&sameClient=1`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      const acceptButtons = page.getByRole('button', { name: 'Aceptar' })
+      expect(await acceptButtons.count()).toBe(2)
+      await acceptButtons.first().click()
+      await page.getByRole('status').filter({ hasText: 'Ana Pérez ya forma parte de tu acompañamiento.' }).waitFor({ state: 'visible' })
+      expect(await page.getByText('Servicio alternativo').count()).toBe(0)
+      expect(await acceptButtons.count()).toBe(0)
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('reconciles a refreshed conflict with server props that removed every same-client request', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?accept=conflict&sameClient=1&serverAfterRefresh=empty`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+      const acceptButtons = page.getByRole('button', { name: 'Aceptar' })
+      expect(await acceptButtons.count()).toBe(2)
+
+      await acceptButtons.first().click()
+
+      await page.getByText('La solicitud se actualizó. Recarga la bandeja.').waitFor({ state: 'visible' })
+      await page.getByRole('heading', { name: 'No hay solicitudes nuevas' }).waitFor({ state: 'visible' })
+      expect(await page.getByText('Servicio alternativo').count()).toBe(0)
+      expect(await acceptButtons.count()).toBe(0)
+      expect(await page.evaluate(() => (window as Window & { __COACH_REFRESHES__?: number }).__COACH_REFRESHES__)).toBe(1)
+    } finally {
+      await page.close()
+    }
+  })
+
+  it('removes a request that became terminal during a decline race', async () => {
+    const page = await browser.newPage()
+    try {
+      page.on('dialog', dialog => dialog.accept())
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/coachRequestQueue.html?decline=conflict&serverAfterRefresh=empty`)
+      await page.waitForFunction(() => Boolean((window as Window & { __COACH_QUEUE_READY__?: boolean }).__COACH_QUEUE_READY__))
+
+      await page.getByRole('button', { name: 'Rechazar' }).click()
+
+      await page.getByText('La solicitud se actualizó. Recarga la bandeja.').waitFor({ state: 'visible' })
+      await page.getByRole('heading', { name: 'No hay solicitudes nuevas' }).waitFor({ state: 'visible' })
+      expect(await page.getByRole('button', { name: 'Rechazar' }).count()).toBe(0)
+      expect(await page.evaluate(() => (window as Window & { __COACH_REFRESHES__?: number }).__COACH_REFRESHES__)).toBe(1)
     } finally {
       await page.close()
     }

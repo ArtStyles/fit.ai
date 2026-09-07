@@ -55,14 +55,14 @@ describe('professional workspace routes', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it.each([
-    ['../page', 'Resumen profesional'],
-    ['../clients/page', 'Todavía no tienes clientes'],
-    ['../programs/page', 'Todavía no tienes rutinas'],
-    ['../requests/page', 'No hay solicitudes nuevas'],
-  ] as const)('guards %s and renders its real empty state', async (modulePath, expectedText) => {
+    ['../page', 'Resumen profesional', undefined],
+    ['../clients/page', 'Todavía no tienes clientes', undefined],
+    ['../programs/page', 'Todavía no tienes rutinas', {}],
+    ['../requests/page', 'No hay solicitudes nuevas', undefined],
+  ] as const)('guards %s and renders its real empty state', async (modulePath, expectedText, pageProps) => {
     const Page = (await import(modulePath)).default
 
-    const html = renderAuthenticatedPage(await Page())
+    const html = renderAuthenticatedPage(await Page(pageProps))
 
     expect(requireActiveTrainerContext).toHaveBeenCalledTimes(1)
     expect(html).toContain(expectedText)

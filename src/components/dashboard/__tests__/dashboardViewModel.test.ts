@@ -322,22 +322,34 @@ describe('dashboard view model', () => {
     })).recommendation).toMatchObject({
       kind: 'recover-session',
       href: '/session/workout-1',
-      chatHref: '/chat',
     })
   })
 
   it('falls back through adjustment, brief, and upcoming-session recommendations', () => {
     expect(buildDashboardViewModel(input({ activeAdjustmentCount: 2 })).recommendation)
-      .toMatchObject({ kind: 'plan-adjustment', href: '/plan', chatHref: '/chat' })
+      .toMatchObject({ kind: 'plan-adjustment', href: '/plan' })
     expect(buildDashboardViewModel(input()).recommendation)
-      .toMatchObject({ kind: 'daily-brief', chatHref: '/chat' })
+      .toMatchObject({ kind: 'daily-brief' })
     expect(buildDashboardViewModel(input({ dailyBriefMessage: null })).recommendation)
-      .toMatchObject({ kind: 'prepare-next', chatHref: '/chat' })
+      .toMatchObject({ kind: 'prepare-next' })
     expect(buildDashboardViewModel(input({
       dailyBriefMessage: null,
       nextWorkout: null,
       nextWorkoutIsoDay: null,
     })).recommendation).toBeNull()
+  })
+
+  it('does not expose an AI chat destination from dashboard recommendations', () => {
+    const recommendations = [
+      buildDashboardViewModel(input({ recoverableWorkout: workout })).recommendation,
+      buildDashboardViewModel(input({ activeAdjustmentCount: 2 })).recommendation,
+      buildDashboardViewModel(input()).recommendation,
+      buildDashboardViewModel(input({ dailyBriefMessage: null })).recommendation,
+    ]
+
+    recommendations.forEach(recommendation => {
+      expect(recommendation).not.toHaveProperty('chatHref')
+    })
   })
 
   it('derives secondary metrics entirely from the supplied payload', () => {

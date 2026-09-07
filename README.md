@@ -67,7 +67,7 @@ conectado de extremo a extremo:
 
 ## Stack
 
-- Next.js 14 App Router, React 18 y TypeScript.
+- Next.js 16.3.4 App Router, React 19.2.8 y TypeScript.
 - Tailwind CSS, Radix UI, Lucide y Framer Motion.
 - Supabase Auth, Postgres, RLS y Server Actions.
 - Anthropic SDK para chat e interpretacion de ajustes.
@@ -80,7 +80,7 @@ conectado de extremo a extremo:
 
 ### Requisitos
 
-- Node.js y pnpm.
+- Node.js 22.12 o superior (validado con Node.js 24.12) y pnpm 10.27.0.
 - Un proyecto de Supabase.
 - Una API key de Anthropic solo si se quiere usar el chat y la interpretación de ajustes con IA real.
 - Android Studio solo para trabajar con la app Android.
@@ -108,9 +108,24 @@ Configura `.env.local` antes de iniciar la app.
 | `ADMIN_EMAILS` | Emails separados por coma con acceso a `/exercises` en produccion. |
 | `E2E_HISTORY_CONTINUITY_ENABLED` | Opt-in exclusivo para la prueba destructiva de continuidad en un proyecto E2E descartable. |
 
-### Base de datos
+### Base de datos y migraciones
 
-Aplica las migraciones SQL en este orden:
+La única línea operativa para Supabase vive en
+`infra/supabase/migrations/`. Todos los comandos mantenidos por el repositorio
+fijan `--workdir infra`; consulta el
+[runbook de migraciones](infra/supabase/README.md) antes de listar, simular,
+aplicar o reparar el historial remoto.
+
+El flujo normal es validar, enlazar con una sesión autenticada, revisar
+`migration list`, ejecutar el dry-run, hacer `db push` con autorización y volver
+a listar. Un archivo confirmado en Git no demuestra que se haya aplicado en el
+proyecto remoto.
+
+#### Historial legado (solo referencia y fixtures)
+
+`supabase/migrations/` contiene 61 SQL históricos que algunas pruebas y scripts
+leen directamente. La lista siguiente documenta el orden conceptual del legado;
+no debe entregarse a `db push` ni a `db reset`:
 
 ```text
 001_initial_schema.sql
@@ -167,20 +182,39 @@ Aplica las migraciones SQL en este orden:
 053_trainer_draft_rpc_json_repair.sql
 054_product_notification_archiving.sql
 055_atomic_notification_attention_dismissal.sql
+056_trainer_template_exercise_batch_append.sql
+057_trainer_assignment_decline.sql
+058_training_profile_consent_regrant.sql
+059_trainer_assignment_single_pending.sql
 ```
 
-Para el marketplace de entrenadores, desplegar primero la base de datos y
-después una aplicación compatible. La `049_trainer_iso_weekday_repair.sql` debe
+Las dependencias siguientes se conservan para auditoría y para los harnesses que
+reconstruyen capas concretas del historial; no sustituyen el runbook activo. Para
+el marketplace de entrenadores, la base de datos debe preceder a una aplicación
+compatible. La `049_trainer_iso_weekday_repair.sql` debe
 permanecer como la última capa correctiva tras cualquier reaplicación de
 `043_trainer_programming.sql` o `045_trainer_hardening.sql`; a continuación se
 aplican `050_product_events_conversion_funnel.sql`,
 `051_workout_adjustment_atomic.sql`, `052_notification_attention_dismissals.sql`,
 `053_trainer_draft_rpc_json_repair.sql`, `054_product_notification_archiving.sql`
-y `055_atomic_notification_attention_dismissal.sql`.
+y `055_atomic_notification_attention_dismissal.sql`, antes de
+`056_trainer_template_exercise_batch_append.sql`,
+`057_trainer_assignment_decline.sql` y
+`058_training_profile_consent_regrant.sql` y
+`059_trainer_assignment_single_pending.sql`.
 La 053 debe estar aplicada para que el formulario de entrenador pueda guardar el
 borrador mediante su RPC atómico; la 054 habilita el archivado no destructivo de
 notificaciones y la 055 valida y persiste de forma atómica únicamente la versión
-vigente de cada aviso descartable.
+vigente de cada aviso descartable. La 056 agrega ejercicios de una plantilla en
+un lote atómico. La 057 permite que el cliente cierre de forma idempotente una
+propuesta aún no aceptada, sin modificar su snapshot, y notifica al entrenador.
+La 058 permite que el cliente vuelva a autorizar explícitamente los datos de
+entrenamiento de una relación activa, sin incluir medidas corporales. La 059
+serializa las propuestas por cliente y evita que dos claves de idempotencia
+distintas creen más de una rutina pendiente o compitan con una rutina activa;
+confirmar `trainer_security_preflight() = 59` en el proyecto
+remoto antes de desplegar la interfaz compatible. Que la migración esté
+confirmada en Git no demuestra que se haya aplicado al proyecto remoto.
 
 Las migraciones de continuidad se despliegan en orden y **primero en base de
 datos**: `036_completed_session_context.sql` → `037_atomic_plan_lifecycle.sql`
@@ -279,6 +313,8 @@ de exito del motor.
 
 ## Android y PWA
 
+Los comandos `pnpm dev` y `pnpm build` usan Webpack explícitamente para conservar
+la integración con `@ducanh2912/next-pwa`; Next.js 16 usa Turbopack por defecto.
 La PWA se genera durante `pnpm build`; en desarrollo el service worker esta
 desactivado. `public/sw.js`, `public/workbox-*.js` y `public/swe-worker-*.js`
 son salida de build y no se versionan.
@@ -299,8 +335,12 @@ pnpm cap:android
 | `pnpm build` | Genera el build de produccion y la PWA. |
 | `pnpm start` | Sirve el build de produccion. |
 | `pnpm lint` | Ejecuta ESLint. |
-| `pnpm type-check` | Ejecuta TypeScript sin emitir archivos. |
+| `pnpm type-check` | Genera los contratos de rutas de Next.js y ejecuta TypeScript sin emitir archivos. |
 | `pnpm test` | Ejecuta Vitest una vez. |
+| `pnpm check:supabase-migrations` | Valida nombres, versiones y contenido de la línea activa bajo `infra`. |
+| `pnpm supabase:migrations:list` | Lista el ledger local/remoto mediante el enlace autenticado del workdir activo. |
+| `pnpm supabase:migrations:dry-run` | Simula el próximo `db push` sin aplicar SQL. |
+| `pnpm supabase:migrations:push` | Aplica migraciones activas pendientes; requiere revisión y autorización. |
 | `pnpm test:e2e` | Ejecuta la suite Playwright; los casos destructivos requieren sus gates y un proyecto E2E dedicado. |
 | `pnpm test:watch` | Ejecuta Vitest en modo watch. |
 | `pnpm test:ui` | Abre la interfaz de Vitest. |
@@ -319,8 +359,9 @@ src/app/          Rutas, paginas y Server Actions
 src/components/   UI y flujos de producto
 src/lib/          Supabase, IA, progresion, scheduling y capacidades nativas
 src/store/        Estado Zustand de la sesion activa
-supabase/         Migraciones SQL
-scripts/          Seed de ejercicios y generacion de assets
+infra/supabase/   Workdir y migraciones canónicas activas de Supabase
+supabase/         SQL histórico y fixtures; nunca usar como workdir de push/reset
+scripts/          Validadores, seeds explícitos y generacion de assets
 android/          Proyecto Android de Capacitor
 assets/           Assets fuente para iconos y splash
 public/           Manifest, iconos y service worker generado

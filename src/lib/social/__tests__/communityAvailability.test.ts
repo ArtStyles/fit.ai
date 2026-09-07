@@ -84,6 +84,6 @@ describe('community availability', () => {
 
     await expect(FeedPage()).rejects.toMatchObject({ kind: 'redirect', destination: '/trainers' })
     await expect(NewPostPage()).rejects.toMatchObject({ kind: 'notFound' })
-    await expect(PostDetailPage({ params: { id: 'post-1' } })).rejects.toMatchObject({ kind: 'notFound' })
+    await expect(PostDetailPage({ params: Promise.resolve({ id: 'post-1' }) })).rejects.toMatchObject({ kind: 'notFound' })
   })
 })

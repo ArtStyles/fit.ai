@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
 import { Check, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react'
 import { ExerciseImage } from '@/components/exercises/ExerciseImage'
@@ -123,6 +123,10 @@ type ExerciseCatalogDialogViewProps = {
   loading?: boolean
   error?: string | null
   onPageChange?: (page: number) => void
+  confirming?: boolean
+  confirmationError?: string | null
+  confirmationDetails?: ReactNode
+  invalidIds?: string[]
 }
 
 export function ExerciseCatalogDialogView({
@@ -145,6 +149,10 @@ export function ExerciseCatalogDialogView({
   loading = false,
   error = null,
   onPageChange,
+  confirming = false,
+  confirmationError = null,
+  confirmationDetails,
+  invalidIds = [],
 }: ExerciseCatalogDialogViewProps) {
   const localFacets = collectExerciseFacets(options)
   const facets = providedFacets ?? {
@@ -164,6 +172,7 @@ export function ExerciseCatalogDialogView({
             aria-label="Buscar ejercicios"
             value={query}
             onChange={event => onQueryChange(event.target.value)}
+            disabled={confirming}
             placeholder="Buscar ejercicio"
             autoFocus
             className="h-12 w-full rounded-xl border border-border/70 bg-muted/40 pl-10 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
@@ -171,7 +180,7 @@ export function ExerciseCatalogDialogView({
         </div>
 
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-          <div className="min-w-0">
+          <fieldset disabled={confirming} className={`m-0 min-w-0 border-0 p-0 ${confirming ? 'opacity-60' : ''}`} aria-disabled={confirming || undefined}>
             <CompactCategorySelect
               ariaLabel="Filtrar por equipo"
               value={equipment}
@@ -180,8 +189,8 @@ export function ExerciseCatalogDialogView({
               allLabel="Todo el equipo"
               className="bg-muted/40 font-medium"
             />
-          </div>
-          <div className="min-w-0">
+          </fieldset>
+          <fieldset disabled={confirming} className={`m-0 min-w-0 border-0 p-0 ${confirming ? 'opacity-60' : ''}`} aria-disabled={confirming || undefined}>
             <CompactCategorySelect
               ariaLabel="Filtrar por músculo"
               value={muscle}
@@ -190,7 +199,7 @@ export function ExerciseCatalogDialogView({
               allLabel="Todos los músculos"
               className="bg-muted/40 font-medium"
             />
-          </div>
+          </fieldset>
         </div>
       </div>
 
@@ -213,6 +222,7 @@ export function ExerciseCatalogDialogView({
           <ul className="min-w-0 max-w-full divide-y divide-border/50 overflow-hidden">
             {matches.map(option => {
               const selected = selectedIds.includes(option.id)
+              const invalid = invalidIds.includes(option.id)
               const limitReached = selectionLimit !== undefined && selectedIds.length >= selectionLimit
               const meta = [...option.muscleGroups.slice(0, 2), ...option.equipment.slice(0, 1)].join(' · ')
               return (
@@ -220,7 +230,8 @@ export function ExerciseCatalogDialogView({
                   <button
                     type="button"
                     aria-pressed={selected}
-                    disabled={loading || (!selected && limitReached)}
+                    aria-invalid={invalid || undefined}
+                    disabled={confirming || loading || (!selected && (limitReached || invalid))}
                     onClick={() => onToggle(option.id)}
                     className="flex min-h-[68px] w-full min-w-0 max-w-full items-center gap-3 overflow-hidden py-2 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:bg-muted/20"
                   >
@@ -234,6 +245,7 @@ export function ExerciseCatalogDialogView({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-foreground">{option.name}</span>
                       {meta ? <span className="mt-0.5 block truncate text-xs text-foreground/70">{meta}</span> : null}
+                      {invalid ? <span className="mt-0.5 block truncate text-xs font-semibold text-destructive">ID {option.id} ya no disponible</span> : null}
                     </span>
                     <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent'}`}>
                       <Check className="h-4 w-4" aria-hidden="true" />
@@ -256,7 +268,7 @@ export function ExerciseCatalogDialogView({
           <button
             type="button"
             onClick={() => onPageChange?.(page - 1)}
-            disabled={page <= 1 || loading}
+            disabled={confirming || page <= 1 || loading}
             className="inline-flex min-h-11 min-w-0 shrink items-center gap-1 rounded-xl border border-border px-2 text-xs font-semibold text-foreground disabled:opacity-40 sm:px-3"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -268,7 +280,7 @@ export function ExerciseCatalogDialogView({
           <button
             type="button"
             onClick={() => onPageChange?.(page + 1)}
-            disabled={page >= totalPages || loading}
+            disabled={confirming || page >= totalPages || loading}
             className="inline-flex min-h-11 min-w-0 shrink items-center gap-1 rounded-xl border border-border px-2 text-xs font-semibold text-foreground disabled:opacity-40 sm:px-3"
           >
             Siguiente
@@ -283,13 +295,16 @@ export function ExerciseCatalogDialogView({
             Máximo de {selectionLimit} ejercicios por vez.
           </p>
         ) : null}
+        {confirmationDetails ? <div className="mb-2 text-sm text-muted-foreground">{confirmationDetails}</div> : null}
+        {confirmationError ? <p role="alert" className="mb-2 text-sm text-destructive">{confirmationError}</p> : null}
         <button
           type="button"
-          disabled={selectedIds.length === 0}
+          disabled={confirming || selectedIds.length === 0}
+          aria-disabled={confirming || undefined}
           onClick={onConfirm}
           className="min-h-12 w-full rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-40"
         >
-          {confirmVerb} {selectionLabel}
+          {confirming ? 'Agregando…' : `${confirmVerb} ${selectionLabel}`}
         </button>
       </div>
     </div>
@@ -306,6 +321,9 @@ export function ExerciseCatalogDialog({
   confirmVerb = 'Agregar',
   maxSelections = 12,
   paginated = false,
+  confirmationError,
+  confirmationDetails,
+  invalidIds = [],
   onConfirm,
 }: {
   open: boolean
@@ -317,7 +335,10 @@ export function ExerciseCatalogDialog({
   confirmVerb?: string
   maxSelections?: number
   paginated?: boolean
-  onConfirm: (ids: string[], selectedOptions?: ExerciseCatalogOption[]) => void
+  confirmationError?: string | null
+  confirmationDetails?: ReactNode
+  invalidIds?: string[]
+  onConfirm: (ids: string[], selectedOptions?: ExerciseCatalogOption[]) => boolean | void | Promise<boolean | void>
 }) {
   const [query, setQuery] = useState('')
   const [muscle, setMuscle] = useState('')
@@ -341,6 +362,8 @@ export function ExerciseCatalogDialog({
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const [internalConfirmationError, setInternalConfirmationError] = useState<string | null>(null)
   const selectedIdsKey = selectedIds.join(',')
 
   useEffect(() => {
@@ -389,8 +412,31 @@ export function ExerciseCatalogDialog({
 
   const visibleOptions = paginated ? pageOptions : options
 
+  async function confirmSelection() {
+    if (confirming || draftIds.length === 0) return
+    setConfirming(true)
+    setInternalConfirmationError(null)
+    try {
+      const selectedOptions = draftIds.flatMap(id => {
+        const option = knownOptions.get(id)
+        return option ? [option] : []
+      })
+      const result = await onConfirm(draftIds, selectedOptions)
+      if (result !== false) onOpenChange(false)
+    } catch (cause) {
+      setInternalConfirmationError(cause instanceof Error ? cause.message : 'No se pudo completar la selección.')
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && confirming) return
+    onOpenChange(nextOpen)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         aria-describedby={undefined}
         className="h-[42rem] max-w-lg gap-0 border-border/70 bg-background p-0"
@@ -411,15 +457,10 @@ export function ExerciseCatalogDialog({
             onMuscleChange={value => { setMuscle(value); setPage(1) }}
             onEquipmentChange={value => { setEquipment(value); setPage(1) }}
             onToggle={id => {
+              setInternalConfirmationError(null)
               setDraftIds(current => toggleExerciseSelection(current, id, selectionMode, maxSelections))
             }}
-            onConfirm={() => {
-              onConfirm(draftIds, draftIds.flatMap(id => {
-                const option = knownOptions.get(id)
-                return option ? [option] : []
-              }))
-              onOpenChange(false)
-            }}
+            onConfirm={confirmSelection}
             confirmVerb={confirmVerb}
             paginated={paginated}
             page={page}
@@ -427,6 +468,10 @@ export function ExerciseCatalogDialog({
             loading={loading}
             error={error}
             onPageChange={setPage}
+            confirming={confirming}
+            confirmationError={confirmationError ?? internalConfirmationError}
+            confirmationDetails={confirmationDetails}
+            invalidIds={invalidIds}
           />
         </div>
       </DialogContent>

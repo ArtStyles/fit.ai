@@ -122,26 +122,22 @@ export type DashboardRecommendation =
       workout: DashboardWorkout
       isoDay: number | null
       href: string
-      chatHref: '/chat'
     }
   | {
       kind: 'plan-adjustment'
       adjustmentCount: number
       href: '/plan'
-      chatHref: '/chat'
     }
   | {
       kind: 'daily-brief'
       message: string
       href: null
-      chatHref: '/chat'
     }
   | {
       kind: 'prepare-next'
       workout: DashboardWorkout
       isoDay: number | null
       href: '/plan'
-      chatHref: '/chat'
     }
 
 export type DashboardViewModel = {
@@ -257,7 +253,6 @@ function deriveRecommendation(input: DashboardViewModelInput): DashboardRecommen
       workout: input.recoverableWorkout,
       isoDay: input.recoverableIsoDay,
       href: `/session/${input.recoverableWorkout.id}`,
-      chatHref: '/chat',
     }
   }
   if (input.activeAdjustmentCount > 0) {
@@ -265,7 +260,6 @@ function deriveRecommendation(input: DashboardViewModelInput): DashboardRecommen
       kind: 'plan-adjustment',
       adjustmentCount: input.activeAdjustmentCount,
       href: '/plan',
-      chatHref: '/chat',
     }
   }
   if (input.dailyBriefMessage) {
@@ -273,7 +267,6 @@ function deriveRecommendation(input: DashboardViewModelInput): DashboardRecommen
       kind: 'daily-brief',
       message: input.dailyBriefMessage,
       href: null,
-      chatHref: '/chat',
     }
   }
   if (input.nextWorkout) {
@@ -282,7 +275,6 @@ function deriveRecommendation(input: DashboardViewModelInput): DashboardRecommen
       workout: input.nextWorkout,
       isoDay: input.nextWorkoutIsoDay,
       href: '/plan',
-      chatHref: '/chat',
     }
   }
   return null

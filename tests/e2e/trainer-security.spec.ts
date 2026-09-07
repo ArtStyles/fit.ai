@@ -5,7 +5,7 @@ import {
 import {
   TRAINER_SECURITY_ID_FIELDS,
   assertTrainerSecurityRemoteReady,
-  prepareAcceptPublishSuspendRace,
+  prepareSelectPublishSuspendRace,
   prepareAuthoritativeIdorRace,
   prepareEndReadEvidenceRace,
   prepareIdempotentProposalRace,
@@ -79,9 +79,9 @@ test('concurrent trainer workflows linearize without duplicate or partial state'
   })
 
   await runPreparedTrainerSecurityRace({
-    prepare: () => preflightAndSeed(() => prepareAcceptPublishSuspendRace(`${trainerSecurityScope}-transition`)),
+    prepare: () => preflightAndSeed(() => prepareSelectPublishSuspendRace(`${trainerSecurityScope}-transition`)),
     exercise: async transitionRace => {
-      const results = await Promise.allSettled([transitionRace.run.accept(), transitionRace.run.publish(), transitionRace.run.suspend()])
+      const results = await Promise.allSettled([transitionRace.run.select(), transitionRace.run.publish(), transitionRace.run.suspend()])
       expect(results.every(result => result.status === 'fulfilled')).toBe(true)
       const suspendResult = results[2] as PromiseFulfilledResult<{ data: unknown; error: unknown }>
       expect(suspendResult.value.error).toBeNull()
@@ -89,7 +89,7 @@ test('concurrent trainer workflows linearize without duplicate or partial state'
       for (const result of results.slice(0, 2) as PromiseFulfilledResult<{ data: unknown; error: { message?: string } | null }>[]) {
         if (result.value.error) {
           const outcome = requireDeniedGenericOutcome(result.value)
-          expect(['TRAINER_ASSIGNMENT_TRAINER_INACTIVE', 'COACHING_TRAINER_NOT_ACTIVE', 'TRAINER_ASSIGNMENT_RELATIONSHIP_INACTIVE']).toContain(outcome.domain)
+          expect(['TRAINER_ASSIGNMENT_TRAINER_INACTIVE', 'COACHING_TRAINER_NOT_ACTIVE', 'TRAINER_ASSIGNMENT_RELATIONSHIP_INACTIVE', 'PLAN_VERSION_SUPERSEDED', 'TRAINER_ASSIGNMENT_NOT_ACTIVE']).toContain(outcome.domain)
         }
       }
       const state = await transitionRace.inspect()
@@ -98,8 +98,8 @@ test('concurrent trainer workflows linearize without duplicate or partial state'
       expect((state.relationship as { status?: string })?.status).toBe('paused_by_platform')
       expect(rows(state.consents).every(consent => Boolean(consent.revoked_at))).toBe(true)
       expect(rows(state.assignments)).toHaveLength(1)
-      expect(['proposed', 'frozen']).toContain(rows(state.assignments)[0]?.status)
-      expect(rows(state.plans).filter(plan => plan.is_active === true)).toHaveLength(0)
+      expect(rows(state.assignments)[0]?.status).toBe('frozen')
+      expect(rows(state.plans).filter(plan => plan.is_active === true)).toHaveLength((results[0] as PromiseFulfilledResult<{ error: unknown }>).value.error ? 0 : 1)
       expect(rows(state.versions).every(version => Boolean(version.materialized_plan_id))).toBe(true)
     },
   })
@@ -131,8 +131,9 @@ test('concurrent trainer workflows linearize without duplicate or partial state'
       expect((state.relationship as { status?: string })?.status).toBe('ended')
       expect(rows(state.consents).every(consent => Boolean(consent.revoked_at))).toBe(true)
       expect(rows(state.assignments).every(assignment => assignment.status === 'frozen')).toBe(true)
-      expect(rows(state.versions).every(version => version.status === 'frozen' && Boolean(version.materialized_plan_id))).toBe(true)
-      expect(rows(state.plans).filter(plan => plan.is_active === true)).toHaveLength(0)
+      expect(rows(state.versions).every(version => ['frozen', 'superseded'].includes(String(version.status)) && Boolean(version.materialized_plan_id))).toBe(true)
+      expect(rows(state.versions).filter(version => version.status === 'frozen')).toHaveLength(1)
+      expect(rows(state.plans).filter(plan => plan.is_active === true)).toHaveLength(1)
     },
   })
 })

@@ -144,8 +144,10 @@ export async function runAllCleanupSteps(steps: Array<() => Promise<void>>): Pro
 }
 
 /** WCAG 2.2 permits inline text links to follow line-height instead of a
- * 44px box. Every other enabled, rendered action uses the product's stricter
- * 44px mobile target contract. Checkbox/radio targets use their associated
+ * 44px box. Every other rendered action, including aria-disabled controls,
+ * uses the product's stricter 44px mobile target contract. Native disabled
+ * controls are excluded because browsers remove them from interaction.
+ * Checkbox/radio targets use their associated
  * label because that is the actual clickable hit area in the browser. */
 export async function expectActionTargetsAtLeast44(page: Page): Promise<void> {
   const failures = await page.evaluate((): ActionTargetFailure[] => {
@@ -170,7 +172,7 @@ export async function expectActionTargetsAtLeast44(page: Page): Promise<void> {
         || Number(style.opacity) === 0
         || ownRect.width <= 0
         || ownRect.height <= 0
-        || element.matches(':disabled,[aria-disabled="true"]')
+        || element.matches(':disabled')
         || element.closest('[aria-hidden="true"], [inert]')
       ) return []
 
@@ -205,7 +207,7 @@ export async function expectActionTargetsAtLeast44(page: Page): Promise<void> {
     })
   })
 
-  expect(failures, 'enabled action targets smaller than 44px').toEqual([])
+  expect(failures, 'rendered action targets smaller than 44px').toEqual([])
 }
 
 export async function expectResponsiveGeometry(page: Page): Promise<void> {

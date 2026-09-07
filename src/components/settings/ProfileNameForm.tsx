@@ -1,11 +1,12 @@
 'use client'
 
-import { useFormState } from 'react-dom'
+import { useActionState } from 'react'
 import { updateProfileName, type ProfileNameActionState } from '@/app/actions/settings'
 import { SettingsField } from './SettingsField'
 import { SettingsSaveBar } from './SettingsSaveBar'
 import { SettingsStatus } from './SettingsStatus'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { preserveSettingsFormValues } from './preserveSettingsFormValues'
 
 const initialState: ProfileNameActionState = {
   ok: false,
@@ -15,10 +16,10 @@ const initialState: ProfileNameActionState = {
 
 export function ProfileNameForm({ initialName }: { initialName: string }) {
   const { t } = useI18n()
-  const [state, formAction] = useFormState(updateProfileName, initialState)
+  const [state, formAction] = useActionState(updateProfileName, initialState)
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form ref={preserveSettingsFormValues} action={formAction} className="space-y-4">
       <SettingsField
         id="fullName"
         label={t('Nombre')}

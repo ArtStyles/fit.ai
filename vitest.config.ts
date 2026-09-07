@@ -10,18 +10,26 @@ const baseExclude = [
 ]
 
 const browserFixtureTests = [
+  'src/components/session/__tests__/sessionRecoveryInteraction.test.tsx',
   'src/components/coaching/__tests__/applicationForm.test.tsx',
   'src/components/coaching/__tests__/coachInsightsAnalytics.test.ts',
   'src/components/coaching/__tests__/coachingRequestForm.test.tsx',
+  'src/components/coaching/__tests__/coachingContextAcceptance.test.tsx',
   'src/components/coaching/__tests__/consentManager.test.tsx',
   'src/components/coaching/__tests__/programTemplateEditor.test.tsx',
   'src/components/coaching/__tests__/trainerAccessibilityAcceptance.test.ts',
   'src/components/coaching/__tests__/trainerAssignmentUi.test.tsx',
   'src/components/exercises/__tests__/ExerciseMotionPreviewInteraction.test.tsx',
+  'src/components/dashboard/__tests__/SecondaryMetricsResponsive.test.tsx',
+  'src/components/dashboard/__tests__/MusicNowPlayingResponsive.test.tsx',
+  'src/components/settings/__tests__/MusicIntegrationSettingsInteraction.test.tsx',
+  'src/components/settings/__tests__/SettingsActionsInteraction.test.tsx',
+  'src/lib/native/__tests__/useNowPlayingSessionInteraction.test.tsx',
   'src/components/plan/__tests__/planInteractions.test.tsx',
   'src/components/notifications/__tests__/dismissibleAttentionNoticeInteraction.test.tsx',
   'src/components/notifications/__tests__/notificationCenterInteraction.test.tsx',
   'src/components/notifications/__tests__/swipeDismissPlanNoticeInteraction.test.tsx',
+  'src/components/navigation/__tests__/AccountWorkspaceResponsive.test.ts',
 ]
 
 export default defineConfig({

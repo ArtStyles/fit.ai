@@ -56,11 +56,11 @@ const users: AdminUserRecord[] = [
   },
 ]
 
-it('owns query filters and renders the real account directory and action controls', async () => {
+it('awaits route query filters and renders the real account directory and action controls', async () => {
   listAdminUsersMock.mockResolvedValue({ users, suspensionEnabled: true })
 
   const html = renderToStaticMarkup(await AdminUsersPage({
-    searchParams: { q: '  ana  ', status: 'active', tier: 'pro' },
+    searchParams: Promise.resolve({ q: '  ana  ', status: 'active', tier: 'pro' }),
   }))
 
   expect(html).toContain('Cuentas, suscripciones y acceso')
@@ -81,7 +81,7 @@ it('owns query filters and renders the real account directory and action control
 it('renders suspension as unavailable rather than active or zero', async () => {
   listAdminUsersMock.mockResolvedValue({ users, suspensionEnabled: false })
 
-  const html = renderToStaticMarkup(await AdminUsersPage({ searchParams: {} }))
+  const html = renderToStaticMarkup(await AdminUsersPage({ searchParams: Promise.resolve({}) }))
 
   expect(html).toContain('El estado de suspensión no está disponible en este momento.')
   expect(html).toContain('No disponible')

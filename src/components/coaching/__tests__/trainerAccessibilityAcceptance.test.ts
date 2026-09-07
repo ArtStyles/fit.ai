@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import {
   auditCriticalAndSeriousAccessibility,
   expectActionTargetsAtLeast44,
@@ -16,6 +17,14 @@ const VIEWPORTS = [
   { width: 768, height: 1024 },
   { width: 1024, height: 768 },
   { width: 1440, height: 900 },
+] as const
+const EDITOR_MOBILE_VIEWPORTS = [320, 360, 390, 430, 450] as const
+const NARROW_PERSONAL_NAV_VIEWPORTS = [320, 360] as const
+const EDITOR_AXE_CASES = [
+  { theme: 'dark', editorState: 'metadata editor' },
+  { theme: 'dark', editorState: 'batch dialog' },
+  { theme: 'light', editorState: 'metadata editor' },
+  { theme: 'light', editorState: 'batch dialog' },
 ] as const
 
 describe('trainer accessibility acceptance in a local browser', () => {
@@ -42,9 +51,16 @@ describe('trainer accessibility acceptance in a local browser', () => {
           'react',
           'react-dom',
           'react-dom/client',
+          'react/jsx-dev-runtime',
+          '@capacitor/core',
+          '@capacitor/haptics',
+          'clsx',
+          'tailwind-merge',
+          'zustand',
           'lucide-react',
           '@radix-ui/react-avatar',
           '@radix-ui/react-dialog',
+          '@radix-ui/react-dropdown-menu',
           '@radix-ui/react-select',
         ],
       },
@@ -54,6 +70,8 @@ describe('trainer accessibility acceptance in a local browser', () => {
         { find: '@/app/actions/trainerAssignments', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerAssignments.fixture.ts') },
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
         { find: '@/app/actions/workspace', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
+        { find: '@/app/actions/authorizeSession', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/sessionAuthorization.fixture.ts') },
+        { find: '@/app/(auth)/actions', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
         { find: '@/app/actions/exerciseCatalog', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/exerciseCatalog.fixture.ts') },
         { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
         { find: 'next/link', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextLink.fixture.tsx') },
@@ -67,7 +85,8 @@ describe('trainer accessibility acceptance in a local browser', () => {
     if (!address || typeof address === 'string') throw new Error('Trainer accessibility fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=application', '__TRAINER_ACCESSIBILITY_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()
@@ -80,10 +99,6 @@ describe('trainer accessibility acceptance in a local browser', () => {
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=${surface}`)
       await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
-      if (surface === 'editor') {
-        await page.getByText('Editar entrenamiento', { exact: true }).click()
-        await page.getByText('Editar ejercicio', { exact: true }).click()
-      }
       if (surface === 'assignment') {
         await page.locator('button[aria-controls="assign-program-form"]').click()
       }
@@ -93,6 +108,311 @@ describe('trainer accessibility acceptance in a local browser', () => {
     }
   }, 30_000)
 
+  it('shows the trainer message and prescribed indication in the proposal browser surface', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=proposal`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      await pwExpect(page.getByText('Mensaje del entrenador:', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText(/Prioriza el control/)).toBeVisible()
+      await pwExpect(page.getByText('Indicación del entrenador:', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText(/Controla la bajada/)).toBeVisible()
+    } finally {
+      await context.close()
+    }
+  }, 30_000)
+
+  it.each(EDITOR_AXE_CASES)('editor with $editorState open in $theme theme has no critical/serious Axe findings', async ({ theme, editorState }) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=editor`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      await page.evaluate(currentTheme => {
+        document.documentElement.classList.toggle('dark', currentTheme === 'dark')
+      }, theme)
+      if (editorState === 'metadata editor') {
+        const metadata = page.getByText('Editar información', { exact: true })
+        await metadata.click()
+        await pwExpect(page.getByLabel('Nombre de la rutina')).toBeVisible()
+      } else {
+        await page.getByRole('button', { name: 'Agregar varios ejercicios' }).click()
+        await pwExpect(page.getByRole('dialog', { name: 'Agregar ejercicios' })).toBeVisible()
+      }
+      await auditCriticalAndSeriousAccessibility(page)
+    } finally {
+      await context.close()
+    }
+  }, 30_000)
+
+  it.each(EDITOR_MOBILE_VIEWPORTS)('contains the active-day editor and readable metrics at %i px', async width => {
+    const context = await browser.newContext({ viewport: { width, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=editor`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      await expectResponsiveGeometry(page)
+      await expectActionTargetsAtLeast44(page)
+      await pwExpect(page.getByRole('tablist', { name: 'Días de la rutina' })).toBeVisible()
+      const metrics = page.locator('[data-exercise-metrics]')
+      await pwExpect(metrics).toHaveCount(2)
+      expect(await metrics.evaluateAll(groups => groups.map(group => {
+        const groupRect = group.getBoundingClientRect()
+        const cells = Array.from(group.children).map(child => child.getBoundingClientRect())
+        return {
+          contained: cells.every(cell => cell.left >= groupRect.left - 1 && cell.right <= groupRect.right + 1),
+          separate: cells.every((cell, index) => index === 0 || cell.left >= cells[index - 1].right - 1),
+          labels: Array.from(group.querySelectorAll('dt')).map(label => label.textContent?.trim()),
+          values: Array.from(group.querySelectorAll('dd')).map(value => value.textContent?.trim()),
+        }
+      }))).toEqual([
+        { contained: true, separate: true, labels: ['Series × reps', 'Intensidad', 'Descanso'], values: ['3 × 10', 'RPE 7', '60 s'] },
+        { contained: true, separate: true, labels: ['Series × reps', 'Intensidad', 'Descanso'], values: ['4 × 8', 'RPE 8', '90 s'] },
+      ])
+
+      const actionPanel = page.getByRole('complementary', { name: 'Resumen semanal' }).getByRole('region', { name: 'Resumen semanal' })
+      expect(await actionPanel.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingBottom))).toBeGreaterThanOrEqual(12)
+    } finally {
+      await context.close()
+    }
+  }, 30_000)
+
+  it('uses roving tab focus and arrow keys while exposing one active day panel', async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=editor`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      const dayA = page.getByRole('tab', { name: /Día A/ })
+      const dayB = page.getByRole('tab', { name: /Día B/ })
+      await pwExpect(dayA).toHaveAttribute('aria-selected', 'true')
+      await pwExpect(dayA).toHaveAttribute('tabindex', '0')
+      await pwExpect(dayB).toHaveAttribute('aria-selected', 'false')
+      await pwExpect(dayB).toHaveAttribute('tabindex', '-1')
+      const dayAPanelId = await dayA.getAttribute('aria-controls') ?? ''
+      const dayBPanelId = await dayB.getAttribute('aria-controls') ?? ''
+      const dayAPanel = page.locator(`#${dayAPanelId}`)
+      const dayBPanel = page.locator(`#${dayBPanelId}`)
+      await pwExpect(dayAPanel).toHaveCount(1)
+      await pwExpect(dayBPanel).toHaveCount(1)
+      await pwExpect(page.locator('[role="tabpanel"]')).toHaveCount(2)
+      await pwExpect(page.getByRole('tabpanel')).toHaveCount(1)
+      await pwExpect(dayAPanel).toHaveAttribute('aria-labelledby', await dayA.getAttribute('id') ?? '')
+      await pwExpect(dayBPanel).toBeHidden()
+      await pwExpect(dayBPanel).toHaveAttribute('inert', '')
+
+      await dayA.focus()
+      await page.keyboard.press('ArrowRight')
+      await pwExpect(dayB).toBeFocused()
+      await pwExpect(dayB).toHaveAttribute('aria-selected', 'true')
+      await pwExpect(page.getByRole('tabpanel', { name: 'Día B' })).toBeVisible()
+      await pwExpect(page.getByRole('tabpanel')).toHaveCount(1)
+
+      await page.keyboard.press('ArrowLeft')
+      await pwExpect(dayA).toBeFocused()
+      await pwExpect(dayA).toHaveAttribute('aria-selected', 'true')
+      await pwExpect(page.getByRole('tabpanel', { name: 'Día A' })).toBeVisible()
+
+      await page.keyboard.press('End')
+      await pwExpect(dayB).toBeFocused()
+      await pwExpect(dayB).toHaveAttribute('aria-selected', 'true')
+      await pwExpect(page.getByRole('tabpanel', { name: 'Día B' })).toBeVisible()
+
+      await page.keyboard.press('Home')
+      await pwExpect(dayA).toBeFocused()
+      await pwExpect(dayA).toHaveAttribute('aria-selected', 'true')
+      await pwExpect(page.getByRole('tabpanel', { name: 'Día A' })).toBeVisible()
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it('restores focus to the external batch opener after successful confirmation and keeps its pending target touch-sized', async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=editor&refresh=stale`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      const opener = page.getByRole('button', { name: 'Agregar varios ejercicios' })
+      await opener.click()
+      const dialog = page.getByRole('dialog', { name: 'Agregar ejercicios' })
+      const firstExercise = dialog.getByRole('button', { name: /Ejercicio 01/ })
+      await firstExercise.focus()
+      await page.keyboard.press('Space')
+      const confirm = dialog.getByRole('button', { name: 'Agregar 1 ejercicio' })
+      await confirm.focus()
+      await page.keyboard.press('Enter')
+
+      await pwExpect(dialog).toBeHidden()
+      await pwExpect(opener).toBeFocused()
+      await pwExpect(opener).toHaveAttribute('aria-disabled', 'true')
+      await expectActionTargetsAtLeast44(page)
+      const target = await opener.evaluate(element => {
+        const rect = element.getBoundingClientRect()
+        return { width: rect.width, height: rect.height }
+      })
+      expect(target.width).toBeGreaterThanOrEqual(43.5)
+      expect(target.height).toBeGreaterThanOrEqual(43.5)
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it('measures aria-disabled targets instead of excluding them from the touch contract', async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=editor`)
+      await page.locator('main').evaluate(main => {
+        const target = document.createElement('button')
+        target.setAttribute('aria-disabled', 'true')
+        target.setAttribute('aria-label', 'Objetivo pendiente pequeño')
+        target.style.width = '44px'
+        target.style.height = '20px'
+        main.append(target)
+      })
+
+      await expect(expectActionTargetsAtLeast44(page)).rejects.toThrow(/Objetivo pendiente pequeño/)
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it('scrolls the route editor clear of the fixed bottom navigation and includes the simulated safe-area inset', async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 640 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=editor-shell`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      await page.evaluate(() => {
+        document.documentElement.style.setProperty('--safe-area-inset-bottom', '24px')
+      })
+      const viewport = page.locator('[data-app-scroll-viewport]')
+      const bottomNav = page.getByRole('navigation', { name: 'Navegación principal' })
+      await pwExpect(viewport).toBeVisible()
+      await pwExpect(bottomNav).toBeVisible()
+      await viewport.evaluate(element => { element.scrollTop = element.scrollHeight })
+
+      const geometry = await page.evaluate(() => {
+        const scrollViewport = document.querySelector<HTMLElement>('[data-app-scroll-viewport]')!
+        const nav = document.querySelector<HTMLElement>('nav.fitai-safe-bottom')!
+        const panel = document.querySelector<HTMLElement>('aside[aria-labelledby="routine-summary-title"] section')!
+        return {
+          atScrollEnd: scrollViewport.scrollHeight - scrollViewport.clientHeight - scrollViewport.scrollTop,
+          panelBottom: panel.getBoundingClientRect().bottom,
+          navTop: nav.getBoundingClientRect().top,
+          panelPaddingBottom: Number.parseFloat(getComputedStyle(panel).paddingBottom),
+          safeInset: getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom').trim(),
+          appSafeInset: getComputedStyle(document.documentElement).getPropertyValue('--app-safe-area-bottom').trim(),
+        }
+      })
+      expect(geometry.atScrollEnd).toBeLessThanOrEqual(1)
+      expect(geometry.panelBottom).toBeLessThanOrEqual(geometry.navTop)
+      expect(geometry.safeInset).toBe('24px')
+      expect(geometry.appSafeInset).toBe('24px')
+      expect(geometry.panelPaddingBottom).toBeGreaterThanOrEqual(24)
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it.each(NARROW_PERSONAL_NAV_VIEWPORTS)('keeps five personal destinations usable at %i px', async width => {
+    const context = await browser.newContext({ viewport: { width, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=personal-shell`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+
+      const navigation = page.locator('nav.fitai-safe-bottom')
+      const expectedDestinations = ['Inicio', 'Plan', 'Entrenar', 'Progreso', 'Comunidad']
+      await pwExpect(navigation.getByRole('link')).toHaveCount(expectedDestinations.length)
+      for (const destination of expectedDestinations) {
+        await pwExpect(navigation.getByRole('link', { name: destination, exact: true })).toBeVisible()
+      }
+      await pwExpect(navigation.getByRole('link', { name: 'Mi entrenador', exact: true })).toHaveCount(0)
+      await pwExpect(navigation.getByRole('button', { name: 'Cambiar al espacio Entrenador' })).toHaveCount(0)
+
+      await expectResponsiveGeometry(page)
+      await expectActionTargetsAtLeast44(page)
+
+      const geometry = await navigation.evaluate(element => {
+        const targets = Array.from(element.querySelectorAll<HTMLElement>('a, button'))
+        const iconBoxes = Array.from(element.querySelectorAll<HTMLElement>('[data-bottom-nav-icon]'))
+          .map(icon => icon.getBoundingClientRect())
+        return {
+          targetBounds: targets.map(target => {
+            const rect = target.getBoundingClientRect()
+            return { left: rect.left, right: rect.right }
+          }),
+          iconBounds: iconBoxes.map(rect => ({ left: rect.left, right: rect.right })),
+        }
+      })
+
+      expect(geometry.iconBounds).toHaveLength(expectedDestinations.length)
+      expect(geometry.targetBounds.every(({ left, right }) => left >= -0.5 && right <= width + 0.5)).toBe(true)
+      expect(geometry.targetBounds.every((target, index, targets) => index === 0 || target.left >= targets[index - 1].right - 0.5)).toBe(true)
+      expect(geometry.iconBounds.every((icon, index, icons) => index === 0 || icon.left >= icons[index - 1].right - 0.5)).toBe(true)
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it.each(['directory', 'public-profile'] as const)(
+    '%s exposes one touch-sized account trigger on mobile',
+    async surface => {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+      const page = await context.newPage()
+      try {
+        await page.goto(
+          `${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=${surface}`,
+        )
+        await page.waitForFunction(() => Boolean((window as Window & {
+          __TRAINER_ACCESSIBILITY_READY__?: boolean
+        }).__TRAINER_ACCESSIBILITY_READY__))
+        const trigger = page.getByRole('button', { name: 'Abrir cuenta y espacios' })
+        await pwExpect(trigger).toHaveCount(1)
+        await pwExpect(trigger).toBeVisible()
+        await expectActionTargetsAtLeast44(page)
+        await expectResponsiveGeometry(page)
+      } finally {
+        await context.close()
+      }
+    },
+  )
+
+  it('selects a batch with Space and Enter and restores focus after keyboard close', async () => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=editor`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+      const opener = page.getByRole('button', { name: 'Agregar varios ejercicios' })
+      await opener.focus()
+      await page.keyboard.press('Enter')
+      const dialog = page.getByRole('dialog', { name: 'Agregar ejercicios' })
+      await pwExpect(dialog).toBeVisible()
+
+      const firstExercise = dialog.getByRole('button', { name: /Ejercicio 01/ })
+      const secondExercise = dialog.getByRole('button', { name: /Ejercicio 02/ })
+      await firstExercise.focus()
+      await page.keyboard.press('Space')
+      await secondExercise.focus()
+      await page.keyboard.press('Enter')
+      await pwExpect(firstExercise).toHaveAttribute('aria-pressed', 'true')
+      await pwExpect(secondExercise).toHaveAttribute('aria-pressed', 'true')
+      await pwExpect(dialog.getByRole('button', { name: 'Agregar 2 ejercicios' })).toBeVisible()
+
+      const close = dialog.getByRole('button', { name: 'Cerrar' })
+      await close.focus()
+      await page.keyboard.press('Enter')
+      await pwExpect(dialog).toBeHidden()
+      await pwExpect(opener).toBeFocused()
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
   it.each(VIEWPORTS)('keeps trainer controls and wide content contained at $width px', async viewport => {
     const context = await browser.newContext({ viewport })
     const page = await context.newPage()
@@ -101,13 +421,15 @@ describe('trainer accessibility acceptance in a local browser', () => {
         await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=${surface}`)
         await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
         if (surface === 'editor') {
-          await page.getByText('Editar entrenamiento', { exact: true }).click()
-          await page.getByText('Editar ejercicio', { exact: true }).click()
+          await page.getByText('Editar día', { exact: true }).click()
+          await page.getByRole('button', { name: 'Editar Sentadilla con barra' }).click()
           await pwExpect(page.getByRole('button', { name: 'Guardar ejercicio' })).toBeVisible()
         }
         if (surface === 'assignment') {
           await page.locator('button[aria-controls="assign-program-form"]').click()
-          await pwExpect(page.getByLabel(/Cliente del acompa/)).toBeVisible()
+          const clientChoices = page.getByRole('group', { name: /Cliente del acompa/ })
+          await pwExpect(clientChoices).toBeVisible()
+          await pwExpect(clientChoices.getByRole('radio', { name: /Ana Rivera.*Servicio Fuerza/ })).toBeVisible()
         }
         await expectResponsiveGeometry(page)
         await expectActionTargetsAtLeast44(page)
@@ -178,12 +500,15 @@ describe('trainer accessibility acceptance in a local browser', () => {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=assignment`)
       await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
       const disclosure = page.locator('button[aria-controls="assign-program-form"]')
-      await pwExpect(disclosure).toHaveAccessibleName('Enviar a un cliente')
+      await pwExpect(disclosure).toHaveAccessibleName('Asignar a un cliente')
       await disclosure.focus()
       await page.keyboard.press('Enter')
       await pwExpect(disclosure).toHaveAttribute('aria-expanded', 'true')
       await page.keyboard.press('Tab')
-      await pwExpect(page.getByLabel(/Cliente del acompa/)).toBeFocused()
+      const clientChoice = page.getByRole('group', { name: /Cliente del acompa/ }).getByRole('radio', { name: /Ana Rivera.*Servicio Fuerza/ })
+      await pwExpect(clientChoice).toBeFocused()
+      await page.keyboard.press('Space')
+      await pwExpect(clientChoice).toBeChecked()
       await page.keyboard.press('Tab')
       await pwExpect(page.getByLabel(/Resumen para el cliente/)).toBeFocused()
 
@@ -197,9 +522,28 @@ describe('trainer accessibility acceptance in a local browser', () => {
       })
       await accept.focus()
       await page.keyboard.press('Enter')
-      await page.getByText('La solicitud fue aceptada.').waitFor({ state: 'visible' })
+      const acceptanceAnnouncement = page.getByText('La solicitud fue aceptada.', { exact: true })
+      await acceptanceAnnouncement.waitFor({ state: 'visible' })
       expect(confirmationSeen).toBe(true)
-      await pwExpect(page.locator('[aria-live="polite"]')).toContainText('La solicitud fue aceptada.')
+      await pwExpect(acceptanceAnnouncement).toHaveAttribute('aria-live', 'polite')
+    } finally {
+      await context.close()
+    }
+  }, 15_000)
+
+  it('shows the requesting client photo and name with the existing request details', async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=requests`)
+      await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
+
+      await pwExpect(page.locator('img[alt=""]')).toBeVisible()
+      await pwExpect(page.getByRole('img')).toHaveCount(0)
+      await pwExpect(page.getByRole('heading', { level: 2, name: 'Ana Pérez' })).toBeVisible()
+      await pwExpect(page.getByText('Solicita: Servicio de fuerza', { exact: true })).toBeVisible()
+      await pwExpect(page.getByText('Quiero mejorar mi técnica.', { exact: true })).toBeVisible()
+      await expectResponsiveGeometry(page)
     } finally {
       await context.close()
     }

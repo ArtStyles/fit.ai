@@ -848,6 +848,8 @@ describe('product notification actions', () => {
   })
 
   it('persists only the current authenticated plan-version notice key', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
     const state = createPlanDismissalClient()
     createClientMock.mockResolvedValue(state.client)
     const dismiss = await getDismissPlanUpdateNotification()
@@ -895,6 +897,8 @@ describe('product notification actions', () => {
   })
 
   it('passes the configured app fallback timezone when the profile has none', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
     const previousTimeZone = process.env.NEXT_PUBLIC_APP_TIME_ZONE
     process.env.NEXT_PUBLIC_APP_TIME_ZONE = 'Pacific/Kiritimati'
     try {
@@ -943,6 +947,8 @@ describe('product notification actions', () => {
   })
 
   it('treats a repeated current-version dismissal as success', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
     const state = createPlanDismissalClient()
     createClientMock.mockResolvedValue(state.client)
     const dismiss = await getDismissPlanUpdateNotification()

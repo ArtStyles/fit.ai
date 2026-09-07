@@ -3,11 +3,16 @@
 import { revalidatePath } from 'next/cache'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
 import { requireAppUserContext } from '@/lib/auth/server'
+import {
+  GENERIC_TRAINER_ASSIGNMENT_PROPOSAL_ERROR,
+  mapTrainerAssignmentProposalError,
+} from '@/lib/coaching/trainerAssignmentProposalErrors'
 
 type FieldErrors = Record<string, string>
 type Failure = { ok: false; error: string; fieldErrors?: FieldErrors }
 type ProposalResult = { ok: true; assignmentId: string; assignmentVersionId: string; workoutPlanId: string } | Failure
 type AcceptanceResult = { ok: true; assignmentId: string; workoutPlanId: string } | Failure
+export type DeclineResult = { ok: true; assignmentId: string; changed: boolean } | Failure
 type RevisionResult = { ok: true; assignmentId: string; assignmentVersionId: string; workoutPlanId: string } | Failure
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -25,8 +30,8 @@ function failure(fieldErrors: FieldErrors, error: string): Failure {
   return { ok: false, error, ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}) }
 }
 
-/** Proposes, but never activates, a trainer's immutable professional plan. */
-export async function proposeTrainerAssignment(formData: FormData): Promise<ProposalResult> {
+/** Adds an immutable professional plan to the client library without selecting it. */
+export async function assignTrainerProgram(formData: FormData): Promise<ProposalResult> {
   const relationshipId = value(formData, 'relationshipId')
   const templateId = value(formData, 'templateId')
   const changeSummary = value(formData, 'changeSummary')
@@ -37,22 +42,26 @@ export async function proposeTrainerAssignment(formData: FormData): Promise<Prop
   if (!isUuid(templateId)) fieldErrors.templateId = 'La rutina no es válida.'
   if (changeSummary.length > 1000) fieldErrors.changeSummary = 'El resumen no puede superar 1000 caracteres.'
   if (!idempotencyKey || idempotencyKey.length > 200) fieldErrors.idempotencyKey = 'No se pudo identificar este envío. Inténtalo de nuevo.'
-  if (Object.keys(fieldErrors).length) return failure(fieldErrors, 'Revisa los datos de la propuesta.')
+  if (Object.keys(fieldErrors).length) return failure(fieldErrors, 'Revisa los datos de la asignación.')
 
   const { supabase } = await requireActiveTrainerContext()
-  const { data, error } = await (supabase.rpc as any)('propose_trainer_assignment', {
+  const { data, error } = await (supabase.rpc as any)('assign_trainer_program', {
     p_relationship_id: relationshipId,
     p_template_id: templateId,
     p_change_summary: changeSummary || null,
     p_idempotency_key: idempotencyKey,
   })
   const proposal = Array.isArray(data) ? data[0] : data
-  if (error || !proposal?.assignment_id || !proposal?.assignment_version_id || !proposal?.workout_plan_id) {
-    return failure({}, 'No se pudo enviar la rutina. Verifica que el acompañamiento siga activo y que el cliente haya dado su consentimiento.')
+  if (error) return failure({}, mapTrainerAssignmentProposalError(error))
+  if (!proposal?.assignment_id || !proposal?.assignment_version_id || !proposal?.workout_plan_id) {
+    return failure({}, GENERIC_TRAINER_ASSIGNMENT_PROPOSAL_ERROR)
   }
 
+  revalidatePath('/plan')
+  revalidatePath('/dashboard')
+  revalidatePath('/coach/clients', 'layout')
   revalidatePath('/coaching')
-  revalidatePath('/coach/programs')
+  revalidatePath('/coach/programs', 'layout')
   return {
     ok: true,
     assignmentId: proposal.assignment_id,
@@ -61,7 +70,12 @@ export async function proposeTrainerAssignment(formData: FormData): Promise<Prop
   }
 }
 
-/** Activates a client's first accepted professional prescription atomically. */
+/** Compatibility entry point for older clients; it uses direct assignment. */
+export async function proposeTrainerAssignment(formData: FormData): Promise<ProposalResult> {
+  return assignTrainerProgram(formData)
+}
+
+/** Legacy compatibility acknowledgement; direct assignment already makes the routine available. */
 export async function acceptTrainerAssignment(formData: FormData): Promise<AcceptanceResult> {
   const assignmentId = value(formData, 'assignmentId')
   const idempotencyKey = value(formData, 'idempotencyKey')
@@ -88,6 +102,36 @@ export async function acceptTrainerAssignment(formData: FormData): Promise<Accep
   return { ok: true, assignmentId: accepted.assignment_id, workoutPlanId: accepted.workout_plan_id }
 }
 
+/** Terminates an unaccepted proposal without requiring an active coaching relationship. */
+export async function declineTrainerAssignment(formData: FormData): Promise<DeclineResult> {
+  const assignmentId = value(formData, 'assignmentId')
+  const reason = value(formData, 'reason')
+  const idempotencyKey = value(formData, 'idempotencyKey')
+  const fieldErrors: FieldErrors = {}
+
+  if (!isUuid(assignmentId)) fieldErrors.assignmentId = 'La propuesta no es válida.'
+  if (reason.length > 500) fieldErrors.reason = 'El motivo no puede superar 500 caracteres.'
+  if (!idempotencyKey || idempotencyKey.length > 200) {
+    fieldErrors.idempotencyKey = 'No se pudo identificar este rechazo. Inténtalo de nuevo.'
+  }
+  if (Object.keys(fieldErrors).length) return failure(fieldErrors, 'Revisa los datos del rechazo.')
+
+  const { supabase } = await requireAppUserContext()
+  const { data, error } = await (supabase.rpc as any)('decline_trainer_assignment', {
+    p_assignment_id: assignmentId,
+    p_reason: reason || null,
+    p_idempotency_key: idempotencyKey,
+  })
+  const declined = Array.isArray(data) ? data[0] : data
+  if (error || !declined?.assignment_id || typeof declined.changed !== 'boolean') {
+    return failure({}, 'No se pudo rechazar la rutina. Verifica que la propuesta siga pendiente e inténtalo de nuevo.')
+  }
+
+  revalidatePath('/coaching')
+  revalidatePath('/coach/programs', 'layout')
+  return { ok: true, assignmentId: declined.assignment_id, changed: declined.changed }
+}
+
 /** Publishes an immutable replacement that only affects sessions authorized later. */
 export async function publishTrainerAssignmentRevision(formData: FormData): Promise<RevisionResult> {
   const assignmentId = value(formData, 'assignmentId')
@@ -111,12 +155,16 @@ export async function publishTrainerAssignmentRevision(formData: FormData): Prom
     p_idempotency_key: idempotencyKey,
   })
   const revision = Array.isArray(data) ? data[0] : data
+  if (error) {
+    const mappedError = mapTrainerAssignmentProposalError(error)
+    if (mappedError !== GENERIC_TRAINER_ASSIGNMENT_PROPOSAL_ERROR) return failure({}, mappedError)
+  }
   if (error || !revision?.assignment_id || !revision?.assignment_version_id || !revision?.workout_plan_id) {
     return failure({}, 'No se pudo publicar la revisión. Verifica que el acompañamiento siga activo e inténtalo de nuevo.')
   }
 
   revalidatePath('/coaching')
-  revalidatePath('/coach/programs')
+  revalidatePath('/coach/programs', 'layout')
   revalidatePath('/plan')
   return {
     ok: true,

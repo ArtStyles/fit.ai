@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { orderedIdsToUpdates, selectedExerciseIds } from './plan.logic'
+import { selectedExerciseIds } from './plan.logic'
 import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
-import { requireEditableOwnedPlan } from '@/lib/plans/editability'
+import { requireEditableOwnedPlan, requireOwnedPlan } from '@/lib/plans/editability'
 
 function asNullableString(value: FormDataEntryValue | null): string | null {
   const text = typeof value === 'string' ? value.trim() : ''
@@ -127,7 +127,7 @@ export async function activatePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
-  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+  try { await requireOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=save_failed') }
 
   const { data, error } = await (supabase.rpc as any)('activate_plan_version', {
     p_plan_id: planId,
@@ -195,9 +195,10 @@ export async function deletePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
-  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+  let ownedPlan: Awaited<ReturnType<typeof requireOwnedPlan>>
+  try { ownedPlan = await requireOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=save_failed') }
 
-  const { error } = await (supabase.rpc as any)('retire_plan_family', {
+  const { error } = await (supabase.rpc as any)(ownedPlan.prescription_locked ? 'remove_trainer_assignment' : 'retire_plan_family', {
     p_plan_id: planId,
   })
 
@@ -205,6 +206,9 @@ export async function deletePlan(formData: FormData) {
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')
+  revalidatePath('/coaching')
+  revalidatePath('/coach/programs', 'layout')
+  revalidatePath('/coach/clients', 'layout')
   redirect('/plan?notice=plan_retired')
 }
 
@@ -467,17 +471,13 @@ export async function moveWorkoutExercise(formData: FormData) {
   reordered[currentIndex] = reordered[targetIndex]
   reordered[targetIndex] = current
 
-  const updates = await Promise.all(
-    reordered.map((item, index) =>
-      (supabase.from('workout_exercises') as any)
-        .update({ order_index: index + 1 })
-        .eq('id', item.id),
-    ),
-  )
+  const { error } = await supabase.schema('public').rpc('reorder_workout_exercises_atomic', {
+    p_plan_id: planId,
+    p_workout_id: row.workout_id,
+    p_ordered_ids: reordered.map(item => item.id),
+  })
+  if (error) redirect('/plan?error=save_failed')
 
-  if (updates.some(result => result.error)) redirect('/plan?error=save_failed')
-
-  await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(row.workout_id)
 }
 
@@ -494,27 +494,23 @@ export async function reorderWorkoutExercises(
   if (!workout || workout.plan_id !== planId) return { success: false }
   try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { return { success: false } }
 
-  const { data } = await (supabase.from('workout_exercises') as any)
+  const { data, error: readError } = await (supabase.from('workout_exercises') as any)
     .select('id')
     .eq('workout_id', workoutId)
 
   const owned = new Set(((data ?? []) as { id: string }[]).map(r => r.id))
-  if (orderedIds.length !== owned.size || !orderedIds.every(id => owned.has(id))) {
+  if (readError || !Array.isArray(orderedIds) || orderedIds.length !== owned.size
+    || new Set(orderedIds).size !== owned.size || !orderedIds.every(id => owned.has(id))) {
     return { success: false }
   }
 
-  const updates = await Promise.all(
-    orderedIdsToUpdates(orderedIds).map(u =>
-      (supabase.from('workout_exercises') as any)
-        .update({ order_index: u.order_index })
-        .eq('id', u.id)
-        .eq('workout_id', workoutId),
-    ),
-  )
+  const { error } = await supabase.schema('public').rpc('reorder_workout_exercises_atomic', {
+    p_plan_id: planId,
+    p_workout_id: workoutId,
+    p_ordered_ids: orderedIds,
+  })
+  if (error) return { success: false }
 
-  if (updates.some(result => result.error)) return { success: false }
-
-  await touchManualPlan(supabase, planId, user.id)
   revalidatePlanSurfaces(workoutId)
   return { success: true }
 }

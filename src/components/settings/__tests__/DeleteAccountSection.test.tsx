@@ -24,6 +24,6 @@ describe('DeleteAccountConfirmationForm', () => {
       </I18nProvider>,
     )
 
-    expect(html).toMatch(/<input[^>]*name="confirmText"[^>]*class="[^"]*h-11[^"]*"/)
+    expect(html).toMatch(/<input(?=[^>]*name="confirmText")(?=[^>]*class="[^"]*h-11[^"]*")[^>]*>/)
   })
 })

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { getPlatform, isNativePlatform } from '@/lib/native/platform'
 import { runBackHandlers } from '@/lib/native/backHandlers'
+import { dismissOpenRadixOverlay } from '@/lib/native/androidBackOverlay'
 import { useNavStore } from '@/store/navStore'
 import { useToast } from '@/components/feedback/ToastProvider'
 
@@ -13,22 +14,6 @@ const HOME = '/dashboard'
 
 /** Ventana para el patrón "presiona atrás otra vez para salir" (ms). */
 const EXIT_HINT_WINDOW_MS = 2000
-
-/** ¿Hay un diálogo/alertdialog de Radix abierto? */
-function hasOpenOverlay(): boolean {
-  return Boolean(
-    document.querySelector(
-      '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
-    ),
-  )
-}
-
-/** Radix cierra su capa superior (modal, dropdown, popover…) al recibir Escape. */
-function dismissTopOverlay(): void {
-  document.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
-  )
-}
 
 /**
  * Conecta el gesto/botón "atrás" de Android a la navegación de la app.
@@ -70,10 +55,7 @@ export function useAndroidBack(): void {
         if (runBackHandlers()) return
 
         // 2. Capa flotante de Radix abierta → cerrarla
-        if (hasOpenOverlay()) {
-          dismissTopOverlay()
-          return
-        }
+        if (dismissOpenRadixOverlay()) return
 
         const path = pathnameRef.current
 

@@ -1,3 +1,4 @@
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import { renderToStaticMarkup } from 'react-dom/server'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -138,7 +139,7 @@ describe('ApplicationForm', () => {
     expect(html).toMatch(/<input(?=[^>]*type="radio")(?=[^>]*name="credentialTypeChoice")(?=[^>]*value="document")(?=[^>]*checked="")[^>]*>/)
     expect(html).toContain('Subir documento')
     expect(html).toContain('Usar enlace verificable')
-    expect(html).toMatch(/name="file" type="file"/)
+    expect(html).toMatch(/<input(?=[^>]*name="file")(?=[^>]*type="file")[^>]*>/)
     expect(html).not.toContain('name="externalUrl"')
     expect(html).toContain('<summary>Añadir entidad y fechas (opcional)</summary>')
   })
@@ -350,8 +351,14 @@ describe('ApplicationForm DOM accessibility', () => {
       configFile: false,
       root: repoRoot,
       appType: 'spa',
+      cacheDir: path.join(repoRoot, 'node_modules', '.vite-application-form-test'),
       oxc: { jsx: { runtime: 'automatic' } },
+      optimizeDeps: {
+        entries: [path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/applicationForm.html')],
+        include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-dev-runtime', 'lucide-react', 'clsx', 'tailwind-merge'],
+      },
       resolve: {
+        dedupe: ['react', 'react-dom'],
         alias: [
           {
             find: '@/app/actions/trainerApplications',
@@ -367,7 +374,8 @@ describe('ApplicationForm DOM accessibility', () => {
     if (!address || typeof address === 'string') throw new Error('Vite DOM fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/coaching/__tests__/fixtures/applicationForm.html?case=photo', '__APPLICATION_FORM_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()

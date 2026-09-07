@@ -7,18 +7,19 @@ import { useI18n } from '@/components/i18n/I18nProvider'
 interface PlanRetireButtonProps {
   planId: string
   planName: string
+  professional?: boolean
 }
 
-export function PlanRetireButton({ planId, planName }: PlanRetireButtonProps) {
+export function PlanRetireButton({ planId, planName, professional = false }: PlanRetireButtonProps) {
   const { t } = useI18n()
-  const label = `${t('Archivar')} ${planName}`
+  const label = `${t(professional ? 'Eliminar' : 'Archivar')} ${planName}`
 
   return (
     <form
       action={deletePlan}
       onSubmit={event => {
         const confirmed = window.confirm(
-          t('El plan se archivará, pero tu historial permanecerá intacto.'),
+          t(professional ? 'La rutina se eliminará de tu lista, pero tu historial permanecerá intacto.' : 'El plan se archivará, pero tu historial permanecerá intacto.'),
         )
         if (!confirmed) event.preventDefault()
       }}

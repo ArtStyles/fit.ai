@@ -19,11 +19,15 @@ const initialActionState: TrainingSettingsActionState = {
 }
 let actionState: TrainingSettingsActionState = initialActionState
 
+vi.mock('react', async importOriginal => ({
+  ...await importOriginal<typeof import('react')>(),
+  useActionState: () => [actionState, vi.fn()],
+}))
+
 vi.mock('react-dom', async importOriginal => {
   const reactDom = await importOriginal<typeof import('react-dom')>()
   return {
     ...reactDom,
-    useFormState: () => [actionState, vi.fn()],
     useFormStatus: () => ({ pending: false }),
   }
 })

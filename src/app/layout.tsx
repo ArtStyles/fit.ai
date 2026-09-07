@@ -50,9 +50,9 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const storedLanguage = cookies().get('fitai-language')?.value
-  const language = normalizeLanguage(headers().get('x-public-locale') ?? storedLanguage)
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const storedLanguage = (await cookies()).get('fitai-language')?.value
+  const language = normalizeLanguage((await headers()).get('x-public-locale') ?? storedLanguage)
 
   return (
     <html lang={language} className={`dark ${barlowCondensed.variable} ${plusJakarta.variable}`} suppressHydrationWarning>

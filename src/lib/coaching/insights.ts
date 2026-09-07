@@ -378,7 +378,7 @@ function parseDetailPayload(value: unknown) {
   const versions = value.versions.map(version => {
     if (!isRecord(version)) unavailable()
     const status = requiredString(version.status)
-    if (status !== 'active' && status !== 'superseded') unavailable()
+    if (status !== 'active' && status !== 'superseded' && status !== 'frozen' && status !== 'cancelled') unavailable()
     return { id: requiredString(version.id), effectiveFrom: dateString(version.effectiveFrom), effectiveTo: dateOrNull(version.effectiveTo) }
   })
   const prescribedWorkouts = value.prescribedWorkouts.map(workout => {

@@ -16,6 +16,14 @@ const payload = {
 }
 
 describe('adaptCoachClientInsights', () => {
+  it.each(['cancelled', 'frozen'])('retains completed evidence for %s selection windows after library removal', status => {
+    const detail = adaptCoachClientInsights({ ...payload, versions: [{ ...payload.versions[0], status, effectiveTo: '2026-08-04T00:00:00.000Z' }] }, {
+      rangeStart: '2026-08-03', rangeEnd: '2026-08-10', now: '2026-08-10T12:00:00.000Z',
+    })
+    expect(detail.adherence).toEqual({ prescribed: 1, completed: 1, missed: 0, pending: 0, adherencePercent: 100 })
+    expect(detail.sessions[0].workoutName).toBe('Fuerza A')
+  })
+
   it('derives client-time-zone prescribed adherence from the versioned RPC evidence', () => {
     const detail = adaptCoachClientInsights(payload, {
       rangeStart: '2026-08-03', rangeEnd: '2026-08-10', now: '2026-08-10T12:00:00.000Z',

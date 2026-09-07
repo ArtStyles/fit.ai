@@ -4,10 +4,11 @@ import { MeasurementsClient } from '@/components/measurements/MeasurementsClient
 export const metadata = { title: 'Medidas · Vekira' }
 
 export default async function MedidasPage({
-  searchParams,
+  searchParams: searchParamsPromise,
 }: {
-  searchParams?: { from?: string | string[] }
+  searchParams?: Promise<{ from?: string | string[] }>
 }) {
+  const searchParams = await searchParamsPromise
   const fromSettings = searchParams?.from === 'settings'
   const result = await getMeasurements()
   return (

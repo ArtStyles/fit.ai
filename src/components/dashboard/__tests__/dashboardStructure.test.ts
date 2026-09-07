@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const page = readFileSync(new URL('../../../app/(app)/dashboard/page.tsx', import.meta.url), 'utf8')
+const primaryFlow = readFileSync(new URL('../DashboardPrimaryFlow.tsx', import.meta.url), 'utf8')
 const header = readFileSync(new URL('../DashboardHeader.tsx', import.meta.url), 'utf8')
 const recommendation = readFileSync(new URL('../NextRecommendation.tsx', import.meta.url), 'utf8')
 const viewModel = readFileSync(new URL('../dashboardViewModel.ts', import.meta.url), 'utf8')
@@ -22,6 +23,52 @@ describe('dashboard structure', () => {
     expect(page.match(/<DashboardWeekJourney\b/g)).toHaveLength(1)
   })
 
+  it('places one coaching summary after the accessible title and before music and the weekly journey', () => {
+    const flowPositions = ['{title}', '{coaching}', '{music}', '{journey}']
+      .map(section => primaryFlow.indexOf(section))
+    const pagePositions = [
+      'title={<h1 className="sr-only"',
+      'coaching={coachingSummary ? (',
+      '<CoachingSummaryCard',
+      'music={<MusicNowPlayingSlot',
+      'journey={<DashboardWeekJourney',
+    ].map(section => page.indexOf(section))
+
+    expect(flowPositions.every(position => position >= 0)).toBe(true)
+    expect(flowPositions).toEqual([...flowPositions].sort((a, b) => a - b))
+    expect(pagePositions.every(position => position >= 0)).toBe(true)
+    expect(pagePositions).toEqual([...pagePositions].sort((a, b) => a - b))
+    expect(page.match(/<CoachingSummaryCard\b/g)).toHaveLength(1)
+  })
+
+  it('loads the private coaching summary at the page boundary inside the existing parallel load', () => {
+    const dashboardPageStart = page.indexOf('export default async function DashboardPage')
+    const parallelLoadStart = page.indexOf('await Promise.all([', dashboardPageStart)
+    const parallelLoadEnd = page.indexOf('\n  ])', parallelLoadStart)
+    const summaryLoad = page.indexOf('loadClientCoachingSummary(', parallelLoadStart)
+    const summaryLoadSource = page.slice(summaryLoad, summaryLoad + 160)
+
+    expect(dashboardPageStart).toBeGreaterThanOrEqual(0)
+    expect(parallelLoadStart).toBeGreaterThanOrEqual(0)
+    expect(summaryLoad).toBeGreaterThan(parallelLoadStart)
+    expect(summaryLoad).toBeLessThan(parallelLoadEnd)
+    expect(summaryLoadSource).toContain('supabase,')
+    expect(summaryLoadSource).not.toContain('as unknown as ClientCoachingSummaryClient')
+    expect(summaryLoadSource).toContain('user.id')
+    expect(page).not.toMatch(/active_trainer_directory[^]*client_user_id/)
+  })
+
+  it('keeps the persistent coaching load error out of live announcement semantics', () => {
+    const coachingStart = page.indexOf('coaching={')
+    const coachingEnd = page.indexOf('music={<MusicNowPlayingSlot', coachingStart)
+    const coachingSource = page.slice(coachingStart, coachingEnd)
+
+    expect(coachingStart).toBeGreaterThanOrEqual(0)
+    expect(coachingEnd).toBeGreaterThan(coachingStart)
+    expect(coachingSource).toContain('coachingSummaryError')
+    expect(coachingSource).not.toMatch(/role="status"|aria-live/)
+  })
+
   it('uses a real desktop grid without duplicating the current workout', () => {
     expect(journey).toContain('lg:grid-cols-[minmax(0,1fr)_22rem]')
     expect(page).not.toContain('<TodayActionCard')
@@ -35,10 +82,10 @@ describe('dashboard structure', () => {
     expect(header).not.toContain('aria-expanded')
   })
 
-  it('places the contextual coach link beside the recommendation', () => {
-    expect(recommendation).toContain('href={recommendation.chatHref}')
-    expect(viewModel).toContain("chatHref: '/chat'")
-    expect(page).not.toMatch(/fixed[^\n]+\/chat|\/chat[^\n]+fixed/)
+  it('keeps AI coach access out of the Home recommendation', () => {
+    expect(recommendation).not.toContain('href={recommendation.chatHref}')
+    expect(viewModel).not.toContain("chatHref: '/chat'")
+    expect(page).not.toContain('/chat')
   })
 
   it('uses a single server-rendered page H1 in the dashboard main content', () => {

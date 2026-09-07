@@ -41,6 +41,9 @@ describe('SettingsNavGroup', () => {
 
     const memberHtml = renderToStaticMarkup(await SettingsPage())
 
+    expect(memberHtml).toContain('href="/settings/musica"')
+    expect(memberHtml).toContain('Integración musical')
+    expect(memberHtml).toContain('Reproductor del sistema Android')
     expect(memberHtml).not.toContain('Administración')
 
     mockRequireAppUserContext.mockResolvedValue({

@@ -45,7 +45,7 @@ async function renderApplication(
   }))
 
   const ApplicationPage = (await import('../page')).default
-  return renderToStaticMarkup(await ApplicationPage({ searchParams }))
+  return renderToStaticMarkup(await ApplicationPage({ searchParams: Promise.resolve(searchParams ?? {}) }))
 }
 
 describe('Trainer application settings entry', () => {

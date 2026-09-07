@@ -157,7 +157,7 @@ export function TrainerServiceForm({ initialService }: { initialService?: Traine
         </button>
         {initialService ? <button type="button" onClick={() => void toggleService()} disabled={saving} className="min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">{isActive ? 'Desactivar servicio' : 'Activar servicio'}</button> : null}
       </div>
-      <p className="sr-only" aria-live="polite">{announcement}</p>
+      <p role="status" aria-live="polite" className="mt-3 min-h-5 text-sm text-muted-foreground">{announcement}</p>
     </form>
   )
 }

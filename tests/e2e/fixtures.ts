@@ -4,15 +4,15 @@ import { deriveTrainerRelationshipScope } from './helpers/core-product'
 type TrainerFixtures = { trainerSecurityScope: string }
 
 export const test = base.extend<TrainerFixtures>({
-  page: async ({ page }, use) => {
+  page: async ({ page }, provide) => {
     await page.route('**/api/analytics', async route => {
       await route.fulfill({ status: 202, contentType: 'application/json', body: '{}' })
     })
-    await use(page)
+    await provide(page)
   },
-  trainerSecurityScope: async ({ browserName }, use, testInfo) => {
+  trainerSecurityScope: async ({ browserName }, provide, testInfo) => {
     void browserName
-    await use(deriveTrainerRelationshipScope({
+    await provide(deriveTrainerRelationshipScope({
       projectName: `${testInfo.project.name}-security`,
       workerIndex: testInfo.workerIndex,
       parallelIndex: testInfo.parallelIndex,

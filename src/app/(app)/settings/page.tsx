@@ -43,6 +43,7 @@ export default async function SettingsPage() {
       title: t('Aplicaci\u00f3n'),
       entries: [
         { href: '/settings/notificaciones', label: t('Notificaciones'), description: t('Recordatorios y avisos'), icon: 'bell-ring' as const },
+        { href: '/settings/musica', label: t('Integraci\u00f3n musical'), description: t('Reproductor del sistema Android'), icon: 'music-2' as const },
         { href: '/settings/idioma', label: t('Idioma'), description: t('Idioma de la interfaz'), icon: 'languages' as const },
       ],
     },

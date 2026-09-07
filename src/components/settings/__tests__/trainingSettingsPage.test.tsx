@@ -32,11 +32,15 @@ let profileError: { message: string } | null = null
 let activePlanError: { message: string } | null = null
 const selectCalls: Array<{ table: string; columns: string }> = []
 
+vi.mock('react', async importOriginal => ({
+  ...await importOriginal<typeof import('react')>(),
+  useActionState: () => [{ ok: false, message: null, formError: null, fieldErrors: {} }, vi.fn()],
+}))
+
 vi.mock('react-dom', async importOriginal => {
   const reactDom = await importOriginal<typeof import('react-dom')>()
   return {
     ...reactDom,
-    useFormState: () => [{ ok: false, message: null, formError: null, fieldErrors: {} }, vi.fn()],
     useFormStatus: () => ({ pending: false }),
   }
 })

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
 import type { PublicTrainerDirectoryRow } from '@/lib/coaching/directory'
 
 const modalityLabels: Record<PublicTrainerDirectoryRow['modalities'][number], string> = {
@@ -20,11 +21,12 @@ export function TrainerPublicProfile({ trainer }: { trainer: PublicTrainerDirect
     <article className="space-y-6" aria-labelledby="trainer-name">
       <header className="rounded-3xl border border-border/70 bg-card p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 ref={headingRef} tabIndex={-1} id="trainer-name" className="text-2xl font-bold text-foreground">{trainer.professionalName}</h1>
             <span className="mt-2 inline-flex rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">Perfil verificado</span>
           </div>
           {trainer.professionalPhotoUrl ? <img src={trainer.professionalPhotoUrl} alt="" className="h-16 w-16 rounded-full object-cover" /> : null}
+          <AccountWorkspaceMenu surface="topbar" />
         </div>
         <p className="mt-4 whitespace-pre-line text-sm leading-6 text-muted-foreground">{trainer.bio}</p>
       </header>

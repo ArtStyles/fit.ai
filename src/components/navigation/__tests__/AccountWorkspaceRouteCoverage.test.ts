@@ -1,0 +1,335 @@
+import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createElement, type ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { chromium, expect as pwExpect, type Browser, type Page } from '@playwright/test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { I18nProvider } from '@/components/i18n/I18nProvider'
+import type { AccountWorkspaceModel } from '../AccountWorkspaceContext'
+import { AccountWorkspaceProvider } from '../AccountWorkspaceProvider'
+import { FixedTopBar } from '../FixedTopBar'
+
+type FixtureResolveArgs = { path: string }
+type FixtureBuildApi = {
+  onResolve: (
+    options: { filter: RegExp },
+    callback: (args: FixtureResolveArgs) => { path: string; namespace: string } | null,
+  ) => void
+  onLoad: (
+    options: { filter: RegExp; namespace: string },
+    callback: (args: FixtureResolveArgs) => {
+      contents: string | undefined
+      loader: 'js' | 'tsx'
+      resolveDir: string
+    },
+  ) => void
+}
+type Esbuild = {
+  build: (options: Record<string, unknown>) => Promise<{
+    outputFiles: Array<{ text: string }>
+  }>
+}
+type ChatHarness = Window & typeof globalThis & { __chatReady?: boolean }
+
+const mocks = vi.hoisted(() => ({ pathname: '/notifications' }))
+const originalCommunityEnabled = process.env.COMMUNITY_ENABLED
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
+const read = (relative: string) => readFileSync(path.join(root, relative), 'utf8')
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => mocks.pathname,
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
+  redirect: vi.fn(),
+}))
+vi.mock('@/app/actions/workspace', () => ({ setWorkspace: vi.fn() }))
+vi.mock('@/app/(auth)/actions', () => ({ signOut: vi.fn() }))
+
+const model: AccountWorkspaceModel = {
+  account: { id: 'account-a', name: 'Ana Pérez', email: 'ana@example.com', avatarUrl: null },
+  trainerAccess: { granted: true },
+  preferredWorkspace: 'personal',
+  personalNavItems: [{ href: '/dashboard', label: 'Inicio' }],
+  coachNavItems: [{ href: '/coach', label: 'Resumen' }],
+}
+
+function renderInWorkspace(node: ReactNode) {
+  return renderToStaticMarkup(
+    createElement(
+      I18nProvider,
+      {
+        language: 'es',
+        syncDocumentLanguage: false,
+        children: createElement(AccountWorkspaceProvider, { model, children: node }),
+      },
+    ),
+  )
+}
+
+async function renderFeedPage() {
+  process.env.COMMUNITY_ENABLED = 'true'
+  vi.resetModules()
+  vi.doMock('@/app/actions/feed', () => ({
+    getDiscoverFeed: vi.fn().mockResolvedValue({ posts: [], nextCursor: null }),
+    getFollowingFeed: vi.fn().mockResolvedValue({ posts: [], nextCursor: null }),
+  }))
+  vi.doMock('@/app/actions/follows', () => ({
+    getPendingRequestCount: vi.fn().mockResolvedValue(2),
+  }))
+  vi.doMock('@/lib/auth/server', () => ({
+    requireAppUserContext: vi.fn().mockResolvedValue({ profile: { language: 'es' } }),
+  }))
+  vi.doMock('@/lib/features/community', () => ({ isCommunityEnabled: () => true }))
+
+  const FeedPage = (await import('@/app/(app)/feed/page')).default
+  const { I18nProvider: FeedI18nProvider } = await import('@/components/i18n/I18nProvider')
+  return renderToStaticMarkup(
+    createElement(FeedI18nProvider, {
+      language: 'es',
+      syncDocumentLanguage: false,
+      children: await FeedPage(),
+    }),
+  )
+}
+
+async function loadEsbuild(): Promise<Esbuild> {
+  const require = createRequire(import.meta.url)
+  const vitestEntry = require.resolve('vitest')
+  const viteEntry = createRequire(vitestEntry).resolve('vite')
+  const esbuildEntry = createRequire(viteEntry).resolve('esbuild')
+  return import(esbuildEntry) as unknown as Promise<Esbuild>
+}
+
+async function buildChatBrowserFixture(): Promise<string> {
+  const { build } = await loadEsbuild()
+  const chatPath = path.join(process.cwd(), 'src/components/chat/ChatContainer.tsx')
+
+  const result = await build({
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    write: false,
+    jsx: 'automatic',
+    stdin: {
+      loader: 'tsx',
+      resolveDir: process.cwd(),
+      contents: `
+        import React from 'react'
+        import { createRoot } from 'react-dom/client'
+        import { ChatContainer } from ${JSON.stringify(chatPath)}
+
+        createRoot(document.getElementById('root')).render(
+          <ChatContainer initialConversations={[]} />,
+        )
+        requestAnimationFrame(() => { window.__chatReady = true })
+      `,
+    },
+    plugins: [{
+      name: 'chat-topbar-browser-fixture-mocks',
+      setup(buildApi: FixtureBuildApi) {
+        const mocks = new Map<string, string>([
+          ['next/navigation', `
+            export const usePathname = () => '/chat'
+            export const useRouter = () => ({ replace: () => {}, refresh: () => {} })
+          `],
+          ['@/app/actions/chat', `
+            export const createConversation = async () => ({ success: false })
+            export const sendMessage = async () => ({ success: false })
+            export const getMessages = async () => []
+            export const deleteConversation = async () => ({ success: true })
+          `],
+          ['@/components/i18n/I18nProvider', `
+            export const useI18n = () => ({ language: 'es', timeZone: 'America/Havana', t: source => source })
+          `],
+          ['@/components/ui/dialog', `
+            import React from 'react'
+            export const Dialog = ({ open, children }) => React.createElement('div', { 'data-dialog-open': open ? 'true' : 'false' }, children)
+            export const DialogContent = ({ children, ...props }) => React.createElement('div', props, children)
+            export const DialogHeader = ({ children, ...props }) => React.createElement('div', props, children)
+            export const DialogTitle = ({ children, ...props }) => React.createElement('h2', props, children)
+          `],
+          ['@/components/navigation/PendingLink', `
+            import React from 'react'
+            export const PendingLink = ({ href, children, showSpinner, ...props }) => React.createElement('a', { href, ...props }, children)
+          `],
+          ['@/components/navigation/AccountWorkspaceMenu', 'export const AccountWorkspaceMenu = () => null'],
+          ['@/components/navigation/AccountWorkspaceContext', 'export const useOptionalAccountWorkspace = () => null'],
+          ['@/components/ui', 'export const LongPressMenu = ({ children }) => children'],
+          ['@/components/chat/ChatInputBar', 'export const ChatInputBar = () => null'],
+          ['@/components/chat/MessageBubble', 'export const MessageBubble = () => null'],
+        ])
+
+        buildApi.onResolve({ filter: /.*/ }, args => {
+          if (mocks.has(args.path)) return { path: args.path, namespace: 'chat-topbar-mock' }
+          return null
+        })
+        buildApi.onLoad({ filter: /.*/, namespace: 'chat-topbar-mock' }, args => ({
+          contents: mocks.get(args.path),
+          loader: 'js',
+          resolveDir: process.cwd(),
+        }))
+      },
+    }],
+  })
+
+  return result.outputFiles[0]?.text ?? ''
+}
+
+let browser: Browser
+let bundle = ''
+let page: Page
+
+beforeAll(async () => {
+  bundle = await buildChatBrowserFixture()
+  browser = await chromium.launch({ headless: true })
+}, 30_000)
+
+beforeEach(async () => {
+  page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.setContent('<main><div id="root"></div></main>')
+  await page.addScriptTag({ content: bundle })
+  await page.waitForFunction(() => Boolean((window as ChatHarness).__chatReady))
+})
+
+afterEach(async () => {
+  mocks.pathname = '/notifications'
+  vi.doUnmock('@/app/actions/feed')
+  vi.doUnmock('@/app/actions/follows')
+  vi.doUnmock('@/lib/auth/server')
+  vi.doUnmock('@/lib/features/community')
+  vi.resetModules()
+  if (originalCommunityEnabled === undefined) delete process.env.COMMUNITY_ENABLED
+  else process.env.COMMUNITY_ENABLED = originalCommunityEnabled
+  await page?.close()
+})
+
+afterAll(async () => {
+  await browser?.close()
+})
+
+describe('top-bar account composition contract', () => {
+  it.each([
+    'src/components/coaching/TrainerDirectory.tsx',
+    'src/components/coaching/TrainerPublicProfile.tsx',
+    'src/app/(app)/coaching/page.tsx',
+  ])('%s exposes account access in its existing content header', source => {
+    expect(read(source)).toContain('<AccountWorkspaceMenu surface="topbar"')
+  })
+
+  it('renders Feed destinations from the shared action region', async () => {
+    const html = await renderFeedPage()
+    await page.setContent(html)
+    const actionRegion = page.locator('[data-fixed-topbar-actions]')
+
+    // Mutation caught: remove FeedPage actions or move them outside FixedTopBar.actions.
+    await pwExpect(actionRegion.getByRole('link', { name: 'Solicitudes de seguimiento' }))
+      .toHaveAttribute('href', '/solicitudes')
+    await pwExpect(actionRegion.getByRole('link', { name: 'Buscar usuarios' }))
+      .toHaveAttribute('href', '/buscar')
+    await pwExpect(actionRegion.getByRole('link', { name: 'Nueva publicación' }))
+      .toHaveAttribute('href', '/feed/new')
+  })
+
+  it('keeps Chat destinations and the New handler in the real top-bar action region', async () => {
+    const topBarActions = page.locator('[data-fixed-topbar-actions]')
+
+    // Mutation caught: remove ChatContainer.actions or its setShowNewDialog(true) click handler.
+    await pwExpect(page.locator('header').getByRole('link')).toHaveAttribute('href', '/dashboard')
+    await pwExpect(topBarActions.getByRole('button', { name: 'Nueva' })).toBeVisible()
+    await topBarActions.getByRole('button', { name: 'Nueva' }).click()
+    await pwExpect(page.locator('[data-dialog-open]')).toHaveAttribute('data-dialog-open', 'true')
+  })
+
+  it.each(['/session/workout-1', '/plans/generate', '/feed/new'])(
+    'suppresses the default account trigger on immersive route %s through the provider',
+    pathname => {
+      mocks.pathname = pathname
+
+      // Mutation caught: remove FixedTopBar's immersiveRoute condition.
+      expect(renderInWorkspace(createElement(FixedTopBar, null, 'Cargando')))
+        .not.toContain('Abrir cuenta y espacios')
+    },
+  )
+})
+
+const pageTopBarSources = [
+  'src/app/(app)/plan/page.tsx',
+  'src/app/(app)/progress/page.tsx',
+  'src/app/(app)/notifications/page.tsx',
+  'src/components/settings/SettingsScreen.tsx',
+  'src/components/measurements/MeasurementsClient.tsx',
+  'src/app/(app)/exercises/[exerciseId]/page.tsx',
+  'src/app/(app)/calendario/page.tsx',
+  'src/app/(app)/history/page.tsx',
+  'src/app/(app)/history/[logId]/page.tsx',
+  'src/app/(app)/u/[username]/page.tsx',
+  'src/app/(app)/coach/page.tsx',
+  'src/app/(app)/coach/clients/page.tsx',
+  'src/app/(app)/coach/clients/[clientId]/page.tsx',
+  'src/app/(app)/coach/programs/page.tsx',
+  'src/app/(app)/coach/programs/new/page.tsx',
+  'src/app/(app)/coach/programs/[templateId]/page.tsx',
+  'src/app/(app)/coach/requests/page.tsx',
+  'src/app/(app)/coach/profile/page.tsx',
+  'src/app/(app)/coach/services/page.tsx',
+] as const
+
+const fixedTopBarSources = [
+  'src/app/(app)/feed/page.tsx',
+  'src/app/(app)/buscar/page.tsx',
+  'src/components/chat/ChatContainer.tsx',
+  'src/app/(app)/exercises/page.tsx',
+  'src/app/(app)/post/[id]/page.tsx',
+  'src/app/(app)/solicitudes/page.tsx',
+  'src/app/(app)/coach/apply/page.tsx',
+] as const
+
+describe('authenticated account-trigger route coverage', () => {
+  it.each(pageTopBarSources)('%s uses the shared PageTopBar slot', source => {
+    expect(read(source)).toContain('<PageTopBar')
+  })
+
+  it.each(fixedTopBarSources)('%s uses a non-immersive FixedTopBar slot', source => {
+    const content = read(source)
+    expect(content).toContain('<FixedTopBar')
+    expect(content).not.toContain('accountSlot="hidden"')
+  })
+
+  it.each([
+    'src/components/coaching/TrainerDirectory.tsx',
+    'src/components/coaching/TrainerPublicProfile.tsx',
+    'src/app/(app)/coaching/page.tsx',
+  ])('%s uses its existing content header', source => {
+    expect(read(source)).toContain('<AccountWorkspaceMenu surface="topbar"')
+  })
+
+  it('uses a custom dashboard trigger and preserves /entrenar as a redirect', () => {
+    expect(read('src/components/dashboard/DashboardHeader.tsx')).toContain('accountSlot="custom"')
+    expect(read('src/app/(app)/entrenar/page.tsx')).toContain('redirect(')
+  })
+
+  it('groups collision-prone actions and gives the exercise toolbar an explicit slot', () => {
+    expect(read('src/app/(app)/feed/page.tsx')).toContain('actions=')
+    expect(read('src/components/chat/ChatContainer.tsx')).toContain('actions=')
+    const exercises = read('src/app/(app)/exercises/page.tsx')
+    expect(exercises).toContain('accountSlot="custom"')
+    expect(exercises).toContain('<AccountWorkspaceMenu surface="topbar"')
+  })
+
+  it.each([
+    'src/components/session/SessionHeader.tsx',
+    'src/app/(app)/plans/generate/page.tsx',
+    'src/app/(app)/feed/new/page.tsx',
+  ])('%s opts out explicitly', source => {
+    expect(read(source)).toContain('accountSlot="hidden"')
+  })
+
+  it('keeps the session loading header immersive', () => {
+    const loading = read('src/components/feedback/RouteLoading.tsx')
+    const start = loading.indexOf('export function SessionLoading')
+    const end = loading.indexOf('export function ExercisesLoading')
+    const sessionLoading = loading.slice(start, end)
+    expect(sessionLoading).toContain('accountSlot="hidden"')
+  })
+})

@@ -1,4 +1,9 @@
 import type { CardioModality, PlanAdjustmentIntent } from '@/lib/training-engine'
+import { resolveAdjustmentSchedule } from './adjustmentSchedule'
+
+type ValidatedPlanAdjustmentIntent = PlanAdjustmentIntent & {
+  expectedCurrentWorkoutDays?: number[]
+}
 
 export const CARDIO_MODALITIES = [
   'walking',
@@ -16,6 +21,7 @@ export interface PlanAdjustmentOptions {
   availableEquipment: string[]
   cardioPreferences: CardioModality[]
   exercises: Array<{ id: string; name: string }>
+  currentWorkoutDays?: number[]
 }
 
 export interface PlanAdjustmentPreviewSummary {
@@ -25,6 +31,7 @@ export interface PlanAdjustmentPreviewSummary {
   exercisesRemovedCount: number
   changedPrescriptionCount: number
   warnings: string[]
+  workoutDays: number[]
 }
 
 function uniqueStrings(values: unknown[]): string[] {
@@ -34,9 +41,19 @@ function uniqueStrings(values: unknown[]): string[] {
 export function validatePlanAdjustmentIntent(
   raw: unknown,
   options: PlanAdjustmentOptions,
-): PlanAdjustmentIntent | null {
+): ValidatedPlanAdjustmentIntent | null {
   if (!raw || typeof raw !== 'object') return null
   const value = raw as Record<string, unknown>
+  const currentWorkoutDays = options.currentWorkoutDays
+    ?? Array.from({ length: options.currentDaysPerWeek }, (_, index) => index + 1)
+  const expectedDays = value.expectedCurrentWorkoutDays
+  const bindSchedule = (intent: PlanAdjustmentIntent): ValidatedPlanAdjustmentIntent | null => {
+    if (expectedDays === undefined) return intent
+    if (!Array.isArray(expectedDays)
+      || expectedDays.length !== currentWorkoutDays.length
+      || expectedDays.some((day, index) => day !== currentWorkoutDays[index])) return null
+    return { ...intent, expectedCurrentWorkoutDays: [...currentWorkoutDays] }
+  }
 
   if (
     value.type === 'change_days'
@@ -44,24 +61,38 @@ export function validatePlanAdjustmentIntent(
     && Number(value.daysPerWeek) >= 2
     && Number(value.daysPerWeek) <= 6
   ) {
-    return { type: 'change_days', daysPerWeek: Number(value.daysPerWeek) }
+    const candidate: PlanAdjustmentIntent = {
+      type: 'change_days',
+      daysPerWeek: Number(value.daysPerWeek),
+      ...(value.preferredWorkoutDays !== undefined
+        ? { preferredWorkoutDays: value.preferredWorkoutDays as number[] }
+        : {}),
+    }
+    try {
+      return bindSchedule({
+        ...candidate,
+        preferredWorkoutDays: resolveAdjustmentSchedule(currentWorkoutDays, candidate),
+      })
+    } catch {
+      return null
+    }
   }
 
   if (
     value.type === 'change_duration'
     && [30, 45, 60, 90].includes(Number(value.sessionDurationMinutes))
   ) {
-    return {
+    return bindSchedule({
       type: 'change_duration',
       sessionDurationMinutes: Number(value.sessionDurationMinutes) as 30 | 45 | 60 | 90,
-    }
+    })
   }
 
   if (
     value.type === 'change_intensity'
     && (value.direction === 'easier' || value.direction === 'harder')
   ) {
-    return { type: 'change_intensity', direction: value.direction }
+    return bindSchedule({ type: 'change_intensity', direction: value.direction })
   }
 
   if (value.type === 'equipment_unavailable' && Array.isArray(value.equipment)) {
@@ -72,10 +103,10 @@ export function validatePlanAdjustmentIntent(
     ) {
       return null
     }
-    return {
+    return bindSchedule({
       type: 'equipment_unavailable',
       equipment: uniqueStrings(value.equipment),
-    }
+    })
   }
 
   if (
@@ -83,7 +114,7 @@ export function validatePlanAdjustmentIntent(
     && typeof value.exerciseId === 'string'
     && options.exercises.some(exercise => exercise.id === value.exerciseId)
   ) {
-    return { type: 'replace_exercise', exerciseId: value.exerciseId }
+    return bindSchedule({ type: 'replace_exercise', exerciseId: value.exerciseId })
   }
 
   if (value.type === 'change_cardio_preferences' && Array.isArray(value.cardioPreferences)) {
@@ -94,10 +125,10 @@ export function validatePlanAdjustmentIntent(
     ) {
       return null
     }
-    return {
+    return bindSchedule({
       type: 'change_cardio_preferences',
       cardioPreferences: uniqueStrings(value.cardioPreferences) as CardioModality[],
-    }
+    })
   }
 
   return null

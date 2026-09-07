@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -51,6 +52,16 @@ function finishButton(markup: string): string {
 }
 
 describe('SessionHeader locked completion', () => {
+  it('explicitly hides account access while preserving session controls', () => {
+    const source = readFileSync(new URL('../SessionHeader.tsx', import.meta.url), 'utf8')
+    const html = renderHeader()
+
+    expect(source).toContain('accountSlot="hidden"')
+    expect(html).toContain('aria-label="Volver"')
+    expect(html).toContain('Rutina profesional')
+    expect(html).toContain('Finalizar')
+  })
+
   it('disables finish after partial progress in a locked prescription', () => {
     testState.prescriptionLocked = true
 

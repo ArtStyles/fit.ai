@@ -1,4 +1,6 @@
+import { PlanSwitcher } from '../../PlanSwitcher'
 import { createRoot } from 'react-dom/client'
+import { useEffect, useState } from 'react'
 import '@/styles/globals.css'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import { ToastProvider } from '@/components/feedback/ToastProvider'
@@ -13,6 +15,7 @@ const initialCatalogOptions = Array.from({ length: 24 }, (_, index) => ({
   equipment: [index % 2 === 0 ? 'Barra' : 'Mancuernas'],
   imageUrl: null,
 }))
+let catalogConfirmAttempts = 0
 
 function WorkspaceFixture() {
   const summary = {
@@ -66,16 +69,52 @@ function WorkspaceFixture() {
   />
 }
 
+function LibraryFixture() {
+  const primary = new URLSearchParams(window.location.search).get('primary')
+  return <PlanSwitcher tier="free" t={text => text} plans={[
+    { id: 'personal', name: 'Mi plan personal', goal: null, days_per_week: 3, difficulty: 'beginner', source_type: 'manual', created_at: '', is_active: primary === 'personal', prescription_locked: false },
+    { id: 'professional-a', name: 'Fuerza del entrenador', goal: null, days_per_week: 3, difficulty: 'intermediate', source_type: 'trainer_assigned', created_at: '', is_active: primary === 'professional', prescription_locked: true },
+    { id: 'professional-b', name: 'Movilidad del entrenador', goal: null, days_per_week: 2, difficulty: 'beginner', source_type: 'trainer_assigned', created_at: '', is_active: false, prescription_locked: true },
+  ]} />
+}
+
 function CatalogFixture() {
+  const [open, setOpen] = useState(true)
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      const state = window as Window & { __CATALOG_CLOSE_REQUESTS__?: number }
+      state.__CATALOG_CLOSE_REQUESTS__ = (state.__CATALOG_CLOSE_REQUESTS__ ?? 0) + 1
+    }
+    setOpen(nextOpen)
+  }
+
+  useEffect(() => {
+    (window as Window & { __CATALOG_OPEN__?: boolean }).__CATALOG_OPEN__ = open
+  }, [open])
+
+  async function confirmCatalog(ids: string[]) {
+    catalogConfirmAttempts += 1
+    ;(window as Window & { __CATALOG_ATTEMPTS__?: number }).__CATALOG_ATTEMPTS__ = catalogConfirmAttempts
+    if (new URLSearchParams(window.location.search).get('confirm') === 'retry' && catalogConfirmAttempts === 1) {
+      return false
+    }
+    if (new URLSearchParams(window.location.search).get('confirm') === 'hold') {
+      await new Promise<void>(resolve => {
+        (window as Window & { __RESOLVE_CATALOG_CONFIRM__?: () => void }).__RESOLVE_CATALOG_CONFIRM__ = resolve
+      })
+    }
+    (window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__ = ids
+    return true
+  }
+
   return <ExerciseCatalogDialog
-    open
-    onOpenChange={() => {}}
+    open={open}
+    onOpenChange={handleOpenChange}
     options={initialCatalogOptions}
     selectionMode="multiple"
     paginated
-    onConfirm={ids => {
-      (window as Window & { __CATALOG_SELECTION__?: string[] }).__CATALOG_SELECTION__ = ids
-    }}
+    onConfirm={confirmCatalog}
   />
 }
 
@@ -85,7 +124,7 @@ createRoot(document.getElementById('root')!).render(
   <I18nProvider language="es">
     <ToastProvider>
       <main className="mx-auto max-w-5xl px-4 py-6">
-        {surface === 'catalog' ? <CatalogFixture /> : <WorkspaceFixture />}
+        {surface === 'library' ? <LibraryFixture /> : surface === 'catalog' ? <CatalogFixture /> : <WorkspaceFixture />}
       </main>
     </ToastProvider>
   </I18nProvider>,

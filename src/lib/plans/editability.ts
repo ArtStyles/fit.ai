@@ -19,9 +19,9 @@ export function getPlanCapabilities(plan: PlanEditabilityInput): PlanCapabilitie
       canEdit: false,
       canAdjustWithAi: false,
       canRegenerate: false,
-      canRetire: false,
+      canRetire: true,
       canShare: false,
-      canActivate: false,
+      canActivate: true,
     }
   }
 
@@ -57,4 +57,11 @@ export async function requireEditableOwnedPlan(
   }
 
   return data as { id: string; prescription_locked: boolean }
+}
+
+/** Ownership is required for library selection/removal, independently of prescription editing. */
+export async function requireOwnedPlan(supabase: QueryableSupabase, userId: string, planId: string): Promise<{ id: string; prescription_locked: boolean }> {
+  const { data, error } = await supabase.from('workout_plans').select('id, prescription_locked').eq('id', planId).eq('user_id', userId).maybeSingle()
+  if (error || !data) throw new Error('PLAN_NOT_FOUND')
+  return data
 }

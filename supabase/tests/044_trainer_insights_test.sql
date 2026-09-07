@@ -32,7 +32,7 @@ INSERT INTO public.coaching_consents (relationship_id, scope, text_version, gran
 INSERT INTO public.exercises (id, name) VALUES
   ('f4000000-0000-4000-8000-000000000051', 'Live exercise name');
 INSERT INTO public.measurements (id, user_id, recorded_at, weight_kg, body_fat_percentage, muscle_mass_kg, waist_cm, notes) VALUES
-  ('f4000000-0000-4000-8000-000000000131', 'f4000000-0000-4000-8000-000000000003', '2026-08-08 02:30:00+00', 70.5, 18.2, 31.2, 80, 'PRIVATE_MEASUREMENT_NOTE_MUST_NOT_LEAK');
+  ('f4000000-0000-4000-8000-000000000131', 'f4000000-0000-4000-8000-000000000003', (CURRENT_DATE + TIME '02:30') AT TIME ZONE 'UTC', 70.5, 18.2, 31.2, 80, 'PRIVATE_MEASUREMENT_NOTE_MUST_NOT_LEAK');
 
 SET CONSTRAINTS ALL DEFERRED;
 INSERT INTO public.trainer_plan_assignments (id, relationship_id, trainer_user_id, client_user_id, status, accepted_at, active_version_id) VALUES
@@ -281,7 +281,7 @@ SELECT lives_ok(
 );
 SELECT is(
   (SELECT public.get_coach_client_measurements('f4000000-0000-4000-8000-000000000003', CURRENT_DATE - 30, CURRENT_DATE)->'measurements'->0->>'recordedOn'),
-  '2026-08-07',
+  (CURRENT_DATE - 1)::TEXT,
   'measurement dates use the client local calendar day'
 );
 SELECT ok(

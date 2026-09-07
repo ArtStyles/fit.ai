@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(179);
+SELECT plan(182);
 
 CREATE TEMP TABLE expected_trainer_sensitive_tables (table_name TEXT PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO expected_trainer_sensitive_tables (table_name) VALUES
@@ -114,8 +114,9 @@ SELECT ok(
 SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
-   WHERE namespace.nspname = 'public' AND function.prosecdef),
-  '65281f1de5190b82865b0b5813545830',
+   WHERE namespace.nspname = 'public' AND function.prosecdef
+     AND function.oid <> 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])'::regprocedure),
+  '490c95e92755266b33f972e3faa1b1dc',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -166,6 +167,9 @@ SELECT ok(
   AND has_function_privilege('authenticated', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
   AND has_function_privilege('service_role', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
   AND NOT has_function_privilege('anon', 'public.apply_workout_adjustment_atomic(uuid,jsonb)', 'EXECUTE')
+  AND has_function_privilege('authenticated', 'public.append_trainer_template_exercises(uuid,jsonb)', 'EXECUTE')
+  AND has_function_privilege('service_role', 'public.append_trainer_template_exercises(uuid,jsonb)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.append_trainer_template_exercises(uuid,jsonb)', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.authorize_session_start(uuid,uuid)', 'EXECUTE'),
   'effective function ACLs expose only the reviewed API-role entry points, including inherited anonymous trigger grants'
 );
@@ -176,9 +180,30 @@ SELECT is(
    CROSS JOIN LATERAL aclexplode(COALESCE(function.proacl, acldefault('f', function.proowner))) privilege
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
+     AND function.oid <> 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])'::regprocedure
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  'a26130a18fefc8fd85940d92d8d6eaf8',
+  'dd6587e7ada5d793c8579f05b90b3c06',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
+);
+
+-- Catalog digests include the reviewed 057/058 definer additions. Review the new
+-- reorder boundary explicitly, including inherited default privileges.
+SELECT ok(
+  (SELECT function.prosecdef AND owner.rolname = 'postgres'
+    AND function.proconfig = ARRAY['search_path=""']::text[]
+    AND NOT EXISTS (
+      SELECT 1 FROM aclexplode(COALESCE(function.proacl, acldefault('f', function.proowner))) privilege
+      LEFT JOIN pg_roles grantee ON grantee.oid = privilege.grantee
+      WHERE privilege.grantee <> function.proowner
+        AND (grantee.rolname IS DISTINCT FROM 'authenticated'
+          OR privilege.privilege_type <> 'EXECUTE' OR privilege.is_grantable)
+    )
+   FROM pg_proc function JOIN pg_roles owner ON owner.oid = function.proowner
+   WHERE function.oid = 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])'::regprocedure)
+  AND has_function_privilege('authenticated', 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])', 'EXECUTE')
+  AND NOT has_function_privilege('service_role', 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])', 'EXECUTE'),
+  'atomic reorder is postgres-owned with an empty search path and only authenticated execute'
 );
 
 -- Stable actor matrix. These identifiers are deliberately distinct from every
@@ -411,10 +436,28 @@ SELECT throws_ok($$DELETE FROM public.coaching_relationships WHERE id = '1110000
 SELECT throws_ok($$INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES ('11100000-0000-4000-8000-000000000001','training_profile','forged','a1000000-0000-4000-8000-000000000001')$$, '42501', NULL, 'consent insertion is RPC-only');
 SELECT throws_ok($$UPDATE public.coaching_consents SET text_version = 'forged' WHERE relationship_id = '11100000-0000-4000-8000-000000000001'$$, '42501', NULL, 'consent update is denied');
 SELECT throws_ok($$DELETE FROM public.coaching_consents WHERE relationship_id = '11100000-0000-4000-8000-000000000001'$$, '42501', NULL, 'consent deletion is denied');
+SELECT is(
+  (SELECT changed FROM public.grant_training_profile_consent(
+    '11100000-0000-4000-8000-000000000001',
+    'training-profile-v1',
+    'f5800000-0000-4000-8000-000000000001'
+  )),
+  FALSE,
+  'client_a can idempotently confirm its own active training-profile grant through the RPC'
+);
 RESET ROLE; SELECT set_config('request.jwt.claim.sub', 'a3000000-0000-4000-8000-000000000003', true); SET LOCAL ROLE authenticated;
 SELECT is((SELECT count(*) FROM public.coaching_requests), 3::BIGINT, 'coach_a reads requests addressed to it');
 SELECT is((SELECT count(*) FROM public.coaching_relationships), 2::BIGINT, 'coach_a reads active scoped relationships');
 SELECT is((SELECT count(*) FROM public.coaching_consents), 4::BIGINT, 'coach_a reads active scoped consents');
+SELECT throws_ok(
+  $$SELECT public.grant_training_profile_consent(
+    '11100000-0000-4000-8000-000000000001',
+    'training-profile-v1',
+    'f5800000-0000-4000-8000-000000000002'
+  )$$,
+  'P0001', 'COACHING_RELATIONSHIP_NOT_ACTIVE',
+  'the trainer cannot grant training-profile consent for a client'
+);
 RESET ROLE; SELECT set_config('request.jwt.claim.sub', 'a4000000-0000-4000-8000-000000000004', true); SET LOCAL ROLE authenticated;
 SELECT is((SELECT count(*) FROM public.coaching_requests WHERE client_user_id IN ('a1000000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000002')), 0::BIGINT, 'coach_b cannot read coach_a requests');
 SELECT is((SELECT count(*) FROM public.coaching_relationships WHERE client_user_id IN ('a1000000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000002')), 0::BIGINT, 'coach_b cannot read coach_a relationships');

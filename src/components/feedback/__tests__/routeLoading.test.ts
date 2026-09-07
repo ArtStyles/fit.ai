@@ -74,14 +74,15 @@ describe('route loading skeletons', () => {
     expect(html).toContain('data-loading-slot="notification-activity"')
   })
 
-  it('matches the real dashboard top bar structure without extra right-side chrome', () => {
+  it('uses the real dashboard account trigger without a duplicate avatar skeleton', () => {
     const routeLoading = source('../RouteLoading.tsx')
-
-    expect(routeLoading).toContain('export function DashboardLoading()')
-    expect(routeLoading).toContain('contentClassName="max-w-3xl sm:px-6"')
-    expect(routeLoading).toContain('data-loading-slot="dashboard-avatar-badge"')
-    expect(routeLoading).not.toContain('w-[8.5rem]')
-    expect(routeLoading).not.toContain('rounded-full border border-border/60 bg-card/50 p-1.5 pr-3 shadow-sm')
+    const start = routeLoading.indexOf('export function DashboardLoading')
+    const end = routeLoading.indexOf('export function PlanLoading')
+    const dashboard = routeLoading.slice(start, end)
+    expect(dashboard).toContain('accountSlot="custom"')
+    expect(dashboard).toContain('<AccountWorkspaceMenu surface="dashboard"')
+    expect(dashboard).toContain('data-loading-slot="dashboard-notification"')
+    expect(dashboard).not.toContain('dashboard-avatar-badge')
   })
 
   it('reserves a top-bar action slot in profile loading for the owner settings shortcut', () => {

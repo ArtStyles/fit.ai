@@ -11,7 +11,7 @@ type ExerciseDetail = NonNullable<ExerciseDetailRpc['Returns']['exercise']>
 describe('exercise motion preview database contract', () => {
   it('adds the nullable column and projects it from the detail RPC', () => {
     const migration = readFileSync(
-      new URL('../../../../supabase/migrations/057_exercise_motion_previews.sql', import.meta.url),
+      new URL('../../../../supabase/migrations/062_exercise_motion_previews.sql', import.meta.url),
       'utf8',
     )
 

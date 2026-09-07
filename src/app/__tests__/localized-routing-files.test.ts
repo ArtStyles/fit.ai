@@ -54,7 +54,7 @@ describe('localized public route files', () => {
   it('prefers the forwarded locale over the stored language cookie', () => {
     const rootLayout = source('../layout.tsx')
 
-    expect(rootLayout).toContain("headers().get('x-public-locale') ?? storedLanguage")
-    expect(rootLayout).toContain("cookies().get('fitai-language')")
+    expect(rootLayout).toContain("(await headers()).get('x-public-locale') ?? storedLanguage")
+    expect(rootLayout).toContain("(await cookies()).get('fitai-language')")
   })
 })

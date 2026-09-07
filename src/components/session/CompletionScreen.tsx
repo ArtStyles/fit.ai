@@ -61,6 +61,7 @@ interface Props {
   syncErrorSource: SessionSyncErrorSource
   onSyncEvent: (event: SessionSyncEvent, source?: SessionSyncErrorSource) => void
   onRetryLocalBackup: () => void
+  onEnsureBackup: () => PersistenceResult
   onClearBackup: () => PersistenceResult
 }
 
@@ -71,6 +72,7 @@ export function CompletionScreen({
   syncErrorSource,
   onSyncEvent,
   onRetryLocalBackup,
+  onEnsureBackup,
   onClearBackup,
 }: Props) {
   const router = useRouter()
@@ -119,6 +121,12 @@ export function CompletionScreen({
 
   const doSave = useCallback(async () => {
     if (serverSavedRef.current) return
+    // A server response may be lost. Persist this exact completion before sending it.
+    const backupResult = onEnsureBackup()
+    if (!backupResult.ok) {
+      setSaveError(t('No se pudo respaldar la sesión. Libera espacio y vuelve a intentar.'))
+      return
+    }
     const requestToken = requestGateRef.current.begin()
     if (requestToken === null) return
 
@@ -196,7 +204,7 @@ export function CompletionScreen({
     } finally {
       if (requestGateRef.current.finish(requestToken)) setIsSaving(false)
     }
-  }, [clientSessionId, exercises, finishedAt, moodRating, onClearBackup, onSyncEvent, prescriptionLocked, showToast, startedAt, syncErrorSource, t, workoutId])
+  }, [clientSessionId, exercises, finishedAt, moodRating, onClearBackup, onEnsureBackup, onSyncEvent, prescriptionLocked, showToast, startedAt, syncErrorSource, t, workoutId])
 
   function handleDone() {
     if (!cleanupComplete) return

@@ -83,9 +83,10 @@ async function loadPlanAdjustmentOptions(
       .eq('id', userId)
       .single(),
     (supabase.from('workouts') as any)
-      .select('id')
+      .select('id, day_of_week, order_in_plan')
       .eq('plan_id', planId)
-      .eq('user_id', userId),
+      .eq('user_id', userId)
+      .order('order_in_plan'),
   ])
 
   const profile = profileResult.data as {
@@ -94,7 +95,12 @@ async function loadPlanAdjustmentOptions(
     available_equipment: string[] | null
     cardio_preferences: CardioModality[] | null
   } | null
-  const workoutIds = ((workoutsResult.data ?? []) as Array<{ id: string }>).map(
+  const workoutRows = (workoutsResult.data ?? []) as Array<{
+    id: string
+    day_of_week: number | null
+    order_in_plan: number | null
+  }>
+  const workoutIds = workoutRows.map(
     workout => workout.id,
   )
   const exerciseResult = workoutIds.length > 0
@@ -117,6 +123,7 @@ async function loadPlanAdjustmentOptions(
     availableEquipment: profile?.available_equipment ?? [],
     cardioPreferences: profile?.cardio_preferences ?? ['walking'],
     exercises: Array.from(planExercises.values()),
+    currentWorkoutDays: workoutRows.flatMap(workout => workout.day_of_week == null ? [] : [workout.day_of_week]),
   }
 }
 
@@ -189,9 +196,13 @@ export async function previewStructuredPlanAdjustment(
   if (!intent) return { success: false, error: 'El ajuste seleccionado no es válido.' }
 
   try {
+    const boundIntent = {
+      ...intent,
+      expectedCurrentWorkoutDays: [...(options.currentWorkoutDays ?? [])],
+    }
     const preview = await generatePlan({
       mode: 'plan_adjustment',
-      adjustmentIntent: intent,
+      adjustmentIntent: boundIntent,
       expectedParentPlanId: plan.id,
       previewOnly: true,
     })
@@ -205,7 +216,7 @@ export async function previewStructuredPlanAdjustment(
 
     return {
       success: true,
-      intent,
+      intent: boundIntent,
       preview: {
         daysBefore: diff?.daysBefore ?? 0,
         daysAfter: diff?.daysAfter ?? 0,
@@ -213,6 +224,7 @@ export async function previewStructuredPlanAdjustment(
         exercisesRemovedCount: diff?.exercisesRemoved.length ?? 0,
         changedPrescriptionCount: diff?.changedPrescriptionCount ?? 0,
         warnings: preview.warnings ?? [],
+        workoutDays: preview.workoutDays ?? [],
       },
     }
   } catch (error) {
