@@ -31,6 +31,10 @@ Las pruebas de navegador incluyen formularios, permisos y consentimientos simula
 
 En la comprobación posterior para publicar en `main`, tipos, lint y las 2.515 pruebas unitarias volvieron a pasar. Una ejecución de navegador terminó con 239/240 casos aprobados: `AccountWorkspaceResponsive`, superficie `topbar` a 320 px, agotó la espera de 15 s de la señal de carga del fixture. Sus 40 casos pasaron al repetir el archivo completo sin modificar código ni tiempos de espera; el diagnóstico de Vite no mostró una nueva optimización de dependencias. La causa de esa intermitencia no quedó confirmada, por lo que no se declara corregida.
 
+La primera ejecución tras instalar las nuevas dependencias en `main` detectó otro problema de preparación: Vite invalidaba `lucide-react` durante la carga del editor profesional (`504 Outdated Optimize Dep`) al descubrir tarde `react/jsx-dev-runtime`, `clsx`, `tailwind-merge` y el selector de Radix. Pasaron 198 casos y los 42 del editor quedaron sin ejecutar. Su configuración ahora limita el escaneo al HTML de ese fixture e incluye previamente esas dependencias, sin ampliar tiempos de espera ni cambiar aserciones. La ejecución completa posterior en `main` aprobó **18 archivos y 240 casos**, sin retries, en 389,36 s; también pasó el caso `topbar` citado anteriormente.
+
+La repetición del build en el checkout de `main` quedó bloqueada por `connect EACCES 142.250.113.95:443` al descargar Barlow Condensed y Plus Jakarta Sans desde Google Fonts, tras tres reintentos automáticos. El build aprobado de la tabla corresponde a la carpeta aislada; el código de la aplicación es idéntico y la corrección posterior afecta solo a la preparación de pruebas. No se usaron fuentes simuladas ni se desactivaron comprobaciones para presentar como aprobado el build de `main`.
+
 Regresiones comprobadas antes de corregir:
 
 - Los filtros de usuarios se perdían al recibir `searchParams` como promesa.

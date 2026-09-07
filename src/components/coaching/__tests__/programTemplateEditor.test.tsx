@@ -33,7 +33,14 @@ describe('professional template editor browser interactions', () => {
       appType: 'spa',
       cacheDir: path.join(repoRoot, 'node_modules', '.vite-program-template-test'),
       oxc: { jsx: { runtime: 'automatic' } },
-      optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'lucide-react', '@radix-ui/react-avatar', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu'] },
+      optimizeDeps: {
+        entries: [path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html')],
+        include: [
+          'react', 'react-dom', 'react-dom/client', 'react/jsx-dev-runtime', 'lucide-react',
+          '@radix-ui/react-avatar', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu',
+          '@radix-ui/react-select', 'clsx', 'tailwind-merge',
+        ],
+      },
       resolve: {
         dedupe: ['react', 'react-dom'],
         alias: [
