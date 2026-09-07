@@ -1,0 +1,394 @@
+-- phase: fixtures
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+  ('59000000-0000-4000-8000-000000000001', 'single-pending-trainer@example.test', '{}'::JSONB),
+  ('59000000-0000-4000-8000-000000000002', 'single-pending-client@example.test', '{}'::JSONB);
+INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, account_status) VALUES
+  ('59000000-0000-4000-8000-000000000001', 'Single pending trainer', 'https://example.test/single-pending-trainer.webp', TRUE, 'active'),
+  ('59000000-0000-4000-8000-000000000002', 'Single pending client', 'https://example.test/single-pending-client.webp', TRUE, 'active');
+INSERT INTO public.trainer_applications (id, user_id, status, decided_at) VALUES
+  ('59000000-0000-4000-8000-000000000011', '59000000-0000-4000-8000-000000000001', 'approved', NOW());
+INSERT INTO public.trainer_profiles (
+  id, user_id, source_application_id, slug, status, professional_name, bio, experience_summary
+) VALUES (
+  '59000000-0000-4000-8000-000000000021',
+  '59000000-0000-4000-8000-000000000001',
+  '59000000-0000-4000-8000-000000000011',
+  'single-pending-trainer',
+  'active',
+  'Single pending trainer',
+  'Single pending proposal coverage',
+  'Migration 059 evidence'
+);
+INSERT INTO public.trainer_service_offerings (
+  id, trainer_profile_id, name, modality, duration_minutes
+) VALUES (
+  '59000000-0000-4000-8000-000000000031',
+  '59000000-0000-4000-8000-000000000021',
+  'Single pending service',
+  'online',
+  60
+);
+INSERT INTO public.coaching_relationships (
+  id, service_id, trainer_user_id, client_user_id, status
+) VALUES (
+  '59000000-0000-4000-8000-000000000041',
+  '59000000-0000-4000-8000-000000000031',
+  '59000000-0000-4000-8000-000000000001',
+  '59000000-0000-4000-8000-000000000002',
+  'active'
+);
+INSERT INTO public.coaching_consents (relationship_id, scope, text_version, granted_by) VALUES (
+  '59000000-0000-4000-8000-000000000041',
+  'training_profile',
+  'training-profile-v1',
+  '59000000-0000-4000-8000-000000000002'
+);
+INSERT INTO public.exercises (id, name) VALUES (
+  '59000000-0000-4000-8000-000000000051',
+  'Single pending squat'
+);
+INSERT INTO public.trainer_program_templates (
+  id, trainer_user_id, name, days_per_week, status
+) VALUES (
+  '59000000-0000-4000-8000-000000000061',
+  '59000000-0000-4000-8000-000000000001',
+  'Single pending template',
+  1,
+  'active'
+);
+INSERT INTO public.trainer_template_workouts (
+  id, template_id, name, day_of_week, order_in_plan
+) VALUES (
+  '59000000-0000-4000-8000-000000000071',
+  '59000000-0000-4000-8000-000000000061',
+  'Single pending day',
+  1,
+  1
+);
+INSERT INTO public.trainer_template_exercises (
+  id, template_workout_id, exercise_id, order_index, sets, reps, rest_seconds
+) VALUES (
+  '59000000-0000-4000-8000-000000000081',
+  '59000000-0000-4000-8000-000000000071',
+  '59000000-0000-4000-8000-000000000051',
+  1,
+  3,
+  8,
+  60
+);
+
+INSERT INTO auth.users (id,email) VALUES ('59000000-0000-4000-8000-000000000003','other-client@example.test');
+INSERT INTO public.profiles (id,full_name,account_status,onboarding_done) VALUES ('59000000-0000-4000-8000-000000000003','Other client','active',true);
+INSERT INTO public.coaching_relationships (id,service_id,trainer_user_id,client_user_id,status)
+SELECT '59000000-0000-4000-8000-000000000042',service_id,trainer_user_id,'59000000-0000-4000-8000-000000000003','active'
+FROM public.coaching_relationships WHERE id='59000000-0000-4000-8000-000000000041';
+INSERT INTO public.coaching_consents (relationship_id,scope,text_version,granted_by)
+VALUES ('59000000-0000-4000-8000-000000000042','training_profile','training-profile-v1','59000000-0000-4000-8000-000000000003');
+INSERT INTO public.trainer_program_templates (id,trainer_user_id,name,days_per_week,status)
+SELECT id,'59000000-0000-4000-8000-000000000001','Same display name',1,'active' FROM unnest(ARRAY[
+'59000000-0000-4000-8000-000000000062'::uuid,'59000000-0000-4000-8000-000000000063'::uuid,'59000000-0000-4000-8000-000000000064'::uuid]) id;
+INSERT INTO public.trainer_template_workouts (id,template_id,name,day_of_week,order_in_plan) VALUES
+('59000000-0000-4000-8000-000000000072','59000000-0000-4000-8000-000000000062','Second day',1,1),
+('59000000-0000-4000-8000-000000000073','59000000-0000-4000-8000-000000000063','Third day',1,1);
+INSERT INTO public.trainer_template_exercises (template_workout_id,exercise_id,order_index,sets,reps,rest_seconds)
+SELECT id,'59000000-0000-4000-8000-000000000051',1,3,8,60 FROM public.trainer_template_workouts
+WHERE id IN ('59000000-0000-4000-8000-000000000072','59000000-0000-4000-8000-000000000073');
+UPDATE public.trainer_template_workouts SET day_of_week=extract(isodow from now() at time zone 'America/Havana')::int;
+INSERT INTO public.workout_plans (id,user_id,name,days_per_week,is_active,source_type,family_id,library_slot)
+VALUES ('59000000-0000-4000-8000-000000000091','59000000-0000-4000-8000-000000000002','Personal',1,true,'manual','59000000-0000-4000-8000-000000000091','personal');
+
+-- phase: baseline
+BEGIN;
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT * FROM public.propose_trainer_assignment('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000061',NULL,'direct-assignment-test');
+ROLLBACK;
+
+-- phase: legacy
+BEGIN;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT * FROM public.propose_trainer_assignment('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000061',NULL,'legacy-valid');
+RESET ROLE;
+UPDATE public.trainer_plan_assignments SET status='frozen' WHERE proposal_idempotency_key='legacy-valid';
+SET LOCAL ROLE authenticated;
+SELECT * FROM public.propose_trainer_assignment('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000061',NULL,'legacy-duplicate');
+SELECT * FROM public.propose_trainer_assignment('59000000-0000-4000-8000-000000000042','59000000-0000-4000-8000-000000000061',NULL,'legacy-invalid');
+RESET ROLE;
+UPDATE public.trainer_plan_assignments SET status='frozen' WHERE proposal_idempotency_key='legacy-invalid';
+SET LOCAL ROLE authenticated;
+SELECT * FROM public.propose_trainer_assignment('59000000-0000-4000-8000-000000000042','59000000-0000-4000-8000-000000000062',NULL,'legacy-cancelled');
+RESET ROLE;
+UPDATE public.trainer_plan_assignments SET status='cancelled' WHERE proposal_idempotency_key='legacy-cancelled';
+UPDATE public.trainer_plan_assignments SET status='proposed' WHERE proposal_idempotency_key='legacy-invalid';
+UPDATE public.trainer_plan_assignments SET status='proposed',created_at=now()-interval '1 day' WHERE proposal_idempotency_key='legacy-valid';
+UPDATE public.coaching_consents SET revoked_at=now(),revoked_by='59000000-0000-4000-8000-000000000003' WHERE relationship_id='59000000-0000-4000-8000-000000000042';
+COMMIT;
+
+-- phase: behavior
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
+SET search_path=public,extensions;
+SELECT no_plan();
+SELECT is((SELECT status FROM trainer_plan_assignments WHERE proposal_idempotency_key='legacy-valid'),'active','valid pending proposal becomes available');
+SELECT is((SELECT status FROM trainer_plan_assignments WHERE proposal_idempotency_key='legacy-duplicate'),'cancelled','duplicate pending proposal closes without deleting evidence');
+SELECT is((SELECT status FROM trainer_plan_assignments WHERE proposal_idempotency_key='legacy-invalid'),'cancelled','pending proposal without consent closes');
+SELECT ok((SELECT p.retired_at IS NOT NULL FROM trainer_plan_assignments a JOIN trainer_assignment_versions v ON v.assignment_id=a.id JOIN workout_plans p ON p.id=v.materialized_plan_id WHERE a.proposal_idempotency_key='legacy-cancelled'),'historical cancelled proposal cannot leak into available library');
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE accepted_at IS NOT NULL OR acceptance_idempotency_key IS NOT NULL),0,'migration records no fake acceptance');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),1,'migration preserves principal plan');
+SELECT ok((SELECT is_active FROM workout_plans WHERE id='59000000-0000-4000-8000-000000000091'),'personal plan remains principal');
+SELECT a.id AS first_assignment,v.id AS first_version,v.materialized_plan_id AS first_plan FROM trainer_plan_assignments a JOIN trainer_assignment_versions v ON v.id=a.active_version_id WHERE a.proposal_idempotency_key='legacy-valid' \gset
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT is(session_user::text,'authenticator','API session identity is authenticator');
+SELECT is(current_user::text,'authenticated','API effective role is authenticated');
+SELECT is(public.trainer_security_preflight(),60,'professional security preflight includes direct assignment');
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000064',NULL,'incomplete')$$,'P0001','TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE','incomplete template is atomic rejection');
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000042','59000000-0000-4000-8000-000000000062',NULL,'no-consent')$$,'P0001','TRAINER_ASSIGNMENT_CONSENT_REQUIRED','missing consent rejects assignment');
+SELECT assignment_id AS second_assignment,assignment_version_id AS second_version,workout_plan_id AS second_plan FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'second-template') \gset
+SELECT is((SELECT assignment_id FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'second-template')),:'second_assignment'::uuid,'same request returns original assignment');
+SELECT is((SELECT assignment_id FROM propose_trainer_assignment('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'second-request')),:'second_assignment'::uuid,'old proposal entry point deduplicates retained template');
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000061',NULL,'second-template')$$,'P0001','TRAINER_ASSIGNMENT_IDEMPOTENCY_MISMATCH','idempotency key cannot target a different template');
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000042','59000000-0000-4000-8000-000000000062',NULL,'second-template')$$,'P0001','TRAINER_ASSIGNMENT_IDEMPOTENCY_MISMATCH','idempotency key cannot target a different recipient');
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE status='active'),2,'different templates coexist');
+SELECT is(jsonb_array_length(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'versions'),0,'unselected available routines do not create missed-workout denominators');
+SELECT ok((get_coach_clients_summary()->'clients'->0->>'activeAssignmentVersionId') IS NULL,'summary has no arbitrary primary assignment');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000003',true);
+SELECT throws_ok(format('SELECT remove_trainer_assignment(%L)',:'first_plan'),'P0001','PLAN_NOT_FOUND','another client cannot remove plan');
+SELECT throws_ok(format('SELECT activate_plan_version(%L)',:'first_plan'),'P0001','PLAN_NOT_FOUND','another client cannot select plan');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT ok(NOT (SELECT is_active FROM workout_plans WHERE id=:'second_plan'),'assignment never selects itself');
+SELECT is((SELECT workout_plan_id FROM accept_trainer_assignment(:'first_assignment','obsolete-accept')),:'first_plan'::uuid,'obsolete acceptance safely returns existing available plan');
+SELECT ok((SELECT is_active FROM workout_plans WHERE id='59000000-0000-4000-8000-000000000091'),'obsolete acceptance does not change principal');
+SELECT set_config('app.trainer_prescription_mutation','authorized',true);
+SELECT set_config('app.plan_lifecycle_actor','59000000-0000-4000-8000-000000000002',true);
+SELECT throws_ok(format('UPDATE workout_plans SET name=''forged'' WHERE id=%L',:'first_plan'),'P0001','TRAINER_PRESCRIPTION_LOCKED','forged prescription flag cannot edit professional plan');
+SELECT throws_ok(format('UPDATE workout_plans SET is_active=true WHERE id=%L',:'first_plan'),'P0001','TRAINER_PRESCRIPTION_LOCKED','forged lifecycle flag cannot select professional plan directly');
+SELECT throws_ok(format('DELETE FROM workout_plans WHERE id=%L',:'first_plan'),'P0001','TRAINER_PRESCRIPTION_LOCKED','raw delete cannot destroy professional history');
+SELECT is(activate_plan_version(:'first_plan'),:'first_plan'::uuid,'client selects professional plan');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),1,'exactly one principal after professional selection');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT is(jsonb_array_length(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'versions'),1,'selected assignment alone supplies insight schedule');
+SELECT is((get_coach_clients_summary()->'clients'->0->>'activeAssignmentVersionId')::uuid,:'first_version'::uuid,'summary primary version follows client selection');
+SELECT is(jsonb_array_length(get_coach_clients_summary()->'clients'->0->'adherenceInput'->'versions'),1,'summary excludes unselected assignments from adherence denominator');
+SELECT throws_ok(format('SELECT * FROM publish_trainer_assignment_revision(%L,%L,''Duplicate source'',''duplicate-revision'')',:'first_assignment','59000000-0000-4000-8000-000000000062'),'P0001','TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED','revision cannot collide with another retained template');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT id AS first_workout FROM workouts WHERE plan_id=:'first_plan' \gset
+SELECT authorize_session_start('59000000-0000-4000-8000-000000000095',:'first_workout') AS saved_context \gset
+SELECT is(activate_plan_version('59000000-0000-4000-8000-000000000091'),'59000000-0000-4000-8000-000000000091'::uuid,'client can return to personal plan');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT assignment_version_id AS revised_version,workout_plan_id AS revised_plan FROM publish_trainer_assignment_revision(:'first_assignment','59000000-0000-4000-8000-000000000061','Future revision','revision-1') \gset
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT ok((SELECT is_active FROM workout_plans WHERE id='59000000-0000-4000-8000-000000000091'),'revision of unselected routine preserves personal choice');
+SELECT ok((SELECT superseded_at IS NOT NULL AND NOT is_active FROM workout_plans WHERE id=:'first_plan'),'revision supersedes its own prior version');
+SELECT is(authorize_session_start('59000000-0000-4000-8000-000000000095',:'first_workout'),:'saved_context'::jsonb,'authorized session retains original snapshot across revision');
+SELECT is(activate_plan_version(:'revised_plan'),:'revised_plan'::uuid,'client selects revised plan');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT assignment_version_id AS current_version,workout_plan_id AS current_plan FROM publish_trainer_assignment_revision(:'first_assignment','59000000-0000-4000-8000-000000000061','Selected revision','revision-2') \gset
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT ok((SELECT is_active FROM workout_plans WHERE id=:'current_plan'),'revision transfers own principal choice');
+SELECT throws_ok(format('SELECT activate_plan_version(%L)',:'revised_plan'),'P0001','PLAN_VERSION_SUPERSEDED','superseded version cannot be selected');
+SELECT is(remove_trainer_assignment(:'first_plan'),:'first_plan'::uuid,'removing any version closes the entire assignment');
+SELECT is(remove_trainer_assignment(:'first_plan'),:'first_plan'::uuid,'removal is idempotent');
+SELECT is((SELECT status FROM trainer_plan_assignments WHERE id=:'first_assignment'),'cancelled','removal cancels assignment');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE trainer_assignment_id=:'first_assignment' AND retired_at IS NULL),0,'all assignment versions retire');
+SELECT is((SELECT count(*)::int FROM trainer_assignment_versions WHERE assignment_id=:'first_assignment'),3,'all versions retained');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),1,'removal of principal chooses another available plan');
+SELECT is(authorize_session_start('59000000-0000-4000-8000-000000000095',:'first_workout'),:'saved_context'::jsonb,'already authorized session remains historical after removal');
+SELECT lives_ok(format('SELECT * FROM save_session_log_atomic_v3(''59000000-0000-4000-8000-000000000095'',%L,now(),30,4,%L::jsonb,%L::jsonb)',:'first_workout','[{"exercise_id":"59000000-0000-4000-8000-000000000051","sets_completed":3,"reps_completed":[8,8,8],"weights_kg":[20,20,20],"rpe_values":[7,7,7],"skip_reason":null}]','{"version":1,"prs":[],"progressions":[]}'),'session started before removal can finish with original prescription');
+SELECT is((SELECT count(*)::int FROM progress_logs WHERE client_session_id='59000000-0000-4000-8000-000000000095'),1,'completed session retained after assignment removal');
+SELECT throws_ok(format('SELECT activate_plan_version(%L)',:'current_plan'),'P0001','PLAN_VERSION_RETIRED','removed plan cannot be reactivated');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT is(jsonb_array_length(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'sessions'),1,'coach retains removed assignment session evidence while consent is active');
+SELECT ok(get_coach_clients_summary()->'clients'->0->>'lastProfessionalEvidenceAt' IS NOT NULL,'summary retains evidence timestamp from removed assignment');
+SELECT is((SELECT workout_plan_id FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000061',NULL,'legacy-valid')),:'first_plan'::uuid,'old assignment retry returns historical copy without resurrection');
+SELECT throws_ok(format('SELECT * FROM publish_trainer_assignment_revision(%L,%L,''forbidden'',''removed-revision'')',:'first_assignment','59000000-0000-4000-8000-000000000061'),'P0001','TRAINER_ASSIGNMENT_NOT_ACTIVE','removed assignment cannot be revised');
+SELECT assignment_id AS reassigned,workout_plan_id AS reassigned_plan FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000061',NULL,'reassign-new-request') \gset
+SELECT isnt(:'reassigned'::uuid,:'first_assignment'::uuid,'fresh request after removal creates a new assignment');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT throws_ok(format('SELECT * FROM accept_trainer_assignment(%L,''obsolete-retry'')',:'first_assignment'),'P0001','TRAINER_ASSIGNMENT_NOT_AVAILABLE','old acceptance cannot resurrect removed routine');
+SELECT activate_plan_version('59000000-0000-4000-8000-000000000091');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+UPDATE coaching_relationships SET status='paused_by_platform',paused_at=now() WHERE id='59000000-0000-4000-8000-000000000041';
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE status='frozen'),2,'pause freezes every retained assignment');
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT is(activate_plan_version(:'second_plan'),:'second_plan'::uuid,'client can use frozen retained routine');
+SELECT activate_plan_version('59000000-0000-4000-8000-000000000091');
+SELECT * FROM resume_paused_coaching_relationship('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000096');
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE status='active'),2,'resume restores all retained assignments');
+SELECT ok((SELECT is_active FROM workout_plans WHERE id='59000000-0000-4000-8000-000000000091'),'resume preserves principal choice');
+SELECT is((SELECT status FROM trainer_plan_assignments WHERE id=:'first_assignment'),'cancelled','resume leaves removed assignment cancelled');
+SELECT * FROM end_coaching_relationship('59000000-0000-4000-8000-000000000041',NULL,'59000000-0000-4000-8000-000000000097');
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE status='frozen'),2,'ending relationship freezes all retained routines');
+SELECT ok((SELECT is_active FROM workout_plans WHERE id='59000000-0000-4000-8000-000000000091'),'ending relationship preserves principal choice');
+SELECT remove_trainer_assignment(:'second_plan');
+SELECT remove_trainer_assignment(:'reassigned_plan');
+SELECT retire_plan_family('59000000-0000-4000-8000-000000000091');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),0,'removing all plans leaves no principal');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+-- Restore the fictional relationship solely to exercise independent race requests.
+UPDATE coaching_relationships SET status='active',ended_at=NULL,ended_by=NULL,end_reason=NULL WHERE id='59000000-0000-4000-8000-000000000041';
+INSERT INTO coaching_consents (relationship_id,scope,text_version,granted_by) VALUES ('59000000-0000-4000-8000-000000000041','training_profile','training-profile-v1','59000000-0000-4000-8000-000000000002');
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT is((SELECT workout_plan_id FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'second-request')),:'second_plan'::uuid,'alternate deduplicated key remains historical after removal');
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE status='active'),0,'alternate key retry cannot resurrect cancelled assignment');
+SELECT throws_ok('SELECT * FROM private.trainer_assignment_requests','42501',NULL,'authenticated cannot access request ledger');
+SELECT workout_plan_id AS last_plan FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'last-plan-request') \gset
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),0,'first professional library copy still requires explicit selection');
+SELECT activate_plan_version(:'last_plan');
+SELECT remove_trainer_assignment(:'last_plan');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),0,'removing the last professional principal leaves no principal');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT * FROM finish();
+COMMIT;
+
+-- phase: permissions
+BEGIN;
+SET search_path=public,extensions;
+SELECT no_plan();
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT set_config('app.plan_lifecycle_actor','59000000-0000-4000-8000-000000000002',true);
+SELECT set_config('app.trainer_prescription_mutation','authorized',true);
+SELECT throws_ok($$INSERT INTO workout_plans(user_id,name,days_per_week,source_type,family_id,library_slot) VALUES('59000000-0000-4000-8000-000000000002','Forged',1,'manual',gen_random_uuid(),'personal')$$,'P0001','PLAN_DIRECT_LIFECYCLE_MUTATION_FORBIDDEN','trainer cannot forge authority by setting lifecycle flags');
+SELECT throws_ok($$INSERT INTO trainer_plan_assignments(relationship_id,trainer_user_id,client_user_id,status) VALUES('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000001','59000000-0000-4000-8000-000000000002','active')$$,'42501',NULL,'trainer cannot bypass assignment RPC by direct insert');
+SELECT assignment_id AS permission_assignment,workout_plan_id AS permission_plan FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'permission-fixture') \gset
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000003',true);
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000063',NULL,'foreign-trainer')$$,'P0001','COACHING_RELATIONSHIP_NOT_ACTIVE','another user cannot assign to someone else relationship');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT set_config('app.plan_lifecycle_actor','59000000-0000-4000-8000-000000000002',true);
+INSERT INTO workout_plans(user_id,name,days_per_week,source_type,family_id,library_slot) VALUES
+('59000000-0000-4000-8000-000000000002','Personal one',1,'manual',gen_random_uuid(),'personal'),
+('59000000-0000-4000-8000-000000000002','Personal two',1,'manual',gen_random_uuid(),'personal');
+SELECT throws_ok($$INSERT INTO workout_plans(user_id,name,days_per_week,source_type,family_id,library_slot) VALUES('59000000-0000-4000-8000-000000000002','Excess family',1,'manual',gen_random_uuid(),'personal')$$,'P0001','PLAN_FAMILY_LIMIT: free plan family limit reached','personal family limit survives trigger ownership repair');
+SELECT is(activate_plan_version(:'permission_plan'),:'permission_plan'::uuid,'professional selection works with full personal library');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT set_config('request.jwt.claim.sub','',true);
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE coaching_consents SET revoked_at=now(),revoked_by='59000000-0000-4000-8000-000000000002' WHERE relationship_id='59000000-0000-4000-8000-000000000041' AND revoked_at IS NULL;
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT throws_ok(format('SELECT * FROM publish_trainer_assignment_revision(%L,%L,''No consent'',''new-revision'')',:'permission_assignment','59000000-0000-4000-8000-000000000062'),'P0001','TRAINER_ASSIGNMENT_CONSENT_REQUIRED','revoked consent prevents a new revision');
+SELECT throws_ok($$SELECT get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)$$,'P0001','COACH_CLIENT_INSIGHTS_UNAVAILABLE','revoked consent hides historical professional evidence');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT set_config('request.jwt.claim.sub','',true);
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE profiles SET account_status='suspended' WHERE id='59000000-0000-4000-8000-000000000002';
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT throws_ok(format('SELECT activate_plan_version(%L)',:'permission_plan'),'P0001','PLAN_ACCOUNT_INACTIVE','inactive client cannot select a plan');
+SELECT throws_ok(format('SELECT remove_trainer_assignment(%L)',:'permission_plan'),'P0001','PLAN_ACCOUNT_INACTIVE','inactive client cannot mutate library');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000063',NULL,'inactive-client')$$,'P0001','TRAINER_ASSIGNMENT_CLIENT_INACTIVE','inactive client cannot receive new routines');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE profiles SET account_status='active' WHERE id='59000000-0000-4000-8000-000000000002';
+UPDATE trainer_profiles SET status='suspended' WHERE user_id='59000000-0000-4000-8000-000000000001';
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000063',NULL,'inactive-trainer')$$,'P0001','TRAINER_ASSIGNMENT_TRAINER_INACTIVE','inactive professional cannot assign routines');
+SET LOCAL ROLE anon;
+SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000063',NULL,'anon')$$,'42501',NULL,'anonymous cannot execute direct assignment');
+SELECT throws_ok(format('SELECT remove_trainer_assignment(%L)',:'permission_plan'),'42501',NULL,'anonymous cannot execute removal');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+ALTER FUNCTION public.assign_trainer_program(uuid,uuid,text,text) SECURITY INVOKER;
+SELECT throws_ok('SELECT trainer_security_preflight()','P0001','TRAINER_SECURITY_PREFLIGHT_FAILED','preflight rejects assignment function without trusted execution');
+ALTER FUNCTION public.assign_trainer_program(uuid,uuid,text,text) SECURITY DEFINER;
+GRANT SELECT ON private.trainer_assignment_requests TO authenticated;
+SELECT throws_ok('SELECT trainer_security_preflight()','P0001','TRAINER_SECURITY_PREFLIGHT_FAILED','preflight rejects request ledger exposure');
+REVOKE SELECT ON private.trainer_assignment_requests FROM authenticated;
+GRANT SELECT ON private.trainer_plan_selection_periods TO authenticated;
+SELECT throws_ok('SELECT trainer_security_preflight()','P0001','TRAINER_SECURITY_PREFLIGHT_FAILED','preflight rejects selection ledger exposure');
+SELECT * FROM finish();
+ROLLBACK;
+
+-- phase: selection
+BEGIN;
+SET search_path=public,extensions;
+SELECT no_plan();
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT assignment_id AS delayed_assignment,assignment_version_id AS delayed_version,workout_plan_id AS delayed_plan FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000061',NULL,'delayed-selection') \gset
+SELECT assignment_version_id AS other_version,workout_plan_id AS other_plan FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'other-selection') \gset
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+-- Fictional older availability: assignment precedes first selection by four days.
+UPDATE trainer_assignment_versions SET effective_from=now()-interval '4 days' WHERE id=:'delayed_version';
+SELECT clock_timestamp() AS selection_boundary \gset
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT activate_plan_version(:'delayed_plan');
+SELECT activate_plan_version(:'delayed_plan');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT ok((SELECT bool_and((schedule_window->>'effectiveFrom')::timestamptz >= :'selection_boundary'::timestamptz) FROM jsonb_array_elements(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'versions') schedule_window WHERE schedule_window->>'id'=:'delayed_version'),'days available before first selection are not prescribed');
+SELECT is((SELECT count(*)::int FROM jsonb_array_elements(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'versions') schedule_window WHERE schedule_window->>'id'=:'delayed_version'),1,'selecting the same principal is idempotent for schedule history');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT activate_plan_version(:'other_plan');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT ok((SELECT bool_and(schedule_window->>'effectiveTo' IS NOT NULL) FROM jsonb_array_elements(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'versions') schedule_window WHERE schedule_window->>'id'=:'delayed_version'),'switching to another retained routine closes previous schedule window');
+SELECT ok((SELECT bool_and((schedule_window->>'effectiveFrom')::timestamptz >= :'selection_boundary'::timestamptz) FROM jsonb_array_elements(get_coach_clients_summary()->'clients'->0->'adherenceInput'->'versions') schedule_window WHERE schedule_window->>'id'=:'other_version'),'newly selected routine starts its own schedule window');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT activate_plan_version(:'delayed_plan');
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT is((SELECT count(*)::int FROM jsonb_array_elements(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'versions') schedule_window WHERE schedule_window->>'id'=:'delayed_version'),2,'reselecting a routine retains distinct schedule windows');
+SELECT is((SELECT sum(jsonb_array_length(schedule_window->'workouts'))::int FROM jsonb_array_elements(get_coach_clients_summary()->'clients'->0->'adherenceInput'->'versions') schedule_window WHERE schedule_window->>'id'=:'delayed_version'),1,'multiple windows do not duplicate summary workouts');
+SELECT is(jsonb_array_length(get_coach_client_insights('59000000-0000-4000-8000-000000000002',current_date-7,current_date)->'sessions'),1,'historical completed sessions survive subsequent principal switches');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT * FROM finish();
+ROLLBACK;
+
+-- phase: race
+BEGIN;
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000063',NULL,'RACE_KEY');
+SELECT pg_sleep(0.2);
+COMMIT;
+
+-- phase: race_verify
+SET search_path=public,extensions;
+SELECT no_plan();
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE source_template_id='59000000-0000-4000-8000-000000000063' AND status='active'),1,'concurrent distinct requests retain one template copy');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE trainer_assignment_id IN (SELECT id FROM trainer_plan_assignments WHERE source_template_id='59000000-0000-4000-8000-000000000063')),1,'race does not create orphan copies');
+SELECT * FROM finish();
+
+-- phase: rerun_verify
+SET search_path=public,extensions;
+SELECT no_plan();
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE status='active'),1,'migration rerun preserves retained assignment');
+SELECT is((SELECT count(*)::int FROM trainer_assignment_versions WHERE assignment_id=(SELECT id FROM trainer_plan_assignments WHERE proposal_idempotency_key='legacy-valid')),3,'migration rerun retains removed revision history');
+SELECT is((SELECT status FROM trainer_plan_assignments WHERE proposal_idempotency_key='legacy-valid'),'cancelled','migration rerun does not resurrect removed assignment');
+SELECT is((SELECT count(*)::int FROM session_authorizations WHERE client_session_id='59000000-0000-4000-8000-000000000095'),1,'migration rerun retains authorized session history');
+SELECT is((SELECT count(*)::int FROM progress_logs WHERE client_session_id='59000000-0000-4000-8000-000000000095'),1,'migration rerun retains completed session history');
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE accepted_at IS NOT NULL),0,'no migration or obsolete client call invents acceptance');
+SELECT * FROM finish();

@@ -9,7 +9,7 @@ Durante esta etapa:
 - `COMMUNITY_ENABLED` debe permanecer en `false`.
 - Los servicios son gratuitos; precio, moneda, intervalo, checkout y claves de pago no se muestran ni se configuran.
 - No existen chat privado ni reseñas del marketplace. La entrevista se coordina por el contacto externo declarado en la solicitud y visible solo para administración.
-- Las rutinas profesionales aceptadas son inmutables para el cliente; el cliente solo puede ejecutarlas. Los cambios llegan como una nueva revisión del entrenador.
+- Las rutinas profesionales asignadas llegan a la biblioteca sin cambiar la principal. El cliente puede elegirlas y retirarlas; la prescripción de ejercicios permanece bloqueada. Los cambios llegan como una nueva revisión del entrenador. La migración y su verificación están en [asignación directa](trainer-direct-assignment-migration.md).
 - Los planes comerciales futuros permanecen ocultos hasta integrar y aprobar la pasarela de pago.
 
 ## Responsables y evidencia

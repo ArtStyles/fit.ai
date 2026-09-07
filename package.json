@@ -24,6 +24,7 @@
     "test:db:verification": "node scripts/test-trainer-verification-db.mjs",
     "test:db:relationships": "node scripts/test-trainer-relationships-db.mjs",
     "test:db:programming": "node scripts/test-trainer-programming-db.mjs",
+    "test:db:direct-assignment": "node scripts/test-trainer-direct-assignment-db.mjs",
     "test:db:insights": "node scripts/test-trainer-programming-db.mjs",
     "test:db:trainers": "node scripts/test-trainer-programming-db.mjs --authorization",
     "test:db:trainer-security": "node scripts/test-trainer-security-db.mjs",
