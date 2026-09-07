@@ -34,6 +34,7 @@ CREATE SCHEMA private;
 CREATE SCHEMA IF NOT EXISTS public;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated, service_role;
 
 
 --

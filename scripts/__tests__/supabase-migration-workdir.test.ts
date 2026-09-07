@@ -78,6 +78,33 @@ describe('supabase migration workdir contract', () => {
     }
   })
 
+  it('clears managed function defaults before replaying public functions and restores application defaults', () => {
+    const baseline = readFileSync(
+      new URL('../../infra/supabase/migrations/20260906233340_remote_schema_baseline.sql', import.meta.url),
+      'utf8',
+    )
+    const schemaPosition = baseline.indexOf('CREATE SCHEMA IF NOT EXISTS public;')
+    const tableRevokePosition = baseline.indexOf(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated, service_role;',
+    )
+    const functionRevokePosition = baseline.indexOf(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated, service_role;',
+    )
+    const firstPublicFunctionPosition = baseline.indexOf('CREATE FUNCTION public.')
+    const lastPublicFunctionPosition = baseline.lastIndexOf('CREATE FUNCTION public.')
+
+    expect(schemaPosition).toBeGreaterThanOrEqual(0)
+    expect(functionRevokePosition).toBeGreaterThan(schemaPosition)
+    expect(functionRevokePosition).toBeGreaterThan(tableRevokePosition)
+    expect(functionRevokePosition).toBeLessThan(firstPublicFunctionPosition)
+
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      expect(baseline.indexOf(
+        `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO ${role};`,
+      )).toBeGreaterThan(lastPublicFunctionPosition)
+    }
+  })
+
   it.each(['20260906010101_rollback_profiles.sql', '20260906010101_reset_profiles.sql', '20260906010101_test_accounts.sql'])(
     'rejects forbidden migration name %s',
     fileName => {
