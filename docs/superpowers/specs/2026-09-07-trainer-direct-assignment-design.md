@@ -10,6 +10,7 @@ Diseño aprobado en la conversación: el entrenador asigna una rutina directamen
 - Reintentar la misma solicitud devuelve el mismo resultado. Eliminar y volver a asignar usa una nueva solicitud y crea una copia nueva. Un reintento antiguo no resucita una rutina eliminada.
 - Eliminar significa retirar de la biblioteca, cerrar la asignación y conservar versiones, entrenamientos y pruebas históricas. Si era la principal se selecciona otra disponible, si existe; si no existe queda sin principal.
 - El cliente puede elegir y cambiar entre planes personales y profesionales. La prescripción profesional sigue bloqueada para editar ejercicios; ese bloqueo no bloquea la biblioteca ni la eliminación.
+- Crear un plan personal nuevo, manual o generado, crea una familia independiente incluso si la principal es profesional. Elegir activar ese nuevo plan conserva la copia del entrenador; regenerar o ajustar su prescripción continúa prohibido.
 - Una revisión del entrenador conserva si esa rutina era principal. No debe apropiarse de la selección de otra rutina.
 - El seguimiento de cumplimiento cuenta la programación solo durante los periodos en que el cliente eligió usar la rutina; recibirla y guardarla sin usar no genera incumplimientos. Cambiar de rutina no borra sesiones ya completadas.
 - Pausar/finalizar/reactivar acompañamiento debe manejar varias asignaciones y conservar la selección del cliente. La cancelación por eliminación impide futuras revisiones sobre esa asignación.
