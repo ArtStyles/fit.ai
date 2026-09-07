@@ -1,12 +1,18 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const spawnSyncMock = vi.hoisted(() => vi.fn(() => ({ status: 0 })))
+
+vi.mock('node:child_process', () => ({ spawnSync: spawnSyncMock }))
+
 import {
   ACTIVE_SUPABASE_WORKDIR,
   buildNpxInvocation,
   buildNpxSupabaseArguments,
   buildSupabaseCliArguments,
+  runSupabaseCommand,
   validateActiveMigrationDirectory,
   validateMigrationNames,
 } from '../lib/supabase-migration-workdir.mjs'
@@ -38,22 +44,25 @@ describe('supabase migration workdir contract', () => {
     ])).toThrow('Duplicate migration version: 20260906010101')
   })
 
-  it('rejects an active migration that changes supabase_admin default privileges', () => {
-    const repoRoot = mkdtempSync(path.join(tmpdir(), 'supabase-migration-workdir-'))
-    const migrationDirectory = path.join(repoRoot, 'infra', 'supabase', 'migrations')
-    mkdirSync(migrationDirectory, { recursive: true })
-    writeFileSync(
-      path.join(migrationDirectory, '20260906010101_managed_default_privileges.sql'),
-      'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO authenticated;\n',
-    )
+  it.each(['supabase_admin', '"supabase_admin"'])(
+    'rejects an active migration that changes %s default privileges',
+    managedRole => {
+      const repoRoot = mkdtempSync(path.join(tmpdir(), 'supabase-migration-workdir-'))
+      const migrationDirectory = path.join(repoRoot, 'infra', 'supabase', 'migrations')
+      mkdirSync(migrationDirectory, { recursive: true })
+      writeFileSync(
+        path.join(migrationDirectory, '20260906010101_managed_default_privileges.sql'),
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${managedRole} IN SCHEMA public GRANT ALL ON TABLES TO authenticated;\n`,
+      )
 
-    try {
-      expect(() => validateActiveMigrationDirectory(repoRoot))
-        .toThrow('supabase_admin default privileges')
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true })
-    }
-  })
+      try {
+        expect(() => validateActiveMigrationDirectory(repoRoot))
+          .toThrow('supabase_admin default privileges')
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('clears managed table defaults before replaying public tables and restores application defaults', () => {
     const baseline = readFileSync(
@@ -120,6 +129,42 @@ describe('supabase migration workdir contract', () => {
   it('refuses caller-supplied workdir arguments', () => {
     expect(() => buildSupabaseCliArguments(['migration', 'list', '--workdir', 'other']))
       .toThrow('must not include --workdir')
+  })
+
+  it.each([
+    ['linked flag', ['db', 'reset', '--linked']],
+    ['linked assignment', ['db', 'reset', '--linked=true']],
+    ['database URL', ['db', 'reset', '--db-url', 'postgresql://example.invalid/database']],
+    ['project reference', ['db', 'reset', '--project-ref', 'example-project']],
+    ['interspersed global flag', ['db', '--debug', 'reset', '--linked']],
+  ])('refuses a remote db reset selected by %s', (_label, commandArguments) => {
+    expect(() => buildSupabaseCliArguments(commandArguments))
+      .toThrow('Refusing to reset a remote Supabase database')
+  })
+
+  it('requires an explicit local target for db reset', () => {
+    expect(() => buildSupabaseCliArguments(['db', 'reset']))
+      .toThrow('db reset requires explicit --local')
+    expect(buildSupabaseCliArguments(['db', 'reset', '--local']))
+      .toEqual(['db', 'reset', '--local', '--workdir', 'infra'])
+  })
+
+  it.each([
+    ['db push', ['db', 'push', '--linked']],
+    ['db push with an interspersed global flag', ['db', '--debug', 'push', '--linked']],
+    ['local db reset', ['db', 'reset', '--local']],
+  ])('validates active migrations before invoking %s', (_label, commandArguments) => {
+    const repoRoot = mkdtempSync(path.join(tmpdir(), 'supabase-migration-workdir-'))
+    const migrationDirectory = path.join(repoRoot, 'infra', 'supabase', 'migrations')
+    mkdirSync(migrationDirectory, { recursive: true })
+    writeFileSync(path.join(migrationDirectory, '060_invalid.sql'), 'SELECT 1;\n')
+
+    try {
+      expect(() => runSupabaseCommand(commandArguments, { repoRoot }))
+        .toThrow('YYYYMMDDHHMMSS_nombre.sql')
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true })
+    }
   })
 
   it('pins Supabase through npx before adding the active workdir', () => {

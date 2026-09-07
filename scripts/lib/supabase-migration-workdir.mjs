@@ -8,7 +8,42 @@ export const SUPABASE_CLI_PACKAGE = 'supabase@2.116.0'
 
 const MIGRATION_NAME = /^(?<version>\d{14})_(?<name>[a-z0-9]+(?:_[a-z0-9]+)*)\.sql$/
 const FORBIDDEN_NAME = /(?:rollback|reset|test_accounts)/i
-const MANAGED_DEFAULT_PRIVILEGES = /\bALTER\s+DEFAULT\s+PRIVILEGES\s+FOR\s+ROLE\s+supabase_admin\b/i
+const MANAGED_DEFAULT_PRIVILEGES = /\bALTER\s+DEFAULT\s+PRIVILEGES\s+FOR\s+ROLE\s+(?:"supabase_admin"|supabase_admin)(?=\s|;)/i
+const REMOTE_RESET_OPTIONS = ['--linked', '--db-url', '--project-ref']
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+function includesCommand(argumentsWithoutWorkdir, command, subcommand) {
+  const commandIndex = argumentsWithoutWorkdir.indexOf(command)
+  return commandIndex >= 0 && argumentsWithoutWorkdir.indexOf(subcommand, commandIndex + 1) > commandIndex
+}
+
+function includesOption(argumentsWithoutWorkdir, option) {
+  return argumentsWithoutWorkdir.some(argument => argument === option || argument.startsWith(`${option}=`))
+}
+
+function validateSupabaseCommandArguments(argumentsWithoutWorkdir) {
+  if (argumentsWithoutWorkdir.some(argument => argument === '--workdir' || argument.startsWith('--workdir='))) {
+    throw new Error('Supabase command arguments must not include --workdir')
+  }
+
+  if (!includesCommand(argumentsWithoutWorkdir, 'db', 'reset')) {
+    return
+  }
+
+  if (REMOTE_RESET_OPTIONS.some(option => includesOption(argumentsWithoutWorkdir, option))) {
+    throw new Error('Refusing to reset a remote Supabase database')
+  }
+
+  if (!argumentsWithoutWorkdir.some(argument => argument === '--local' || argument === '--local=true')) {
+    throw new Error('Supabase db reset requires explicit --local')
+  }
+}
+
+function requiresActiveMigrationValidation(argumentsWithoutWorkdir) {
+  return includesCommand(argumentsWithoutWorkdir, 'db', 'push')
+    || includesCommand(argumentsWithoutWorkdir, 'db', 'reset')
+}
 
 export function validateMigrationNames(fileNames) {
   const versions = new Set()
@@ -40,9 +75,7 @@ export function validateMigrationSql(sql, fileName) {
 }
 
 export function buildSupabaseCliArguments(argumentsWithoutWorkdir) {
-  if (argumentsWithoutWorkdir.some(argument => argument === '--workdir' || argument.startsWith('--workdir='))) {
-    throw new Error('Supabase command arguments must not include --workdir')
-  }
+  validateSupabaseCommandArguments(argumentsWithoutWorkdir)
 
   return [...argumentsWithoutWorkdir, '--workdir', ACTIVE_SUPABASE_WORKDIR]
 }
@@ -62,11 +95,16 @@ export function buildNpxInvocation(platform, nodeExecutable) {
   return { command: 'npx', prefixArguments: [] }
 }
 
-export function runSupabaseCommand(argumentsWithoutWorkdir) {
+export function runSupabaseCommand(argumentsWithoutWorkdir, options = {}) {
+  const npxArguments = buildNpxSupabaseArguments(argumentsWithoutWorkdir)
+  if (requiresActiveMigrationValidation(argumentsWithoutWorkdir)) {
+    validateActiveMigrationDirectory(options.repoRoot ?? repoRoot)
+  }
+
   const invocation = buildNpxInvocation(process.platform, process.execPath)
   const result = spawnSync(
     invocation.command,
-    [...invocation.prefixArguments, ...buildNpxSupabaseArguments(argumentsWithoutWorkdir)],
+    [...invocation.prefixArguments, ...npxArguments],
     { stdio: 'inherit' },
   )
 
@@ -98,7 +136,6 @@ function isMainModule() {
 }
 
 if (isMainModule()) {
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
   const commandArguments = process.argv.slice(2)
 
   try {
