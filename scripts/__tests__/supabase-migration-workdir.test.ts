@@ -153,4 +153,14 @@ describe('supabase migration workdir contract', () => {
       'supabase:migrations:push': 'node scripts/lib/supabase-migration-workdir.mjs --run db push --linked',
     })
   })
+
+  it('ignores generated Supabase branch state and disables the missing automatic seed', () => {
+    const gitignore = readFileSync(new URL('../../.gitignore', import.meta.url), 'utf8')
+    const config = readFileSync(new URL('../../infra/supabase/config.toml', import.meta.url), 'utf8')
+    const seedSection = config.match(/\[db\.seed\][\s\S]*?(?=\r?\n\[|$)/)?.[0]
+
+    expect(gitignore).toContain('**/supabase/.temp/')
+    expect(gitignore).toContain('**/supabase/.branches/')
+    expect(seedSection).toContain('enabled = false')
+  })
 })
