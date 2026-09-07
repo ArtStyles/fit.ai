@@ -30,6 +30,7 @@ import type { WeeklySummary, WeeklyExerciseRow } from '@/lib/plans/periodization
 import type { UserContext }        from '@/lib/ai/types'
 import { isConfirmedPlanRpcFailure } from '@/lib/plans/persistentRequestId'
 import type { Json } from '@/types/database'
+import { resolveAdjustmentSchedule } from '@/lib/plans/adjustmentSchedule'
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ export interface GeneratePlanResult {
   requiresReadinessReview?: boolean
   previewDiff?: PlanDiff
   warnings?: string[]
+  workoutDays?: number[]
   error?:            string
 }
 
@@ -162,6 +164,17 @@ function assignIsoDays(
   }
   // Por defecto: lun, mar, mié… hasta completar dayCount
   return Array.from({ length: dayCount }, (_, i) => i + 1)
+}
+
+async function loadPlanWorkoutDays(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  planId: string,
+): Promise<number[]> {
+  const { data } = await (supabase.from('workouts') as any)
+    .select('day_of_week')
+    .eq('plan_id', planId)
+    .order('order_in_plan') as { data: Array<{ day_of_week: number | null }> | null }
+  return (data ?? []).flatMap(row => row.day_of_week == null ? [] : [row.day_of_week])
 }
 
 // ─── Helper: resumen de la semana anterior ────────────────────────────────────
@@ -502,14 +515,26 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
 
   // ── 5. Generar y persistir el plan con el motor determinista ───────────────
 
-  const [regenerationContext, previousPlan] = await Promise.all([
+  const [regenerationContext, previousPlan, activeWorkoutDays] = await Promise.all([
     mode === 'weekly_regeneration' && activePlan
       ? buildRegenerationContext(supabase, user.id, activePlan.id)
       : Promise.resolve(null),
     mode !== 'initial' && activePlan
       ? loadPlanForEngine(supabase, activePlan)
       : Promise.resolve(null),
+    mode === 'plan_adjustment' && activePlan
+      ? loadPlanWorkoutDays(supabase, activePlan.id)
+      : Promise.resolve([]),
   ])
+
+  let resolvedWorkoutDays = profile.preferred_workout_days ?? []
+  if (mode === 'plan_adjustment' && options.adjustmentIntent) {
+    try {
+      resolvedWorkoutDays = resolveAdjustmentSchedule(activeWorkoutDays, options.adjustmentIntent)
+    } catch {
+      return { success: false, error: 'El calendario del plan activo cambió. Vuelve a generar la vista previa.' }
+    }
+  }
 
   const engineExercises: EngineExercise[] = exercises.map(exercise => ({
     id: exercise.id,
@@ -551,11 +576,13 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
       language: profile.language ?? 'es',
       fitnessLevel: profile.fitness_level,
       primaryGoal: profile.primary_goal as UserContext['primary_goal'],
-      daysPerWeek: profile.days_per_week,
+      daysPerWeek: mode === 'plan_adjustment'
+        ? resolvedWorkoutDays.length
+        : profile.days_per_week,
       sessionDurationMinutes: profile.session_duration_minutes ?? 60,
       gymType: profile.gym_type ?? 'full_gym',
       availableEquipment: profile.available_equipment ?? [],
-      preferredWorkoutDays: profile.preferred_workout_days,
+      preferredWorkoutDays: resolvedWorkoutDays,
       cardioPreferences: profile.cardio_preferences ?? [],
       age,
       readiness: parseReadiness(
@@ -594,6 +621,15 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
     }
   }
 
+  if (mode === 'plan_adjustment' && engineResult.plan.days.length !== resolvedWorkoutDays.length) {
+    return {
+      success: false,
+      error: 'El motor devolvió un calendario distinto al ajuste previsualizado.',
+      engineVersion: engineResult.metadata.engineVersion,
+      evidenceVersion: engineResult.metadata.evidenceVersion,
+    }
+  }
+
   if (options.previewOnly) {
     return {
       success: true,
@@ -604,17 +640,22 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
       evidenceVersion: engineResult.metadata.evidenceVersion,
       previewDiff: adjustmentPreview?.diff ?? undefined,
       warnings: adjustmentPreview?.warnings ?? engineResult.metadata.warnings,
+      workoutDays: resolvedWorkoutDays,
     }
   }
 
-  const isoDays = assignIsoDays(engineResult.plan.days.length, profile.preferred_workout_days)
+  const isoDays = mode === 'plan_adjustment'
+    ? resolvedWorkoutDays
+    : assignIsoDays(engineResult.plan.days.length, profile.preferred_workout_days)
   const transactionalPlan = {
     ...engineResult.plan,
     goal: profile.primary_goal,
     difficulty: profile.fitness_level,
     days: engineResult.plan.days.map((day, dayIndex) => ({
       ...day,
-      day_of_week: isoDays[dayIndex] ?? dayIndex + 1,
+      day_of_week: mode === 'plan_adjustment'
+        ? isoDays[dayIndex]
+        : isoDays[dayIndex] ?? dayIndex + 1,
       estimated_duration_minutes: estimateDayMinutes(day),
       exercises: day.exercises.map((exercise, exerciseIndex) => ({
         ...exercise,
@@ -628,7 +669,7 @@ export async function generatePlan(options: GeneratePlanOptions): Promise<Genera
   if (mode === 'plan_adjustment' && intent) {
     if (intent.type === 'change_days') {
       profileUpdates.days_per_week = intent.daysPerWeek
-      profileUpdates.preferred_workout_days = intent.preferredWorkoutDays ?? []
+      profileUpdates.preferred_workout_days = resolvedWorkoutDays
     } else if (intent.type === 'change_duration') {
       profileUpdates.session_duration_minutes = intent.sessionDurationMinutes
     } else if (intent.type === 'equipment_unavailable') {

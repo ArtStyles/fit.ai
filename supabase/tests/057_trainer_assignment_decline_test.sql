@@ -380,6 +380,10 @@ SELECT is(
   'only successful first writes produce decline audit rows'
 );
 
+-- Flush the valid deferred assignment FK before catalog-tampering DDL.
+-- Keep the intentionally mismatched plan identity deferred until ROLLBACK.
+SET CONSTRAINTS trainer_plan_assignments_active_version_id_fkey IMMEDIATE;
+
 CREATE TEMP TABLE decline_catalog_restore (allowlist_ddl TEXT NOT NULL);
 INSERT INTO decline_catalog_restore (allowlist_ddl)
 SELECT pg_get_functiondef('public.is_professional_audit_event_allowed(text,text)'::REGPROCEDURE);

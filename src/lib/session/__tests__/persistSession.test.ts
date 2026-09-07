@@ -1,379 +1,199 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSessionStore } from '@/store/sessionStore'
 import { MAX_SESSION_SETS } from '../limits'
-import * as sessionPersistence from '../persistSession'
-import { clearBackup, loadBackup, saveBackup, type SessionSnapshot } from '../persistSession'
+import { clearActiveSession, clearBackup, loadActiveSession, loadBackup, recoverSessionBackup, saveBackup, type SessionSnapshot } from '../persistSession'
 
-const snapshot = {
-  clientSessionId: '11111111-1111-4111-8111-111111111111',
-  workoutId: 'workout-1',
-  workoutName: 'Workout',
-  startedAt: Date.now() - 60_000,
-  exercises: [],
-} as SessionSnapshot
+const USER_A = 'user-a'; const USER_B = 'user-b'; const WORKOUT = 'workout-1'
+const scopedKey = (userId: string) => `fitai_session_v2_${encodeURIComponent(userId)}_${encodeURIComponent(WORKOUT)}`
+const pointerKey = (userId: string) => `fitai_active_session_v2_${encodeURIComponent(userId)}`
+const snapshot = (overrides: Partial<SessionSnapshot> = {}): SessionSnapshot => ({
+  userId: USER_A, clientSessionId: '11111111-1111-4111-8111-111111111111', workoutId: WORKOUT,
+  workoutName: 'Workout', startedAt: Date.now() - 60_000, exercises: [], ...overrides,
+})
+const legacyExercise = { workoutExerciseId: 'we-1', exerciseId: 'ex-1', name: 'Squat', status: 'active', sets: [{ weightKg: '10', reps: '8', rpe: null, completed: false }] }
 
-const legacyExercise = {
-  workoutExerciseId: 'we-1',
-  exerciseId: 'ex-1',
-  name: 'Squat',
-  status: 'active',
-  sets: [{ weightKg: '10', reps: '8', rpe: null, completed: false }],
+class MemoryStorage implements Storage {
+  values = new Map<string, string>()
+  get length() { return this.values.size }
+  clear() { this.values.clear() }
+  getItem(key: string) { return this.values.get(key) ?? null }
+  key(index: number) { return Array.from(this.values.keys())[index] ?? null }
+  removeItem(key: string) { this.values.delete(key) }
+  setItem(key: string, value: string) { this.values.set(key, value) }
 }
+let storage: MemoryStorage
+beforeEach(() => { storage = new MemoryStorage(); vi.stubGlobal('localStorage', storage) })
 
-describe('session backup persistence results', () => {
-  const setItem = vi.fn()
-  const getItem = vi.fn()
-  const removeItem = vi.fn()
-
-  beforeEach(() => {
-    setItem.mockReset()
-    getItem.mockReset()
-    removeItem.mockReset()
-    useSessionStore.getState().clearSession()
-    vi.stubGlobal('localStorage', { setItem, getItem, removeItem })
+describe('owner-scoped session persistence', () => {
+  it('isolates A -> B -> A saves and active pointers', () => {
+    saveBackup(snapshot({ workoutName: 'A' })); saveBackup(snapshot({ userId: USER_B, workoutName: 'B' }))
+    expect(loadActiveSession(USER_A)?.workoutName).toBe('A')
+    expect(loadActiveSession(USER_B)?.workoutName).toBe('B')
+    expect(loadBackup(USER_A, WORKOUT)?.userId).toBe(USER_A)
   })
 
-  it('reports a failed write and succeeds when the user retries', () => {
-    setItem.mockImplementationOnce(() => { throw new Error('quota exceeded') })
-
-    expect(saveBackup(snapshot)).toEqual({ ok: false, error: 'quota exceeded' })
-    expect(saveBackup(snapshot)).toEqual({ ok: true })
+  it('rejects blank owners and a stored owner differing from the key owner', () => {
+    expect(saveBackup(snapshot({ userId: ' ' })).ok).toBe(false)
+    storage.setItem(scopedKey(USER_A), JSON.stringify({ version: 2, ...snapshot({ userId: USER_B }) }))
+    expect(loadBackup(USER_A, WORKOUT)).toBeNull()
+    expect(storage.getItem(scopedKey(USER_A))).not.toBeNull()
   })
 
-  it('recovers the active session without requiring its workout id', () => {
-    const values = new Map<string, string>()
-    setItem.mockImplementation((key: string, value: string) => values.set(key, value))
-    getItem.mockImplementation((key: string) => values.get(key) ?? null)
-
-    expect(saveBackup(snapshot)).toEqual({ ok: true })
-
-    const loadActiveSession = (sessionPersistence as typeof sessionPersistence & {
-      loadActiveSession?: () => SessionSnapshot | null
-    }).loadActiveSession
-
-    expect(loadActiveSession?.()).toMatchObject(snapshot)
+  it('roundtrips exact client and finish timestamps', () => {
+    const value = snapshot({ finishedAt: Date.now() - 1_000 }); saveBackup(value)
+    expect(loadBackup(USER_A, WORKOUT)).toMatchObject({ userId: USER_A, clientSessionId: value.clientSessionId, finishedAt: value.finishedAt })
   })
 
-  it('notifies the current page when the active session changes', () => {
-    const eventTarget = new EventTarget()
-    const listener = vi.fn()
-    eventTarget.addEventListener('fitai:active-session-changed', listener)
-    vi.stubGlobal('window', eventTarget)
-
-    expect(saveBackup(snapshot)).toEqual({ ok: true })
-
-    expect(listener).toHaveBeenCalledOnce()
+  it.each([undefined, 0])('restores %s finishedAt as ongoing', finishedAt => {
+    saveBackup(snapshot({ finishedAt })); expect(loadBackup(USER_A, WORKOUT)?.finishedAt ?? 0).toBe(0)
   })
 
-  it('discards the current active session and its backup without needing an id', () => {
-    const values = new Map<string, string>()
-    setItem.mockImplementation((key: string, value: string) => values.set(key, value))
-    getItem.mockImplementation((key: string) => values.get(key) ?? null)
-    removeItem.mockImplementation((key: string) => values.delete(key))
-    saveBackup(snapshot)
-
-    const clearActiveSession = (sessionPersistence as typeof sessionPersistence & {
-      clearActiveSession?: () => ReturnType<typeof clearBackup>
-    }).clearActiveSession
-
-    expect(clearActiveSession?.()).toEqual({ ok: true })
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  it.each([Date.now() - 120_000, Date.now() + 6 * 60_000])('rejects invalid finish timestamp %s', finishedAt => {
+    storage.setItem(scopedKey(USER_A), JSON.stringify({ version: 2, ...snapshot({ finishedAt }) }))
+    expect(loadBackup(USER_A, WORKOUT)).toBeNull()
   })
 
-  it('clears the active-session pointer when a completed workout removes its backup', () => {
-    const values = new Map<string, string>()
-    const eventTarget = new EventTarget()
-    const listener = vi.fn()
-    setItem.mockImplementation((key: string, value: string) => values.set(key, value))
-    getItem.mockImplementation((key: string) => values.get(key) ?? null)
-    removeItem.mockImplementation((key: string) => values.delete(key))
-    eventTarget.addEventListener('fitai:active-session-changed', listener)
-    vi.stubGlobal('window', eventTarget)
-
-    saveBackup(snapshot)
-    expect(clearBackup(snapshot.workoutId)).toEqual({ ok: true })
-
-    expect(sessionPersistence.loadActiveSession()).toBeNull()
-    expect(listener).toHaveBeenCalledTimes(2)
+  it('retains a valid finished pending draft after the crash-recovery age window', () => {
+    const startedAt = Date.now() - 13 * 60 * 60_000
+    const finishedAt = startedAt + 45 * 60_000
+    storage.setItem(scopedKey(USER_A), JSON.stringify({ version: 2, ...snapshot({ startedAt, finishedAt }) }))
+    expect(loadBackup(USER_A, WORKOUT)?.finishedAt).toBe(finishedAt)
   })
 
-  it('treats a malformed active-session pointer as stale during completion cleanup', () => {
-    const values = new Map<string, string>([['fitai_active_session', '{malformed']])
-    const eventTarget = new EventTarget()
-    const listener = vi.fn()
-    getItem.mockImplementation((key: string) => values.get(key) ?? null)
-    removeItem.mockImplementation((key: string) => values.delete(key))
-    eventTarget.addEventListener('fitai:active-session-changed', listener)
-    vi.stubGlobal('window', eventTarget)
-
-    expect(clearBackup(snapshot.workoutId)).toEqual({ ok: true })
-    expect(values.has('fitai_active_session')).toBe(false)
-    expect(listener).toHaveBeenCalledOnce()
+  it('clears only the requested owner data', () => {
+    saveBackup(snapshot()); saveBackup(snapshot({ userId: USER_B }))
+    expect(clearBackup(USER_A, WORKOUT)).toEqual({ ok: true }); expect(loadActiveSession(USER_A)).toBeNull(); expect(loadActiveSession(USER_B)).not.toBeNull()
+    expect(clearActiveSession(USER_B)).toEqual({ ok: true }); expect(loadBackup(USER_B, WORKOUT)).toBeNull()
   })
 
-  it('can discard a malformed active-session pointer without getting stuck', () => {
-    const values = new Map<string, string>([['fitai_active_session', '{malformed']])
-    getItem.mockImplementation((key: string) => values.get(key) ?? null)
-    removeItem.mockImplementation((key: string) => values.delete(key))
+  it('reports storage write failures', () => {
+    vi.spyOn(storage, 'setItem').mockImplementationOnce(() => { throw new Error('quota exceeded') })
+    expect(saveBackup(snapshot())).toEqual({ ok: false, error: 'quota exceeded' })
+  })
+})
 
-    expect(sessionPersistence.clearActiveSession()).toEqual({ ok: true })
-    expect(values.has('fitai_active_session')).toBe(false)
+describe('legacy migration', () => {
+  function storeLegacy(overrides: Record<string, unknown> = {}) {
+    const legacy = { workoutId: WORKOUT, workoutName: 'Legacy', startedAt: Date.now() - 60_000, exercises: [legacyExercise], ...overrides }
+    storage.setItem(`fitai_session_${WORKOUT}`, JSON.stringify(legacy)); storage.setItem('fitai_active_session', JSON.stringify({ workoutId: WORKOUT }))
+    return legacy
+  }
+
+  it('keeps anonymous legacy invisible until ownership is verified', async () => {
+    storeLegacy(); expect(loadBackup(USER_A, WORKOUT)).toBeNull(); expect(loadActiveSession(USER_A)).toBeNull()
+    const restored = await recoverSessionBackup(USER_A, WORKOUT, async () => USER_A)
+    expect(restored).toMatchObject({ userId: USER_A, workoutName: 'Legacy' }); expect(storage.getItem(`fitai_session_${WORKOUT}`)).toBeNull()
   })
 
-  it('reports a failed deletion and succeeds when cleanup retries', () => {
-    removeItem.mockImplementationOnce(() => { throw new Error('storage blocked') })
-
-    expect(clearBackup(snapshot.workoutId)).toEqual({ ok: false, error: 'storage blocked' })
-    expect(clearBackup(snapshot.workoutId)).toEqual({ ok: true })
-    expect(removeItem).toHaveBeenCalledTimes(2)
+  it('uses the old active pointer when no workout id is supplied', async () => {
+    storeLegacy(); expect((await recoverSessionBackup(USER_A, null, async () => USER_A))?.workoutId).toBe(WORKOUT)
   })
 
-  it('rejects a structurally corrupt backup before it reaches the session store', () => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: 'not-an-array',
-    }))
-
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  it('preserves legacy bytes when verification returns a different owner', async () => {
+    const raw = JSON.stringify(storeLegacy()); expect(await recoverSessionBackup(USER_A, WORKOUT, async () => USER_B)).toBeNull()
+    expect(storage.getItem(`fitai_session_${WORKOUT}`)).toBe(raw); expect(storage.getItem('fitai_active_session')).not.toBeNull()
   })
 
   it.each([
-    [[null]],
-    [[{ workoutExerciseId: 'we-1', exerciseId: 'ex-1', name: 'Squat', status: 'active', sets: 'bad' }]],
-    [[{
-      workoutExerciseId: 'we-1', exerciseId: 'ex-1', name: 'Squat', status: 'active',
-      sets: [{ weightKg: 10, reps: '8', rpe: null, completed: false }],
-    }]],
-  ])('rejects corrupt exercise/set elements: %j', exercises => {
-    getItem.mockReturnValue(JSON.stringify({ ...snapshot, exercises }))
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
+    ['null ownership', async () => null],
+    ['network exception', async () => { throw new Error('network') }],
+  ])('blocks initialization on %s and retries without losing the legacy id or sets', async (_name, verifyOwner) => {
+    const clientSessionId = '22222222-2222-4222-8222-222222222222'
+    const raw = JSON.stringify(storeLegacy({ clientSessionId }))
+
+    await expect(recoverSessionBackup(USER_A, WORKOUT, verifyOwner)).rejects.toThrow('ownership')
+    expect(storage.getItem(`fitai_session_${WORKOUT}`)).toBe(raw)
+
+    const restored = await recoverSessionBackup(USER_A, WORKOUT, async () => USER_A)
+    expect(restored?.clientSessionId).toBe(clientSessionId)
+    expect(restored?.exercises[0].sets).toEqual(legacyExercise.sets)
   })
 
-  it('accepts a valid legacy backup without a client id or newer exercise metadata', () => {
-    getItem.mockReturnValue(JSON.stringify({
-      workoutId: snapshot.workoutId,
-      workoutName: snapshot.workoutName,
-      startedAt: snapshot.startedAt,
-      exercises: [legacyExercise],
-    }))
+  it('throws and preserves legacy evidence when scoped copy fails', async () => {
+    const raw = JSON.stringify(storeLegacy())
+    vi.spyOn(storage, 'setItem').mockImplementationOnce((key, value) => { if (key === scopedKey(USER_A)) throw new Error('quota exceeded'); storage.values.set(key, value) })
+    await expect(recoverSessionBackup(USER_A, WORKOUT, async () => USER_A)).rejects.toThrow('quota exceeded')
+    expect(storage.getItem(`fitai_session_${WORKOUT}`)).toBe(raw)
+  })
 
-    const restored = loadBackup(snapshot.workoutId)
-    expect(restored).not.toBeNull()
-    expect(restored?.exercises[0]).toEqual({
-      ...legacyExercise,
-      originalExerciseId: null,
-      originalName: null,
-      imageUrl: null,
-      instructions: null,
-      muscleGroups: [],
-      isCompound: false,
-      targetSets: 1,
-      targetReps: null,
-      targetDuration: null,
-      restSeconds: 60,
-      targetRpe: 7,
-      suggestedWeight: null,
-      weightSuggestionBasis: null,
-      notes: null,
-      source: 'planned',
-      skipReason: null,
-      expanded: true,
-      hasLastSessionData: false,
-      previousPerformance: null,
-    })
+  it('prefers a concurrent scoped save and leaves legacy intact', async () => {
+    storeLegacy(); let resolveOwner!: (owner: string) => void
+    const recovery = recoverSessionBackup(USER_A, WORKOUT, () => new Promise(resolve => { resolveOwner = resolve }))
+    saveBackup(snapshot({ workoutName: 'Newer' })); resolveOwner(USER_A)
+    expect((await recovery)?.workoutName).toBe('Newer'); expect(storage.getItem(`fitai_session_${WORKOUT}`)).not.toBeNull()
+  })
 
-    useSessionStore.getState().restoreSession(restored!)
-    expect(() => {
-      useSessionStore.getState().updateSetField('we-1', 0, 'reps', '9')
-      useSessionStore.getState().finishSession()
-    }).not.toThrow()
-    expect(useSessionStore.getState().exercises[0].muscleGroups).toEqual([])
+  it('preserves a different active workout saved while dock ownership verification is pending', async () => {
+    storeLegacy()
+    let resolveOwner!: (owner: string) => void
+    const recovery = recoverSessionBackup(USER_A, null, () => new Promise(resolve => { resolveOwner = resolve }))
+    saveBackup(snapshot({ workoutId: 'workout-2', workoutName: 'New active workout' }))
+    resolveOwner(USER_A)
+
+    expect((await recovery)?.workoutId).toBe('workout-2')
+    expect(loadActiveSession(USER_A)?.workoutId).toBe('workout-2')
+    expect(JSON.parse(storage.getItem(pointerKey(USER_A))!)).toMatchObject({ workoutId: 'workout-2' })
+  })
+
+  it('normalizes bounded legacy data only after verification', async () => {
+    storeLegacy({ exercises: [{ ...legacyExercise, sets: Array.from({ length: MAX_SESSION_SETS }, () => ({ ...legacyExercise.sets[0] })) }] })
+    expect((await recoverSessionBackup(USER_A, WORKOUT, async () => USER_A))?.exercises[0]).toMatchObject({ targetSets: MAX_SESSION_SETS, muscleGroups: [], restSeconds: 60, targetRpe: 7, source: 'planned' })
   })
 
   it.each([
-    ['originalExerciseId', 42],
-    ['originalName', []],
-    ['imageUrl', 42],
-    ['instructions', []],
-    ['muscleGroups', 'legs'],
-    ['isCompound', 'false'],
-    ['targetSets', '3'],
-    ['targetReps', '8'],
-    ['targetDuration', '30'],
-    ['restSeconds', '60'],
-    ['targetRpe', '7'],
-    ['suggestedWeight', '10'],
-    ['weightSuggestionBasis', 'guessed'],
-    ['notes', 42],
-    ['source', 'imported'],
-    ['skipReason', 42],
-    ['expanded', 'yes'],
-    ['hasLastSessionData', 'no'],
-    ['previousPerformance', 'bad'],
-  ])('rejects corrupt optional exercise field %s', (field, corruptValue) => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{ ...legacyExercise, [field]: corruptValue }],
-    }))
+    { exercises: 'bad' }, { exercises: [{ ...legacyExercise, sets: 'bad' }] }, { exercises: [{ ...legacyExercise, targetRpe: 11 }] },
+    { exercises: [{ ...legacyExercise, sets: [{ ...legacyExercise.sets[0], reps: '101' }] }] },
+    { exercises: [{ ...legacyExercise, previousPerformance: [{ weightKg: -1, reps: 8 }] }] },
+    { exercises: [{ ...legacyExercise, sets: Array.from({ length: MAX_SESSION_SETS + 1 }, () => legacyExercise.sets[0]) }] },
+  ])('rejects corrupt or unbounded legacy content %#', async corrupt => {
+    storeLegacy(corrupt); expect(await recoverSessionBackup(USER_A, WORKOUT, async () => USER_A)).toBeNull(); expect(storage.getItem(`fitai_session_${WORKOUT}`)).not.toBeNull()
+  })
 
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
+
+  it.each([
+    ['originalExerciseId', 42], ['originalName', []], ['imageUrl', 42], ['instructions', []],
+    ['muscleGroups', 'legs'], ['isCompound', 'false'], ['targetSets', '3'], ['targetReps', '8'],
+    ['targetDuration', '30'], ['restSeconds', '60'], ['targetRpe', '7'], ['suggestedWeight', '10'],
+    ['weightSuggestionBasis', 'guessed'], ['notes', 42], ['source', 'imported'], ['skipReason', 42],
+    ['expanded', 'yes'], ['hasLastSessionData', 'no'], ['previousPerformance', 'bad'],
+  ])('rejects corrupt optional legacy exercise field %s', async (field, value) => {
+    storeLegacy({ exercises: [{ ...legacyExercise, [field]: value }] })
+    expect(await recoverSessionBackup(USER_A, WORKOUT, async () => USER_A)).toBeNull()
   })
 
   it.each([
-    ['rpe', '7'],
-    ['completed', 'false'],
-    ['durationSeconds', '30'],
-  ])('rejects corrupt optional set field %s', (field, corruptValue) => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{
-        ...legacyExercise,
-        sets: [{ ...legacyExercise.sets[0], [field]: corruptValue }],
-      }],
-    }))
-
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
+    ['targetSets', -1], ['targetSets', 101], ['targetReps', -1], ['targetReps', 101],
+    ['targetDuration', -1], ['targetDuration', 43_201], ['restSeconds', -1], ['restSeconds', 3_601],
+    ['targetRpe', 0], ['targetRpe', 11], ['targetRpe', 7.5], ['suggestedWeight', -1], ['suggestedWeight', 501],
+  ])('rejects out-of-domain legacy exercise field %s=%s', async (field, value) => {
+    storeLegacy({ exercises: [{ ...legacyExercise, [field]: value }] })
+    expect(await recoverSessionBackup(USER_A, WORKOUT, async () => USER_A)).toBeNull()
   })
 
   it.each([
-    ['targetSets', -1],
-    ['targetSets', 101],
-    ['targetReps', -1],
-    ['targetReps', 101],
-    ['targetDuration', -1],
-    ['targetDuration', 43_201],
-    ['restSeconds', -1],
-    ['restSeconds', 3_601],
-    ['targetRpe', 0],
-    ['targetRpe', 11],
-    ['suggestedWeight', -1],
-    ['suggestedWeight', 501],
-  ])('rejects out-of-domain exercise field %s=%s', (field, invalidValue) => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{ ...legacyExercise, [field]: invalidValue }],
-    }))
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
+    ['weightKg', '-1'], ['weightKg', '501'], ['weightKg', ' '], ['reps', '-1'], ['reps', '101'],
+    ['rpe', 0], ['rpe', 11], ['rpe', 7.5], ['durationSeconds', -1], ['durationSeconds', 43_201], ['durationSeconds', 30.5],
+  ])('rejects out-of-domain legacy set field %s=%s', async (field, value) => {
+    storeLegacy({ exercises: [{ ...legacyExercise, sets: [{ ...legacyExercise.sets[0], [field]: value }] }] })
+    expect(await recoverSessionBackup(USER_A, WORKOUT, async () => USER_A)).toBeNull()
+  })
+})
+
+describe('storage race safety', () => {
+  it('does not promote a stale legacy snapshot changed during ownership verification', async () => {
+    const oldRaw = JSON.stringify({ workoutId: WORKOUT, workoutName: 'Old', startedAt: Date.now() - 60_000, exercises: [] })
+    storage.setItem(`fitai_session_${WORKOUT}`, oldRaw); storage.setItem('fitai_active_session', JSON.stringify({ workoutId: WORKOUT }))
+    let resolveOwner!: (owner: string) => void
+    const recovery = recoverSessionBackup(USER_A, WORKOUT, () => new Promise(resolve => { resolveOwner = resolve }))
+    storage.setItem(`fitai_session_${WORKOUT}`, JSON.stringify({ ...JSON.parse(oldRaw), workoutName: 'Changed' }))
+    resolveOwner(USER_A)
+    await expect(recovery).rejects.toThrow('changed')
+    expect(loadBackup(USER_A, WORKOUT)).toBeNull()
+    expect(storage.getItem(`fitai_session_${WORKOUT}`)).toContain('Changed')
   })
 
-  it('rejects more stored sets than the shared session limit when targetSets is omitted', () => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{
-        ...legacyExercise,
-        sets: Array.from(
-          { length: MAX_SESSION_SETS + 1 },
-          () => ({ ...legacyExercise.sets[0] }),
-        ),
-      }],
-    }))
-
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
-  })
-
-  it('accepts exactly the shared set limit and derives a bounded legacy targetSets', () => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{
-        ...legacyExercise,
-        sets: Array.from(
-          { length: MAX_SESSION_SETS },
-          () => ({ ...legacyExercise.sets[0] }),
-        ),
-      }],
-    }))
-
-    const restoredExercise = loadBackup(snapshot.workoutId)?.exercises[0]
-    expect(restoredExercise?.sets).toHaveLength(MAX_SESSION_SETS)
-    expect(restoredExercise?.targetSets).toBe(MAX_SESSION_SETS)
-  })
-
-  it.each([
-    ['targetDuration', 30.5],
-    ['restSeconds', 60.5],
-    ['targetRpe', 7.5],
-  ])('rejects fractional discrete exercise field %s=%s', (field, invalidValue) => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{ ...legacyExercise, [field]: invalidValue }],
-    }))
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
-  })
-
-  it('accepts integer boundary values for discrete exercise and set fields', () => {
-    const boundedExercise = {
-      ...legacyExercise,
-      targetDuration: 0,
-      restSeconds: 3_600,
-      targetRpe: 10,
-      previousPerformance: [{ weightKg: 0, reps: 0, durationSeconds: 43_200 }],
-      sets: [{
-        ...legacyExercise.sets[0],
-        rpe: 1,
-        durationSeconds: 43_200,
-      }],
-    }
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [boundedExercise],
-    }))
-
-    expect(loadBackup(snapshot.workoutId)?.exercises[0]).toMatchObject(boundedExercise)
-  })
-
-  it.each([
-    ['weightKg', '-1'],
-    ['weightKg', '501'],
-    ['reps', '-1'],
-    ['reps', '101'],
-    ['rpe', 0],
-    ['rpe', 11],
-    ['durationSeconds', -1],
-    ['durationSeconds', 43_201],
-    ['weightKg', ' '],
-  ])('rejects out-of-domain set field %s=%s', (field, invalidValue) => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{
-        ...legacyExercise,
-        sets: [{ ...legacyExercise.sets[0], [field]: invalidValue }],
-      }],
-    }))
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
-  })
-
-  it.each([
-    ['rpe', 7.5],
-    ['durationSeconds', 30.5],
-  ])('rejects fractional discrete set field %s=%s', (field, invalidValue) => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{
-        ...legacyExercise,
-        sets: [{ ...legacyExercise.sets[0], [field]: invalidValue }],
-      }],
-    }))
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
-  })
-
-  it.each([
-    { weightKg: -1, reps: 8, durationSeconds: null },
-    { weightKg: 10, reps: 101, durationSeconds: null },
-    { weightKg: 10, reps: 8, durationSeconds: 43_201 },
-    { weightKg: 10, reps: 8, durationSeconds: 30.5 },
-  ])('rejects out-of-domain previous performance %j', previousPerformance => {
-    getItem.mockReturnValue(JSON.stringify({
-      ...snapshot,
-      exercises: [{ ...legacyExercise, previousPerformance: [previousPerformance] }],
-    }))
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
-  })
-
-  it.each([
-    Date.now() - 12 * 60 * 60_000 - 15 * 60_000 - 1,
-    Date.now() + 6 * 60_000,
-  ])('rejects implausible crash timestamp %s', startedAt => {
-    getItem.mockReturnValue(JSON.stringify({ ...snapshot, startedAt }))
-    expect(loadBackup(snapshot.workoutId)).toBeNull()
+  it('stores v2 owner records and pointers', () => {
+    saveBackup(snapshot())
+    expect(JSON.parse(storage.getItem(scopedKey(USER_A))!)).toMatchObject({ version: 2, userId: USER_A })
+    expect(JSON.parse(storage.getItem(pointerKey(USER_A))!)).toEqual({ version: 2, userId: USER_A, workoutId: WORKOUT })
   })
 })

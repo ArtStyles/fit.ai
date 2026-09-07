@@ -44,3 +44,5 @@ export async function signOut() {
 export async function releaseSessionAuthorization() {
   return { success: true as const }
 }
+
+export async function verifySessionBackupOwner() { return null }

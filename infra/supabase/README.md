@@ -17,6 +17,11 @@ La línea activa comienza con una sola migración:
 20260906233340_remote_schema_baseline.sql
 ```
 
+Las nuevas migraciones se añaden después de ese baseline. El reordenamiento
+atómico de ejercicios se entrega en
+`20260907135652_workout_exercise_reorder_atomic.sql`; el archivo `060` del
+directorio histórico conserva el mismo SQL para las fixtures de PostgreSQL.
+
 El baseline se capturó el 6 de septiembre de 2026 con `pg_dump` 17.6 en modo
 `schema-only` sobre los esquemas `public` y `private`. Se usó `pg_dump` después
 de que `supabase db pull` y `supabase db dump` agotaran el tiempo de espera. No

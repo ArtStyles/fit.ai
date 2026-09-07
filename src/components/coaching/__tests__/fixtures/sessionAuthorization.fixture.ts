@@ -3,3 +3,4 @@
 export async function releaseSessionAuthorization(): Promise<never> {
   throw new Error('Workout authorization release is outside the accessibility fixture.')
 }
+export async function verifySessionBackupOwner() { return null }

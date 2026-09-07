@@ -65,7 +65,9 @@ describe('buildPlanAdjustmentSummary', () => {
       exercisesRemovedCount: 1,
       changedPrescriptionCount: 5,
       warnings: ['Engine warning'],
+      workoutDays: [2, 4, 6],
     }, 'en')).toEqual([
+      'Scheduled days: Tue, Thu, Sat',
       'Weekly days: 4 → 3',
       '2 exercises added',
       '1 exercise replaced or removed',
@@ -82,8 +84,9 @@ describe('buildPlanAdjustmentSummary', () => {
       exercisesRemovedCount: 0,
       changedPrescriptionCount: 0,
       warnings: [],
+      workoutDays: [2, 4, 6, 7],
     }, 'en')).toEqual([
-      'The plan was recalculated and validated without major structural changes.',
+      'Scheduled days: Tue, Thu, Sat, Sun',
     ])
   })
 })

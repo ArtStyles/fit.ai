@@ -32,6 +32,7 @@ import { AccountWorkspaceMenuBody } from '../AccountWorkspaceMenu'
 import { AccountWorkspaceTrigger } from '../AccountWorkspaceTrigger'
 
 const account = {
+  id: 'account-a',
   name: 'Ana Pérez con un nombre profesional especialmente largo',
   email: 'ana.entrenamiento@example.com',
   avatarUrl: null,
@@ -109,7 +110,7 @@ async function buildMenuBrowserFixture(): Promise<string> {
         window.__workspaceChanges = []
         const root = createRoot(document.getElementById('root'))
         const context = {
-          account: {
+          account: { id: 'account-a',
             name: 'Ana Pérez',
             email: 'ana@example.com',
             avatarUrl: null,

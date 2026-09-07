@@ -16,7 +16,7 @@ vi.mock('@/app/actions/workspace', () => ({ setWorkspace: vi.fn() }))
 vi.mock('@/app/(auth)/actions', () => ({ signOut: vi.fn() }))
 
 const model: AccountWorkspaceModel = {
-  account: { name: 'Ana Pérez', email: 'ana@example.com', avatarUrl: null },
+  account: { id: 'account-a', name: 'Ana Pérez', email: 'ana@example.com', avatarUrl: null },
   trainerAccess: { granted: true },
   preferredWorkspace: 'personal',
   personalNavItems: [{ href: '/dashboard', label: 'Inicio' }],

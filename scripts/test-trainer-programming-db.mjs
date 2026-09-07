@@ -28,6 +28,7 @@ const trainerMigrationFiles = [
   '057_trainer_assignment_decline.sql',
   '058_training_profile_consent_regrant.sql',
   '059_trainer_assignment_single_pending.sql',
+  '060_workout_exercise_reorder_atomic.sql',
 ]
 const migrationPath = file => path.join(repoRoot, 'supabase', 'migrations', file)
 const readMigration = file => readFileSync(migrationPath(file), 'utf8')
@@ -1073,8 +1074,8 @@ const differentKeyProposalRaceSql = `
 CREATE EXTENSION IF NOT EXISTS dblink;
 BEGIN;
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
-  ('59a00000-0000-4000-8000-000000000001', 'proposal-race-trainer@example.test', '{}'::jsonb),
-  ('59a00000-0000-4000-8000-000000000002', 'proposal-race-client@example.test', '{}'::jsonb);
+  ('59a00000-0000-4000-8000-000000000001', 'different-key-proposal-trainer@example.test', '{}'::jsonb),
+  ('59a00000-0000-4000-8000-000000000002', 'different-key-proposal-client@example.test', '{}'::jsonb);
 INSERT INTO public.profiles (id, full_name, avatar_url, onboarding_done, account_status) VALUES
   ('59a00000-0000-4000-8000-000000000001', 'Proposal race trainer', 'https://example.test/proposal-race-trainer.webp', TRUE, 'active'),
   ('59a00000-0000-4000-8000-000000000002', 'Proposal race client', 'https://example.test/proposal-race-client.webp', TRUE, 'active');
@@ -1086,7 +1087,7 @@ INSERT INTO public.trainer_profiles (
   '59a00000-0000-4000-8000-000000000021',
   '59a00000-0000-4000-8000-000000000001',
   '59a00000-0000-4000-8000-000000000011',
-  'proposal-race-trainer',
+  'different-key-proposal-trainer',
   'active',
   'Proposal race trainer',
   'Race',
@@ -1853,6 +1854,12 @@ try {
   runPsql(readMigration('050_product_events_conversion_funnel.sql'), 'applying migration 050 conversion funnel events')
   runPsql(readMigration('051_workout_adjustment_atomic.sql'), 'applying migration 051 atomic workout adjustment')
   runPsql(readMigration('053_trainer_draft_rpc_json_repair.sql'), 'applying migration 053 trainer draft RPC JSON repair')
+  runPsql(readMigration('060_workout_exercise_reorder_atomic.sql'), 'applying migration 060 atomic exercise reorder')
+  runPsql(readMigration('060_workout_exercise_reorder_atomic.sql'), 'reapplying migration 060 for rerunnability')
+  const reorderTapOutput = runPsql(readFileSync(path.join(repoRoot, 'supabase', 'tests', '060_workout_exercise_reorder_atomic_test.sql'), 'utf8'), 'running 060 atomic exercise reorder pgTAP suite')
+  if (/^\s*not ok\b/m.test(reorderTapOutput) || /# Looks like you (?:failed|planned)\b/.test(reorderTapOutput)) throw new Error('060 pgTAP reported one or more failed assertions')
+  const reorderRaceOutput = runPsql(readFileSync(path.join(repoRoot, 'supabase', 'tests', '060_workout_exercise_reorder_concurrency_test.sql'), 'utf8'), 'running committed 060 concurrent exercise reorders')
+  if (/^\s*not ok\b/m.test(reorderRaceOutput) || /# Looks like you (?:failed|planned)\b/.test(reorderRaceOutput)) throw new Error('060 concurrent pgTAP reported one or more failed assertions')
   const tapOutput = runPsql(readFileSync(testPath, 'utf8'), 'running 043 pgTAP behavior suite against migration 053')
   if (/^\s*not ok\b/m.test(tapOutput) || /# Looks like you (?:failed|planned)\b/.test(tapOutput)) throw new Error('pgTAP reported one or more failed assertions')
   const insightsTapOutput = runPsql(readFileSync(insightsTestPath, 'utf8'), 'running final consent-bound insight suite against migration 050')
@@ -1915,7 +1922,7 @@ try {
   if (securityMode) {
     runPsql(readFileSync(securityTestPath, 'utf8'), 'running trainer security supplemental races and IDOR effects')
   }
-  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-051, 053, 056-059 behavior and rerunnability passed\n')
+  process.stdout.write('\n[trainer-programming-db] PASS: trainer migrations 040-051, 053, 056-060 behavior and rerunnability passed\n')
 } finally {
   if (started) {
     const cleanup = docker(['rm', '--force', container], { print: false })

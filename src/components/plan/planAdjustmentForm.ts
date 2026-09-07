@@ -54,6 +54,14 @@ export function buildPlanAdjustmentSummary(
     translate(language, source, values)
   const summary: string[] = []
 
+  if (preview.workoutDays.length > 0) {
+    const labels = language === 'en'
+      ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      : ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    const heading = language === 'en' ? 'Scheduled days' : 'Días programados'
+    summary.push(`${heading}: ${preview.workoutDays.map(day => labels[day - 1]).join(', ')}`)
+  }
+
   if (preview.daysBefore !== preview.daysAfter) {
     summary.push(t('Días semanales: {before} → {after}', {
       before: preview.daysBefore,

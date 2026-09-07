@@ -11,14 +11,15 @@ import type { Workspace } from '@/lib/coaching/workspace'
 import { ChevronUp, Trash2 } from 'lucide-react'
 import {
   ACTIVE_SESSION_CHANGED_EVENT,
-  clearActiveSession,
+  clearBackup,
   loadActiveSession,
+  recoverSessionBackup,
   type RestorableSessionSnapshot,
 } from '@/lib/session/persistSession'
 import { formatActiveWorkoutElapsed, summarizeActiveSession } from '@/components/session/sessionViewModel'
 import { useSessionStore } from '@/store/sessionStore'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { releaseSessionAuthorization } from '@/app/actions/authorizeSession'
+import { releaseSessionAuthorization, verifySessionBackupOwner } from '@/app/actions/authorizeSession'
 import {
   useAccountWorkspace,
   useOptionalAccountWorkspace,
@@ -40,14 +41,14 @@ type ActiveWorkoutDockViewProps = {
 
 type DiscardSessionDependencies = {
   releaseAuthorization: typeof releaseSessionAuthorization
-  clearPersistedSession: typeof clearActiveSession
+  clearPersistedSession: typeof clearBackup
 }
 
 export async function discardActiveWorkoutSession(
-  session: Pick<RestorableSessionSnapshot, 'clientSessionId' | 'workoutId'>,
+  session: Pick<RestorableSessionSnapshot, 'userId' | 'clientSessionId' | 'workoutId'>,
   dependencies: DiscardSessionDependencies = {
     releaseAuthorization: releaseSessionAuthorization,
-    clearPersistedSession: clearActiveSession,
+    clearPersistedSession: clearBackup,
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (session.clientSessionId) {
@@ -60,7 +61,7 @@ export async function discardActiveWorkoutSession(
     if (!released.success) return { ok: false, error: released.error }
   }
 
-  const cleared = dependencies.clearPersistedSession()
+  const cleared = dependencies.clearPersistedSession(session.userId, session.workoutId)
   if (!cleared.ok) {
     return { ok: false, error: 'No se pudo descartar el entrenamiento. Inténtalo nuevamente.' }
   }
@@ -141,6 +142,7 @@ export function shouldShowActiveWorkoutDock({
 export function ActiveWorkoutDock() {
   const pathname = usePathname()
   const accountWorkspace = useOptionalAccountWorkspace()
+  const userId = accountWorkspace?.account.id
   const [snapshot, setSnapshot] = useState<RestorableSessionSnapshot | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
@@ -148,15 +150,28 @@ export function ActiveWorkoutDock() {
   const [discarding, setDiscarding] = useState(false)
 
   useEffect(() => {
-    const refresh = () => setSnapshot(loadActiveSession())
+    let current = true
+    let refreshAttempt = 0
+    const refresh = () => {
+      const attempt = ++refreshAttempt
+      if (!userId) { setSnapshot(null); return }
+      const scoped = loadActiveSession(userId)
+      setSnapshot(scoped)
+      if (!scoped) void recoverSessionBackup(userId, null, verifySessionBackupOwner)
+        .then(recovered => { if (current && attempt === refreshAttempt) setSnapshot(recovered) })
+        .catch(() => { /* Keep unknown legacy evidence until verification can succeed. */ })
+    }
     refresh()
     window.addEventListener(ACTIVE_SESSION_CHANGED_EVENT, refresh)
     window.addEventListener('storage', refresh)
+    window.addEventListener('online', refresh)
     return () => {
+      current = false
       window.removeEventListener(ACTIVE_SESSION_CHANGED_EVENT, refresh)
       window.removeEventListener('storage', refresh)
+      window.removeEventListener('online', refresh)
     }
-  }, [])
+  }, [userId])
 
   useEffect(() => {
     if (!snapshot) return
@@ -165,7 +180,7 @@ export function ActiveWorkoutDock() {
     return () => window.clearInterval(interval)
   }, [snapshot])
 
-  if (!snapshot || !shouldShowActiveWorkoutDock({
+  if (!snapshot || snapshot.userId !== userId || !shouldShowActiveWorkoutDock({
     workspace: accountWorkspace?.presentedWorkspace ?? 'personal',
     snapshot,
     pathname,
@@ -179,7 +194,7 @@ export function ActiveWorkoutDock() {
       <ActiveWorkoutDockView
         workoutId={snapshot.workoutId}
         workoutName={snapshot.workoutName}
-        elapsedLabel={formatActiveWorkoutElapsed(snapshot.startedAt, now)}
+        elapsedLabel={formatActiveWorkoutElapsed(snapshot.startedAt, snapshot.finishedAt || now)}
         completedSets={progress.completedSets}
         totalSets={progress.totalSets}
         percentage={progress.percentage}
@@ -224,7 +239,8 @@ export function ActiveWorkoutDock() {
                     setDiscardError(result.error)
                     return
                   }
-                  useSessionStore.getState().clearSession()
+                  const state = useSessionStore.getState()
+                  if (state.userId === snapshot.userId && state.clientSessionId === snapshot.clientSessionId) state.clearSession()
                   setSnapshot(null)
                   setConfirmingDiscard(false)
                 })

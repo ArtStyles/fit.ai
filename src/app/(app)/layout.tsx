@@ -30,6 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   )
   const accountWorkspace = {
     account: {
+      id: user.id,
       name: profile.full_name,
       email: user.email ?? '',
       avatarUrl: profile.avatar_url,

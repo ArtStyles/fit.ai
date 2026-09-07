@@ -10,6 +10,7 @@ export type TrainerAccessSummary =
 
 export type AccountWorkspaceModel = {
   account: {
+    id: string
     name: string | null
     email: string
     avatarUrl: string | null

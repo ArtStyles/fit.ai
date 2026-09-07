@@ -140,7 +140,7 @@ async function buildProviderBrowserFixture(): Promise<string> {
         const root = createRoot(document.getElementById('root'))
         root.render(
           <AccountWorkspaceProvider model={{
-            account: { name: 'Ada', email: 'ada@example.com', avatarUrl: null },
+            account: { id: 'account-a', name: 'Ada', email: 'ada@example.com', avatarUrl: null },
             trainerAccess: { granted: true },
             preferredWorkspace: 'personal',
             personalNavItems: [{ href: '/dashboard', label: 'Inicio' }],

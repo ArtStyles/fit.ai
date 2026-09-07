@@ -28,7 +28,7 @@ import { BottomNav } from '../BottomNav'
 import { FixedTopBar } from '../FixedTopBar'
 
 const PERSONAL_MODEL: AccountWorkspaceModel = {
-  account: { name: 'Ana', email: 'ana@example.com', avatarUrl: null },
+  account: { id: 'account-a', name: 'Ana', email: 'ana@example.com', avatarUrl: null },
   trainerAccess: { granted: true },
   preferredWorkspace: 'personal',
   personalNavItems: [

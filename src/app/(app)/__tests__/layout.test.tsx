@@ -15,7 +15,7 @@ type LayoutRenderOptions = {
 
 type AppShellProps = {
   accountWorkspace: {
-    account: { name: string | null; email: string; avatarUrl: string | null }
+    account: { id: string; name: string | null; email: string; avatarUrl: string | null }
     trainerAccess: { granted: boolean; reason?: string }
     preferredWorkspace: string
     personalNavItems: unknown
@@ -111,6 +111,7 @@ describe('AppLayout push initialization', () => {
     expect(appShellProps).toEqual({
       accountWorkspace: {
         account: {
+          id: 'layout-test-user',
           name: 'Ana Pérez',
           email: 'ana@example.com',
           avatarUrl: '/avatar.jpg',
@@ -133,6 +134,7 @@ describe('AppLayout push initialization', () => {
     expect(appShellProps).toEqual({
       accountWorkspace: {
         account: {
+          id: 'layout-test-user',
           name: 'Ana Pérez',
           email: 'ana@example.com',
           avatarUrl: '/avatar.jpg',
@@ -155,6 +157,7 @@ describe('AppLayout push initialization', () => {
     expect(appShellProps).toEqual({
       accountWorkspace: {
         account: {
+          id: 'layout-test-user',
           name: 'Ana Pérez',
           email: 'ana@example.com',
           avatarUrl: '/avatar.jpg',

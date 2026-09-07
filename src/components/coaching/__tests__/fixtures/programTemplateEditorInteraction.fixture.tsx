@@ -32,7 +32,7 @@ type ServerEvent =
 const query = new URLSearchParams(window.location.search)
 const showNewTemplateForm = query.get('view') === 'new'
 const editorAccountModel = {
-  account: { name: 'Ada Entrenadora', email: 'ada@example.com', avatarUrl: null },
+  account: { id: 'account-a', name: 'Ada Entrenadora', email: 'ada@example.com', avatarUrl: null },
   trainerAccess: { granted: true as const },
   preferredWorkspace: 'coach' as const,
   personalNavItems: getPersonalNavItems({ communityEnabled: false }),

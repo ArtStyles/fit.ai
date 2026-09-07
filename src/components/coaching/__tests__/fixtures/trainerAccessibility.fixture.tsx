@@ -21,7 +21,7 @@ import { I18nProvider } from '@/components/i18n/I18nProvider'
 const surface = new URLSearchParams(window.location.search).get('surface')
 
 const coachAccountWorkspace = {
-  account: {
+  account: { id: 'account-a',
     name: 'Ada Entrenadora',
     email: 'ada@example.com',
     avatarUrl: null,

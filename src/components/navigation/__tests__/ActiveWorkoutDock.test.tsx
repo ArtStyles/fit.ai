@@ -7,13 +7,13 @@ import type { RestorableSessionSnapshot } from '@/lib/session/persistSession'
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard' }))
 vi.mock('@/app/actions/workspace', () => ({ setWorkspace: vi.fn() }))
-const accountWorkspace = vi.hoisted(() => ({ value: { presentedWorkspace: 'personal' as const } }))
+const accountWorkspace = vi.hoisted(() => ({ value: { account: { id: 'account-a' }, presentedWorkspace: 'personal' as const } }))
 vi.mock('../AccountWorkspaceContext', () => ({
   useOptionalAccountWorkspace: () => accountWorkspace.value,
 }))
 
 const snapshot: RestorableSessionSnapshot = {
-  clientSessionId: 'session-1',
+  userId: 'account-a', clientSessionId: 'session-1',
   workoutId: 'workout-1',
   workoutName: 'Fuerza',
   startedAt: Date.now(),
@@ -76,7 +76,7 @@ describe('persistent active workout panel', () => {
   it('releases the server reservation before deleting the local backup', async () => {
     const discardActiveWorkoutSession = (bottomNavigation as typeof bottomNavigation & {
       discardActiveWorkoutSession?: (
-        session: { clientSessionId?: string; workoutId: string },
+        session: { userId: string; clientSessionId?: string; workoutId: string },
         dependencies: {
           releaseAuthorization: (clientSessionId: string, workoutId: string) => Promise<{ success: boolean; error?: string }>
           clearPersistedSession: () => { ok: boolean }
@@ -89,7 +89,7 @@ describe('persistent active workout panel', () => {
 
     const order: string[] = []
     const result = await discardActiveWorkoutSession(
-      { clientSessionId: 'session-1', workoutId: 'workout-1' },
+      { userId: 'account-a', clientSessionId: 'session-1', workoutId: 'workout-1' },
       {
         releaseAuthorization: async () => {
           order.push('server')
@@ -109,7 +109,7 @@ describe('persistent active workout panel', () => {
   it('preserves the local backup when releasing the server reservation fails', async () => {
     const discardActiveWorkoutSession = (bottomNavigation as typeof bottomNavigation & {
       discardActiveWorkoutSession?: (
-        session: { clientSessionId?: string; workoutId: string },
+        session: { userId: string; clientSessionId?: string; workoutId: string },
         dependencies: {
           releaseAuthorization: (clientSessionId: string, workoutId: string) => Promise<{ success: boolean; error?: string }>
           clearPersistedSession: () => { ok: boolean }
@@ -122,7 +122,7 @@ describe('persistent active workout panel', () => {
 
     const clearPersistedSession = vi.fn(() => ({ ok: true as const }))
     const result = await discardActiveWorkoutSession(
-      { clientSessionId: 'session-1', workoutId: 'workout-1' },
+      { userId: 'account-a', clientSessionId: 'session-1', workoutId: 'workout-1' },
       {
         releaseAuthorization: vi.fn().mockResolvedValue({ success: false, error: 'Sin conexión' }),
         clearPersistedSession,
@@ -138,7 +138,7 @@ describe('persistent active workout panel', () => {
     const clearPersistedSession = vi.fn(() => ({ ok: true as const }))
 
     const result = await discardActiveWorkoutSession(
-      { clientSessionId: 'session-1', workoutId: 'workout-1' },
+      { userId: 'account-a', clientSessionId: 'session-1', workoutId: 'workout-1' },
       {
         releaseAuthorization: vi.fn().mockRejectedValue(new Error('network unavailable')),
         clearPersistedSession,

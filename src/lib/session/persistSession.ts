@@ -1,7 +1,8 @@
 /**
  * Utilidades de respaldo en localStorage para la sesión activa.
  *
- * Clave: fitai_session_<workoutId>
+ * Las claves v2 incluyen la cuenta propietaria. Las claves sin propietario se
+ * leen exclusivamente durante una migración autorizada.
  * Propósito: recuperar el estado de la sesión si el usuario cierra la app
  *            a mitad del entrenamiento (crash recovery).
  */
@@ -20,10 +21,12 @@ import {
 } from './limits'
 
 export interface SessionSnapshot {
+  userId: string
   clientSessionId: string
   workoutId:   string
   workoutName: string
   startedAt:   number
+  finishedAt?: number
   exercises:   ExerciseSession[]
 }
 
@@ -33,7 +36,7 @@ export type RestorableSessionSnapshot = Omit<SessionSnapshot, 'clientSessionId'>
 
 export type PersistenceResult = { ok: true } | { ok: false; error: string }
 
-const ACTIVE_SESSION_KEY = 'fitai_active_session'
+const LEGACY_ACTIVE_SESSION_KEY = 'fitai_active_session'
 export const ACTIVE_SESSION_CHANGED_EVENT = 'fitai:active-session-changed'
 
 function dispatchActiveSessionChanged() {
@@ -42,8 +45,20 @@ function dispatchActiveSessionChanged() {
   }
 }
 
-function backupKey(workoutId: string): string {
+function legacyBackupKey(workoutId: string): string {
   return `fitai_session_${workoutId}`
+}
+
+function backupKey(userId: string, workoutId: string): string {
+  return `fitai_session_v2_${encodeURIComponent(userId)}_${encodeURIComponent(workoutId)}`
+}
+
+function activeKey(userId: string): string {
+  return `fitai_active_session_v2_${encodeURIComponent(userId)}`
+}
+
+function validOwner(userId: string): boolean {
+  return userId.trim().length > 0
 }
 
 function activeSessionPointer(raw: string | null): { workoutId: string | null, stale: boolean } {
@@ -242,18 +257,26 @@ function normalizeStoredExercise(value: unknown): ExerciseSession | null {
   }
 }
 
-function normalizeSessionSnapshot(value: unknown, workoutId: string): RestorableSessionSnapshot | null {
+function normalizeSessionSnapshot(
+  value: unknown,
+  workoutId: string,
+  expectedUserId?: string,
+): RestorableSessionSnapshot | null {
   const now = Date.now()
   if (!isRecord(value) ||
     value.workoutId !== workoutId ||
+    (expectedUserId !== undefined && value.userId !== expectedUserId) ||
+    (value.userId !== undefined && (typeof value.userId !== 'string' || !validOwner(value.userId))) ||
     (value.clientSessionId !== undefined && typeof value.clientSessionId !== 'string') ||
     typeof value.workoutName !== 'string' ||
-    !isNumberInRange(
-      value.startedAt,
-      now - MAX_SESSION_AGE_MS,
-      now + MAX_SESSION_FUTURE_SKEW_MS,
-    ) ||
-    !Array.isArray(value.exercises)) return null
+    !isFiniteNumber(value.startedAt) ||
+    value.startedAt > now + MAX_SESSION_FUTURE_SKEW_MS ||
+    ((value.finishedAt === undefined || value.finishedAt === 0) &&
+      value.startedAt < now - MAX_SESSION_AGE_MS) ||
+    !Array.isArray(value.exercises) ||
+    (value.finishedAt !== undefined && value.finishedAt !== 0 &&
+      (!isFiniteNumber(value.finishedAt) || value.finishedAt < value.startedAt ||
+        value.finishedAt > now + MAX_SESSION_FUTURE_SKEW_MS))) return null
 
   const exercises: ExerciseSession[] = []
   for (const storedExercise of value.exercises) {
@@ -263,18 +286,21 @@ function normalizeSessionSnapshot(value: unknown, workoutId: string): Restorable
   }
 
   return {
+    userId: typeof value.userId === 'string' ? value.userId : (expectedUserId ?? ''),
     ...(value.clientSessionId === undefined ? {} : { clientSessionId: value.clientSessionId }),
     workoutId,
     workoutName: value.workoutName,
     startedAt: value.startedAt,
+    ...(value.finishedAt === undefined ? {} : { finishedAt: value.finishedAt }),
     exercises,
   }
 }
 
 export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {
+  if (!validOwner(snapshot.userId)) return { ok: false, error: 'Session owner is required' }
   try {
-    localStorage.setItem(backupKey(snapshot.workoutId), JSON.stringify(snapshot))
-    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ workoutId: snapshot.workoutId }))
+    localStorage.setItem(backupKey(snapshot.userId, snapshot.workoutId), JSON.stringify({ version: 2, ...snapshot }))
+    localStorage.setItem(activeKey(snapshot.userId), JSON.stringify({ version: 2, userId: snapshot.userId, workoutId: snapshot.workoutId }))
     dispatchActiveSessionChanged()
     return { ok: true }
   } catch (error) {
@@ -282,25 +308,28 @@ export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {
   }
 }
 
-export function loadActiveSession(): RestorableSessionSnapshot | null {
+export function loadActiveSession(userId: string): RestorableSessionSnapshot | null {
+  if (!validOwner(userId)) return null
   try {
-    const raw = localStorage.getItem(ACTIVE_SESSION_KEY)
+    const raw = localStorage.getItem(activeKey(userId))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
-    if (!isRecord(parsed) || typeof parsed.workoutId !== 'string' || !parsed.workoutId) return null
-    return loadBackup(parsed.workoutId)
+    if (!isRecord(parsed) || parsed.version !== 2 || parsed.userId !== userId || typeof parsed.workoutId !== 'string' || !parsed.workoutId) return null
+    return loadBackup(userId, parsed.workoutId)
   } catch {
     return null
   }
 }
 
-export function clearActiveSession(): PersistenceResult {
+export function clearActiveSession(userId: string): PersistenceResult {
+  if (!validOwner(userId)) return { ok: false, error: 'Session owner is required' }
   try {
-    const pointer = activeSessionPointer(localStorage.getItem(ACTIVE_SESSION_KEY))
+    const key = activeKey(userId)
+    const pointer = activeSessionPointer(localStorage.getItem(key))
     if (pointer.workoutId) {
-      localStorage.removeItem(backupKey(pointer.workoutId))
+      localStorage.removeItem(backupKey(userId, pointer.workoutId))
     }
-    localStorage.removeItem(ACTIVE_SESSION_KEY)
+    localStorage.removeItem(key)
     dispatchActiveSessionChanged()
     return { ok: true }
   } catch (error) {
@@ -308,27 +337,98 @@ export function clearActiveSession(): PersistenceResult {
   }
 }
 
-export function loadBackup(workoutId: string): RestorableSessionSnapshot | null {
+export function loadBackup(userId: string, workoutId: string): RestorableSessionSnapshot | null {
+  if (!validOwner(userId)) return null
   try {
-    const raw = localStorage.getItem(backupKey(workoutId))
+    const raw = localStorage.getItem(backupKey(userId, workoutId))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
-    return normalizeSessionSnapshot(parsed, workoutId)
+    if (!isRecord(parsed) || parsed.version !== 2) return null
+    return normalizeSessionSnapshot(parsed, workoutId, userId)
   } catch {
     return null
   }
 }
 
-export function clearBackup(workoutId: string): PersistenceResult {
+export function clearBackup(userId: string, workoutId: string): PersistenceResult {
+  if (!validOwner(userId)) return { ok: false, error: 'Session owner is required' }
   try {
-    localStorage.removeItem(backupKey(workoutId))
-    const pointer = activeSessionPointer(localStorage.getItem(ACTIVE_SESSION_KEY))
+    localStorage.removeItem(backupKey(userId, workoutId))
+    const key = activeKey(userId)
+    const pointer = activeSessionPointer(localStorage.getItem(key))
     if (pointer.workoutId === workoutId || pointer.stale) {
-      localStorage.removeItem(ACTIVE_SESSION_KEY)
+      localStorage.removeItem(key)
       dispatchActiveSessionChanged()
     }
     return { ok: true }
   } catch (error) {
     return { ok: false, error: persistenceError(error) }
+  }
+}
+
+export async function recoverSessionBackup(
+  userId: string,
+  workoutId: string | null,
+  verifyOwner: (workoutId: string) => Promise<string | null>,
+): Promise<RestorableSessionSnapshot | null> {
+  if (!validOwner(userId)) return null
+
+  const scoped = workoutId ? loadBackup(userId, workoutId) : loadActiveSession(userId)
+  if (scoped) return scoped
+
+  try {
+    const scopedPointerKey = activeKey(userId)
+    const capturedScopedPointer = localStorage.getItem(scopedPointerKey)
+    const capturedPointer = localStorage.getItem(LEGACY_ACTIVE_SESSION_KEY)
+    const legacyWorkoutId = workoutId ?? activeSessionPointer(capturedPointer).workoutId
+    if (!legacyWorkoutId) return null
+    const legacyKey = legacyBackupKey(legacyWorkoutId)
+    const capturedBackup = localStorage.getItem(legacyKey)
+    if (!capturedBackup) return null
+
+    let parsed: unknown
+    try { parsed = JSON.parse(capturedBackup) } catch { return null }
+    const candidate = normalizeSessionSnapshot(parsed, legacyWorkoutId)
+    if (!candidate) return null
+
+    let owner: string | null
+    try {
+      owner = await verifyOwner(legacyWorkoutId)
+    } catch {
+      throw new Error('Session ownership verification unavailable')
+    }
+    if (owner === null) throw new Error('Session ownership verification unavailable')
+    if (owner !== userId) return null
+
+    const newer = loadBackup(userId, legacyWorkoutId)
+    if (newer) return newer
+    if (localStorage.getItem(legacyKey) !== capturedBackup) {
+      throw new Error('Legacy session changed during ownership verification')
+    }
+    const scopedPointerChanged = localStorage.getItem(scopedPointerKey) !== capturedScopedPointer
+    if (scopedPointerChanged && workoutId === null) {
+      const newActive = loadActiveSession(userId)
+      if (newActive) return newActive
+    }
+    const migrated: RestorableSessionSnapshot = { ...candidate, userId }
+    try {
+      localStorage.setItem(backupKey(userId, legacyWorkoutId), JSON.stringify({ version: 2, ...migrated }))
+      if (!scopedPointerChanged) {
+        localStorage.setItem(scopedPointerKey, JSON.stringify({ version: 2, userId, workoutId: legacyWorkoutId }))
+      }
+    } catch (error) {
+      throw new Error(persistenceError(error))
+    }
+
+    if (localStorage.getItem(legacyKey) === capturedBackup) localStorage.removeItem(legacyKey)
+    if (activeSessionPointer(capturedPointer).workoutId === legacyWorkoutId &&
+      capturedPointer !== null && localStorage.getItem(LEGACY_ACTIVE_SESSION_KEY) === capturedPointer) {
+      localStorage.removeItem(LEGACY_ACTIVE_SESSION_KEY)
+    }
+    dispatchActiveSessionChanged()
+    return migrated
+  } catch (error) {
+    if (error instanceof Error && error.message !== 'Local storage unavailable') throw error
+    return null
   }
 }

@@ -280,6 +280,7 @@ export default async function SessionPage({ params: paramsPromise }: PageProps) 
 
   return (
     <SessionClient
+      userId={user.id}
       workoutId={workoutId}
       workoutName={workout.name}
       estimatedMinutes={workout.estimated_duration_minutes}

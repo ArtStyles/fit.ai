@@ -1,11 +1,13 @@
 'use client'
 
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react'
+import { useSessionStore } from '@/store/sessionStore'
 import { usePathname, useRouter } from 'next/navigation'
 import { setWorkspace } from '@/app/actions/workspace'
 import { signOut as signOutAction } from '@/app/(auth)/actions'
@@ -81,6 +83,15 @@ export function AccountWorkspaceProvider({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  useEffect(() => {
+    const state = useSessionStore.getState()
+    if (state.userId && state.userId !== model.account.id) state.clearSession()
+    return () => {
+      if (useSessionStore.getState().userId === model.account.id) {
+        useSessionStore.getState().clearSession()
+      }
+    }
+  }, [model.account.id])
   const transitionInFlight = useRef(false)
   const [pendingWorkspace, setPendingWorkspace] = useState<Workspace | null>(null)
   const [error, setError] = useState<string | null>(null)

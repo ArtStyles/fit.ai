@@ -23,7 +23,7 @@ vi.mock('@/components/navigation/FixedTopBar', () => ({
 }))
 
 const model: AccountWorkspaceModel = {
-  account: { name: 'Ana PÃ©rez', email: 'ana@example.com', avatarUrl: null },
+  account: { id: 'account-a', name: 'Ana PÃ©rez', email: 'ana@example.com', avatarUrl: null },
   trainerAccess: { granted: true },
   preferredWorkspace: 'personal',
   personalNavItems: [{ href: '/dashboard', label: 'Inicio' }],

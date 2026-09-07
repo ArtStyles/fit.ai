@@ -94,7 +94,7 @@ describe('trainer assignment single-pending migration', () => {
     expect(runner).toContain("runPsql(readMigration('059_trainer_assignment_single_pending.sql'), 'reapplying migration 059 for rerunnability')")
     expect(runner).toMatch(/reapplying migration 058 against durable consent evidence[\s\S]+restoring migration 059 after historical 058 rerun/i)
     expect(runner).toContain('running 059 trainer assignment single-pending pgTAP suite')
-    expect(runner).toContain('PASS: trainer migrations 040-051, 053, 056-059 behavior and rerunnability passed')
+    expect(runner).toContain('PASS: trainer migrations 040-051, 053, 056-060 behavior and rerunnability passed')
     expect(readme).toContain('trainer_security_preflight() = 59')
     expect(runbook).toContain('040–059')
     expect(pilotChecklist).toContain('040–059')

@@ -18,6 +18,17 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+/** Ownership check only: migrating a local draft must not issue a session lease. */
+export async function verifySessionBackupOwner(workoutId: string): Promise<string | null> {
+  if (!isUuid(workoutId)) return null
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data, error } = await supabase.from('workouts')
+    .select('id').eq('id', workoutId).eq('user_id', user.id).maybeSingle()
+  return !error && data ? user.id : null
+}
+
 export async function authorizeSessionStart(
   clientSessionId: string,
   workoutId: string,

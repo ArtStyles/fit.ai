@@ -38,7 +38,7 @@ INSERT INTO public.trainer_profiles (
 ) VALUES
   ('58000000-0000-4000-8000-000000000021', '58000000-0000-4000-8000-000000000001', '58000000-0000-4000-8000-000000000011', 'consent-active-trainer', 'active', 'Consent active trainer', 'Bio', 'Evidence'),
   ('58000000-0000-4000-8000-000000000022', '58000000-0000-4000-8000-000000000007', '58000000-0000-4000-8000-000000000012', 'consent-inactive-trainer', 'active', 'Consent inactive trainer', 'Bio', 'Evidence'),
-  ('58000000-0000-4000-8000-000000000023', '58000000-0000-4000-8000-000000000009', '58000000-0000-4000-8000-000000000013', 'consent-inactive-profile', 'inactive', 'Consent inactive profile', 'Bio', 'Evidence');
+  ('58000000-0000-4000-8000-000000000023', '58000000-0000-4000-8000-000000000009', '58000000-0000-4000-8000-000000000013', 'consent-inactive-profile', 'active', 'Consent inactive profile', 'Bio', 'Evidence');
 
 INSERT INTO public.trainer_service_offerings (
   id, trainer_profile_id, name, modality, duration_minutes
@@ -57,6 +57,11 @@ INSERT INTO public.coaching_relationships (
   ('58000000-0000-4000-8000-000000000045', '58000000-0000-4000-8000-000000000031', '58000000-0000-4000-8000-000000000001', '58000000-0000-4000-8000-000000000006', 'active', NULL, NULL, NULL, NULL),
   ('58000000-0000-4000-8000-000000000046', '58000000-0000-4000-8000-000000000032', '58000000-0000-4000-8000-000000000007', '58000000-0000-4000-8000-000000000008', 'active', NULL, NULL, NULL, NULL),
   ('58000000-0000-4000-8000-000000000047', '58000000-0000-4000-8000-000000000033', '58000000-0000-4000-8000-000000000009', '58000000-0000-4000-8000-00000000000a', 'active', NULL, NULL, NULL, NULL);
+
+-- Services and relationships must be created while the trainer is active.
+-- Deactivate only after seeding dependencies to exercise consent denial.
+UPDATE public.trainer_profiles SET status = 'inactive'
+WHERE id = '58000000-0000-4000-8000-000000000023';
 
 SELECT ok(
   to_regprocedure('public.grant_training_profile_consent(uuid,text,uuid)') IS NOT NULL,
@@ -131,16 +136,13 @@ SELECT ok(
 );
 SELECT ok(
   (
-    SELECT strpos(procedure.prosrc, 'PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0))') > 0
-      AND strpos(procedure.prosrc, 'FROM public.profiles client_account') > 0
-      AND strpos(procedure.prosrc, 'AND relationship.trainer_user_id = v_trainer_user_id
-  FOR UPDATE;') >
-        strpos(procedure.prosrc, 'FROM public.profiles client_account')
-      AND strpos(procedure.prosrc, 'AND relationship.trainer_user_id = v_trainer_user_id
-  FOR UPDATE;') > 0
-      AND strpos(procedure.prosrc, 'FROM public.coaching_consents consent') >
-        strpos(procedure.prosrc, 'AND relationship.trainer_user_id = v_trainer_user_id
-  FOR UPDATE;')
+    SELECT strpos(replace(procedure.prosrc, chr(13), ''), 'PERFORM pg_advisory_xact_lock(hashtextextended(v_client_user_id::TEXT, 0))') > 0
+      AND strpos(replace(procedure.prosrc, chr(13), ''), 'FROM public.profiles client_account') > 0
+      AND strpos(replace(procedure.prosrc, chr(13), ''), 'AND relationship.trainer_user_id = v_trainer_user_id' || chr(10) || '  FOR UPDATE;') >
+        strpos(replace(procedure.prosrc, chr(13), ''), 'FROM public.profiles client_account')
+      AND strpos(replace(procedure.prosrc, chr(13), ''), 'AND relationship.trainer_user_id = v_trainer_user_id' || chr(10) || '  FOR UPDATE;') > 0
+      AND strpos(replace(procedure.prosrc, chr(13), ''), 'FROM public.coaching_consents consent') >
+        strpos(replace(procedure.prosrc, chr(13), ''), 'AND relationship.trainer_user_id = v_trainer_user_id' || chr(10) || '  FOR UPDATE;')
     FROM pg_proc procedure
     WHERE procedure.oid = 'public.grant_training_profile_consent(uuid,text,uuid)'::REGPROCEDURE
   ),

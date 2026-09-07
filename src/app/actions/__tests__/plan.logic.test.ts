@@ -149,9 +149,11 @@ function editablePlanClient() {
     return builder
   })
 
+  const rpc = vi.fn().mockResolvedValue({ data: 2, error: null })
   return {
+    schema: () => ({ rpc }),
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } } })) },
-    rpc: vi.fn(),
+    rpc,
     from,
   }
 }
@@ -396,5 +398,60 @@ describe('inline workout editor actions', () => {
     }))).rejects.toThrow('REDIRECT:/plan?error=save_failed')
     expect(client.workoutFilters).toContainEqual(['plan_id', 'plan-1'])
     expect(client.planMutationCalls()).toBe(0)
+  })
+})
+
+describe('atomic workout exercise ordering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    requireEditableOwnedPlan.mockResolvedValue({ id: 'plan-1', prescription_locked: false })
+  })
+
+  it.each([
+    ['duplicates', ['row-1', 'row-1']],
+    ['omission', ['row-1']],
+    ['foreign member', ['row-1', 'foreign']],
+    ['extra member', ['row-1', 'row-2', 'foreign']],
+  ])('rejects %s without writing', async (_, ids) => {
+    const client = editablePlanClient()
+    createClient.mockResolvedValue(client)
+    const { reorderWorkoutExercises } = await import('../plan')
+    await expect(reorderWorkoutExercises('plan-1', 'workout-1', ids)).resolves.toEqual({ success: false })
+    expect(client.rpc).not.toHaveBeenCalled()
+    for (const result of client.from.mock.results) expect(result.value.update).not.toHaveBeenCalled()
+  })
+
+  it('saves a complete permutation with one transaction and leaves the editor open', async () => {
+    const client = editablePlanClient()
+    client.rpc.mockResolvedValue({ data: 2, error: null })
+    createClient.mockResolvedValue(client)
+    const { reorderWorkoutExercises } = await import('../plan')
+    await expect(reorderWorkoutExercises('plan-1', 'workout-1', ['row-2', 'row-1'])).resolves.toEqual({ success: true })
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith('reorder_workout_exercises_atomic', {
+      p_plan_id: 'plan-1', p_workout_id: 'workout-1', p_ordered_ids: ['row-2', 'row-1'],
+    })
+    for (const result of client.from.mock.results) expect(result.value.update).not.toHaveBeenCalled()
+    expect(redirect).not.toHaveBeenCalled()
+  })
+
+  it('returns failure without invalidating the editor when the transaction fails', async () => {
+    const client = editablePlanClient()
+    client.rpc.mockResolvedValue({ data: null, error: { message: 'transaction rejected' } })
+    createClient.mockResolvedValue(client)
+    const { reorderWorkoutExercises } = await import('../plan')
+    await expect(reorderWorkoutExercises('plan-1', 'workout-1', ['row-2', 'row-1'])).resolves.toEqual({ success: false })
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('uses the same atomic permutation for move controls', async () => {
+    const client = editablePlanClient()
+    client.rpc.mockResolvedValue({ data: 2, error: null })
+    createClient.mockResolvedValue(client)
+    const { moveWorkoutExercise } = await import('../plan')
+    await moveWorkoutExercise(data({ planId: 'plan-1', workoutExerciseId: 'row-1', direction: 'down' }))
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith('reorder_workout_exercises_atomic', {
+      p_plan_id: 'plan-1', p_workout_id: 'workout-1', p_ordered_ids: ['row-2', 'row-1'],
+    })
+    for (const result of client.from.mock.results) expect(result.value.update).not.toHaveBeenCalled()
   })
 })

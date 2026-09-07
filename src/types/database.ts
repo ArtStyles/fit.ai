@@ -1611,6 +1611,14 @@ export interface Database {
         Args: Record<string, unknown>
         Returns: unknown
       }
+      reorder_workout_exercises_atomic: {
+        Args: {
+          p_plan_id: string
+          p_workout_id: string
+          p_ordered_ids: string[]
+        }
+        Returns: number
+      }
       apply_workout_adjustment_atomic: {
         Args: {
           p_workout_id: string

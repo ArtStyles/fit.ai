@@ -23,7 +23,7 @@ const language = query.get('language') ?? 'es'
 const personalNavItems = getPersonalNavItems({ communityEnabled: false })
 const coachNavItems = getCoachNavItems()
 const model: AccountWorkspaceModel = {
-  account: {
+  account: { id: 'account-a',
     name: 'Ana P\u00e9rez Entrenamiento de Rendimiento',
     email: 'ana.entrenamiento.muy.largo@example.com',
     avatarUrl: null,
@@ -133,15 +133,15 @@ createRoot(document.getElementById('root')!).render(
 )
 
 const activeSnapshot: SessionSnapshot = {
-  clientSessionId: 'session-1',
+  userId: 'account-a', clientSessionId: 'session-1',
   workoutId: 'workout-1',
   workoutName: 'Fuerza de prueba',
   startedAt: Date.now(),
   exercises: [],
 }
 const readSessionBytes = () => ({
-  pointer: localStorage.getItem('fitai_active_session'),
-  backup: localStorage.getItem('fitai_session_workout-1'),
+  pointer: localStorage.getItem('fitai_active_session_v2_account-a'),
+  backup: localStorage.getItem('fitai_session_v2_account-a_workout-1'),
 })
 Object.assign(window, {
   __SEED_ACTIVE_SESSION__: () => {

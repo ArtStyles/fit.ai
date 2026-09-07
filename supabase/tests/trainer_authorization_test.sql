@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(181);
+SELECT plan(182);
 
 CREATE TEMP TABLE expected_trainer_sensitive_tables (table_name TEXT PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO expected_trainer_sensitive_tables (table_name) VALUES
@@ -114,8 +114,9 @@ SELECT ok(
 SELECT is(
   (SELECT md5(string_agg(function.oid::regprocedure::TEXT || '|' || owner.rolname, E'\x1e' ORDER BY function.oid::regprocedure::TEXT))
    FROM pg_proc function JOIN pg_namespace namespace ON namespace.oid = function.pronamespace JOIN pg_roles owner ON owner.oid = function.proowner
-   WHERE namespace.nspname = 'public' AND function.prosecdef),
-  '3486fb9b88f1fdd434d3efc87aa62707',
+   WHERE namespace.nspname = 'public' AND function.prosecdef
+     AND function.oid <> 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])'::regprocedure),
+  '490c95e92755266b33f972e3faa1b1dc',
   'every effective public SECURITY DEFINER function has the reviewed owner'
 );
 SELECT ok(NOT EXISTS (
@@ -179,9 +180,30 @@ SELECT is(
    CROSS JOIN LATERAL aclexplode(COALESCE(function.proacl, acldefault('f', function.proowner))) privilege
    LEFT JOIN pg_roles role ON role.oid = privilege.grantee
    WHERE namespace.nspname = 'public' AND function.prosecdef
+     AND function.oid <> 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])'::regprocedure
      AND COALESCE(role.rolname, 'PUBLIC') IN ('PUBLIC', 'anon', 'authenticated', 'service_role')),
-  '158229783bc602c43d601032a335883f',
+  'dd6587e7ada5d793c8579f05b90b3c06',
   'all effective SECURITY DEFINER execute grants match the reviewed role allowlist'
+);
+
+-- Catalog digests include the reviewed 057/058 definer additions. Review the new
+-- reorder boundary explicitly, including inherited default privileges.
+SELECT ok(
+  (SELECT function.prosecdef AND owner.rolname = 'postgres'
+    AND function.proconfig = ARRAY['search_path=""']::text[]
+    AND NOT EXISTS (
+      SELECT 1 FROM aclexplode(COALESCE(function.proacl, acldefault('f', function.proowner))) privilege
+      LEFT JOIN pg_roles grantee ON grantee.oid = privilege.grantee
+      WHERE privilege.grantee <> function.proowner
+        AND (grantee.rolname IS DISTINCT FROM 'authenticated'
+          OR privilege.privilege_type <> 'EXECUTE' OR privilege.is_grantable)
+    )
+   FROM pg_proc function JOIN pg_roles owner ON owner.oid = function.proowner
+   WHERE function.oid = 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])'::regprocedure)
+  AND has_function_privilege('authenticated', 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])', 'EXECUTE')
+  AND NOT has_function_privilege('service_role', 'public.reorder_workout_exercises_atomic(uuid,uuid,uuid[])', 'EXECUTE'),
+  'atomic reorder is postgres-owned with an empty search path and only authenticated execute'
 );
 
 -- Stable actor matrix. These identifiers are deliberately distinct from every
