@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const ACTIVE_SUPABASE_WORKDIR = 'infra'
-export const SUPABASE_CLI_PACKAGE = 'supabase@2.101.0'
+export const SUPABASE_CLI_PACKAGE = 'supabase@2.116.0'
 
 const MIGRATION_NAME = /^(?<version>\d{14})_(?<name>[a-z0-9]+(?:_[a-z0-9]+)*)\.sql$/
 const FORBIDDEN_NAME = /(?:rollback|reset|test_accounts)/i

@@ -126,7 +126,7 @@ describe('supabase migration workdir contract', () => {
     expect(buildNpxSupabaseArguments(['db', 'push', '--linked', '--dry-run']))
       .toEqual([
         '--yes',
-        'supabase@2.101.0',
+        'supabase@2.116.0',
         'db',
         'push',
         '--linked',
