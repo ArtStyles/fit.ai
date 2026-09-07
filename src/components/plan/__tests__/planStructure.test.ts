@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const page = readFileSync(new URL('../../../app/(app)/plan/page.tsx', import.meta.url), 'utf8')
+const switcher = readFileSync(new URL('../PlanSwitcher.tsx', import.meta.url), 'utf8')
 const workspace = readFileSync(new URL('../PlanWorkoutWorkspace.tsx', import.meta.url), 'utf8')
 const readView = readFileSync(new URL('../PlanWorkoutReadView.tsx', import.meta.url), 'utf8')
 const exerciseList = readFileSync(new URL('../WorkoutExerciseList.tsx', import.meta.url), 'utf8')
@@ -31,7 +32,7 @@ describe('plan information hierarchy', () => {
       'updateWorkoutSummary',
       'href={`/session/${',
     ]) {
-      expect(`${page}\n${workspace}\n${readView}`).toContain(marker)
+      expect(`${page}\n${switcher}\n${workspace}\n${readView}`).toContain(marker)
     }
   })
 
@@ -70,7 +71,7 @@ describe('plan information hierarchy', () => {
 
   it('renders a locked professional plan as read-only without mutation tools', () => {
     expect(page).toContain('prescriptionLocked')
-    expect(page).toContain('Asignada por entrenador')
+    expect(switcher).toContain('Asignada por entrenador')
     expect(workspace).toContain('prescriptionLocked')
     expect(workspace).not.toContain("onEdit={() => setMode('edit')}")
   })

@@ -12,9 +12,7 @@ vi.mock('@/components/coaching/ClientCoachingStatus', () => ({
 vi.mock('@/components/coaching/ConsentManager', () => ({
   ConsentManager: ({ relationshipId, consents }: { relationshipId: string; consents: unknown[] }) => <><p>consents:{relationshipId}</p><p>consent-count:{consents.length}</p></>,
 }))
-vi.mock('@/components/coaching/ProposedProgramReview', () => ({
-  ProposedProgramReview: ({ proposal }: { proposal: { trainerName: string; snapshot: { name: string }; canAccept: boolean; exerciseDetailsAvailable: boolean } }) => <section><h2>{proposal.snapshot.name}</h2><p>{`proposal-trainer:${proposal.trainerName}`}</p><p>{`proposal-can-accept:${proposal.canAccept}`}</p><p>{`proposal-exercise-details:${proposal.exerciseDetailsAvailable}`}</p>{proposal.canAccept ? <button type="button">Aceptar rutina</button> : null}<button type="button">No aceptar rutina</button></section>,
-}))
+
 
 function requestQuery(
   result: { data: unknown; error: unknown },
@@ -51,6 +49,7 @@ function requestQuery(
   const proposalEq = vi.fn(() => proposalQuery)
   const proposalOrder = vi.fn(() => proposalQuery)
   proposalQuery.eq = proposalEq
+  proposalQuery.in = vi.fn(() => proposalQuery)
   proposalQuery.order = proposalOrder
   proposalQuery.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => proposalResult.then(resolve, reject)
   const proposalSelect = vi.fn(() => proposalQuery)
@@ -78,13 +77,14 @@ function proposedAssignmentFixture(relationshipId: string) {
     id: '77777777-7777-4777-8777-777777777777',
     relationship_id: relationshipId,
     trainer_user_id: 'trainer-active',
-    status: 'proposed',
+    status: 'active',
+    active_version_id: '88888888-8888-4888-8888-888888888888',
     created_at: '2026-09-04T12:00:00.000Z',
     trainer_assignment_versions: [{
       id: '88888888-8888-4888-8888-888888888888',
       version_number: 1,
-      status: 'proposed',
-      change_summary: 'Revisa esta propuesta.',
+      status: 'active',
+      change_summary: 'Prioriza la técnica.',
       snapshot: {
         schemaVersion: 1,
         name: 'Rutina con detalle pendiente',
@@ -246,162 +246,41 @@ describe('CoachingPage', () => {
     expect(supabase.rpc).toHaveBeenCalledWith('get_requestable_trainer_services', { trainer_slug: 'marina-perez' })
   })
 
-  it('renders an ended relationship proposal from the authenticated client scope without exposing relationship controls', async () => {
-    const supabase = requestQuery(
-      { data: [], error: null },
-      [],
-      [{ id: 'trainer-ended', username: 'ines', full_name: 'Inés Torres', avatar_url: null }],
-      [],
-      {
-        proposals: {
-          data: [{
-            id: '11111111-1111-4111-8111-111111111111',
-            relationship_id: 'ended-relationship',
-            trainer_user_id: 'trainer-ended',
-            status: 'proposed',
-            created_at: '2026-09-04T12:00:00.000Z',
-            trainer_assignment_versions: [{
-              id: '22222222-2222-4222-8222-222222222222',
-              version_number: 1,
-              status: 'proposed',
-              change_summary: 'Propuesta pendiente al cerrar la relación',
-              snapshot: {
-                schemaVersion: 1,
-                name: 'Rutina pendiente',
-                goal: 'Fuerza',
-                description: 'Revisión segura',
-                daysPerWeek: 1,
-                workouts: [{
-                  sourceTemplateWorkoutId: '33333333-3333-4333-8333-333333333333',
-                  name: 'Día uno',
-                  dayOfWeek: 1,
-                  orderInPlan: 1,
-                  exercises: [{
-                    sourceTemplateExerciseId: '44444444-4444-4444-8444-444444444444',
-                    exerciseId: '55555555-5555-4555-8555-555555555555',
-                    orderIndex: 1,
-                    sets: 3,
-                    reps: 8,
-                    weightKg: null,
-                    targetRpe: 7,
-                    restSeconds: 60,
-                    notes: null,
-                  }],
-                }],
-              },
-            }],
-          }],
-          error: null,
-        },
-        exercises: { data: [{ id: '55555555-5555-4555-8555-555555555555', name: 'Sentadilla' }], error: null },
-      },
-    )
+  it('shows multiple retained routines and the trainer message without routine acceptance', async () => {
+    const first = proposedAssignmentFixture('relationship-current')[0]
+    const second = { ...first, id: 'second', status: 'frozen', trainer_assignment_versions: [{ ...first.trainer_assignment_versions[0], snapshot: { ...first.trainer_assignment_versions[0].snapshot, name: 'Movilidad semanal' } }] }
+    const supabase = requestQuery({ data: [], error: null }, [], [{ id: 'trainer-active', username: 'ines', full_name: 'Inés Torres', avatar_url: null }], [], { proposals: { data: [first, second], error: null } })
     requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
     const { default: CoachingPage } = await import('../page')
-
     const html = renderToStaticMarkup(await CoachingPage())
-
     expect(supabase.proposalEq).toHaveBeenCalledWith('client_user_id', 'client-1')
-    expect(supabase.proposalEq).toHaveBeenCalledWith('status', 'proposed')
-    expect(supabase.proposalOrder.mock.calls).toEqual([
-      ['created_at', { ascending: false }],
-      ['id', { ascending: false }],
-    ])
-    expect(supabase.profileIn).toHaveBeenCalledWith('id', ['trainer-ended'])
-    expect(html).toContain('Rutina pendiente')
-    expect(html).toContain('proposal-trainer:Inés Torres')
-    expect(html).toContain('proposal-can-accept:false')
-    expect(html).not.toContain('>Aceptar rutina<')
-    expect(html).toContain('No aceptar rutina')
-    expect(html).not.toContain('relationship:')
+    expect(html).toContain('Rutina con detalle pendiente')
+    expect(html).toContain('Movilidad semanal')
+    expect(html).toContain('Inés Torres')
+    expect(html).toContain('Prioriza la técnica.')
+    expect(html).toContain('href="/plan"')
+    expect(html).not.toContain('Aceptar rutina')
+    expect(html).not.toContain('No aceptar rutina')
     expect(html).not.toContain('consents:')
   })
 
-  it('allows accepting only when the proposal belongs to the active relationship', async () => {
-    const relationshipId = '66666666-6666-4666-8666-666666666666'
-    const supabase = requestQuery(
-      { data: [], error: null },
-      [{ id: relationshipId, status: 'active', trainer_user_id: 'trainer-active', service_id: 'service-active', started_at: '2026-09-04T12:00:00.000Z', source_request_id: null }],
-      [{ id: 'trainer-active', username: 'ines', full_name: 'Inés Torres', avatar_url: null }],
-      [],
-      {
-        proposals: {
-          data: [{
-            id: '77777777-7777-4777-8777-777777777777',
-            relationship_id: relationshipId,
-            trainer_user_id: 'trainer-active',
-            status: 'proposed',
-            created_at: '2026-09-04T12:00:00.000Z',
-            trainer_assignment_versions: [{
-              id: '88888888-8888-4888-8888-888888888888',
-              version_number: 1,
-              status: 'proposed',
-              change_summary: null,
-              snapshot: {
-                schemaVersion: 1,
-                name: 'Rutina activa pendiente',
-                goal: 'Fuerza',
-                description: null,
-                daysPerWeek: 1,
-                workouts: [{
-                  sourceTemplateWorkoutId: '99999999-9999-4999-8999-999999999999',
-                  name: 'Día uno',
-                  dayOfWeek: 1,
-                  orderInPlan: 1,
-                  exercises: [{
-                    sourceTemplateExerciseId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-                    exerciseId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-                    orderIndex: 1,
-                    sets: 3,
-                    reps: 8,
-                    weightKg: null,
-                    targetRpe: 7,
-                    restSeconds: 60,
-                    notes: null,
-                  }],
-                }],
-              },
-            }],
-          }],
-          error: null,
-        },
-        exercises: { data: [{ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Sentadilla' }], error: null },
-      },
-    )
+  it('preserves the library destination when historical snapshot details are incomplete', async () => {
+    const supabase = requestQuery({ data: [], error: null }, [], [], [], { proposals: { data: [{ ...proposedAssignmentFixture('ended')[0], trainer_assignment_versions: [] }], error: null } })
     requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
     const { default: CoachingPage } = await import('../page')
-
     const html = renderToStaticMarkup(await CoachingPage())
-
-    expect(html).toContain('proposal-can-accept:true')
-    expect(html).toContain('>Aceptar rutina<')
-    expect(html).toContain('>No aceptar rutina<')
+    expect(html).toContain('Rutina del entrenador')
+    expect(html).toContain('Ver mis rutinas')
+    expect(html).not.toContain('Aceptar rutina')
   })
 
-  it.each([
-    ['returns an error', { exercises: { data: null, error: { message: 'exercise read failed' } } }],
-    ['throws', { exerciseException: new Error('exercise read failed') }],
-  ])('keeps the proposal rejectable but not acceptable when the exercise lookup %s', async (_case, exerciseOptions) => {
-    const relationshipId = '66666666-6666-4666-8666-666666666666'
-    const supabase = requestQuery(
-      { data: [], error: null },
-      [{ id: relationshipId, status: 'active', trainer_user_id: 'trainer-active', service_id: 'service-active', started_at: '2026-09-04T12:00:00.000Z', source_request_id: null }],
-      [{ id: 'trainer-active', username: 'ines', full_name: 'Inés Torres', avatar_url: null }],
-      [],
-      {
-        proposals: { data: proposedAssignmentFixture(relationshipId), error: null },
-        ...exerciseOptions,
-      },
-    )
+  it('reports assignment read failures while preserving relationship and consent controls', async () => {
+    const supabase = requestQuery({ data: [], error: null }, [{ id: 'relationship-current', status: 'active', trainer_user_id: 'trainer-active', service_id: 'service-active', started_at: '2026-09-01T12:00:00.000Z', source_request_id: null }], [], [], { proposals: { data: null, error: { message: 'unavailable' } } })
     requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
     const { default: CoachingPage } = await import('../page')
-
     const html = renderToStaticMarkup(await CoachingPage())
-
-    expect(html).toContain('Rutina con detalle pendiente')
-    expect(html).toContain('proposal-exercise-details:false')
-    expect(html).toContain('proposal-can-accept:false')
-    expect(html).not.toContain('>Aceptar rutina<')
-    expect(html).toContain('>No aceptar rutina<')
+    expect(html).toContain('No se pudieron cargar tus rutinas asignadas.')
+    expect(html).toContain('consents:relationship-current')
+    expect(html).toContain('relationship:active')
   })
 })

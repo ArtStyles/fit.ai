@@ -43,14 +43,14 @@ describe('trainer assignment proposal errors', () => {
       'El acompañamiento está pausado o finalizado. Revísalo antes de enviar la rutina.',
     ],
     [
-      'TRAINER_ASSIGNMENT_ACTIVE_EXISTS',
-      { hint: 'TRAINER_ASSIGNMENT_ACTIVE_EXISTS' },
-      'Este cliente ya tiene una rutina profesional activa. Gestiona esa rutina en lugar de enviar otra.',
+      'TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED',
+      { hint: 'TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED' },
+      'Este cliente ya tiene esta rutina asignada.',
     ],
     [
-      'TRAINER_ASSIGNMENT_PROPOSAL_EXISTS',
-      { message: 'TRAINER_ASSIGNMENT_PROPOSAL_EXISTS' },
-      'Este cliente ya tiene una propuesta pendiente de revisión. Gestiona esa propuesta antes de enviar otra.',
+      'TRAINER_ASSIGNMENT_IDEMPOTENCY_MISMATCH',
+      { message: 'TRAINER_ASSIGNMENT_IDEMPOTENCY_MISMATCH' },
+      'Este envío corresponde a otra selección o a una rutina eliminada. Inicia un nuevo envío.',
     ],
     [
       'TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE',
@@ -98,12 +98,12 @@ describe('trainer assignment proposal errors', () => {
 describe('trainer assignment actions', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('proposes through the atomic RPC and derives the trainer from the active session', async () => {
+  it('assigns directly through the atomic RPC and derives the trainer from the active session', async () => {
     const supabase = supabaseFixture()
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
-    const { proposeTrainerAssignment } = await import('../trainerAssignments')
+    const { assignTrainerProgram } = await import('../trainerAssignments')
 
-    await expect(proposeTrainerAssignment(form({
+    await expect(assignTrainerProgram(form({
       relationshipId: ids.relationship,
       templateId: ids.template,
       changeSummary: 'Rutina inicial',
@@ -111,7 +111,7 @@ describe('trainer assignment actions', () => {
       trainerUserId: 'attacker',
     }))).resolves.toEqual({ ok: true, assignmentId: ids.assignment, assignmentVersionId: ids.version, workoutPlanId: ids.plan })
 
-    expect(supabase.rpc).toHaveBeenCalledWith('propose_trainer_assignment', {
+    expect(supabase.rpc).toHaveBeenCalledWith('assign_trainer_program', {
       p_relationship_id: ids.relationship,
       p_template_id: ids.template,
       p_change_summary: 'Rutina inicial',
@@ -119,6 +119,7 @@ describe('trainer assignment actions', () => {
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
     expect(revalidatePath).toHaveBeenCalledWith('/coaching')
+    expect(revalidatePath).toHaveBeenCalledWith('/plan')
   })
 
   it('rejects malformed identifiers and does not call the RPC', async () => {
@@ -206,7 +207,7 @@ describe('trainer assignment actions', () => {
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
     expect(revalidatePath).toHaveBeenCalledWith('/coaching')
-    expect(revalidatePath).toHaveBeenCalledWith('/coach/programs')
+    expect(revalidatePath).toHaveBeenCalledWith('/coach/programs', 'layout')
   })
 
   it('sends a blank optional decline reason as null', async () => {
@@ -290,6 +291,15 @@ describe('trainer assignment actions', () => {
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
     expect(revalidatePath).toHaveBeenCalledWith('/plan')
+  })
+
+  it.each([
+    ['TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED', 'Este cliente ya tiene esta rutina asignada.'],
+    ['TRAINER_ASSIGNMENT_NOT_ACTIVE', 'Esta rutina ya no está asignada. Actualiza la lista antes de publicar una revisión.'],
+  ])('explains a revision rejected with %s', async (token, error) => {
+    requireActiveTrainerContext.mockResolvedValue({ supabase: { rpc: vi.fn(async () => ({ data: null, error: { message: token } })) } })
+    const { publishTrainerAssignmentRevision } = await import('../trainerAssignments')
+    await expect(publishTrainerAssignmentRevision(form({ assignmentId: ids.assignment, templateId: ids.template, changeSummary: 'Revisión', idempotencyKey: 'revision-rejected' }))).resolves.toEqual({ ok: false, error })
   })
 
   it('requires a non-blank summary before publishing a revision', async () => {

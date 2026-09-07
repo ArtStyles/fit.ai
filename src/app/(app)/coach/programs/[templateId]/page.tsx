@@ -1,3 +1,4 @@
+import { findRetainedTemplateAssignment } from '@/lib/coaching/trainerTemplateAvailability'
 import { notFound } from 'next/navigation'
 import { Dumbbell } from 'lucide-react'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
@@ -32,8 +33,8 @@ export default async function CoachProgramDetailPage({ params: paramsPromise, se
     ? await (supabase.from('trainer_plan_assignments') as any)
       .select('id, relationship_id, client_user_id, source_template_id, status, created_at')
       .eq('trainer_user_id', user.id)
-      .in('relationship_id', relationshipIds)
-      .in('status', ['proposed', 'active'])
+      .in('client_user_id', relationshipRows.map((relationship: any) => relationship.client_user_id))
+      .in('status', ['proposed', 'active', 'frozen'])
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
     : { data: [], error: null }
@@ -50,25 +51,13 @@ export default async function CoachProgramDetailPage({ params: paramsPromise, se
     const profile = profilesById.get(clientId) as any
     return { clientName: profile?.full_name?.trim() || profile?.username?.trim() || 'Cliente', clientAvatarUrl: profile?.avatar_url || null }
   }
-  const blockingAssignmentByRelationship = new Map<string, any>()
-  for (const assignment of assignmentRows) {
-    if (!blockingAssignmentByRelationship.has(assignment.relationship_id)) {
-      blockingAssignmentByRelationship.set(assignment.relationship_id, assignment)
-    }
-  }
   const relationshipsById = new Map(relationshipRows.map((relationship: any) => [relationship.id, relationship]))
   const relationshipChoices = relationshipRows.map((relationship: any) => {
     const service = Array.isArray(relationship.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship.trainer_service_offerings
     const startedAt = new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeZone }).format(new Date(relationship.started_at))
-    const blockingAssignment = blockingAssignmentByRelationship.get(relationship.id)
-    const isProposed = blockingAssignment?.status === 'proposed'
-    const isActive = blockingAssignment?.status === 'active'
-    const state = isProposed ? 'Propuesta pendiente' : isActive ? 'Rutina activa' : 'Listo para recibir rutina'
-    const blockingReason = isProposed
-      ? 'El cliente ya tiene una propuesta pendiente de revisión.'
-      : isActive
-        ? 'El cliente ya tiene una rutina profesional activa.'
-        : undefined
+    const blockingAssignment = findRetainedTemplateAssignment(assignmentRows, relationship.client_user_id, template.id)
+    const state = blockingAssignment ? 'Rutina asignada' : 'Listo para recibir rutina'
+    const blockingReason = blockingAssignment ? 'Este cliente ya tiene esta rutina asignada.' : undefined
     return {
       id: relationship.id,
       clientUserId: relationship.client_user_id,
@@ -76,16 +65,16 @@ export default async function CoachProgramDetailPage({ params: paramsPromise, se
       serviceName: service?.name ?? 'Acompañamiento',
       startedAt,
       state,
-      canReceiveProposal: !blockingAssignment,
+      canReceiveAssignment: !blockingAssignment,
       ...(blockingReason ? { blockingReason } : {}),
       label: `${service?.name ?? 'Acompañamiento'} · iniciado ${startedAt} · ref. ${relationship.id.slice(0, 8)}`,
     }
   })
-  const revisionChoices = assignmentRows.filter((assignment: any) => assignment.status === 'active' && assignment.source_template_id === template.id).map((assignment: any) => {
+  const revisionChoices = assignmentRows.filter((assignment: any) => assignment.status === 'active' && assignment.source_template_id === template.id && relationshipsById.has(assignment.relationship_id)).map((assignment: any) => {
     const relationship = relationshipsById.get(assignment.relationship_id) as any
     const service = Array.isArray(relationship?.trainer_service_offerings) ? relationship.trainer_service_offerings[0] : relationship?.trainer_service_offerings
     const startedAt = relationship?.started_at ? new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeZone }).format(new Date(relationship.started_at)) : undefined
-    return { id: assignment.id, ...identity(assignment.client_user_id), serviceName: service?.name ?? 'Acompañamiento', startedAt, state: 'Rutina activa', label: `${service?.name ?? 'Acompañamiento'} · rutina activa` }
+    return { id: assignment.id, ...identity(assignment.client_user_id), serviceName: service?.name ?? 'Acompañamiento', startedAt, state: 'Rutina asignada', label: `${service?.name ?? 'Acompañamiento'} · rutina asignada` }
   })
   const requestedClientId = Array.isArray(searchParams?.clientId) ? searchParams.clientId[0] : searchParams?.clientId
   const selectedRelationshipId = requestedClientId && UUID.test(requestedClientId)

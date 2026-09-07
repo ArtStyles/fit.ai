@@ -192,9 +192,9 @@ describe('professional template editor browser interactions', () => {
       await page.getByLabel('Nombre de la rutina').fill('Fuerza editada')
       await pwExpect(page.getByText('Cambios pendientes')).toBeVisible()
 
-      for (const actionName of ['Enviar a un cliente', 'Publicar revisión']) {
+      for (const actionName of ['Asignar a un cliente', 'Publicar revisión']) {
         await page.getByRole('button', { name: actionName }).click()
-        const actionRegion = page.getByRole('region', { name: actionName === 'Enviar a un cliente' ? 'Enviar como rutina profesional' : 'Publicar una revisión' })
+        const actionRegion = page.getByRole('region', { name: actionName === 'Asignar a un cliente' ? 'Asignar rutina profesional' : 'Publicar una revisión' })
         const status = actionRegion.getByRole('status')
         await pwExpect(status).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
         await pwExpect(status).toBeFocused()
@@ -202,7 +202,7 @@ describe('professional template editor browser interactions', () => {
 
       await page.getByRole('button', { name: 'Guardar detalles' }).click()
       await pwExpect(page.getByText('Todo guardado').first()).toBeVisible()
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
       await pwExpect(page.locator('#assign-program-form')).toBeVisible()
     } finally { await page.close() }
   })
@@ -233,12 +233,12 @@ describe('professional template editor browser interactions', () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
-      const assignment = page.getByRole('region', { name: 'Enviar como rutina profesional' })
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
+      const assignment = page.getByRole('region', { name: 'Asignar rutina profesional' })
       await assignment.getByRole('radio', { name: /relationship-a/ }).check()
       await openTemplateDetails(page)
       await page.getByLabel('Descripción de la rutina').fill('Progresión pendiente')
-      await assignment.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
+      await assignment.getByRole('button', { name: 'Asignar rutina' }).click()
 
       await pwExpect(assignment.getByRole('status')).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
       expect(await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: unknown[] }).__ASSIGNMENT_ACTIONS__ ?? [])).toHaveLength(0)
@@ -277,9 +277,9 @@ describe('professional template editor browser interactions', () => {
         return { dispatched: window.dispatchEvent(event), prevented: event.defaultPrevented }
       })).toEqual({ dispatched: false, prevented: true })
 
-      for (const actionName of ['Enviar a un cliente', 'Publicar revisión']) {
+      for (const actionName of ['Asignar a un cliente', 'Publicar revisión']) {
         await page.getByRole('button', { name: actionName }).click()
-        const actionRegion = page.getByRole('region', { name: actionName === 'Enviar a un cliente' ? 'Enviar como rutina profesional' : 'Publicar una revisión' })
+        const actionRegion = page.getByRole('region', { name: actionName === 'Asignar a un cliente' ? 'Asignar rutina profesional' : 'Publicar una revisión' })
         await pwExpect(actionRegion.getByRole('status')).toContainText('Guarda los cambios pendientes antes de asignar o publicar.')
       }
     } finally { await page.close() }
@@ -319,7 +319,7 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(page.getByRole('group', { name: 'Editar ejercicio Sentadilla' }).getByLabel('Repeticiones')).toHaveValue('12')
       await page.getByRole('button', { name: 'Editar Sentadilla' }).click()
 
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
       await pwExpect(page.locator('#assign-program-form')).toBeVisible()
     } finally { await page.close() }
   })
@@ -396,11 +396,11 @@ describe('professional template editor browser interactions', () => {
       await page.waitForFunction(() => Boolean((window as Window & { __RESOLVE_EXERCISE_SAVE__?: () => void }).__RESOLVE_EXERCISE_SAVE__))
       await pwExpect(exercise.getByText('Guardando…')).toBeVisible()
 
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
       await pwExpect(page.locator('#assign-program-form')).toHaveCount(0)
       await page.evaluate(() => (window as Window & { __RESOLVE_EXERCISE_SAVE__?: () => void }).__RESOLVE_EXERCISE_SAVE__?.())
       await pwExpect(exercise).toHaveCount(0)
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
       await pwExpect(page.locator('#assign-program-form')).toBeVisible()
     } finally { await page.close() }
   })
@@ -434,7 +434,7 @@ describe('professional template editor browser interactions', () => {
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
       await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
 
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
       await pwExpect(page.locator('#assign-program-form')).toBeVisible()
     } finally { await page.close() }
   })
@@ -461,11 +461,11 @@ describe('professional template editor browser interactions', () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html`)
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
       const proposal = page.locator('#assign-program-form')
       await proposal.getByRole('radio', { name: /relationship-b/ }).check()
       await pwExpect(proposal.getByRole('radio', { checked: true })).toHaveCount(1)
-      await proposal.getByRole('button', { name: 'Enviar propuesta bloqueada' }).click()
+      await proposal.getByRole('button', { name: 'Asignar rutina' }).click()
 
       await page.getByRole('button', { name: 'Publicar revisión' }).click()
       const revision = page.locator('#publish-program-revision-form')

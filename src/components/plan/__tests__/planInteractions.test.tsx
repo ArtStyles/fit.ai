@@ -2,6 +2,7 @@ import { warmupFixture } from '@/test/browser/warmupFixture'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
 import path from 'node:path'
+import { mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 describe('plan editor mobile interactions', () => {
@@ -35,7 +36,6 @@ describe('plan editor mobile interactions', () => {
         ],
       },
       resolve: { dedupe: ['react', 'react-dom'], alias: [
-        { find: '@/components/feedback/SubmitButton', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/submitButton.fixture.tsx') },
         { find: '@/app/actions/plan', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/planActions.fixture.ts') },
         { find: '@/app/actions/adjustPlan', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/adjustPlan.fixture.ts') },
         { find: '@/app/actions/exerciseCatalog', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/exerciseCatalog.fixture.ts') },
@@ -57,6 +57,41 @@ describe('plan editor mobile interactions', () => {
   afterAll(async () => {
     await browser?.close()
     await viteServer?.close()
+  }, 30_000)
+
+  it.each([360, 1280])('keeps the professional and personal library usable with and without a primary at %ipx', async width => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } })
+    try {
+      for (const primary of ['none', 'professional']) {
+        await page.goto(`${baseUrl}/src/components/plan/__tests__/fixtures/planInteractions.html?surface=library&primary=${primary}`)
+        await page.locator('summary').first().click()
+        await pwExpect(page.getByText('Mi plan personal', { exact: true })).toBeVisible()
+        await pwExpect(page.getByText('Movilidad del entrenador', { exact: true })).toBeVisible()
+        await pwExpect(page.getByRole('link', { name: 'Nuevo plan basado en evidencia' })).toBeVisible()
+        await pwExpect(page.getByText('3/2', { exact: false })).toHaveCount(0)
+        const remove = page.getByRole('button', { name: 'Eliminar Movilidad del entrenador' })
+        page.once('dialog', async dialog => { expect(dialog.message()).toContain('historial'); await dialog.dismiss() })
+        await remove.click()
+        expect(await page.evaluate(() => (window as Window & { __REMOVED_PLAN__?: string }).__REMOVED_PLAN__)).toBeUndefined()
+        const use = page.getByRole('button', { name: /Movilidad del entrenador/ }).filter({ hasText: 'Usar' })
+        await use.click()
+        await page.waitForFunction(() => (window as Window & { __SELECTED_PLAN__?: string }).__SELECTED_PLAN__ === 'professional-b')
+        page.once('dialog', dialog => dialog.accept())
+        await remove.click()
+        await page.waitForFunction(() => (window as Window & { __REMOVED_PLAN__?: string }).__REMOVED_PLAN__ === 'professional-b')
+        const geometry = await page.evaluate(() => ({
+          overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          font: getComputedStyle(document.body).fontFamily,
+          buttons: Array.from(document.querySelectorAll('button')).map(button => ({ label: button.textContent, width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })),
+        }))
+        expect(geometry.overflow).toBe(false)
+        expect(geometry.font).toContain('Arial')
+        expect(geometry.buttons.filter(button => button.width > 0 && button.height > 0).every(button => button.width >= 44 && button.height >= 44), JSON.stringify(geometry.buttons)).toBe(true)
+        expect(geometry.buttons.every(button => !button.label?.includes('UsarUsar'))).toBe(true)
+        await mkdir('artifacts/direct-assignment', { recursive: true })
+        await page.screenshot({ path: `artifacts/direct-assignment/library-${primary}-${width}.png`, fullPage: true })
+      }
+    } finally { await page.close() }
   }, 30_000)
 
   it('shows a circular exercise image that opens its preview from the day detail', async () => {

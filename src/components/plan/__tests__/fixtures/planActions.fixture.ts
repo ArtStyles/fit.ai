@@ -15,3 +15,11 @@ export async function replaceWorkoutExercise(formData: FormData) {
 }
 export async function removeWorkoutExercise() {}
 export async function reorderWorkoutExercises() {}
+
+export async function activatePlan(data: FormData) {
+  (window as Window & { __SELECTED_PLAN__?: string }).__SELECTED_PLAN__ = String(data.get('planId'))
+}
+export async function deletePlan(data: FormData) {
+  (window as Window & { __REMOVED_PLAN__?: string }).__REMOVED_PLAN__ = String(data.get('planId'))
+}
+export async function createManualPlan() {}

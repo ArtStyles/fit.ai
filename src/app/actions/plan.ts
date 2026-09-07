@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { selectedExerciseIds } from './plan.logic'
 import { getPlanCreatePolicy } from '@/lib/plans/entitlements'
-import { requireEditableOwnedPlan } from '@/lib/plans/editability'
+import { requireEditableOwnedPlan, requireOwnedPlan } from '@/lib/plans/editability'
 
 function asNullableString(value: FormDataEntryValue | null): string | null {
   const text = typeof value === 'string' ? value.trim() : ''
@@ -127,7 +127,7 @@ export async function activatePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
-  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+  try { await requireOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=save_failed') }
 
   const { data, error } = await (supabase.rpc as any)('activate_plan_version', {
     p_plan_id: planId,
@@ -195,9 +195,10 @@ export async function deletePlan(formData: FormData) {
   const planId = asNullableString(formData.get('planId'))
   if (!planId) redirect('/plan?error=missing_fields')
 
-  try { await requireEditableOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=plan_locked') }
+  let ownedPlan: Awaited<ReturnType<typeof requireOwnedPlan>>
+  try { ownedPlan = await requireOwnedPlan(supabase, user.id, planId) } catch { redirect('/plan?error=save_failed') }
 
-  const { error } = await (supabase.rpc as any)('retire_plan_family', {
+  const { error } = await (supabase.rpc as any)(ownedPlan.prescription_locked ? 'remove_trainer_assignment' : 'retire_plan_family', {
     p_plan_id: planId,
   })
 
@@ -205,6 +206,9 @@ export async function deletePlan(formData: FormData) {
 
   revalidatePath('/plan')
   revalidatePath('/dashboard')
+  revalidatePath('/coaching')
+  revalidatePath('/coach/programs', 'layout')
+  revalidatePath('/coach/clients', 'layout')
   redirect('/plan?notice=plan_retired')
 }
 

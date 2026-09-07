@@ -27,7 +27,7 @@ export const TRAINER_SECURITY_ID_FIELDS = [
 export type TrainerSecurityIdField = typeof TRAINER_SECURITY_ID_FIELDS[number]
 
 export const TRAINER_SECURITY_PREFLIGHT_ERROR =
-  'Trainer security migrations 040 through 059 must be deployed before fixture writes'
+  'Trainer security baseline and direct-assignment migration (preflight 60) must be deployed before fixture writes'
 
 type TrainerSecurityReadOnlyClient = {
   rpc(name: string, args?: Record<string, unknown>): PromiseLike<{ data?: unknown; error: QueryError }>
@@ -43,7 +43,7 @@ export async function probeTrainerSecurityReadOnly(
 
   return {
     tableError: markerResult.error,
-    marker: markerResult.error || markerResult.data !== 59 ? null : 59,
+    marker: markerResult.error || markerResult.data !== 60 ? null : 60,
   }
 }
 
@@ -57,7 +57,7 @@ export async function assertTrainerSecuritySchemaReady(dependencies: {
 }): Promise<void> {
   try {
     const probe = await dependencies.probeReadOnly()
-    if (probe.tableError || probe.marker !== 59) throw new Error(TRAINER_SECURITY_PREFLIGHT_ERROR)
+    if (probe.tableError || probe.marker !== 60) throw new Error(TRAINER_SECURITY_PREFLIGHT_ERROR)
   } catch {
     throw new Error(TRAINER_SECURITY_PREFLIGHT_ERROR)
   }
@@ -418,13 +418,13 @@ export async function prepareIdempotentProposalRace(scope: string): Promise<Prep
   }
 }
 
-export async function prepareAcceptPublishSuspendRace(scope: string): Promise<PreparedSecurityRace> {
+export async function prepareSelectPublishSuspendRace(scope: string): Promise<PreparedSecurityRace> {
   const prepared = await programmingRace(scope)
   const actors = prepared.actors
   return {
     actors,
     run: {
-      accept: () => (prepared.client.rpc as any)('accept_trainer_assignment', { p_assignment_id: prepared.proposal.assignmentId, p_idempotency_key: `accept-${scope}` }),
+      select: () => (prepared.client.rpc as any)('activate_plan_version', { p_plan_id: prepared.proposal.planId }),
       publish: () => (prepared.trainerA.rpc as any)('publish_trainer_assignment_revision', { p_assignment_id: prepared.proposal.assignmentId, p_template_id: prepared.proposal.templateId, p_change_summary: 'Concurrent publish', p_idempotency_key: `publish-${scope}` }),
       suspend: () => suspendThroughAuthenticatedAdmin(prepared.admin, prepared.fixture.trainerA.id),
     },
@@ -451,7 +451,7 @@ export async function prepareRevisionRace(scope: string): Promise<PreparedSecuri
   const prepared = await programmingRace(scope)
   let accepted: RpcResult
   try {
-    accepted = await (prepared.client.rpc as any)('accept_trainer_assignment', { p_assignment_id: prepared.proposal.assignmentId, p_idempotency_key: `accept-${scope}` })
+    accepted = await (prepared.client.rpc as any)('activate_plan_version', { p_plan_id: prepared.proposal.planId })
     if (accepted.error) throw new Error('Could not prepare revision race')
   } catch (error) {
     await signOutSecurityActors(prepared.actors)
@@ -488,7 +488,7 @@ export async function prepareEndReadEvidenceRace(scope: string): Promise<Prepare
   }
   try {
   const proposal = await fixture.createTemplateAndPropose('Security evidence program', `proposal-${scope}`)
-  const accepted = await (fixture.client.client.rpc as any)('accept_trainer_assignment', { p_assignment_id: proposal.assignmentId, p_idempotency_key: `accept-${scope}` })
+  const accepted = await (fixture.client.client.rpc as any)('activate_plan_version', { p_plan_id: proposal.planId })
   if (accepted.error) throw new Error('Could not prepare evidence race')
   await fixture.prepareInsightsEvidence()
   const trainerA = await independentActor(fixture.trainerA.email, fixture.password)
@@ -594,11 +594,8 @@ export async function prepareAuthoritativeIdorRace(scope: string): Promise<Prepa
     foreignClient: readyForeign.client.client,
   })
   const foreignProposal = await readyForeign.createTemplateAndPropose('Foreign IDOR program', `proposal-${scope}-foreign`)
-  const accepted = await (readyForeign.client.client.rpc as any)('accept_trainer_assignment', {
-    p_assignment_id: foreignProposal.assignmentId,
-    p_idempotency_key: `accept-${scope}-foreign`,
-  })
-  if (accepted.error) throw new Error('Could not accept the foreign IDOR assignment')
+  const accepted = await (readyForeign.client.client.rpc as any)('activate_plan_version', { p_plan_id: foreignProposal.planId })
+  if (accepted.error) throw new Error('Could not select the foreign IDOR routine')
   const evidence = await readyForeign.prepareInsightsEvidence()
   const credentialId = randomUUID()
   const credential = await (readyForeign.service.from('trainer_application_credentials') as any).insert({

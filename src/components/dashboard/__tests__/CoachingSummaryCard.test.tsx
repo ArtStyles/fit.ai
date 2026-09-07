@@ -31,6 +31,7 @@ const cases: Array<{
       startedAt: '2026-09-01T10:00:00.000Z',
       trainingConsentActive: false,
       assignmentStatus: 'proposed',
+      assignmentCount: 0,
     },
   },
   {
@@ -50,13 +51,14 @@ const cases: Array<{
       startedAt: '2026-09-02T10:00:00.000Z',
       trainingConsentActive: false,
       assignmentStatus: 'proposed',
+      assignmentCount: 0,
     },
   },
   {
     name: 'shows a proposed assignment as pending review',
-    expectedState: 'proposal_pending',
-    expectedLabel: 'Rutina pendiente de revisión',
-    expectedCta: 'Revisar rutina',
+    expectedState: 'awaiting_routine',
+    expectedLabel: 'Tu entrenador está preparando el siguiente paso',
+    expectedCta: 'Ver acompañamiento',
     summary: {
       relationshipId: 'relationship-proposal',
       relationshipStatus: 'active',
@@ -69,13 +71,14 @@ const cases: Array<{
       startedAt: '2026-09-03T10:00:00.000Z',
       trainingConsentActive: true,
       assignmentStatus: 'proposed',
+      assignmentCount: 0,
     },
   },
   {
-    name: 'shows an active trainer plan',
-    expectedState: 'active_plan',
-    expectedLabel: 'Rutina activa con tu entrenador',
-    expectedCta: 'Ver acompañamiento',
+    name: 'shows retained routines without claiming they are primary',
+    expectedState: 'routines_available',
+    expectedLabel: '2 rutinas en tu lista',
+    expectedCta: 'Ver mis rutinas',
     summary: {
       relationshipId: 'relationship-active',
       relationshipStatus: 'active',
@@ -88,6 +91,7 @@ const cases: Array<{
       startedAt: '2026-09-04T10:00:00.000Z',
       trainingConsentActive: true,
       assignmentStatus: 'active',
+      assignmentCount: 2,
     },
   },
   {
@@ -107,6 +111,7 @@ const cases: Array<{
       startedAt: '2026-09-05T10:00:00.000Z',
       trainingConsentActive: true,
       assignmentStatus: null,
+      assignmentCount: 0,
     },
   },
 ]
@@ -119,7 +124,7 @@ describe('CoachingSummaryCard', () => {
     expect(html).toContain(expectedLabel)
     expect(html).toContain(summary.trainerName)
     expect(html).toContain(summary.serviceName)
-    expect(html).toContain('href="/coaching"')
+    expect(html).toContain(expectedState === 'routines_available' ? 'href="/plan"' : 'href="/coaching"')
     expect(html).toContain(`>${expectedCta}</a>`)
   })
 

@@ -8,9 +8,9 @@ describe('getPlanCapabilities', () => {
       canEdit: false,
       canAdjustWithAi: false,
       canRegenerate: false,
-      canRetire: false,
+      canRetire: true,
       canShare: false,
-      canActivate: false,
+      canActivate: true,
     })
   })
 

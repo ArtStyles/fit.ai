@@ -13,6 +13,7 @@ export type ClientCoachingSummary = {
   startedAt: string
   trainingConsentActive: boolean
   assignmentStatus: 'proposed' | 'active' | null
+  assignmentCount: number
 }
 
 export type ClientCoachingSummaryResult = {
@@ -38,7 +39,7 @@ type ProfileRow = {
 
 type DirectoryRow = { slug: string | null }
 type ConsentRow = { scope: 'training_profile'; revoked_at: string | null }
-type AssignmentRow = { id: string; status: 'proposed' | 'active'; created_at: string }
+type AssignmentRow = { id: string; status: 'active' | 'frozen'; created_at: string }
 type ServiceRow = { service_id: string; name: string }
 
 function firstRow<T>(value: unknown): T | null {
@@ -86,8 +87,9 @@ export async function loadClientCoachingSummary(
     supabase
       .from('trainer_plan_assignments')
       .select('id, status, created_at')
-      .eq('relationship_id', relationship.id)
-      .in('status', ['proposed', 'active'])
+      .eq('trainer_user_id', relationship.trainer_user_id)
+      .eq('client_user_id', clientUserId)
+      .in('status', ['active', 'frozen'])
       .order('created_at', { ascending: false })
       .order('id', { ascending: false }),
   ])
@@ -102,8 +104,7 @@ export async function loadClientCoachingSummary(
   const assignments = !Array.isArray(assignmentResponse.data)
     ? []
     : assignmentResponse.data as AssignmentRow[]
-  const assignment = assignments.find(candidate => candidate.status === 'proposed')
-    ?? assignments.find(candidate => candidate.status === 'active')
+  const retainedAssignments = assignments.filter(candidate => candidate.status === 'active' || candidate.status === 'frozen')
 
   let serviceName = 'Servicio de acompañamiento no disponible'
   if (directory?.slug) {
@@ -127,7 +128,8 @@ export async function loadClientCoachingSummary(
       serviceName,
       startedAt: relationship.started_at,
       trainingConsentActive: Boolean(consent),
-      assignmentStatus: assignment?.status ?? null,
+      assignmentStatus: retainedAssignments.length ? 'active' : null,
+      assignmentCount: retainedAssignments.length,
     },
     error: null,
   }

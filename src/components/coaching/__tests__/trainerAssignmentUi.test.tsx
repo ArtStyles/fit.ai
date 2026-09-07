@@ -1,13 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
 import path from 'node:path'
+import { mkdir } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 describe('trainer assignment UI contracts', () => {
   it('wires a client-selected relationship to the proposal action without exposing activation controls', async () => {
     const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../AssignProgramDialog.tsx', import.meta.url), 'utf8'))
     expect(source).toContain("import('@/app/actions/trainerAssignments')")
-    expect(source).toContain('proposeTrainerAssignment')
+    expect(source).toContain('assignTrainerProgram')
     expect(source).toContain('name="relationshipId"')
     expect(source).toContain('relationship.label')
     expect(source).toContain('idempotencyKey')
@@ -90,7 +91,7 @@ describe('trainer assignment browser interaction', () => {
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html`)
       await page.waitForFunction(() => Boolean((window as Window & { __ASSIGN_DIALOG_READY__?: boolean }).__ASSIGN_DIALOG_READY__))
-      await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
       const readyRecipient = page.getByRole('radio', { name: /Ana Lista/ })
       const proposedRecipient = page.getByRole('radio', { name: /Luis Pendiente/ })
       const activeRecipient = page.getByRole('radio', { name: /Eva Activa/ })
@@ -98,13 +99,15 @@ describe('trainer assignment browser interaction', () => {
       await pwExpect(readyRecipient).toBeEnabled()
       await pwExpect(readyRecipient).toBeChecked()
       await pwExpect(proposedRecipient).toBeDisabled()
-      await pwExpect(activeRecipient).toBeDisabled()
-      await pwExpect(page.getByText('El cliente ya tiene una propuesta pendiente de revisión.')).toBeVisible()
-      await pwExpect(page.getByText('El cliente ya tiene una rutina profesional activa.')).toBeVisible()
+      await pwExpect(activeRecipient).toBeEnabled()
+      await pwExpect(page.getByText('Este cliente ya tiene esta rutina asignada.')).toBeVisible()
+      await pwExpect(page.getByText('Puede recibir otra rutina distinta.')).toBeVisible()
 
-      const submit = page.getByRole('button', { name: 'Enviar propuesta bloqueada' })
+      const submit = page.getByRole('button', { name: 'Asignar rutina' })
       await pwExpect(submit).toBeEnabled()
       await submit.click()
+      await pwExpect(page.getByRole('status')).toHaveText('Rutina añadida a la lista del cliente.')
+      await pwExpect(readyRecipient).toBeDisabled()
       await page.waitForFunction(() => Boolean((window as Window & { __ASSIGNMENT_ACTIONS__?: unknown[] }).__ASSIGNMENT_ACTIONS__?.length))
       expect(await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__)).toEqual([
         expect.objectContaining({ relationshipId: '11111111-1111-4111-8111-111111111111', templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
@@ -112,13 +115,60 @@ describe('trainer assignment browser interaction', () => {
     } finally { await page.close() }
   }, 15_000)
 
+  it.each([360, 1280])('renders direct assignment without acceptance and preserves recipient identity at %ipx', async width => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } })
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html`)
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
+      await pwExpect(page.getByText('Este cliente ya tiene esta rutina asignada.')).toBeVisible()
+      await pwExpect(page.getByRole('radio', { name: /Eva Activa/ })).toBeEnabled()
+      await pwExpect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toHaveCount(0)
+      const layout = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, font: getComputedStyle(document.body).fontFamily }))
+      expect(layout.scroll).toBeLessThanOrEqual(layout.width)
+      expect(layout.font).toContain('Arial')
+      await mkdir('artifacts/direct-assignment', { recursive: true })
+      await page.screenshot({ path: `artifacts/direct-assignment/assign-${width}.png`, fullPage: true })
+    } finally { await page.close() }
+  })
+
+  it.each([false, true])('keeps retry keys tied to the recipient (change recipient: %s)', async changeRecipient => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html?assign=error-once`)
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar rutina', exact: true }).click()
+      await pwExpect(page.getByRole('status')).toHaveText('No se pudo enviar la rutina.')
+      if (changeRecipient) await page.getByRole('radio', { name: /Eva Activa/ }).check()
+      await page.getByRole('button', { name: 'Asignar rutina', exact: true }).click()
+      await pwExpect(page.getByRole('status')).toHaveText('Rutina añadida a la lista del cliente.')
+      const calls = await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__!)
+      expect(calls).toHaveLength(2)
+      expect(calls[0].idempotencyKey === calls[1].idempotencyKey).toBe(!changeRecipient)
+      expect(calls[0].relationshipId === calls[1].relationshipId).toBe(!changeRecipient)
+    } finally { await page.close() }
+  })
+
+  it('allows a fresh explicit attempt after an idempotency mismatch', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html?assign=mismatch-once`)
+      await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
+      await page.getByRole('button', { name: 'Asignar rutina', exact: true }).click()
+      await pwExpect(page.getByRole('status')).toContainText('Inicia un nuevo envío.')
+      await page.getByRole('button', { name: 'Asignar rutina', exact: true }).click()
+      await pwExpect(page.getByRole('status')).toHaveText('Rutina añadida a la lista del cliente.')
+      const calls = await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__!)
+      expect(calls[0].idempotencyKey).not.toBe(calls[1].idempotencyKey)
+    } finally { await page.close() }
+  })
+
   it('explains both prerequisites when there are no eligible relationships', async () => {
     const page = await browser.newPage()
     try {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/assignProgramDialogInteraction.html?empty=1`)
 
       await pwExpect(page.getByText('Necesitas un acompañamiento activo y una autorización de datos de entrenamiento vigente para enviar esta rutina.')).toBeVisible()
-      await pwExpect(page.getByRole('button', { name: 'Enviar a un cliente' })).toHaveCount(0)
+      await pwExpect(page.getByRole('button', { name: 'Asignar a un cliente' })).toHaveCount(0)
     } finally { await page.close() }
   }, 15_000)
 

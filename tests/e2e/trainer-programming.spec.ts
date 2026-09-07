@@ -10,7 +10,7 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-test('trainer programming keeps immutable prescriptions across acceptance, revision, and execution', async ({ page }, testInfo) => {
+test('trainer programming keeps immutable prescriptions across assignment, selection, revision, and execution', async ({ page }, testInfo) => {
   test.skip(!isTrainerProgrammingE2EEnabled(process.env),
     'Requires dedicated E2E credentials, migrations 042/043, and explicit dedicated-project reset acknowledgement.')
   test.setTimeout(300_000)
@@ -32,11 +32,15 @@ test('trainer programming keeps immutable prescriptions across acceptance, revis
   await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 })
 
   await page.goto('/coaching')
-  await expect(page.getByRole('heading', { name: 'Rutina profesional propuesta', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Rutinas de tu entrenador', exact: true })).toBeVisible()
   await expect(page.getByText('E2E Fuerza V1', { exact: true })).toBeVisible()
-  page.once('dialog', dialog => dialog.accept())
-  await page.getByRole('button', { name: 'Aceptar rutina', exact: true }).click()
-  await expect(page.getByRole('status')).toContainText('Rutina activada')
+  await expect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toHaveCount(0)
+  await expect(fixture.readAcceptedAssignment(proposal.assignmentId)).resolves.toMatchObject({ personalPlanIsActive: true, personalPlanStillExists: true })
+  await page.goto('/plan')
+  await page.locator('[data-plan-library] > summary').click()
+  await page.getByRole('button', { name: /E2E Fuerza V1.*Usar/ }).click()
+  await expect(page).toHaveURL(/notice=plan_activated/)
+
 
   const accepted = await fixture.readAcceptedAssignment(proposal.assignmentId)
   expect(accepted.planId).toBe(proposal.planId)

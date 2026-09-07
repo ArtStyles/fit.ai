@@ -1,3 +1,4 @@
+import { PlanSwitcher } from '../../PlanSwitcher'
 import { createRoot } from 'react-dom/client'
 import { useEffect, useState } from 'react'
 import '@/styles/globals.css'
@@ -68,6 +69,15 @@ function WorkspaceFixture() {
   />
 }
 
+function LibraryFixture() {
+  const primary = new URLSearchParams(window.location.search).get('primary')
+  return <PlanSwitcher tier="free" t={text => text} plans={[
+    { id: 'personal', name: 'Mi plan personal', goal: null, days_per_week: 3, difficulty: 'beginner', source_type: 'manual', created_at: '', is_active: primary === 'personal', prescription_locked: false },
+    { id: 'professional-a', name: 'Fuerza del entrenador', goal: null, days_per_week: 3, difficulty: 'intermediate', source_type: 'trainer_assigned', created_at: '', is_active: primary === 'professional', prescription_locked: true },
+    { id: 'professional-b', name: 'Movilidad del entrenador', goal: null, days_per_week: 2, difficulty: 'beginner', source_type: 'trainer_assigned', created_at: '', is_active: false, prescription_locked: true },
+  ]} />
+}
+
 function CatalogFixture() {
   const [open, setOpen] = useState(true)
 
@@ -114,7 +124,7 @@ createRoot(document.getElementById('root')!).render(
   <I18nProvider language="es">
     <ToastProvider>
       <main className="mx-auto max-w-5xl px-4 py-6">
-        {surface === 'catalog' ? <CatalogFixture /> : <WorkspaceFixture />}
+        {surface === 'library' ? <LibraryFixture /> : surface === 'catalog' ? <CatalogFixture /> : <WorkspaceFixture />}
       </main>
     </ToastProvider>
   </I18nProvider>,

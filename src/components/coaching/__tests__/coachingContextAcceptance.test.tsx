@@ -14,15 +14,14 @@ const IMPORTANT_COPY = [
   'Acompañamiento activo',
   'Seguimiento de fuerza integral',
   'Falta autorizar tus datos de entrenamiento',
-  'Rutina pendiente de revisión',
+  '2 rutinas en tu lista',
   'Falta un paso para recibir tu rutina',
   'Autorizar datos de entrenamiento',
   'Medidas corporales — Opcional',
   'Listo para recibir rutina',
-  'Propuesta pendiente',
-  'Rutina activa',
-  'El cliente ya tiene una propuesta pendiente de revisión.',
-  'El cliente ya tiene una rutina profesional activa.',
+  'Rutina asignada',
+  'Este cliente ya tiene esta rutina asignada.',
+  'Puede recibir otra rutina distinta.',
 ] as const
 
 type MeasuredRect = {
@@ -126,7 +125,7 @@ describe('coaching context cross-flow acceptance', () => {
       await document.fonts?.ready
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     })
-    await page.getByRole('button', { name: 'Enviar a un cliente' }).click()
+    await page.getByRole('button', { name: 'Asignar a un cliente' }).click()
     await pwExpect(page.getByRole('button', { name: 'Cerrar' })).toBeVisible()
     return page
   }

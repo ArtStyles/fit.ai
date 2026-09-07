@@ -500,7 +500,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
       await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=assignment`)
       await page.waitForFunction(() => Boolean((window as Window & { __TRAINER_ACCESSIBILITY_READY__?: boolean }).__TRAINER_ACCESSIBILITY_READY__))
       const disclosure = page.locator('button[aria-controls="assign-program-form"]')
-      await pwExpect(disclosure).toHaveAccessibleName('Enviar a un cliente')
+      await pwExpect(disclosure).toHaveAccessibleName('Asignar a un cliente')
       await disclosure.focus()
       await page.keyboard.press('Enter')
       await pwExpect(disclosure).toHaveAttribute('aria-expanded', 'true')

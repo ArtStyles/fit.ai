@@ -6,6 +6,13 @@ export type TranslationValues = Record<string, string | number>
 // one map makes missing translations fall back safely instead of rendering a
 // key or an empty label.
 const ENGLISH: Record<string, string> = {
+  'Tus rutinas': 'Your routines',
+  'Principal': 'Primary',
+  'Elimina un plan personal para crear otro.': 'Remove a personal plan to create another.',
+  'La rutina se eliminará de tu lista, pero tu historial permanecerá intacto.': 'The routine will be removed from your list, but your history will remain intact.',
+  'Elige una rutina de tu lista para empezar': 'Choose a routine from your list to get started',
+  'Pulsa Usar en la rutina que quieras seleccionar como principal. Puedes cambiarla cuando quieras.': 'Select Use on the routine you want as your primary plan. You can change it anytime.',
+
   'Inicio': 'Home',
   'Plan': 'Plan',
   'Entrenar': 'Train',

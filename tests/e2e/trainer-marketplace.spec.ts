@@ -321,10 +321,14 @@ test('gates the complete persisted trainer marketplace journey and pilot exclusi
 
     const proposal = await fixture.createTemplateAndPropose('Marketplace Professional V1')
     await page.goto('/coaching')
-    await expect(page.getByRole('heading', { name: 'Rutina profesional propuesta', exact: true })).toBeVisible()
-    page.once('dialog', dialog => dialog.accept())
-    await page.getByRole('button', { name: 'Aceptar rutina', exact: true }).click()
-    await expect(page.getByRole('status')).toContainText('Rutina activada')
+    await expect(page.getByRole('heading', { name: 'Rutinas de tu entrenador', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Aceptar rutina', exact: true })).toHaveCount(0)
+    await expect(fixture.readAcceptedAssignment(proposal.assignmentId)).resolves.toMatchObject({ personalPlanIsActive: true, personalPlanStillExists: true })
+    await page.goto('/plan')
+    await page.locator('[data-plan-library] > summary').click()
+    await page.getByRole('button', { name: /Marketplace Professional V1.*Usar/ }).click()
+    await expect(page).toHaveURL(/notice=plan_activated/)
+
     await page.goto('/plan')
     await expectProfessionalPlanReadOnly(page)
     await assertPilotExclusions(page)

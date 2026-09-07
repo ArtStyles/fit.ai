@@ -44,6 +44,7 @@ const trainers: PublicTrainerDirectoryRow[] = [
 
 const contractedSummary: ClientCoachingSummary = {
   assignmentStatus: 'active',
+  assignmentCount: 1,
   relationshipId: '33333333-3333-4333-8333-333333333333',
   relationshipStatus: 'active',
   serviceId: '44444444-4444-4444-8444-444444444444',
@@ -58,6 +59,7 @@ const contractedSummary: ClientCoachingSummary = {
 
 const needsConsentSummary: ClientCoachingSummary = {
   assignmentStatus: null,
+  assignmentCount: 0,
   relationshipId: '55555555-5555-4555-8555-555555555555',
   relationshipStatus: 'active',
   serviceId: '66666666-6666-4666-8666-666666666666',
@@ -70,8 +72,9 @@ const needsConsentSummary: ClientCoachingSummary = {
   trainingConsentActive: false,
 }
 
-const proposalPendingSummary: ClientCoachingSummary = {
-  assignmentStatus: 'proposed',
+const routinesAvailableSummary: ClientCoachingSummary = {
+  assignmentStatus: 'active',
+  assignmentCount: 2,
   relationshipId: '88888888-8888-4888-8888-888888888888',
   relationshipStatus: 'active',
   serviceId: '99999999-9999-4999-8999-999999999999',
@@ -86,7 +89,7 @@ const proposalPendingSummary: ClientCoachingSummary = {
 
 const assignmentRecipients: Relationship[] = [
   {
-    canReceiveProposal: true,
+    canReceiveAssignment: true,
     clientName: 'Ana Lista',
     clientUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
@@ -95,24 +98,23 @@ const assignmentRecipients: Relationship[] = [
     state: 'Listo para recibir rutina',
   },
   {
-    blockingReason: 'El cliente ya tiene una propuesta pendiente de revisión.',
-    canReceiveProposal: false,
+    blockingReason: 'Este cliente ya tiene esta rutina asignada.',
+    canReceiveAssignment: false,
     clientName: 'Luis Pendiente',
     clientUserId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     serviceName: 'Servicio Movilidad',
     startedAt: '2 sep 2026',
-    state: 'Propuesta pendiente',
+    state: 'Rutina asignada',
   },
   {
-    blockingReason: 'El cliente ya tiene una rutina profesional activa.',
-    canReceiveProposal: false,
+    canReceiveAssignment: true,
     clientName: 'Eva Activa',
     clientUserId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     id: '01234567-89ab-4cde-8f01-23456789abcd',
     serviceName: 'Servicio Resistencia',
     startedAt: '3 sep 2026',
-    state: 'Rutina activa',
+    state: 'Puede recibir otra rutina distinta.',
   },
 ]
 
@@ -137,7 +139,7 @@ createRoot(root).render(
         </h2>
         <div className="grid min-w-0 gap-3 lg:grid-cols-2">
           <CoachingSummaryCard summary={needsConsentSummary} />
-          <CoachingSummaryCard summary={proposalPendingSummary} />
+          <CoachingSummaryCard summary={routinesAvailableSummary} />
         </div>
       </section>
 

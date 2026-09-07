@@ -91,7 +91,8 @@ describe('loadClientCoachingSummary', () => {
         serviceName: 'Acompañamiento de fuerza',
         startedAt: '2026-09-01T10:00:00.000Z',
         trainingConsentActive: true,
-        assignmentStatus: 'proposed',
+        assignmentStatus: 'active',
+        assignmentCount: 1,
       },
       error: null,
     })
@@ -158,6 +159,7 @@ describe('loadClientCoachingSummary', () => {
         startedAt: '2026-09-01T10:00:00.000Z',
         trainingConsentActive: false,
         assignmentStatus: null,
+        assignmentCount: 0,
       },
       error: null,
     })

@@ -172,7 +172,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
         serviceName: 'Servicio Fuerza',
         startedAt: '1 ene 2026',
         state: 'Listo para recibir rutina',
-        canReceiveProposal: true,
+        canReceiveAssignment: true,
       }]}
     />
   }
@@ -302,7 +302,7 @@ function Surface({ routeEditorOnly = false }: { routeEditorOnly?: boolean }) {
     relationships={[{
       id: 'relationship-a',
       clientUserId: 'client-a',
-      canReceiveProposal: true,
+      canReceiveAssignment: true,
       label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a',
     }]}
     assignments={[{

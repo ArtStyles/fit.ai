@@ -1670,6 +1670,14 @@ export interface Database {
         Args: { request_id: string; reason?: string }
         Returns: { declined_request_id: string }[]
       }
+      assign_trainer_program: {
+        Args: { p_relationship_id: string; p_template_id: string; p_change_summary: string | null; p_idempotency_key: string }
+        Returns: Array<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>
+      }
+      remove_trainer_assignment: {
+        Args: { p_plan_id: string }
+        Returns: string
+      }
       propose_trainer_assignment: {
         Args: { p_relationship_id: string; p_template_id: string; p_change_summary: string | null; p_idempotency_key: string }
         Returns: Array<{ assignment_id: string; assignment_version_id: string; workout_plan_id: string }>

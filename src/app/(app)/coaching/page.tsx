@@ -1,10 +1,8 @@
 import { ClientCoachingStatus } from '@/components/coaching/ClientCoachingStatus'
 import { ConsentManager, type CoachingConsentView } from '@/components/coaching/ConsentManager'
-import { ProposedProgramReview } from '@/components/coaching/ProposedProgramReview'
 import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { parseTrainerProgramSnapshot } from '@/lib/coaching/programs'
-import { selectLatestProposedAssignment } from '@/lib/coaching/proposals'
 
 const REQUEST_HISTORY_LIMIT = 20
 
@@ -70,19 +68,18 @@ export default async function CoachingPage() {
       source_request_id: string | null
     }> | null | undefined)?.find(candidate => candidate.status === 'paused_by_platform')
 
-  const { data: proposedAssignments, error: proposalsError } = await (supabase as any)
+  const { data: assignedPrograms, error: assignmentsError } = await (supabase as any)
     .from('trainer_plan_assignments')
-    .select('id, relationship_id, trainer_user_id, status, created_at, trainer_assignment_versions(id, version_number, snapshot, status, change_summary)')
+    .select('id, trainer_user_id, active_version_id, status, trainer_assignment_versions(id, version_number, snapshot, change_summary)')
     .eq('client_user_id', user.id)
-    .eq('status', 'proposed')
+    .in('status', ['active', 'frozen'])
     .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-  const assignment = selectLatestProposedAssignment(proposedAssignments as Array<any> | null | undefined)
+  const assignmentRows = (assignedPrograms ?? []) as Array<any>
 
   const trainerIds = Array.from(new Set([
     ...requestRows.map(request => request.trainer_user_id),
     ...(relationship ? [relationship.trainer_user_id] : []),
-    ...(assignment ? [assignment.trainer_user_id] : []),
+    ...assignmentRows.map(assignment => assignment.trainer_user_id),
   ]))
   const [{ data: profiles, error: profilesError }, { data: trainers, error: trainersError }] = trainerIds.length
     ? await Promise.all([
@@ -144,41 +141,14 @@ export default async function CoachingPage() {
       .eq('relationship_id', relationship.id)
     : { data: [], error: null }
 
-  const rawVersion = assignment?.trainer_assignment_versions
-  const version = (Array.isArray(rawVersion) ? rawVersion : rawVersion ? [rawVersion] : [])
-    .filter((candidate: any) => candidate.status === 'proposed')
-    .sort((left: any, right: any) => right.version_number - left.version_number)[0]
-  let proposedProgram: Parameters<typeof ProposedProgramReview>[0]['proposal'] | null = null
-  if (assignment && version) {
-    try {
-      const snapshot = parseTrainerProgramSnapshot(version.snapshot)
-      const exerciseIds = snapshot.workouts.flatMap(workout => workout.exercises.map(exercise => exercise.exerciseId))
-      let exerciseNames: Record<string, string> = {}
-      let exerciseDetailsAvailable = false
-      try {
-        const exerciseResponse = await (supabase as any).from('exercises').select('id, name').in('id', exerciseIds).eq('is_public', true)
-        if (!exerciseResponse.error) {
-          exerciseNames = Object.fromEntries(((exerciseResponse.data ?? []) as Array<{ id: string; name: string }>).map(exercise => [exercise.id, exercise.name]))
-          exerciseDetailsAvailable = exerciseIds.every(exerciseId => Boolean(exerciseNames[exerciseId]?.trim()))
-        }
-      } catch {
-        exerciseDetailsAvailable = false
-      }
-      const proposalTrainer = profilesById.get(assignment.trainer_user_id) as { username?: string | null; full_name?: string | null } | undefined
-      proposedProgram = {
-        assignmentId: assignment.id,
-        versionNumber: version.version_number,
-        changeSummary: version.change_summary,
-        trainerName: proposalTrainer?.full_name?.trim() || proposalTrainer?.username?.trim() || 'tu entrenador',
-        canAccept: exerciseDetailsAvailable && relationship?.status === 'active' && relationship.id === assignment.relationship_id,
-        exerciseDetailsAvailable,
-        snapshot,
-        exerciseNames,
-      }
-    } catch {
-      proposedProgram = null
-    }
-  }
+  const routines = assignmentRows.map(assignment => {
+    const versions = Array.isArray(assignment.trainer_assignment_versions) ? assignment.trainer_assignment_versions : []
+    const version = versions.find((candidate: any) => candidate.id === assignment.active_version_id)
+    const trainer = profilesById.get(assignment.trainer_user_id) as { full_name?: string; username?: string } | undefined
+    let name = 'Rutina del entrenador'
+    try { name = parseTrainerProgramSnapshot(version?.snapshot).name } catch { /* The library remains reachable if a historical snapshot is incomplete. */ }
+    return { id: assignment.id, name, trainerName: trainer?.full_name?.trim() || trainer?.username?.trim() || 'Tu entrenador', version: version?.version_number, message: version?.change_summary }
+  })
 
   return <main className="mx-auto max-w-lg px-4 pb-24 pt-6">
     <CoachingHeader description="Consulta el estado real de tus solicitudes. No se comparten datos de entrenamiento hasta que exista una relación aceptada." />
@@ -190,6 +160,16 @@ export default async function CoachingPage() {
       grantedAt: consent.granted_at,
       revokedAt: consent.revoked_at,
     }))} /> : null}
-    {proposalsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudo cargar la rutina propuesta.</p> : proposedProgram ? <ProposedProgramReview proposal={proposedProgram} /> : null}
+    {assignmentsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus rutinas asignadas.</p> : routines.length ? <section className="mt-6 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4" aria-labelledby="assigned-routines-title">
+      <h2 id="assigned-routines-title" className="font-bold text-foreground">Rutinas de tu entrenador</h2>
+      <p className="mt-2 text-sm text-muted-foreground">Ya están en tu lista. En Plan puedes usar una como principal o eliminarla; recibirlas no cambia tu selección.</p>
+      <ul className="mt-4 space-y-3">{routines.map(routine => <li key={routine.id} className="rounded-xl border border-border/70 bg-background p-3">
+        <h3 className="font-semibold text-foreground">{routine.name}</h3>
+        <p className="mt-1 text-xs text-muted-foreground">{routine.trainerName}{routine.version ? ` · Versión ${routine.version}` : ''}</p>
+        {routine.message ? <p className="mt-2 text-sm text-foreground"><span className="font-medium">Mensaje del entrenador: </span>{routine.message}</p> : null}
+      </li>)}</ul>
+      <a href="/plan" className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">Ver mis rutinas</a>
+    </section> : relationship ? <p className="mt-4 text-sm text-muted-foreground">Las rutinas que te asigne tu entrenador aparecerán en tu lista de Plan.</p> : null}
+
   </main>
 }

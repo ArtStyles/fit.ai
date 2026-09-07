@@ -41,6 +41,7 @@ const COACHING_SUMMARY: ClientCoachingSummary = {
   startedAt: '2026-09-01T10:00:00.000Z',
   trainingConsentActive: true,
   assignmentStatus: 'active',
+  assignmentCount: 1,
 }
 
 describe('TrainerDirectory', () => {

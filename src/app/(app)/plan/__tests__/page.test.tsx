@@ -71,6 +71,7 @@ type QueryResult = {
 }
 
 type CoachingLookupOverrides = {
+  noPrimary?: boolean
   relationship?: QueryResult
   trainerProfile?: QueryResult
   assignmentVersion?: QueryResult
@@ -159,7 +160,7 @@ function createThenableQuery(result: QueryResult) {
 }
 
 function createSupabase(plan: PlanFixture, overrides: CoachingLookupOverrides = {}) {
-  const activePlan = { data: plan, error: null }
+  const activePlan = { data: overrides.noPrimary ? null : plan, error: null }
   const planLibrary = {
     data: [{
       id: plan.id,
@@ -170,7 +171,7 @@ function createSupabase(plan: PlanFixture, overrides: CoachingLookupOverrides = 
       source_type: plan.source_type,
       prescription_locked: plan.prescription_locked,
       created_at: plan.created_at,
-      is_active: true,
+      is_active: !overrides.noPrimary,
     }, ...(plan.prescription_locked ? [{
       id: 'personal-plan-2',
       name: 'Plan personal anterior',
@@ -260,28 +261,37 @@ describe('plan coaching metadata projection', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps the plan switcher read-only when the relationship lookup fails', async () => {
+  it('keeps the library available when the relationship lookup fails', async () => {
     const { html } = await renderPlan(lockedPlan, {
       relationship: { data: null, error: { message: 'relationship lookup failed' } },
     })
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos verificar la relación con tu entrenador.')
-    expect(html).toContain('Biblioteca en solo lectura mientras tu entrenador gestione la rutina activa.')
-    expect(html).not.toContain('href="/plans/generate"')
-    expect(html).not.toContain('>Usar<')
+    expect(html).toContain('Plan personal anterior')
+    expect(html).toContain('href="/plans/generate"')
+    expect(html).toContain('>Usar<')
   })
 
-  it('keeps the plan switcher read-only when the relationship row is missing', async () => {
+  it('keeps the library available when the relationship row is missing', async () => {
     const { html } = await renderPlan(lockedPlan, {
       relationship: { data: null, error: null },
     })
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos verificar la relación con tu entrenador.')
-    expect(html).toContain('Biblioteca en solo lectura mientras tu entrenador gestione la rutina activa.')
-    expect(html).not.toContain('href="/plans/generate"')
-    expect(html).not.toContain('>Usar<')
+    expect(html).toContain('Plan personal anterior')
+    expect(html).toContain('href="/plans/generate"')
+    expect(html).toContain('>Usar<')
+  })
+
+  it('shows the retained library with explicit choice guidance when there is no primary', async () => {
+    const { html } = await renderPlan(lockedPlan, { noPrimary: true })
+    expect(html).toContain('Elige una rutina de tu lista para empezar')
+    expect(html).toContain('Rutina profesional')
+    expect(html).toContain('Plan personal anterior')
+    expect(html).toContain('>Usar<')
+    expect(html).not.toContain('Reintentar generación')
   })
 
   it('shows a profile lookup error without inventing a trainer name', async () => {
@@ -367,6 +377,7 @@ describe('plan coaching metadata projection', () => {
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).toContain('Plan personal anterior')
     expect(html).not.toContain('data-plan-workspace')
     expect(html).not.toContain('data-plan-distribution')
   })
@@ -378,6 +389,7 @@ describe('plan coaching metadata projection', () => {
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).toContain('Plan personal anterior')
     expect(html).not.toContain('data-plan-workspace')
     expect(html).not.toContain('data-plan-distribution')
   })
@@ -400,6 +412,7 @@ describe('plan coaching metadata projection', () => {
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).toContain('Plan personal anterior')
     expect(html).not.toContain('data-plan-workspace')
     expect(html).not.toContain('data-plan-distribution')
   })
@@ -437,6 +450,7 @@ describe('plan coaching metadata projection', () => {
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).toContain('Plan personal anterior')
     expect(html).not.toContain('data-plan-workspace')
     expect(html).not.toContain('data-plan-distribution')
   })
@@ -496,6 +510,7 @@ describe('plan coaching metadata projection', () => {
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos cargar completa la rutina indicada por tu entrenador')
+    expect(html).toContain('Plan personal anterior')
     expect(html).not.toContain('data-plan-workspace')
     expect(html).not.toContain('data-plan-distribution')
   })

@@ -38,12 +38,12 @@ vi.mock('@/lib/training-engine', async () => ({
   regenerateEvidencePlan,
 }))
 
-function lockedClient() {
+function lockedClient(prescriptionLocked = true) {
   const query = (table: string) => {
     const filters: Record<string, unknown> = {}
     const row = table === 'workouts'
       ? { id: 'workout-1', plan_id: 'locked-plan', name: 'Locked workout', focus: null }
-      : { id: 'locked-plan', prescription_locked: true, name: 'Locked plan', goal: null, days_per_week: 3, difficulty: null }
+      : { id: 'locked-plan', prescription_locked: prescriptionLocked, name: 'Locked plan', goal: null, days_per_week: 3, difficulty: null }
     const builder: any = {
       select: () => builder, eq: (key: string, value: unknown) => { filters[key] = value; return builder }, is: () => builder, order: () => builder, limit: () => builder,
       in: () => builder, maybeSingle: async () => ({ data: filters.generation_request_id ? null : row, error: null }), single: async () => ({ data: row, error: null }),
@@ -285,7 +285,6 @@ describe('trainer prescription action barriers', () => {
     createClient.mockResolvedValue(supabase)
     const actions = await import('../plan')
 
-    await expect(actions.deletePlan(data({ planId: 'locked-plan' }))).rejects.toThrow('plan_locked')
     await expect(actions.updatePlanSummary(data({ planId: 'locked-plan', name: 'Nope' }))).rejects.toThrow('plan_locked')
     await expect(actions.addWorkoutExercise(data({ planId: 'locked-plan', workoutId: 'workout-1', exerciseId: 'exercise-1' }))).rejects.toThrow('plan_locked')
     await expect(actions.reorderWorkoutExercises('locked-plan', 'workout-1', [])).resolves.toEqual({ success: false })
@@ -453,5 +452,29 @@ describe('atomic workout exercise ordering', () => {
       p_plan_id: 'plan-1', p_workout_id: 'workout-1', p_ordered_ids: ['row-2', 'row-1'],
     })
     for (const result of client.from.mock.results) expect(result.value.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('professional library lifecycle actions', () => {
+  beforeEach(() => { vi.clearAllMocks(); requireEditableOwnedPlan.mockRejectedValue(new Error('PLAN_PRESCRIPTION_LOCKED')) })
+  it('preserves personal plan retirement', async () => {
+    const client = lockedClient(false)
+    client.rpc.mockResolvedValue({ data: 'locked-plan', error: null })
+    createClient.mockResolvedValue(client)
+    const { deletePlan } = await import('../plan')
+    await expect(deletePlan(data({ planId: 'locked-plan' }))).rejects.toThrow('REDIRECT:/plan?notice=plan_retired')
+    expect(client.rpc).toHaveBeenCalledWith('retire_plan_family', { p_plan_id: 'locked-plan' })
+  })
+  it.each([
+    ['activatePlan', 'activate_plan_version', 'plan_activated'],
+    ['deletePlan', 'remove_trainer_assignment', 'plan_retired'],
+  ] as const)('allows %s for an owned locked prescription through the lifecycle RPC', async (action, rpc, notice) => {
+    const client = lockedClient()
+    client.rpc.mockResolvedValue({ data: 'locked-plan', error: null })
+    createClient.mockResolvedValue(client)
+    const actions = await import('../plan')
+    await expect(actions[action](data({ planId: 'locked-plan' }))).rejects.toThrow(`REDIRECT:/plan?notice=${notice}`)
+    expect(client.rpc).toHaveBeenCalledWith(rpc, { p_plan_id: 'locked-plan' })
+    expect(requireEditableOwnedPlan).not.toHaveBeenCalled()
   })
 })
