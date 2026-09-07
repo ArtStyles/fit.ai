@@ -40,6 +40,8 @@ android/app/google-services.json
 
 # Local browser/test artifacts
 .worktrees/
+**/supabase/.temp/
+**/supabase/.branches/
 .chrome-*/
 artifacts/
 test-results/

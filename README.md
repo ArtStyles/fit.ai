@@ -108,9 +108,24 @@ Configura `.env.local` antes de iniciar la app.
 | `ADMIN_EMAILS` | Emails separados por coma con acceso a `/exercises` en produccion. |
 | `E2E_HISTORY_CONTINUITY_ENABLED` | Opt-in exclusivo para la prueba destructiva de continuidad en un proyecto E2E descartable. |
 
-### Base de datos
+### Base de datos y migraciones
 
-Aplica las migraciones SQL en este orden:
+La única línea operativa para Supabase vive en
+`infra/supabase/migrations/`. Todos los comandos mantenidos por el repositorio
+fijan `--workdir infra`; consulta el
+[runbook de migraciones](infra/supabase/README.md) antes de listar, simular,
+aplicar o reparar el historial remoto.
+
+El flujo normal es validar, enlazar con una sesión autenticada, revisar
+`migration list`, ejecutar el dry-run, hacer `db push` con autorización y volver
+a listar. Un archivo confirmado en Git no demuestra que se haya aplicado en el
+proyecto remoto.
+
+#### Historial legado (solo referencia y fixtures)
+
+`supabase/migrations/` contiene 61 SQL históricos que algunas pruebas y scripts
+leen directamente. La lista siguiente documenta el orden conceptual del legado;
+no debe entregarse a `db push` ni a `db reset`:
 
 ```text
 001_initial_schema.sql
@@ -173,8 +188,10 @@ Aplica las migraciones SQL en este orden:
 059_trainer_assignment_single_pending.sql
 ```
 
-Para el marketplace de entrenadores, desplegar primero la base de datos y
-después una aplicación compatible. La `049_trainer_iso_weekday_repair.sql` debe
+Las dependencias siguientes se conservan para auditoría y para los harnesses que
+reconstruyen capas concretas del historial; no sustituyen el runbook activo. Para
+el marketplace de entrenadores, la base de datos debe preceder a una aplicación
+compatible. La `049_trainer_iso_weekday_repair.sql` debe
 permanecer como la última capa correctiva tras cualquier reaplicación de
 `043_trainer_programming.sql` o `045_trainer_hardening.sql`; a continuación se
 aplican `050_product_events_conversion_funnel.sql`,
@@ -320,6 +337,10 @@ pnpm cap:android
 | `pnpm lint` | Ejecuta ESLint. |
 | `pnpm type-check` | Genera los contratos de rutas de Next.js y ejecuta TypeScript sin emitir archivos. |
 | `pnpm test` | Ejecuta Vitest una vez. |
+| `pnpm check:supabase-migrations` | Valida nombres, versiones y contenido de la línea activa bajo `infra`. |
+| `pnpm supabase:migrations:list` | Lista el ledger local/remoto mediante el enlace autenticado del workdir activo. |
+| `pnpm supabase:migrations:dry-run` | Simula el próximo `db push` sin aplicar SQL. |
+| `pnpm supabase:migrations:push` | Aplica migraciones activas pendientes; requiere revisión y autorización. |
 | `pnpm test:e2e` | Ejecuta la suite Playwright; los casos destructivos requieren sus gates y un proyecto E2E dedicado. |
 | `pnpm test:watch` | Ejecuta Vitest en modo watch. |
 | `pnpm test:ui` | Abre la interfaz de Vitest. |
@@ -338,8 +359,9 @@ src/app/          Rutas, paginas y Server Actions
 src/components/   UI y flujos de producto
 src/lib/          Supabase, IA, progresion, scheduling y capacidades nativas
 src/store/        Estado Zustand de la sesion activa
-supabase/         Migraciones SQL
-scripts/          Seed de ejercicios y generacion de assets
+infra/supabase/   Workdir y migraciones canónicas activas de Supabase
+supabase/         SQL histórico y fixtures; nunca usar como workdir de push/reset
+scripts/          Validadores, seeds explícitos y generacion de assets
 android/          Proyecto Android de Capacitor
 assets/           Assets fuente para iconos y splash
 public/           Manifest, iconos y service worker generado
