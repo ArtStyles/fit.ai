@@ -140,6 +140,78 @@ FROM public.trainer_plan_assignments a JOIN public.trainer_assignment_versions v
 WHERE a.proposal_idempotency_key IS NOT NULL AND a.source_template_id IS NOT NULL AND v.materialized_plan_id IS NOT NULL
 ON CONFLICT DO NOTHING;
 
+-- The ledger's creation is the atomic first-install/backfill boundary. An
+-- existing ledger, even an empty one, means availability no longer proves
+-- selection: direct assignments and later revisions may never have been used.
+-- Capture accepted legacy windows before repairing pending/duplicate copies.
+DO $$
+BEGIN
+  IF to_regclass('private.trainer_plan_selection_periods') IS NULL THEN
+    CREATE TABLE private.trainer_plan_selection_periods (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+      plan_id UUID NOT NULL REFERENCES public.workout_plans(id) ON DELETE RESTRICT,
+      started_at TIMESTAMPTZ NOT NULL,
+      ended_at TIMESTAMPTZ,
+      CHECK (ended_at IS NULL OR ended_at > started_at)
+    );
+
+    -- Legacy acceptance and publication selected immediately. Closed version
+    -- intervals are recoverable even when their plans are superseded/frozen.
+    -- Only a still-selected, available plan proves an open-ended interval;
+    -- an inactive legacy copy without a known end cannot establish one.
+    INSERT INTO private.trainer_plan_selection_periods(client_user_id,plan_id,started_at,ended_at)
+    SELECT p.user_id,p.id,GREATEST(v.effective_from,a.accepted_at),v.effective_to
+    FROM public.workout_plans p
+    JOIN public.trainer_assignment_versions v ON v.id=p.trainer_assignment_version_id AND v.materialized_plan_id=p.id
+    JOIN public.trainer_plan_assignments a ON a.id=p.trainer_assignment_id AND v.assignment_id=a.id
+      AND a.client_user_id=p.user_id AND a.relationship_id=p.trainer_relationship_id
+    WHERE a.accepted_at IS NOT NULL
+      AND p.library_slot='professional' AND p.source_type='trainer_assigned' AND p.prescription_locked
+      AND v.status IN ('active','frozen','superseded')
+      AND (
+        v.effective_to > GREATEST(v.effective_from,a.accepted_at)
+        OR (v.effective_to IS NULL AND p.is_active AND p.retired_at IS NULL AND p.superseded_at IS NULL
+          AND a.status IN ('active','frozen'))
+      );
+  END IF;
+END;
+$$;
+ALTER TABLE private.trainer_plan_selection_periods OWNER TO postgres;
+REVOKE ALL ON private.trainer_plan_selection_periods FROM PUBLIC,anon,authenticated,service_role;
+CREATE UNIQUE INDEX IF NOT EXISTS trainer_plan_selection_periods_one_open_client
+ON private.trainer_plan_selection_periods(client_user_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS trainer_plan_selection_periods_plan_time
+ON private.trainer_plan_selection_periods(plan_id,started_at);
+
+CREATE OR REPLACE FUNCTION private.track_trainer_plan_selection() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+DECLARE changed_at TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+  -- Table RLS and BEFORE guards have already validated this actual row change.
+  -- No GUC grants permission to write selection history.
+  IF NEW.library_slot<>'professional' THEN RETURN NEW; END IF;
+  IF NOT NEW.is_active OR NEW.retired_at IS NOT NULL OR NEW.superseded_at IS NOT NULL THEN
+    UPDATE private.trainer_plan_selection_periods period
+    SET ended_at=GREATEST(changed_at,period.started_at+INTERVAL '1 microsecond')
+    WHERE period.plan_id=NEW.id AND period.ended_at IS NULL;
+  ELSIF NOT EXISTS (SELECT 1 FROM private.trainer_plan_selection_periods period WHERE period.plan_id=NEW.id AND period.ended_at IS NULL) THEN
+    UPDATE private.trainer_plan_selection_periods period
+    SET ended_at=GREATEST(changed_at,period.started_at+INTERVAL '1 microsecond')
+    WHERE period.client_user_id=NEW.user_id AND period.ended_at IS NULL;
+    INSERT INTO private.trainer_plan_selection_periods(client_user_id,plan_id,started_at)
+    VALUES(NEW.user_id,NEW.id,changed_at);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+ALTER FUNCTION private.track_trainer_plan_selection() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.track_trainer_plan_selection() FROM PUBLIC,anon,authenticated,service_role;
+DROP TRIGGER IF EXISTS trg_track_trainer_plan_selection ON public.workout_plans;
+CREATE TRIGGER trg_track_trainer_plan_selection
+AFTER INSERT OR UPDATE OF is_active,retired_at,superseded_at ON public.workout_plans
+FOR EACH ROW EXECUTE FUNCTION private.track_trainer_plan_selection();
+
 -- Resolve legacy pending proposals using the immutable materialization. Never
 -- create another copy, change principal choice, or invent client acceptance.
 DO $$
@@ -215,62 +287,6 @@ SET CONSTRAINTS ALL DEFERRED;
 CREATE UNIQUE INDEX IF NOT EXISTS trainer_assignments_retained_template_unique
 ON public.trainer_plan_assignments(trainer_user_id,client_user_id,source_template_id)
 WHERE status IN ('proposed','active','frozen') AND source_template_id IS NOT NULL;
-
--- Availability is not a prescription window. Record actual principal choices
--- so a copy received Monday and first selected Friday cannot prescribe Mon-Thu.
-CREATE TABLE IF NOT EXISTS private.trainer_plan_selection_periods (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
-  plan_id UUID NOT NULL REFERENCES public.workout_plans(id) ON DELETE RESTRICT,
-  started_at TIMESTAMPTZ NOT NULL,
-  ended_at TIMESTAMPTZ,
-  CHECK (ended_at IS NULL OR ended_at > started_at)
-);
-ALTER TABLE private.trainer_plan_selection_periods OWNER TO postgres;
-REVOKE ALL ON private.trainer_plan_selection_periods FROM PUBLIC,anon,authenticated,service_role;
-CREATE UNIQUE INDEX IF NOT EXISTS trainer_plan_selection_periods_one_open_client
-ON private.trainer_plan_selection_periods(client_user_id) WHERE ended_at IS NULL;
-CREATE INDEX IF NOT EXISTS trainer_plan_selection_periods_plan_time
-ON private.trainer_plan_selection_periods(plan_id,started_at);
-
--- Legacy acceptance/revision selected immediately; that known activation is
--- recoverable. Do not invent earlier selection for an unaccepted copy.
-INSERT INTO private.trainer_plan_selection_periods(client_user_id,plan_id,started_at)
-SELECT p.user_id,p.id,GREATEST(v.effective_from,COALESCE(a.accepted_at,clock_timestamp()))
-FROM public.workout_plans p
-JOIN public.trainer_assignment_versions v ON v.id=p.trainer_assignment_version_id AND v.materialized_plan_id=p.id
-JOIN public.trainer_plan_assignments a ON a.id=p.trainer_assignment_id AND v.assignment_id=a.id
-WHERE p.is_active AND p.library_slot='professional' AND p.retired_at IS NULL AND p.superseded_at IS NULL
-  AND a.status IN ('active','frozen')
-  AND NOT EXISTS (SELECT 1 FROM private.trainer_plan_selection_periods period WHERE period.plan_id=p.id);
-
-CREATE OR REPLACE FUNCTION private.track_trainer_plan_selection() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE changed_at TIMESTAMPTZ:=clock_timestamp();
-BEGIN
-  -- Table RLS and BEFORE guards have already validated this actual row change.
-  -- No GUC grants permission to write selection history.
-  IF NEW.library_slot<>'professional' THEN RETURN NEW; END IF;
-  IF NOT NEW.is_active OR NEW.retired_at IS NOT NULL OR NEW.superseded_at IS NOT NULL THEN
-    UPDATE private.trainer_plan_selection_periods period
-    SET ended_at=GREATEST(changed_at,period.started_at+INTERVAL '1 microsecond')
-    WHERE period.plan_id=NEW.id AND period.ended_at IS NULL;
-  ELSIF NOT EXISTS (SELECT 1 FROM private.trainer_plan_selection_periods period WHERE period.plan_id=NEW.id AND period.ended_at IS NULL) THEN
-    UPDATE private.trainer_plan_selection_periods period
-    SET ended_at=GREATEST(changed_at,period.started_at+INTERVAL '1 microsecond')
-    WHERE period.client_user_id=NEW.user_id AND period.ended_at IS NULL;
-    INSERT INTO private.trainer_plan_selection_periods(client_user_id,plan_id,started_at)
-    VALUES(NEW.user_id,NEW.id,changed_at);
-  END IF;
-  RETURN NEW;
-END;
-$$;
-ALTER FUNCTION private.track_trainer_plan_selection() OWNER TO postgres;
-REVOKE ALL ON FUNCTION private.track_trainer_plan_selection() FROM PUBLIC,anon,authenticated,service_role;
-DROP TRIGGER IF EXISTS trg_track_trainer_plan_selection ON public.workout_plans;
-CREATE TRIGGER trg_track_trainer_plan_selection
-AFTER INSERT OR UPDATE OF is_active,retired_at,superseded_at ON public.workout_plans
-FOR EACH ROW EXECUTE FUNCTION private.track_trainer_plan_selection();
 
 CREATE OR REPLACE FUNCTION private.trainer_assignment_selection_windows(
   p_relationship_id UUID,p_from_date DATE,p_to_date DATE,p_timezone TEXT

@@ -9,7 +9,7 @@ La selección y la eliminación se autorizan por propiedad del plan. La prescrip
 | Comprobación | Resultado |
 | --- | --- |
 | `pnpm exec vitest run --maxWorkers=2` | 306 archivos y 2.838 pruebas correctas, incluidos los proyectos de unidad y navegador. |
-| `pnpm test:db:direct-assignment` | 188 aserciones pgTAP correctas sobre el baseline y las migraciones activas en un PostgreSQL desechable. |
+| `pnpm test:db:direct-assignment` | 207 aserciones pgTAP correctas (188 originales y 19 de historia heredada), más 29 aserciones con los adaptadores reales de detalle/resumen, sobre PostgreSQL desechable. |
 | Auditoría existente sobre el esquema activo | 38 garantías actuales correctas; dos casos del backfill histórico 045 se excluyeron explícitamente porque requieren fixtures anteriores al baseline consolidado. |
 | `pnpm type-check` | Correcto. |
 | `pnpm lint` | Sin errores; permanecen tres advertencias anteriores en archivos ajenos a este cambio. |
@@ -17,6 +17,8 @@ La selección y la eliminación se autorizan por propiedad del plan. La prescrip
 | `pnpm check:supabase-migrations` | Tres migraciones activas válidas, exclusivamente en `infra/supabase/migrations`. |
 
 Las pruebas SQL reproducen los fallos anteriores con `session_user=authenticator` y `current_user=authenticated`, sin sustituir al usuario por service role. Cubren permisos y consentimiento, duplicados concurrentes, eliminación simultánea con finalización/revocación, selección, creación personal, revisiones, continuidad de sesiones, limpieza de fixtures estrictamente delimitada y repetición de la migración con huellas de datos intactas.
+
+La corrección final recupera al instalar el registro los intervalos conocidos de versiones heredadas aceptadas, incluidas las sustituidas y las retenidas congeladas. El caso de regresión conserva en el detalle tres prescripciones, una completada y dos incumplidas; el resumen semanal conserva una prescripción completada. Ambos adaptadores mantienen la sesión como prescrita. Las huellas de planes, versiones, entrenamientos, ejercicios y sesiones permanecen idénticas al migrar; al repetir también permanecen idénticos el registro de selección, las solicitudes y los informes de ambas RPC. Las revisiones posteriores sin selección no generan periodos nuevos, tampoco cuando el registro existente está vacío.
 
 Las capturas de 360 y 1280 px muestran los componentes reales de asignación y biblioteca, con y sin principal, incluyendo varias rutinas, selección y eliminación con confirmación/cancelación. Las pruebas verifican nombres visibles, ausencia de desbordamiento y controles de al menos 44 px. Los límites de navegación y acciones están simulados; estas capturas no sustituyen una prueba de cuentas reales.
 

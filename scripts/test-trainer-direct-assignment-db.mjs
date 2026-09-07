@@ -30,6 +30,76 @@ const phases = Object.fromEntries(readFileSync(path.join(root, 'supabase/tests/t
     const end = section.indexOf('\n')
     return [section.slice(0, end).trim(), section.slice(end + 1)]
   }))
+const historyPhases = Object.fromEntries(readFileSync(path.join(root, 'supabase/tests/trainer_direct_assignment_legacy_history_test.sql'), 'utf8')
+  .split(/^-- phase: /m).slice(1).map(section => {
+    const end = section.indexOf('\n')
+    return [section.slice(0, end).trim(), section.slice(end + 1)]
+  }))
+
+function legacyHistory(migrationDirectory, migrations, baseline) {
+  const historySql = sql
+  const verifyAdapters = payload => check(spawnSync(process.execPath, ['--import', 'tsx', path.join(root, 'scripts/test-trainer-direct-assignment-history.ts')], {
+    input: JSON.stringify(payload), encoding: 'utf8', cwd: root, timeout: 30000,
+  }), 'Real detail and summary adapters preserve historical adherence and completion classification')
+  const apply = () => {
+    for (const migration of migrations.filter(name => name > baseline)) {
+      check(historySql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, migration), 'utf8')}`), `Legacy history: apply ${migration}`)
+    }
+  }
+  const read = label => {
+    const result = historySql(historyPhases.read)
+    check(result, `Read ${label} history as authenticator/authenticated`)
+    const line = result.stdout.split('\n').find(line => line.startsWith('HISTORY:'))
+    if (!line) throw new Error('Legacy history API read returned no payload')
+    return JSON.parse(line.slice('HISTORY:'.length))
+  }
+  const fingerprint = (legacyOnly = false) => historySql(`SELECT md5(jsonb_build_array(
+    (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM trainer_plan_assignments a ${legacyOnly ? 'WHERE a.accepted_at IS NOT NULL' : ''}),
+    (SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM trainer_assignment_versions v JOIN trainer_plan_assignments a ON a.id=v.assignment_id ${legacyOnly ? 'WHERE a.accepted_at IS NOT NULL' : ''}),
+    (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM workout_plans p JOIN trainer_plan_assignments a ON a.id=p.trainer_assignment_id ${legacyOnly ? 'WHERE a.accepted_at IS NOT NULL' : ''}),
+    (SELECT jsonb_agg(to_jsonb(w) ORDER BY w.id) FROM workouts w),
+    (SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM workout_exercises e),
+    (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.client_session_id) FROM session_authorizations s),
+    (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM progress_logs s),
+    (SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM exercise_logs e)
+    ${legacyOnly ? '' : ',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM private.trainer_plan_selection_periods p),(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.idempotency_key) FROM private.trainer_assignment_requests r)'}
+  )::text);`)
+  const same = (before, after, label) => {
+    check(before, `${label}: before fingerprint`)
+    check(after, `${label}: after fingerprint`)
+    if (before.stdout !== after.stdout) throw new Error(`${label}: exact rows changed`)
+    console.log(`${label}: exact row fingerprints match`)
+  }
+  check(historySql(phases.fixtures.replaceAll('59000000', '59500000').replaceAll('single-pending', 'legacy-history').replaceAll('@example.test', '+history@example.test')), 'Create isolated legacy-history fixtures')
+  check(historySql(historyPhases.seed), 'Seed accepted/superseded/frozen legacy versions and trusted API completions')
+  const beforeRows = fingerprint(true)
+  const baselinePayload = read('baseline')
+  apply()
+  same(beforeRows, fingerprint(true), 'Initial backfill preserves immutable accepted histories and sessions')
+  const migrated = read('migrated')
+  verifyAdapters({ baseline: baselinePayload, migrated })
+  check(historySql(historyPhases.migrated), 'Recovered legacy selection windows', { tap: true })
+  check(historySql(historyPhases.later_revisions), 'Revise never-selected direct copy and deselected accepted legacy copy as API role')
+  const beforeRerun = read('before rerun')
+  const beforeRerunRows = fingerprint()
+  apply()
+  same(beforeRerunRows, fingerprint(), 'Legacy rerun preserves library, selections, requests, prescriptions and sessions')
+  const afterRerun = read('after rerun')
+  // now is observational metadata; the actual report payloads must be identical.
+  for (const key of ['detail', 'frozen', 'summary']) {
+    if (JSON.stringify(beforeRerun[key]) !== JSON.stringify(afterRerun[key])) throw new Error(`Legacy rerun changed ${key} API history`)
+  }
+  check(historySql(historyPhases.rerun), 'Rerun cannot invent later unselected history', { tap: true })
+  verifyAdapters({ beforeRerun, afterRerun })
+  console.log('Detail prescribed=3/completed=1/missed=2; weekly summary prescribed=1/completed=1; active and frozen histories: OK')
+  // Explicit empty-ledger boundary probe in fictional data only. Existing table
+  // identity, not row count, must distinguish reruns from first installation.
+  check(historySql('TRUNCATE private.trainer_plan_selection_periods;'), 'Empty the isolated fixture ledger to test the rerun boundary')
+  const emptyRows = fingerprint()
+  apply()
+  same(emptyRows, fingerprint(), 'Existing empty ledger remains empty on rerun')
+  check(historySql("SET search_path=public,extensions; SELECT no_plan(); SELECT is((SELECT count(*)::int FROM private.trainer_plan_selection_periods),0,'existing empty ledger never replays legacy backfill'); SELECT * FROM finish();"), 'Empty-ledger rerun boundary', { tap: true })
+}
 const race = input => new Promise((resolve, reject) => {
   const child = spawn('docker', sqlArgs, { stdio: ['pipe', 'pipe', 'pipe'], timeout: 60000 })
   let stdout = ''; let stderr = ''
@@ -112,7 +182,7 @@ async function removalRelationshipRace(prefix, operation) {
   check(sql(phases.lifecycle_race_verify.replaceAll('RACE_PREFIX', prefix)), `${operation} leaves cancellation and consent coherent`, { tap: true })
 }
 
-try {
+async function startBaseline(migrationDirectory, baseline) {
   check(run(['run', '--detach', '--rm', '--name', container, '--env', 'POSTGRES_PASSWORD=postgres', image]), 'Start disposable PostgreSQL')
   let ready = false
   for (let attempt = 0; attempt < 55; attempt++) {
@@ -121,10 +191,17 @@ try {
   }
   if (!ready) throw new Error('Disposable database did not become healthy')
   check(sql('CREATE TABLE storage.buckets (id text PRIMARY KEY, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]); ALTER TABLE storage.buckets OWNER TO postgres;'), 'Bootstrap baseline storage dependency')
+  check(sql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, baseline), 'utf8')}`), 'Load active baseline with postgres ownership')
+}
+
+try {
   const migrationDirectory = path.join(root, 'infra/supabase/migrations')
   const migrations = readdirSync(migrationDirectory).filter(name => name.endsWith('.sql')).sort()
   const baseline = migrations.find(name => name.endsWith('_remote_schema_baseline.sql'))
-  check(sql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, baseline), 'utf8')}`), 'Load active baseline with postgres ownership')
+  await startBaseline(migrationDirectory, baseline)
+  if (process.argv.includes('--history-only')) {
+    legacyHistory(migrationDirectory, migrations, baseline)
+  } else {
   const personalBoundarySql = `SELECT jsonb_agg(jsonb_build_array(oid::regprocedure::text,
     proowner::regrole::text,prosecdef,proconfig,proacl::text,pronargdefaults) ORDER BY proname)
     FROM pg_proc WHERE oid IN ('public.create_manual_plan_atomic(jsonb,jsonb,boolean)'::regprocedure,
@@ -176,6 +253,10 @@ try {
     await removalRelationshipRace('59200000', 'end')
     await removalRelationshipRace('59300000', 'revoke')
     check(sql(phases.cleanup), 'Fixture cleanup preserves unrelated histories', { tap: true })
+    check(run(['rm', '--force', container]), 'Reset owned disposable container for isolated legacy-history fixtures')
+    await startBaseline(migrationDirectory, baseline)
+    legacyHistory(migrationDirectory, migrations, baseline)
+  }
   }
 } catch (error) {
   console.error(error.message)
