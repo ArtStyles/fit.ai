@@ -55,6 +55,29 @@ describe('supabase migration workdir contract', () => {
     }
   })
 
+  it('clears managed table defaults before replaying public tables and restores application defaults', () => {
+    const baseline = readFileSync(
+      new URL('../../infra/supabase/migrations/20260906233340_remote_schema_baseline.sql', import.meta.url),
+      'utf8',
+    )
+    const schemaPosition = baseline.indexOf('CREATE SCHEMA IF NOT EXISTS public;')
+    const revokePosition = baseline.indexOf(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated, service_role;',
+    )
+    const firstPublicTablePosition = baseline.indexOf('CREATE TABLE public.')
+    const lastPublicTablePosition = baseline.lastIndexOf('CREATE TABLE public.')
+
+    expect(schemaPosition).toBeGreaterThanOrEqual(0)
+    expect(revokePosition).toBeGreaterThan(schemaPosition)
+    expect(revokePosition).toBeLessThan(firstPublicTablePosition)
+
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      expect(baseline.indexOf(
+        `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO ${role};`,
+      )).toBeGreaterThan(lastPublicTablePosition)
+    }
+  })
+
   it.each(['20260906010101_rollback_profiles.sql', '20260906010101_reset_profiles.sql', '20260906010101_test_accounts.sql'])(
     'rejects forbidden migration name %s',
     fileName => {
