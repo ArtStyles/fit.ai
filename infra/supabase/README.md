@@ -45,15 +45,16 @@ una condición `AND`.
 El wrapper `scripts/lib/supabase-migration-workdir.mjs` fija
 `supabase@2.116.0` y añade `--workdir infra` a los comandos. El mismo módulo
 valida los SQL activos cuando se ejecuta mediante
-`pnpm run check:supabase-migrations`. No uses un `supabase` global para el flujo
-mantenido por el repositorio.
+`pnpm run check:supabase-migrations`; además, repite esa validación antes de
+cualquier `db push` o `db reset --local`. No uses un `supabase` global para el
+flujo mantenido por el repositorio.
 
-Antes de operar contra un proyecto remoto se necesita un login válido de
-Supabase y un enlace autenticado. El login de Management API disponible en la
-máquina durante la auditoría terminó respondiendo `Unauthorized` tanto con el
-CLI 2.101 como con el 2.116. Por ello, los scripts que usan `--linked`
-fallarán hasta renovar la sesión; ese fallo no permite afirmar nada sobre el
-ledger.
+Para usar comandos `--linked` se necesita un login válido de Supabase y un
+enlace autenticado. El login de Management API disponible en la máquina durante
+la auditoría terminó respondiendo `Unauthorized` tanto con el CLI 2.101 como con
+el 2.116. Por ello, los scripts que usan `--linked` fallarán hasta renovar la
+sesión; ese fallo no permite afirmar nada sobre el ledger. Los comandos con una
+URL efímera mediante `--db-url` no dependen de ese login.
 
 Nunca guardes ni muestres la URL de conexión, la contraseña de base de datos o
 un access token. Los directorios `infra/supabase/.temp/` e
@@ -85,9 +86,10 @@ un access token. Los directorios `infra/supabase/.temp/` e
    ```
 
    `db reset --local` solo puede apuntar al stack de `infra`. **Nunca ejecutes
-   `db reset --linked`.** No hay seed automático. La importación del catálogo de
-   ejercicios sigue siendo una operación explícita y separada mediante
-   `pnpm seed:exercises`.
+   `db reset --linked`.** El wrapper rechaza cualquier reset remoto y exige
+   `--local` de forma explícita. No hay seed automático. La importación del
+   catálogo de ejercicios sigue siendo una operación explícita y separada
+   mediante `pnpm seed:exercises`.
 
 5. Repite el validador y las pruebas relacionadas con el contrato modificado.
 

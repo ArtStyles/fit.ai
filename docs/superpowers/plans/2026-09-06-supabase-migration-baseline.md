@@ -52,7 +52,9 @@ aún no existía.
 
 El módulo exporta funciones puras y, como programa, inspecciona
 `infra/supabase/migrations`. También valida el contenido para impedir privilegios
-por defecto del rol administrado `supabase_admin`.
+por defecto del rol administrado `supabase_admin`, citado o sin citar. Antes de
+un `db push` o `db reset --local`, el runner repite la validación y rechaza todo
+reset remoto o reset sin `--local` explícito.
 
 - [x] **Step 3: Fijar el CLI y exponer comandos seguros**
 

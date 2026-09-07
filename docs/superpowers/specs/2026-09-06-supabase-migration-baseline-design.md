@@ -1,7 +1,8 @@
 # Baseline trazable de migraciones Supabase — Diseño
 
 **Fecha:** 2026-09-06
-**Estado:** Implementado y verificado; integración Git final pendiente
+**Estado:** Implementación y evidencia remota completas; controles finales e
+integración Git pendientes
 
 ## Problema confirmado
 
@@ -167,7 +168,7 @@ Ante una discrepancia entre `migration list`, el dry-run y el contrato real del
 esquema, se debe revertir la marca incorrecta y detener el proceso. No se repara
 en bloque ni se modifica el esquema remoto para forzar coincidencia.
 
-## Criterios de aceptación verificados
+## Criterios de aceptación con evidencia previa a la integración
 
 - [x] El workdir activo contiene una única versión canónica, timestamped y sin
   duplicados.

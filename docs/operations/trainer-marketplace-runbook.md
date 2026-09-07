@@ -172,13 +172,21 @@ remota de 052, 054 y 055 dentro de la cronología completa 040–059.
 En el proyecto enlazado de staging:
 
 ```bash
-supabase migration list --linked
-supabase db push --linked --dry-run
-supabase db push --linked
-supabase migration list --linked
+pnpm run check:supabase-migrations
+pnpm run supabase:migrations:list
+pnpm run supabase:migrations:dry-run
+pnpm run supabase:migrations:push
+pnpm run supabase:migrations:list
 ```
 
-El `dry-run` y la lista final deben mostrar 040–059 en ese orden. No continuar si aparece una migración desconocida, pendiente entre ellas o un cambio destructivo no revisado.
+Estos scripts fijan el CLI y `--workdir infra`; no ejecutes el CLI global desde
+la raíz. Las migraciones 040–059 son parte del historial legado y no aparecen
+como entradas independientes del ledger canónico. Antes de aplicar un cambio,
+la lista debe alinear local/remoto desde el baseline
+`20260906233340_remote_schema_baseline`; el dry-run solo debe mostrar las nuevas
+migraciones timestamped ya revisadas. No continuar si aparece una versión
+desconocida, una migración inesperadamente pendiente o un cambio destructivo no
+revisado.
 
 ## Preflight remoto de solo lectura
 
