@@ -141,22 +141,24 @@ describe('CoachClientDetailPage', () => {
 
     expect(relationshipQuery.eq).toHaveBeenCalledWith('status', 'active')
     expect(html).toContain('Relación activa')
-    expect(html).toContain('Rutina activa')
-    expect(html).toContain('Gestionar rutina')
-    expect(html).not.toContain('Asignar rutina')
+    expect(relationshipQuery.eq).toHaveBeenCalledWith('trainer_user_id', 'trainer-1')
+    expect(relationshipQuery.eq).toHaveBeenCalledWith('client_user_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    expect(html).toContain('Fuerza')
+    expect(html).toContain('1 rutina asignada')
+    expect(html).toContain('Asignar rutina')
     expect(html).toContain('/coach/programs?clientId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
   })
 
-  it('shows a pending routine proposal without offering a duplicate assignment', async () => {
+  it('counts a frozen routine from an older relationship and keeps assignment available', async () => {
     const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: { id: 'relationship-active', status: 'active', trainer_service_offerings: { name: 'Fuerza' } }, error: null })) }
     relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
-    const proposedAssignment = { id: 'assignment-proposed', status: 'proposed', created_at: '2026-08-15T00:00:00.000Z' }
+    const frozenAssignment = { id: 'assignment-frozen', relationship_id: 'relationship-ended', status: 'frozen', created_at: '2026-08-15T00:00:00.000Z' }
     const assignmentQuery: any = {
       select: vi.fn(),
       eq: vi.fn(),
       in: vi.fn(),
-      order: vi.fn(async () => ({ data: [proposedAssignment], error: null })),
-      maybeSingle: vi.fn(async () => ({ data: proposedAssignment, error: null })),
+      order: vi.fn(async () => ({ data: [frozenAssignment], error: null })),
+      maybeSingle: vi.fn(async () => ({ data: frozenAssignment, error: null })),
     }
     assignmentQuery.select.mockReturnValue(assignmentQuery); assignmentQuery.eq.mockReturnValue(assignmentQuery); assignmentQuery.in.mockReturnValue(assignmentQuery)
     const supabase = { from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery) }
@@ -165,23 +167,26 @@ describe('CoachClientDetailPage', () => {
 
     const html = renderToStaticMarkup(await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
 
-    expect(html).toContain('Propuesta de rutina pendiente')
-    expect(html).not.toContain('Asignar rutina')
-    expect(html).not.toContain('/coach/programs?clientId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
-    expect(assignmentQuery.in).toHaveBeenCalledWith('status', ['active', 'proposed'])
+    expect(html).toContain('1 rutina asignada')
+    expect(html).toContain('Asignar rutina')
+    expect(html).toContain('/coach/programs?clientId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    expect(assignmentQuery.in).toHaveBeenCalledWith('status', ['active', 'frozen'])
+    expect(assignmentQuery.eq).toHaveBeenCalledWith('client_user_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    expect(assignmentQuery.eq).toHaveBeenCalledWith('trainer_user_id', 'trainer-1')
+    expect(assignmentQuery.eq).not.toHaveBeenCalledWith('relationship_id', expect.anything())
   })
 
-  it('prioritizes an active routine when active and proposed assignments coexist', async () => {
+  it('counts all active and frozen retained routines and keeps assignment available', async () => {
     const relationshipQuery: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: { id: 'relationship-active', status: 'active', trainer_service_offerings: { name: 'Fuerza' } }, error: null })) }
     relationshipQuery.select.mockReturnValue(relationshipQuery); relationshipQuery.eq.mockReturnValue(relationshipQuery)
-    const proposedAssignment = { id: 'assignment-proposed', status: 'proposed', created_at: '2026-08-15T00:00:00.000Z' }
+    const frozenAssignment = { id: 'assignment-frozen', relationship_id: 'relationship-ended', status: 'frozen', created_at: '2026-08-15T00:00:00.000Z' }
     const activeAssignment = { id: 'assignment-active', status: 'active', created_at: '2026-08-01T00:00:00.000Z' }
     const assignmentQuery: any = {
       select: vi.fn(),
       eq: vi.fn(),
       in: vi.fn(),
-      order: vi.fn(async () => ({ data: [proposedAssignment, activeAssignment], error: null })),
-      maybeSingle: vi.fn(async () => ({ data: proposedAssignment, error: null })),
+      order: vi.fn(async () => ({ data: [frozenAssignment, activeAssignment], error: null })),
+      maybeSingle: vi.fn(async () => ({ data: frozenAssignment, error: null })),
     }
     assignmentQuery.select.mockReturnValue(assignmentQuery); assignmentQuery.eq.mockReturnValue(assignmentQuery); assignmentQuery.in.mockReturnValue(assignmentQuery)
     const supabase = { from: vi.fn((table: string) => table === 'coaching_relationships' ? relationshipQuery : assignmentQuery) }
@@ -190,10 +195,11 @@ describe('CoachClientDetailPage', () => {
 
     const html = renderToStaticMarkup(await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
 
-    expect(html).toContain('Rutina activa')
+    expect(html).toContain('2 rutinas asignadas')
     expect(html).not.toContain('Propuesta de rutina pendiente')
-    expect(html).not.toContain('Asignar rutina')
-    expect(html).not.toContain('Gestionar rutina')
+    expect(html).toContain('Asignar rutina')
+    expect(html).toContain('/coach/programs?clientId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    expect(assignmentQuery.in).toHaveBeenCalledWith('status', ['active', 'frozen'])
   })
 
   it('does not turn an assignment load failure into a false no-routine state', async () => {
