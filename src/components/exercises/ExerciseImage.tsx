@@ -14,6 +14,7 @@ import { resolveExerciseImage, type ResolvedExerciseImage } from './resolveExerc
 import { canZoom } from './zoomable'
 
 type Variant = 'thumb' | 'hero'
+type ImageFit = 'cover' | 'contain'
 
 type VariantCfg = { aspect: string; icon: string; sizes: string }
 
@@ -28,6 +29,7 @@ function ImageFrame({
   showImage,
   alt,
   cfg,
+  imageFit,
   className,
   onError,
 }: {
@@ -35,6 +37,7 @@ function ImageFrame({
   showImage: boolean
   alt: string
   cfg: VariantCfg
+  imageFit: ImageFit
   className?: string
   onError: () => void
 }) {
@@ -52,7 +55,7 @@ function ImageFrame({
           alt={alt}
           fill
           sizes={cfg.sizes}
-          className="object-cover"
+          className={imageFit === 'contain' ? 'object-contain' : 'object-cover'}
           onError={onError}
         />
       ) : (
@@ -68,6 +71,7 @@ export function ExerciseImage({
   src,
   alt,
   variant = 'thumb',
+  imageFit = 'cover',
   className,
   frameClassName,
   zoomable = false,
@@ -76,6 +80,7 @@ export function ExerciseImage({
   src: string | null | undefined
   alt: string
   variant?: Variant
+  imageFit?: ImageFit
   className?: string
   /** Clases para el marco visual interno (borde, redondeo, fondo). En modo
    *  normal van junto a `className`; en modo zoom siguen aplicándose al marco
@@ -104,6 +109,7 @@ export function ExerciseImage({
       showImage={showImage}
       alt={alt}
       cfg={cfg}
+      imageFit={imageFit}
       className={zoom ? cn('h-full w-full', frameClassName) : cn(className, frameClassName)}
       onError={() => setErrored(true)}
     />

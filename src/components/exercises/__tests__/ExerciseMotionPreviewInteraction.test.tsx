@@ -28,6 +28,7 @@ type BrowserHarness = Window & typeof globalThis & {
   __firstMotionPreview?: Element
   __motionLoadCount?: number
   __motionReady?: boolean
+  __renderExerciseImagePair?: () => void
   __renderMotionPreview?: (options: {
     motionSrc: string | null
     language?: 'es' | 'en'
@@ -54,6 +55,7 @@ async function loadEsbuild(): Promise<Esbuild> {
 async function buildBrowserFixture(): Promise<string> {
   const { build } = await loadEsbuild()
   const componentPath = path.join(process.cwd(), 'src/components/exercises/ExerciseMotionPreview.tsx')
+  const exerciseImagePath = path.join(process.cwd(), 'src/components/exercises/ExerciseImage.tsx')
 
   const result = await build({
     bundle: true,
@@ -68,6 +70,7 @@ async function buildBrowserFixture(): Promise<string> {
         import React from 'react'
         import { createRoot } from 'react-dom/client'
         import { ExerciseMotionPreview } from ${JSON.stringify(componentPath)}
+        import { ExerciseImage as RealExerciseImage } from ${JSON.stringify(exerciseImagePath)}
 
         const root = createRoot(document.getElementById('root'))
         window.__renderMotionPreview = ({ motionSrc, language = 'es', className }) => {
@@ -81,6 +84,23 @@ async function buildBrowserFixture(): Promise<string> {
             />,
           )
         }
+        window.__renderExerciseImagePair = () => {
+          root.render(
+            <>
+              <RealExerciseImage
+                src="https://exercise.test/poster.webp"
+                alt="Poster contain"
+                variant="hero"
+                imageFit="contain"
+              />
+              <RealExerciseImage
+                src="https://exercise.test/poster.webp"
+                alt="Poster cover predeterminado"
+                variant="hero"
+              />
+            </>,
+          )
+        }
         window.__renderMotionPreview({ motionSrc: ${JSON.stringify(motionUrl)} })
         requestAnimationFrame(() => { window.__motionReady = true })
       `,
@@ -91,16 +111,35 @@ async function buildBrowserFixture(): Promise<string> {
         const mocks = new Map<string, string>([
           ['./ExerciseImage', `
             import React from 'react'
-            export const ExerciseImage = ({ src, alt, variant, zoomable, className }) => (
+            export const ExerciseImage = ({ src, alt, variant, zoomable, className, imageFit }) => (
               <div
                 data-poster-preview
                 data-src={src || ''}
                 data-variant={variant}
                 data-zoomable={String(zoomable)}
                 data-class-name={className || ''}
+                data-image-fit={imageFit || ''}
                 aria-label={alt}
               />
             )
+          `],
+          ['next/image', `
+            import React from 'react'
+            export default function NextImage({ fill, ...props }) {
+              return <img data-real-exercise-image {...props} />
+            }
+          `],
+          ['lucide-react', `
+            import React from 'react'
+            export const Dumbbell = props => <svg {...props} />
+            export const ZoomIn = props => <svg {...props} />
+          `],
+          ['@/components/ui/dialog', `
+            import React from 'react'
+            export const Dialog = ({ children }) => <>{children}</>
+            export const DialogContent = ({ children }) => <>{children}</>
+            export const DialogTitle = ({ children }) => <>{children}</>
+            export const DialogTrigger = ({ children }) => <>{children}</>
           `],
           ['@/lib/utils', 'export const cn = (...classes) => classes.filter(Boolean).join(" ")'],
         ])
@@ -194,6 +233,7 @@ describe('ExerciseMotionPreview mounted interaction', () => {
     expect(await page.locator('[data-poster-preview]').getAttribute('data-variant')).toBe('hero')
     expect(await page.locator('[data-poster-preview]').getAttribute('data-zoomable')).toBe('true')
     expect(await page.locator('[data-poster-preview]').getAttribute('data-class-name')).toBe('exercise-detail-motion-layout')
+    expect(await page.locator('[data-poster-preview]').getAttribute('data-image-fit')).toBe('contain')
     expect(await page.getByRole('button', { name: 'Ver movimiento' }).count()).toBe(0)
     expect(await page.locator('[data-motion-preview]').count()).toBe(0)
   })
@@ -202,8 +242,21 @@ describe('ExerciseMotionPreview mounted interaction', () => {
     await page.waitForTimeout(100)
 
     expect(await page.locator('[data-poster-preview]').count()).toBe(1)
+    expect(await page.locator('[data-poster-preview]').getAttribute('data-image-fit')).toBe('contain')
     expect(await page.locator('[data-motion-preview]').count()).toBe(0)
     expect(motionRequests).toEqual([])
+  })
+
+  it('translates contain while keeping cover as the ExerciseImage default', async () => {
+    await page.evaluate(() => (window as BrowserHarness).__renderExerciseImagePair?.())
+
+    const containImage = page.getByAltText('Poster contain')
+    const defaultImage = page.getByAltText('Poster cover predeterminado')
+    await defaultImage.waitFor({ state: 'attached' })
+    expect((await containImage.getAttribute('class'))?.split(/\s+/)).toContain('object-contain')
+    expect((await containImage.getAttribute('class'))?.split(/\s+/)).not.toContain('object-cover')
+    expect((await defaultImage.getAttribute('class'))?.split(/\s+/)).toContain('object-cover')
+    expect((await defaultImage.getAttribute('class'))?.split(/\s+/)).not.toContain('object-contain')
   })
 
   it('mounts the animated WebP after play and restores the poster after pause', async () => {

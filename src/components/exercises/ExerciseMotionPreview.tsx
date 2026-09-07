@@ -42,7 +42,16 @@ export function ExerciseMotionPreview({
   const isCurrentMotionPlaying = isPlaying && activeMotionSrc === motionSrc
 
   if (!motionSrc) {
-    return <ExerciseImage src={posterSrc} alt={alt} variant="hero" zoomable className={className} />
+    return (
+      <ExerciseImage
+        src={posterSrc}
+        alt={alt}
+        variant="hero"
+        imageFit="contain"
+        zoomable
+        className={className}
+      />
+    )
   }
 
   function playMotion() {
@@ -82,7 +91,7 @@ export function ExerciseMotionPreview({
           />
         </div>
       ) : (
-        <ExerciseImage src={posterSrc} alt={alt} variant="hero" zoomable />
+        <ExerciseImage src={posterSrc} alt={alt} variant="hero" imageFit="contain" zoomable />
       )}
 
       <div className="flex items-center justify-between gap-3">
