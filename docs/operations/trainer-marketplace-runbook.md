@@ -167,11 +167,12 @@ pnpm lint
 
 Usar `pnpm test:db:trainers` como puerta funcional y de autorización, y
 `pnpm test:db:trainer-security` como puerta de seguridad repetida tres veces.
-Ambos ejercitan el conjunto profesional 040–051 y 053; la 052, independiente
-del dominio de entrenadores, permanece obligatoria en el orden remoto 040–059.
-La puerta profesional incluye además la 056, la 057, la 058 y la 059: su
-subconjunto es exactamente `040–051, 053, 056–059`; no sustituye la aplicación
-remota de 052, 054 y 055 dentro de la cronología completa 040–059.
+Ambos harnesses reconstruyen capas concretas del historial legado: el conjunto
+profesional 040–051 y 053, además de 056–059. Ese subconjunto sirve para probar
+rerunnabilidad y contratos; no representa el ledger remoto ni autoriza a
+reaplicar 052, 054 o 055. El estado integrado de todas esas capas se verifica en
+producción mediante el baseline canónico y el preflight, no por su numeración
+histórica.
 
 En el proyecto enlazado de staging:
 
@@ -362,23 +363,22 @@ La retención futura requiere diseño y migración independiente con revisión l
 2. Verificar backup/PITR, ACL, trigger append-only y hashes de migración.
 3. Restaurar en aislamiento para calcular alcance. No restaurar producción hasta aprobación del responsable de incidente y base de datos.
 
-## Rollback
+## Rollback hacia delante
 
-Las migraciones 040–059 son aditivas. Tras un despliegue exitoso de la 059,
-el rollback es solo hacia delante: no ejecutar una down migration destructiva,
-no eliminar tablas/columnas, no borrar auditoría, no eliminar ejercicios
-anexados y nunca restaurar la sustracción defectuosa de días. En un entorno ya
-desplegado tampoco se debe volver a ejecutar la migración histórica 045 ni la
-secuencia completa 040–059 sobre evidencia creada después de la 059: la 045 contiene
-el dominio de auditoría anterior a `trainer_plan_assignment/declined`. Cualquier
-reparación posterior se entrega como una migración nueva, revisada y solo hacia
-delante; las reaplicaciones aisladas de 057–059 se reservan para sus pruebas de
-rerunnabilidad documentadas en una base descartable.
+El contrato consolidado en el baseline incluye las capas aditivas 040–059. Tras
+un despliegue canónico, el rollback es solo hacia delante: no ejecutar una down
+migration destructiva, no eliminar tablas/columnas, no borrar auditoría, no
+eliminar ejercicios anexados y nunca restaurar la sustracción defectuosa de
+días. Tampoco se debe volver a ejecutar la migración histórica 045 ni la
+secuencia 040–059 sobre datos actuales. Cualquier reparación se entrega como una
+migración timestamped nueva, revisada y solo hacia delante; las reaplicaciones
+aisladas de 057–059 se reservan para sus pruebas de rerunnabilidad en una base
+descartable.
 
-Procedimiento posterior a la 059:
+Procedimiento posterior a un despliegue canónico:
 
 1. Detener invitaciones, nuevas propuestas y publicaciones de revisiones.
-2. Mantener aplicadas las migraciones hasta la 059 y los datos reparados; volver solo a una versión de aplicación compatible con el esquema nuevo si hace falta.
+2. Mantener alineado el ledger desde el baseline y preservar los datos reparados; volver solo a una versión de aplicación compatible con el esquema vigente si hace falta.
 3. Confirmar que Comunidad sigue apagada y que pagos, precios, chat, reseñas y planes comerciales permanecen ocultos.
 4. Investigar con conteos agregados y ensayar cualquier restauración de respaldo en aislamiento; no restaurar producción sin la decisión explícita por la posible pérdida de cambios posteriores.
 5. Corregir hacia delante con una migración revisada y repetir preflight, auditoría ISO y smoke antes de reabrir publicaciones.
@@ -387,8 +387,9 @@ Esta versión no define una bandera global del marketplace. No asumir que una va
 
 ## Cierre del despliegue
 
-El responsable firma la salida solo si respaldo/restauración, orden 040–059,
-`trainer_security_preflight() = 59`, divergencias ISO profesionales en `0`,
-pruebas técnicas, smoke por roles, privacidad, auditoría append-only y
-exclusiones del piloto están en verde. Cualquier acceso cruzado, corrupción de
-plan, pérdida de evidencia o fallo de revocación detiene el piloto.
+El responsable firma la salida solo si respaldo/restauración, ledger canónico y
+dry-run esperado, `trainer_security_preflight() = 59`, divergencias ISO
+profesionales en `0`, pruebas técnicas, smoke por roles, privacidad, auditoría
+append-only y exclusiones del piloto están en verde. Cualquier acceso cruzado,
+corrupción de plan, pérdida de evidencia o fallo de revocación detiene el
+piloto.
