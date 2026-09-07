@@ -1,123 +1,184 @@
 # Baseline trazable de migraciones Supabase — Diseño
 
-**Fecha:** 2026-09-06  
-**Estado:** Aprobado por el usuario (`hazlo`)
+**Fecha:** 2026-09-06
+**Estado:** Implementado y verificado; integración Git final pendiente
 
 ## Problema confirmado
 
-El esquema remoto está al día con el contrato de seguridad más reciente (preflight 59), pero
-el proyecto remoto no tiene la tabla `supabase_migrations.schema_migrations`. Por eso Supabase
-no conserva un ledger consultable de lo aplicado y un `db push` futuro no puede distinguir el
-estado actual de las migraciones pendientes.
+El esquema remoto estaba al día con el contrato de seguridad más reciente
+(`trainer_security_preflight() = 59`), pero el proyecto remoto no tenía la tabla
+`supabase_migrations.schema_migrations`. Supabase no conservaba, por tanto, un
+ledger consultable de lo aplicado y un `db push` futuro no podía distinguir el
+estado actual de migraciones pendientes.
 
-El directorio histórico `supabase/migrations/` tampoco puede convertirse directamente en la
-fuente activa del CLI:
+El directorio histórico `supabase/migrations/` tampoco podía convertirse
+directamente en la fuente activa del CLI:
 
-- usa versiones cortas (`001`…`059`) y contiene versiones duplicadas (`004`, `005`);
+- contiene 61 SQL con versiones cortas (`001`…`059`) y versiones duplicadas
+  (`004`, `005`);
 - incluye rollbacks que README excluye de una instalación normal;
-- incluye `009_reset_test_accounts.sql`, que borra datos y es solo para desarrollo;
+- incluye `009_reset_test_accounts.sql`, que borra datos y es solo para
+  desarrollo;
 - varias migraciones ejecutan seeds, backfills o reparaciones de datos;
-- numerosos tests y scripts leen esos archivos por su ruta actual, así que moverlos introduciría
-  un cambio amplio y ajeno al objetivo.
+- numerosos tests y scripts leen esos archivos por su ruta actual, así que
+  moverlos introduciría un cambio amplio y ajeno al objetivo.
 
-## Objetivo
+## Decisión
 
-Crear una línea canónica de migraciones para producción a partir del esquema remoto real,
-registrar un único baseline en el ledger oficial de Supabase y hacer que las migraciones futuras
-se creen y desplieguen exclusivamente desde esa línea.
-
-La operación no debe volver a ejecutar migraciones históricas, copiar datos de producción ni
-modificar tablas de negocio.
-
-## Alternativas consideradas
-
-### 1. Marcar `001`…`059` como aplicadas
-
-Rechazada. No existe evidencia suficiente para afirmar que cada archivo histórico se ejecutó
-literalmente y en ese orden. Las versiones duplicadas son ambiguas para el CLI y marcar
-migraciones como aplicadas sin comprobarlas produciría una trazabilidad ficticia.
-
-### 2. Reescribir o mover todo el historial
-
-Rechazada. Haría posible un árbol único, pero obligaría a modificar muchas pruebas y herramientas
-que usan los SQL históricos como fixtures. El riesgo y el ruido de revisión no aportan valor a la
-trazabilidad remota.
-
-### 3. Línea activa aislada con baseline remoto
-
-Elegida. Se crea un workdir de Supabase separado bajo `infra/`, con una única migración inicial
-timestamped generada desde el esquema remoto. El árbol histórico existente se conserva intacto
-como evidencia y fixture de pruebas, pero deja de ser una entrada válida para operaciones de
+Se creó una línea canónica aislada bajo `infra/`, con una única migración inicial
+timestamped derivada del esquema remoto. El árbol histórico se conserva intacto
+como evidencia y fixture de pruebas, pero queda fuera de toda operación de
 producción del CLI.
 
-## Arquitectura
+No se marcaron `001`…`059` como aplicadas porque no existe evidencia de que cada
+archivo se ejecutara literalmente y en ese orden. Tampoco se reescribió ni movió
+el historial: ambas alternativas habrían producido trazabilidad ficticia o
+ruido sin reducir el riesgo.
+
+## Arquitectura resultante
 
 ```text
 infra/
 └── supabase/
-    ├── config.toml                 # configuración del CLI
+    ├── config.toml
+    ├── README.md
     └── migrations/
-        └── <timestamp>_remote_schema_baseline.sql
+        └── 20260906233340_remote_schema_baseline.sql
 
 supabase/
-└── migrations/                     # legado/auditoría/fixtures; no usar con db push
+└── migrations/                     # legado/auditoría/fixtures; no usar con db push/reset
 ```
 
-Los comandos mantenidos por el repositorio siempre fijan `--workdir infra`. De este modo, un
-operador no depende del directorio actual ni puede enviar accidentalmente los rollbacks o el
-reset de cuentas incluido en el árbol histórico.
+Los comandos mantenidos por el repositorio pasan por
+`scripts/lib/supabase-migration-workdir.mjs`, que fija `supabase@2.116.0` y añade
+siempre `--workdir infra`. Esto evita enviar accidentalmente los rollbacks o el
+reset de cuentas del árbol histórico.
 
-## Creación segura del baseline
+## Captura y contenido del baseline
 
-1. Capturar el estado previo del historial remoto y confirmar que está vacío.
-2. Generar el SQL desde el esquema remoto mediante `supabase db pull`, sin marcarlo todavía como
-   aplicado.
-3. Revisar que el archivo contiene DDL, funciones, políticas y grants, pero no filas ni secretos.
-4. Levantar el stack local con Docker y ejecutar `supabase db reset` sobre el nuevo workdir.
-5. Comparar contratos críticos del baseline local con el remoto, incluido el preflight 59.
-6. Registrar únicamente la versión del baseline con `supabase migration repair --status applied`.
-7. Verificar que `migration list` alinea local/remoto y que `db push --dry-run` no propone SQL.
+El preestado remoto confirmó que `supabase_migrations.schema_migrations` no
+existía. `supabase db pull` y `supabase db dump` agotaron el tiempo de espera, por
+lo que la captura se realizó con PostgreSQL 17 `pg_dump --schema-only` sobre los
+esquemas `public` y `private`.
 
-`migration repair` actualiza solo el ledger; no ejecuta el baseline sobre la base remota que ya
-posee ese esquema.
+El SQL resultante:
 
-## Datos y migraciones históricas
+- conserva DDL, funciones, triggers, políticas, grants y comentarios del esquema
+  de aplicación;
+- no contiene filas de usuarios, entrenamientos, solicitudes ni otras tablas de
+  negocio;
+- incorpora solo cinco filas sanitizadas de configuración de buckets mediante
+  un UPSERT idempotente;
+- excluye mutaciones de privilegios por defecto del rol administrado
+  `supabase_admin`;
+- neutraliza al inicio los defaults heredados de tablas y funciones para
+  `postgres` y restaura al final los defaults capturados;
+- no crea secuencias, porque el esquema remoto tenía cero.
 
-El baseline es deliberadamente de esquema. No se descarga ni versiona información de usuarios,
-entrenamientos, solicitudes ni otras filas remotas. Los seeds y backfills históricos permanecen
-en `supabase/migrations/` para auditoría y para los harnesses que explícitamente los usan.
+## Reproducción y equivalencia local
 
-Una instalación nueva obtiene la estructura vigente desde el baseline. Si necesita datos de
-referencia, deben mantenerse como seeds sanitizados y explícitos; nunca se infieren copiando
-datos de producción.
+El baseline se reprodujo desde cero con los CLI 2.101, 2.112 y 2.116. La
+verificación final usó el CLI fijado 2.116.0 y la imagen PostgreSQL 17.6.1.121,
+igual a la remota. En local se confirmó:
 
-## Trazabilidad futura
+- una sola versión aplicada: `20260906233340`;
+- `trainer_security_preflight() = 59`;
+- configuración exacta de los cinco buckets;
+- privilegios por defecto equivalentes;
+- esquemas `public` y `private` reproducibles.
 
-- Todas las migraciones nuevas usan el timestamp de 14 dígitos generado por el CLI.
-- Solo se añaden bajo `infra/supabase/migrations/`.
-- La ruta soportada es: crear migración, probar con reset local, revisar `db push --dry-run`,
-  desplegar y confirmar con `migration list`.
-- README distingue expresamente la línea activa del archivo histórico.
-- `infra/supabase/.temp/` y los metadatos locales de enlace quedan ignorados por Git.
-- No se usa `db reset --linked` contra la base remota.
+Los dumps `public`/`private` normalizados del local y del remoto solo difirieron
+en el token aleatorio de restricción de `pg_dump` y en el formato semánticamente
+equivalente de una condición `AND`. No apareció ninguna diferencia de objetos de
+aplicación.
+
+## Registro remoto ejecutado
+
+Se registró únicamente la versión `20260906233340` mediante
+`migration repair --status applied`. La operación creó/concilió el ledger; no
+ejecutó el DDL del baseline sobre el esquema remoto existente.
+
+El postestado confirmó exactamente una fila con nombre
+`remote_schema_baseline` y `1155` sentencias almacenadas. `migration list` alineó
+la versión local y la remota, y `db push --dry-run` informó que no había nada
+pendiente (`upToDate: true`). Un dump posterior al repair fue idéntico al
+preestado, salvo el token aleatorio de `pg_dump`. No hizo falta revertir la marca
+y no se realizó un `db push` real.
+
+## CLI, autenticación y conexiones
+
+El runner usa exactamente `supabase@2.116.0`. La regresión de `link` introducida
+en 2.112 fue corregida a partir de 2.113. Durante la verificación final, la sesión
+de Management API disponible en esta máquina respondió `Unauthorized` con los
+CLI 2.101 y 2.116; por eso los comandos `--linked` requieren renovar el
+login antes de usarse. Un fallo de autenticación no constituye evidencia sobre
+el contenido del ledger.
+
+La conexión preferida para migraciones es directa y, cuando solo hay IPv4, el
+pooler en modo sesión. En este entorno, el puerto de sesión 5432 agotó el tiempo
+de espera. El pooler de transacciones 6543 se verificó como fallback explícito
+con los CLI 2.112 y 2.116, mientras que 2.101 colisionó al usar prepared
+statements. Como el modo transacción no soporta prepared statements, solo se
+documenta como excepción con 2.116 y una URL entregada de forma efímera; nunca se
+versionan ni se imprimen URLs o credenciales.
+
+## Ledger y alcance de la trazabilidad
+
+`supabase_migrations.schema_migrations` contiene las columnas `version`,
+`statements` y `name`. No registra operador, fecha de despliegue, SHA de Git,
+aprobación, checksum ni SQL manual. El timestamp del nombre representa la
+creación de la migración, no su despliegue.
+
+La trazabilidad completa exige correlacionar la versión/archivo del ledger con
+el SHA de Git que contiene ese SQL exacto y un log de despliegue sanitizado. Ese
+log debe conservar entorno, aprobación, comandos y resultado sin URLs de
+conexión, contraseñas ni tokens. No es correcto afirmar que una migración está
+aplicada basándose solo en Git o en la presencia de objetos del esquema.
+
+## Datos y seeds
+
+El baseline es deliberadamente de esquema. Los seeds y backfills históricos
+permanecen en `supabase/migrations/` para auditoría y para los harnesses que los
+usan explícitamente. No existe seed automático en el workdir activo. La carga
+del catálogo de ejercicios sigue siendo una operación explícita y separada con
+`pnpm seed:exercises`; nunca se infiere copiando datos de producción.
+
+## Flujo futuro
+
+1. Crear migraciones nuevas, con timestamp de 14 dígitos, exclusivamente bajo
+   `infra/supabase/migrations/`.
+2. Validar el árbol y reconstruir la base local con `db reset --local`.
+3. Renovar el login y enlazar el proyecto remoto de forma autenticada.
+4. Ejecutar `migration list` y `db push --dry-run`.
+5. Revisar y autorizar el `db push`; después volver a ejecutar `migration list`.
+6. Conservar el SHA y un log sanitizado como evidencia de la operación.
+
+`infra/supabase/.temp/` e `infra/supabase/.branches/` permanecen ignorados por
+Git. Nunca se usa `db reset --linked`.
 
 ## Fallos y reversión
 
-Antes de registrar el baseline se guarda evidencia de que el historial era inexistente o vacío.
-Si después del repair el listado no coincide o el dry-run propone cambios, se revierte únicamente
-esa entrada con `migration repair --status reverted <timestamp>` y se detiene el proceso. No se
-intenta reparar en bloque ni se modifica el esquema o los datos remotos para forzar coincidencia.
+`migration repair` queda reservado para reconciliaciones de emergencia cuando
+el esquema ya se verificó por otro medio; no es parte del despliegue normal. Si
+un repair marca una versión incorrecta, `migration repair --status reverted`
+elimina solo la fila del ledger. No deshace DDL ni datos.
 
-## Criterios de aceptación
+Ante una discrepancia entre `migration list`, el dry-run y el contrato real del
+esquema, se debe revertir la marca incorrecta y detener el proceso. No se repara
+en bloque ni se modifica el esquema remoto para forzar coincidencia.
 
-- El workdir activo contiene una única versión canónica, timestamped y sin duplicados.
-- El baseline se reproduce desde cero en Supabase local.
-- El contrato crítico local equivale al remoto y pasa el preflight 59.
-- El remoto registra exactamente la versión del baseline.
-- `migration list` muestra la misma versión local y remota.
-- `db push --dry-run` informa que no hay migraciones pendientes.
-- No cambian filas ni objetos de negocio en el remoto durante el registro.
-- El historial legado sigue disponible, claramente rotulado y fuera del flujo productivo.
+## Criterios de aceptación verificados
+
+- [x] El workdir activo contiene una única versión canónica, timestamped y sin
+  duplicados.
+- [x] El baseline se reproduce desde cero en Supabase local.
+- [x] El contrato crítico local equivale al remoto y pasa el preflight 59.
+- [x] El remoto registra exactamente la versión del baseline.
+- [x] `migration list` muestra la misma versión local y remota.
+- [x] `db push --dry-run` informa que no hay migraciones pendientes.
+- [x] El dump remoto no cambia durante el registro del ledger.
+- [x] El historial legado sigue disponible, claramente rotulado y fuera del
+  flujo productivo.
 
 ## Fuera de alcance
 
