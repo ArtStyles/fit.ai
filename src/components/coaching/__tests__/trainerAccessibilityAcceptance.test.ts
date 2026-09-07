@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import {
   auditCriticalAndSeriousAccessibility,
   expectActionTargetsAtLeast44,
@@ -50,6 +51,12 @@ describe('trainer accessibility acceptance in a local browser', () => {
           'react',
           'react-dom',
           'react-dom/client',
+          'react/jsx-dev-runtime',
+          '@capacitor/core',
+          '@capacitor/haptics',
+          'clsx',
+          'tailwind-merge',
+          'zustand',
           'lucide-react',
           '@radix-ui/react-avatar',
           '@radix-ui/react-dialog',
@@ -63,6 +70,7 @@ describe('trainer accessibility acceptance in a local browser', () => {
         { find: '@/app/actions/trainerAssignments', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/trainerAssignments.fixture.ts') },
         { find: '@/app/actions/coachingRequests', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/coachingRequestActions.fixture.ts') },
         { find: '@/app/actions/workspace', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
+        { find: '@/app/actions/authorizeSession', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/sessionAuthorization.fixture.ts') },
         { find: '@/app/(auth)/actions', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/workspace.fixture.ts') },
         { find: '@/app/actions/exerciseCatalog', replacement: path.join(repoRoot, 'src/components/plan/__tests__/fixtures/exerciseCatalog.fixture.ts') },
         { find: 'next/navigation', replacement: path.join(repoRoot, 'src/components/coaching/__tests__/fixtures/nextNavigation.fixture.ts') },
@@ -77,7 +85,8 @@ describe('trainer accessibility acceptance in a local browser', () => {
     if (!address || typeof address === 'string') throw new Error('Trainer accessibility fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/coaching/__tests__/fixtures/trainerAccessibility.html?surface=application', '__TRAINER_ACCESSIBILITY_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()

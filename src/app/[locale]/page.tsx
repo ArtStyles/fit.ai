@@ -13,10 +13,11 @@ import { HOME_CONTENT } from '@/lib/marketing/homeContent'
 import { buildLocalizedMetadata } from '@/lib/seo/metadata'
 
 type LocalizedHomeProps = {
-  params: { locale: string }
+  params: Promise<{ locale: string }>
 }
 
-export function generateMetadata({ params }: LocalizedHomeProps): Metadata {
+export async function generateMetadata({ params: paramsPromise }: LocalizedHomeProps): Promise<Metadata> {
+  const params = await paramsPromise
   if (!isPublicLocale(params.locale)) notFound()
 
   const content = HOME_CONTENT[params.locale]
@@ -32,7 +33,8 @@ export function generateMetadata({ params }: LocalizedHomeProps): Metadata {
   })
 }
 
-export default function LocalizedHome({ params }: LocalizedHomeProps) {
+export default async function LocalizedHome({ params: paramsPromise }: LocalizedHomeProps) {
+  const params = await paramsPromise
   if (!isPublicLocale(params.locale)) notFound()
 
   const locale = params.locale

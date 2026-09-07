@@ -24,10 +24,12 @@ function utcDate(value: Date): string {
   return value.toISOString().slice(0, 10)
 }
 
-export default async function CoachClientDetailPage({ params, searchParams }: {
-  params: { clientId: string }
-  searchParams?: { weeks?: string | string[] }
+export default async function CoachClientDetailPage({ params: paramsPromise, searchParams: searchParamsPromise }: {
+  params: Promise<{ clientId: string }>
+  searchParams?: Promise<{ weeks?: string | string[] }>
 }) {
+  const params = await paramsPromise
+  const searchParams = await searchParamsPromise
   if (!UUID.test(params.clientId)) notFound()
   const weeks = selectedWeeks(searchParams?.weeks)
   const now = new Date()

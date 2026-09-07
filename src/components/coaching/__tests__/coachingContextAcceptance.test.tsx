@@ -1,3 +1,4 @@
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -104,7 +105,8 @@ describe('coaching context cross-flow acceptance', () => {
     }
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 45_000)
+    await warmupFixture(browser, baseUrl + '/src/components/coaching/__tests__/fixtures/coachingContextAcceptance.html', '__COACHING_CONTEXT_ACCEPTANCE_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()

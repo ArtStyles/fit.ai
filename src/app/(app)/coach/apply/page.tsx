@@ -69,10 +69,11 @@ function mapApplication(row: ApplicationRow): TrainerApplicationView {
 }
 
 export default async function TrainerApplicationPage({
-  searchParams,
+  searchParams: searchParamsPromise,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }) {
+  const searchParams = await searchParamsPromise
   const openedFromSettings = searchParams?.from === 'settings'
   const backHref = openedFromSettings ? '/settings' : '/trainers'
   const backLabelKey = openedFromSettings ? 'Volver a ajustes' : 'Volver a entrenadores'

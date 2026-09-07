@@ -430,7 +430,7 @@ describe('trainer administration privacy', () => {
     expect(html).toContain('aria-live="assertive"')
     expect(html).toContain('Revisa los datos de la entrevista.')
     expect(html).toContain('La fecha local no existe o es ambigua.')
-    expect(html).toMatch(/name="proposedAt"[^>]*aria-invalid="true"/)
+    expect(html).toMatch(/<input(?=[^>]*name="proposedAt")(?=[^>]*aria-invalid="true")[^>]*>/)
   })
 
   it('offers an explicit profile reinstatement action for an approved trainer without implying client reactivation', async () => {

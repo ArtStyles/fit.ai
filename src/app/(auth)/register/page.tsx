@@ -78,13 +78,14 @@ const BENEFITS = [
 ] as const
 
 type RegisterPageProps = {
-  searchParams?: { plan?: string; locale?: string }
+  searchParams?: Promise<{ plan?: string; locale?: string }>
 }
 
-export default function RegisterPage({ searchParams }: RegisterPageProps) {
+export default async function RegisterPage({ searchParams: searchParamsPromise }: RegisterPageProps) {
+  const searchParams = await searchParamsPromise
   const locale = registrationLocale(
     searchParams?.locale,
-    cookies().get('fitai-language')?.value,
+    (await cookies()).get('fitai-language')?.value,
   )
   const selectedPlan = searchParams?.plan && EARLY_ACCESS_PLANS.has(searchParams.plan)
     ? searchParams.plan

@@ -23,7 +23,7 @@ describe('NewCoachProgramPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
     const { default: NewCoachProgramPage } = await import('../page')
 
-    renderToStaticMarkup(await NewCoachProgramPage({ searchParams: { clientId: '11111111-1111-4111-8111-111111111111' } }))
+    renderToStaticMarkup(await NewCoachProgramPage({ searchParams: Promise.resolve({ clientId: '11111111-1111-4111-8111-111111111111' }) }))
 
     expect(query.eq).toHaveBeenCalledWith('trainer_user_id', 'trainer-1')
     expect(query.eq).toHaveBeenCalledWith('status', 'active')
@@ -36,7 +36,7 @@ describe('NewCoachProgramPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
     const { default: NewCoachProgramPage } = await import('../page')
 
-    renderToStaticMarkup(await NewCoachProgramPage({ searchParams: { clientId: '22222222-2222-4222-8222-222222222222' } }))
+    renderToStaticMarkup(await NewCoachProgramPage({ searchParams: Promise.resolve({ clientId: '22222222-2222-4222-8222-222222222222' }) }))
 
     expect(formProps).toEqual({ clientId: undefined })
   })
@@ -47,7 +47,7 @@ describe('NewCoachProgramPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
     const { default: NewCoachProgramPage } = await import('../page')
 
-    await expect(NewCoachProgramPage({ searchParams: { clientId: '22222222-2222-4222-8222-222222222222' } }))
+    await expect(NewCoachProgramPage({ searchParams: Promise.resolve({ clientId: '22222222-2222-4222-8222-222222222222' }) }))
       .rejects.toThrow('No se pudo preparar la nueva rutina.')
   })
 })

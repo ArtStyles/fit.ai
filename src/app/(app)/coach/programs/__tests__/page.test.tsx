@@ -50,7 +50,7 @@ describe('CoachProgramsPage', () => {
     const { default: CoachProgramsPage } = await import('../page')
 
     const html = renderToStaticMarkup(await CoachProgramsPage({
-      searchParams: { clientId: '22222222-2222-4222-8222-222222222222' },
+      searchParams: Promise.resolve({ clientId: '22222222-2222-4222-8222-222222222222' }),
     }))
 
     expect(html).toContain('href="/coach/programs/new"')
@@ -63,7 +63,7 @@ describe('CoachProgramsPage', () => {
     const { default: CoachProgramsPage } = await import('../page')
 
     await expect(CoachProgramsPage({
-      searchParams: { clientId: '22222222-2222-4222-8222-222222222222' },
+      searchParams: Promise.resolve({ clientId: '22222222-2222-4222-8222-222222222222' }),
     })).rejects.toThrow('No se pudieron cargar las rutinas profesionales.')
   })
 })

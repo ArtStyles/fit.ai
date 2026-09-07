@@ -9,10 +9,11 @@ import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 export const metadata: Metadata = { title: 'Expediente de entrenador' }
 
 export default async function AdminTrainerApplicationPage({
-  params,
+  params: paramsPromise,
 }: {
-  params: { applicationId: string }
+  params: Promise<{ applicationId: string }>
 }) {
+  const params = await paramsPromise
   const [application, { profile }] = await Promise.all([
     getAdminTrainerApplication(params.applicationId),
     requireAppUserContext(),

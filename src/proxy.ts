@@ -10,9 +10,12 @@ export function isPublicPath(pathname: string): boolean {
     || /^\/(es|en)(\/|$)/.test(pathname)
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const requestHeaders = new Headers(request.headers)
+  // Identity headers are issued only from the verified Supabase session below.
+  requestHeaders.delete('x-fitai-user-id')
+  requestHeaders.delete('x-fitai-user-email')
   const pathLocale = pathname.match(/^\/(es|en)(?:\/|$)/)?.[1]
   const registrationQueryLocale = request.nextUrl.searchParams.get('locale')
   const registrationLocale = pathname === '/register'

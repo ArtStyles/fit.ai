@@ -37,7 +37,7 @@ type AppUserContext = {
 
 export const getAppUserContext = cache(async (): Promise<AppUserContext> => {
   const supabase = await createClient()
-  const requestHeaders = headers()
+  const requestHeaders = await headers()
   const headerUserId = requestHeaders.get('x-fitai-user-id')
   const headerEmail = requestHeaders.get('x-fitai-user-email') ?? undefined
 

@@ -9,7 +9,8 @@ import { PrivateProfileNotice } from '@/components/social/PrivateProfileNotice'
 import { ProfileConnectionsStats } from '@/components/social/ProfileConnectionsStats'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 
-export default async function PublicProfilePage({ params }: { params: { username: string } }) {
+export default async function PublicProfilePage({ params: paramsPromise }: { params: Promise<{ username: string }> }) {
+  const params = await paramsPromise
   const { username } = params
   const { author, posts, postCount, followerCount, followingCount, followState, isPrivate, canViewPosts, isMe } = await getProfile(username)
   if (!author) notFound()

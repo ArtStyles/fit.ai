@@ -9,11 +9,15 @@ import { PersonalDataForm } from '../PersonalDataForm'
 
 let actionState: PersonalDataActionState = INITIAL_PERSONAL_DATA_STATE
 
+vi.mock('react', async importOriginal => ({
+  ...await importOriginal<typeof import('react')>(),
+  useActionState: () => [actionState, vi.fn()],
+}))
+
 vi.mock('react-dom', async importOriginal => {
   const reactDom = await importOriginal<typeof import('react-dom')>()
   return {
     ...reactDom,
-    useFormState: () => [actionState, vi.fn()],
     useFormStatus: () => ({ pending: false }),
   }
 })

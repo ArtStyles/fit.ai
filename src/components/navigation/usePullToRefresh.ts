@@ -59,7 +59,7 @@ function areScrollableAncestorsAtTop(ancestors: readonly HTMLElement[]): boolean
   return ancestors.every(element => element.scrollTop <= 0)
 }
 
-export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement>) {
+export function usePullToRefresh(viewportRef: RefObject<HTMLDivElement | null>) {
   const router = useRouter()
   const pathname = usePathname()
   const [transitionPending, startTransition] = useTransition()

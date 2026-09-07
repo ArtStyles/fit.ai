@@ -7,7 +7,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 const require = createRequire(import.meta.url);
-const nextConfigDirectory = dirname(require.resolve('eslint-config-next/package.json'));
+const nextConfigDirectory = dirname(require.resolve('eslint-config-next'));
 const nextPlugin = require(require.resolve('@next/eslint-plugin-next', {
   paths: [nextConfigDirectory],
 }));
@@ -35,7 +35,9 @@ export default tseslint.config(
       'react-refresh': reactRefresh,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // Preserve the existing hook checks; React Compiler rules are a separate adoption.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',

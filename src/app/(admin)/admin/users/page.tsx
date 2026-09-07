@@ -9,10 +9,11 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
 type AdminUsersPageProps = {
-  searchParams?: AdminUserFilterParams
+  searchParams?: Promise<AdminUserFilterParams>
 }
 
-export default async function AdminUsersPage({ searchParams }: AdminUsersPageProps) {
+export default async function AdminUsersPage({ searchParams: searchParamsPromise }: AdminUsersPageProps) {
+  const searchParams = await searchParamsPromise
   const [data, { profile }] = await Promise.all([
     listAdminUsers(),
     requireAppUserContext(),

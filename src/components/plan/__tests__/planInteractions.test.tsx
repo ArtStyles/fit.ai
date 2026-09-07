@@ -1,3 +1,4 @@
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
 import path from 'node:path'
@@ -23,9 +24,14 @@ describe('plan editor mobile interactions', () => {
       cacheDir: path.join(repoRoot, 'node_modules', '.vite-plan-interactions-test'),
       oxc: { jsx: { runtime: 'automatic' } },
       optimizeDeps: {
+        entries: [path.join(repoRoot, 'src/components/plan/__tests__/fixtures/planInteractions.html')],
         include: [
-          'react', 'react-dom', 'react-dom/client', 'lucide-react', 'framer-motion',
+          'react', 'react-dom', 'react-dom/client', 'react/jsx-dev-runtime', 'lucide-react', 'framer-motion',
           '@radix-ui/react-dialog', '@radix-ui/react-select',
+          '@radix-ui/react-avatar', '@radix-ui/react-dropdown-menu', '@radix-ui/react-label',
+          '@radix-ui/react-navigation-menu', '@radix-ui/react-slot', '@radix-ui/react-tabs',
+          '@radix-ui/react-toast', 'class-variance-authority', 'clsx', 'tailwind-merge',
+          '@capacitor/core', '@capacitor/haptics',
         ],
       },
       resolve: { dedupe: ['react', 'react-dom'], alias: [
@@ -45,7 +51,8 @@ describe('plan editor mobile interactions', () => {
     if (!address || typeof address === 'string') throw new Error('Plan fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/plan/__tests__/fixtures/planInteractions.html?surface=workspace', '__PLAN_INTERACTIONS_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()

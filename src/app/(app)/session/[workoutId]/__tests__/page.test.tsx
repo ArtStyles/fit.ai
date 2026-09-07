@@ -115,7 +115,7 @@ describe('session page plan prescription lookup', () => {
       },
     })
 
-    const html = renderToStaticMarkup(await SessionPage({ params: { workoutId: 'workout-1' } }))
+    const html = renderToStaticMarkup(await SessionPage({ params: Promise.resolve({ workoutId: 'workout-1' }) }))
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos verificar las indicaciones de esta rutina')
@@ -139,7 +139,7 @@ describe('session page plan prescription lookup', () => {
       },
     })
 
-    const html = renderToStaticMarkup(await SessionPage({ params: { workoutId: 'workout-1' } }))
+    const html = renderToStaticMarkup(await SessionPage({ params: Promise.resolve({ workoutId: 'workout-1' }) }))
 
     expect(html).toContain('data-session-client')
     expect(html).toContain('data-prescription-locked="false"')
@@ -195,7 +195,7 @@ describe('session page plan prescription lookup', () => {
       },
     })
 
-    const html = renderToStaticMarkup(await SessionPage({ params: { workoutId: 'workout-1' } }))
+    const html = renderToStaticMarkup(await SessionPage({ params: Promise.resolve({ workoutId: 'workout-1' }) }))
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos cargar todos los ejercicios de esta rutina')
@@ -222,7 +222,7 @@ describe('session page plan prescription lookup', () => {
       },
     })
 
-    const html = renderToStaticMarkup(await SessionPage({ params: { workoutId: 'workout-1' } }))
+    const html = renderToStaticMarkup(await SessionPage({ params: Promise.resolve({ workoutId: 'workout-1' }) }))
 
     expect(html).toContain('role="alert"')
     expect(html).toContain('No pudimos cargar todos los ejercicios de esta rutina')
@@ -264,7 +264,7 @@ describe('session page plan prescription lookup', () => {
       },
     })
 
-    const html = renderToStaticMarkup(await SessionPage({ params: { workoutId: 'workout-1' } }))
+    const html = renderToStaticMarkup(await SessionPage({ params: Promise.resolve({ workoutId: 'workout-1' }) }))
 
     expect(html).toContain('data-session-client')
     expect(html).not.toContain('role="alert"')

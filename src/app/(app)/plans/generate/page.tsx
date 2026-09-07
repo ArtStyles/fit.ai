@@ -8,10 +8,11 @@ import type { ProfileSummary } from './GeneratePlanClient'
 export const metadata = { title: 'Generar plan · Vekira' }
 
 export default async function GeneratePlanPage({
-  searchParams,
+  searchParams: searchParamsPromise,
 }: {
-  searchParams?: { autostart?: string }
+  searchParams?: Promise<{ autostart?: string }>
 }) {
+  const searchParams = await searchParamsPromise
   const { supabase, user } = await requireAppUserContext()
 
   // Leer perfil para mostrar el resumen al usuario

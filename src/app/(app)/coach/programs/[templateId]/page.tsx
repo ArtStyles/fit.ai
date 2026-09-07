@@ -10,7 +10,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 export const metadata = { title: 'Editar rutina profesional · Vekira' }
 
-export default async function CoachProgramDetailPage({ params, searchParams }: { params: { templateId: string }; searchParams?: { clientId?: string | string[] } }) {
+export default async function CoachProgramDetailPage({ params: paramsPromise, searchParams: searchParamsPromise }: { params: Promise<{ templateId: string }>; searchParams?: Promise<{ clientId?: string | string[] }> }) {
+  const params = await paramsPromise
+  const searchParams = await searchParamsPromise
   const { user, profile, supabase } = await requireActiveTrainerContext()
   const timeZone = resolveUserTimeZone(profile.timezone)
   const templates = supabase.from('trainer_program_templates') as any

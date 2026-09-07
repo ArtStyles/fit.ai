@@ -23,7 +23,7 @@ describe('MedidasPage', () => {
 
   it.each(sources)('maps only the exact scalar settings source to the Settings back target', async (searchParams, target) => {
     const { default: MedidasPage } = await import('../page')
-    const html = renderToStaticMarkup(await MedidasPage({ searchParams }))
+    const html = renderToStaticMarkup(await MedidasPage({ searchParams: searchParams ? Promise.resolve(searchParams) : undefined }))
 
     expect(html).toContain(`data-back-target="${target}"`)
   })
@@ -35,7 +35,7 @@ describe('MedidasPage', () => {
       error: 'No se pudieron cargar las medidas.',
     })
     const { default: MedidasPage } = await import('../page')
-    const html = renderToStaticMarkup(await MedidasPage({ searchParams: { from: 'settings' } }))
+    const html = renderToStaticMarkup(await MedidasPage({ searchParams: Promise.resolve({ from: 'settings' }) }))
 
     expect(html).toContain('data-back-target="/settings"')
     expect(html).toContain('data-load-error="No se pudieron cargar las medidas."')

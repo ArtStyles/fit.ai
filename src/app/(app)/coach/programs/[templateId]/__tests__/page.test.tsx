@@ -94,8 +94,8 @@ describe('CoachProgramDetailPage', () => {
     const { default: CoachProgramDetailPage } = await import('../page')
 
     const view = await CoachProgramDetailPage({
-      params: { templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
-      searchParams: { clientId: '11111111-1111-4111-8111-111111111111' },
+      params: Promise.resolve({ templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+      searchParams: Promise.resolve({ clientId: '11111111-1111-4111-8111-111111111111' }),
     } as never)
     renderToStaticMarkup(view)
 
@@ -138,8 +138,8 @@ describe('CoachProgramDetailPage', () => {
     const { default: CoachProgramDetailPage } = await import('../page')
 
     const view = await CoachProgramDetailPage({
-      params: { templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
-      searchParams: { clientId: '88888888-8888-4888-8888-888888888888' },
+      params: Promise.resolve({ templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+      searchParams: Promise.resolve({ clientId: '88888888-8888-4888-8888-888888888888' }),
     } as never)
     renderToStaticMarkup(view)
 

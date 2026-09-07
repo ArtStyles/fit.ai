@@ -1,3 +1,4 @@
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { chromium, type Browser } from '@playwright/test'
@@ -84,7 +85,8 @@ describe('ConsentManager browser interactions', () => {
     if (!address || typeof address === 'string') throw new Error('Vite consent fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/coaching/__tests__/fixtures/consentManager.html?revoke-body=failure', '__CONSENT_MANAGER_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useFormState } from 'react-dom'
+import { useActionState } from 'react'
 import { updatePersonalData } from '@/app/actions/settings'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import {
@@ -12,6 +12,7 @@ import { SettingsField } from './SettingsField'
 import { SettingsSaveBar } from './SettingsSaveBar'
 import { SettingsSection } from './SettingsSection'
 import { SettingsStatus } from './SettingsStatus'
+import { preserveSettingsFormValues } from './preserveSettingsFormValues'
 
 export function PersonalDataForm({
   initial,
@@ -21,10 +22,10 @@ export function PersonalDataForm({
   currentWeightKg: number | null
 }) {
   const { t } = useI18n()
-  const [state, action] = useFormState(updatePersonalData, INITIAL_PERSONAL_DATA_STATE)
+  const [state, action] = useActionState(updatePersonalData, INITIAL_PERSONAL_DATA_STATE)
 
   return (
-    <form action={action} className="space-y-5">
+    <form ref={preserveSettingsFormValues} action={action} className="space-y-5">
       {state.message ? (
         <SettingsStatus tone={state.ok ? 'success' : 'error'}>{t(state.message)}</SettingsStatus>
       ) : null}

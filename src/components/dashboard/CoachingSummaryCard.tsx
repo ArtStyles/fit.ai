@@ -38,7 +38,7 @@ export function CoachingSummaryCard({
   summary,
 }: {
   summary: ClientCoachingSummary
-}): JSX.Element {
+}): React.JSX.Element {
   const state = getCoachingSummaryDisplayState(summary)
   const initials = summary.trainerName
     .split(/\s+/)

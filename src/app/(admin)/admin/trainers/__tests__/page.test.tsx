@@ -36,7 +36,7 @@ it('keeps the real trainer queue inside its feature route', async () => {
   listApplicationsMock.mockResolvedValue([application])
 
   const queueHtml = renderToStaticMarkup(
-    await AdminTrainersPage({ searchParams: { status: 'submitted' } }),
+    await AdminTrainersPage({ searchParams: Promise.resolve({ status: 'submitted' }) }),
   )
 
   expect(queueHtml).toContain('Operaciones')

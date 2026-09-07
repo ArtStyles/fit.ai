@@ -41,7 +41,7 @@ describe('TrainersPage', () => {
       error: null,
     })
 
-    const html = renderToStaticMarkup(await TrainersPage({ searchParams: {} }))
+    const html = renderToStaticMarkup(await TrainersPage({ searchParams: Promise.resolve({}) }))
 
     expect(mocks.loadClientCoachingSummary).toHaveBeenCalledWith(supabase, 'client-1')
     expect(html).toContain('Tu entrenador')
@@ -65,7 +65,7 @@ describe('TrainersPage', () => {
       error: 'No se pudo cargar tu acompañamiento.',
     })
 
-    const html = renderToStaticMarkup(await TrainersPage({ searchParams: {} }))
+    const html = renderToStaticMarkup(await TrainersPage({ searchParams: Promise.resolve({}) }))
 
     expect(html).toContain('No se pudo cargar tu acompañamiento.')
     expect(html).toContain('Grace Hopper')

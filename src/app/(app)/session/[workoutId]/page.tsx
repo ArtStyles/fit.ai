@@ -51,10 +51,11 @@ type RawExerciseOption = {
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 interface PageProps {
-  params: { workoutId: string }
+  params: Promise<{ workoutId: string }>
 }
 
-export default async function SessionPage({ params }: PageProps) {
+export default async function SessionPage({ params: paramsPromise }: PageProps) {
+  const params = await paramsPromise
   const { workoutId } = params
   const communityEnabled = isCommunityEnabled()
 

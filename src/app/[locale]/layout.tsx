@@ -2,13 +2,14 @@ import { notFound } from 'next/navigation'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
 import { isPublicLocale } from '@/lib/i18n/routing'
 
-export default function PublicLocaleLayout({
+export default async function PublicLocaleLayout({
   children,
-  params,
+  params: paramsPromise,
 }: {
   children: React.ReactNode
-  params: { locale: string }
+  params: Promise<{ locale: string }>
 }) {
+  const params = await paramsPromise
   const { locale } = params
 
   if (!isPublicLocale(locale)) notFound()

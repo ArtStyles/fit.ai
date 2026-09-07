@@ -8,10 +8,11 @@ function firstValue(value: string | string[] | undefined) {
 }
 
 export default async function TrainersPage({
-  searchParams,
+  searchParams: searchParamsPromise,
 }: {
-  searchParams: Record<string, string | string[] | undefined>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
+  const searchParams = await searchParamsPromise
   const { supabase, user } = await requireAppUserContext()
   const filters = normalizeDirectoryFilters({
     text: firstValue(searchParams.q),

@@ -1,3 +1,4 @@
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium, expect as pwExpect, type Browser } from '@playwright/test'
@@ -50,7 +51,8 @@ describe('MusicNowPlaying responsive composition', () => {
     if (!address || typeof address === 'string') throw new Error('Music fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/dashboard/__tests__/fixtures/musicNowPlaying.html', '__MUSIC_NOW_PLAYING_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()

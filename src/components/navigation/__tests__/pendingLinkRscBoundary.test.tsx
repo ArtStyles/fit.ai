@@ -12,11 +12,11 @@ import { PendingLink } from '../PendingLink'
 import { SettingsNavGroup } from '@/components/settings/SettingsNavGroup'
 import { SettingsScreen } from '@/components/settings/SettingsScreen'
 
-function findElementsOfType(node: ReactNode, type: ReactElement['type']): ReactElement[] {
-  const matches: ReactElement[] = []
+function findElementsOfType(node: ReactNode, type: ReactElement['type']): ReactElement<{ children?: ReactNode }>[] {
+  const matches: ReactElement<{ children?: ReactNode }>[] = []
 
   function visit(current: ReactNode) {
-    if (!isValidElement(current)) return
+    if (!isValidElement<{ children?: ReactNode }>(current)) return
     if (current.type === type) matches.push(current)
     Children.forEach((current.props as { children?: ReactNode }).children, visit)
   }

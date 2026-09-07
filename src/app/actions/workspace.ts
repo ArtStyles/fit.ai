@@ -34,7 +34,8 @@ export async function setWorkspace(formData: FormData): Promise<WorkspaceChangeR
     }
 
     revalidatePath('/', 'layout')
-    cookies().set(WORKSPACE_COOKIE, workspace, {
+    const cookieStore = await cookies()
+    cookieStore.set(WORKSPACE_COOKIE, workspace, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',

@@ -25,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const timeZone = resolveUserTimeZone(profile.timezone)
   const trainerAccess = await getTrainerAccess(user.id, supabase)
   const preferredWorkspace = normalizeWorkspace(
-    cookies().get(WORKSPACE_COOKIE)?.value,
+    (await cookies()).get(WORKSPACE_COOKIE)?.value,
     trainerAccess.granted,
   )
   const accountWorkspace = {

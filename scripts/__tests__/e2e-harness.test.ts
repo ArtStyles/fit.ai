@@ -18,7 +18,7 @@ describe('E2E harness security', () => {
     const fixture = source('tests/e2e/fixtures.ts')
     expect(fixture).toContain("page.route('**/api/analytics'")
     expect(fixture).toContain('status: 202')
-    expect(fixture.indexOf("page.route('**/api/analytics'")).toBeLessThan(fixture.indexOf('use(page)'))
+    expect(fixture.indexOf("page.route('**/api/analytics'")).toBeLessThan(fixture.indexOf('provide(page)'))
   })
 
   it('registers an account-deleting global teardown', () => {

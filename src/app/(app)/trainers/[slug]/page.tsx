@@ -3,7 +3,8 @@ import { CoachingRequestForm } from '@/components/coaching/CoachingRequestForm'
 import { TrainerPublicProfile } from '@/components/coaching/TrainerPublicProfile'
 import { getActiveTrainerBySlug, getRequestableTrainerServicesBySlug } from '@/lib/coaching/directory'
 
-export default async function TrainerPublicProfilePage({ params }: { params: { slug: string } }) {
+export default async function TrainerPublicProfilePage({ params: paramsPromise }: { params: Promise<{ slug: string }> }) {
+  const params = await paramsPromise
   const trainer = await getActiveTrainerBySlug(params.slug)
   if (!trainer) notFound()
   const requestableServices = await getRequestableTrainerServicesBySlug(params.slug)

@@ -1,3 +1,4 @@
+import { warmupFixture } from '@/test/browser/warmupFixture'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, expect as pwExpect, type Browser, type Page } from '@playwright/test'
 import path from 'node:path'
@@ -54,7 +55,8 @@ describe('professional template editor browser interactions', () => {
     if (!address || typeof address === 'string') throw new Error('Vite template editor fixture did not bind a TCP port.')
     baseUrl = `http://127.0.0.1:${address.port}`
     browser = await chromium.launch({ headless: true })
-  }, 30_000)
+    await warmupFixture(browser, baseUrl + '/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html', '__PROGRAM_EDITOR_READY__')
+  }, 90_000)
 
   afterAll(async () => {
     await browser?.close()

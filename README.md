@@ -67,7 +67,7 @@ conectado de extremo a extremo:
 
 ## Stack
 
-- Next.js 14 App Router, React 18 y TypeScript.
+- Next.js 16.3.4 App Router, React 19.2.8 y TypeScript.
 - Tailwind CSS, Radix UI, Lucide y Framer Motion.
 - Supabase Auth, Postgres, RLS y Server Actions.
 - Anthropic SDK para chat e interpretacion de ajustes.
@@ -80,7 +80,7 @@ conectado de extremo a extremo:
 
 ### Requisitos
 
-- Node.js y pnpm.
+- Node.js 22.12 o superior (validado con Node.js 24.12) y pnpm 10.27.0.
 - Un proyecto de Supabase.
 - Una API key de Anthropic solo si se quiere usar el chat y la interpretación de ajustes con IA real.
 - Android Studio solo para trabajar con la app Android.
@@ -296,6 +296,8 @@ de exito del motor.
 
 ## Android y PWA
 
+Los comandos `pnpm dev` y `pnpm build` usan Webpack explícitamente para conservar
+la integración con `@ducanh2912/next-pwa`; Next.js 16 usa Turbopack por defecto.
 La PWA se genera durante `pnpm build`; en desarrollo el service worker esta
 desactivado. `public/sw.js`, `public/workbox-*.js` y `public/swe-worker-*.js`
 son salida de build y no se versionan.
@@ -316,7 +318,7 @@ pnpm cap:android
 | `pnpm build` | Genera el build de produccion y la PWA. |
 | `pnpm start` | Sirve el build de produccion. |
 | `pnpm lint` | Ejecuta ESLint. |
-| `pnpm type-check` | Ejecuta TypeScript sin emitir archivos. |
+| `pnpm type-check` | Genera los contratos de rutas de Next.js y ejecuta TypeScript sin emitir archivos. |
 | `pnpm test` | Ejecuta Vitest una vez. |
 | `pnpm test:e2e` | Ejecuta la suite Playwright; los casos destructivos requieren sus gates y un proyecto E2E dedicado. |
 | `pnpm test:watch` | Ejecuta Vitest en modo watch. |

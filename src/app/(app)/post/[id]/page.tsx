@@ -8,7 +8,8 @@ import { CommentInput } from '@/components/social/CommentInput'
 import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 import { isCommunityEnabled } from '@/lib/features/community'
 
-export default async function PostDetailPage({ params }: { params: { id: string } }) {
+export default async function PostDetailPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise
   if (!isCommunityEnabled()) notFound()
   const { id } = params
   const detail = await getPostDetail(id)

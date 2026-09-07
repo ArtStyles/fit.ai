@@ -55,7 +55,7 @@ describe('CoachClientDetailPage', () => {
   it('rejects a malformed client UUID before opening a trainer context or RPC', async () => {
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'not-a-uuid' }, searchParams: {} })).rejects.toThrow('NOT_FOUND')
+    await expect(CoachClientDetailPage({ params: Promise.resolve({ clientId: 'not-a-uuid' }), searchParams: Promise.resolve({}) })).rejects.toThrow('NOT_FOUND')
     expect(requireActiveTrainerContext).not.toHaveBeenCalled()
     expect(getCoachClientInsights).not.toHaveBeenCalled()
   })
@@ -65,7 +65,7 @@ describe('CoachClientDetailPage', () => {
     getCoachClientInsights.mockRejectedValue(new Error('COACH_CLIENT_INSIGHTS_UNAVAILABLE'))
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: { weeks: 'invalid' } })).rejects.toThrow('NOT_FOUND')
+    await expect(CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({ weeks: 'invalid' }) })).rejects.toThrow('NOT_FOUND')
     expect(getCoachClientInsights).toHaveBeenCalledWith({}, expect.objectContaining({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', weeks: 4 }))
   })
 
@@ -73,14 +73,14 @@ describe('CoachClientDetailPage', () => {
     requireActiveTrainerContext.mockRejectedValue(new Error('trainer context unavailable'))
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })).rejects.toThrow('NOT_FOUND')
+    await expect(CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) })).rejects.toThrow('NOT_FOUND')
     expect(getCoachClientInsights).not.toHaveBeenCalled()
   })
 
   it('does not call the measurements RPC when body-measurements consent is absent', async () => {
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })
+    await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) })
 
     expect(getCoachClientMeasurements).not.toHaveBeenCalled()
   })
@@ -89,7 +89,7 @@ describe('CoachClientDetailPage', () => {
     getCoachClientInsights.mockResolvedValue({ activeScopes: ['training_profile', 'body_measurements'], rangeStart: '2025-12-04', rangeEnd: '2025-12-31' })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })
+    await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) })
 
     expect(getCoachClientMeasurements).toHaveBeenCalledTimes(1)
     expect(getCoachClientMeasurements).toHaveBeenCalledWith(expect.any(Object), { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fromDate: '2025-12-04', toDate: '2025-12-31' })
@@ -101,7 +101,7 @@ describe('CoachClientDetailPage', () => {
     getCoachClientMeasurements.mockRejectedValue(new Error('COACH_CLIENT_INSIGHTS_UNAVAILABLE'))
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })).resolves.toBeDefined()
+    await expect(CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) })).resolves.toBeDefined()
     expect(getCoachClientInsights).toHaveBeenCalledTimes(1)
     expect(getCoachClientMeasurements).toHaveBeenCalledTimes(1)
     log.mockRestore()
@@ -113,7 +113,7 @@ describe('CoachClientDetailPage', () => {
     getCoachClientMeasurements.mockRejectedValue(new Error('private client measurement payload'))
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} })
+    await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) })
 
     expect(log).toHaveBeenCalledWith('[coach-client-measurements] unavailable')
     expect(log.mock.calls.flat().join(' ')).not.toContain('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
@@ -137,7 +137,7 @@ describe('CoachClientDetailPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
 
     expect(relationshipQuery.eq).toHaveBeenCalledWith('status', 'active')
     expect(html).toContain('Relación activa')
@@ -163,7 +163,7 @@ describe('CoachClientDetailPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
 
     expect(html).toContain('Propuesta de rutina pendiente')
     expect(html).not.toContain('Asignar rutina')
@@ -188,7 +188,7 @@ describe('CoachClientDetailPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+    const html = renderToStaticMarkup(await CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
 
     expect(html).toContain('Rutina activa')
     expect(html).not.toContain('Propuesta de rutina pendiente')
@@ -212,7 +212,7 @@ describe('CoachClientDetailPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+    await expect(CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
       .rejects.toThrow('No se pudo cargar el estado del acompañamiento.')
     expect(notFound).not.toHaveBeenCalled()
   })
@@ -224,7 +224,7 @@ describe('CoachClientDetailPage', () => {
     requireActiveTrainerContext.mockResolvedValue({ profile: { timezone: 'America/Havana' }, user: { id: 'trainer-1' }, supabase })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+    await expect(CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
       .rejects.toThrow('No se pudo cargar el estado del acompañamiento.')
     expect(notFound).not.toHaveBeenCalled()
   })
@@ -250,7 +250,7 @@ describe('CoachClientDetailPage', () => {
     })
     const { default: CoachClientDetailPage } = await import('../page')
 
-    await expect(CoachClientDetailPage({ params: { clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, searchParams: {} }))
+    await expect(CoachClientDetailPage({ params: Promise.resolve({ clientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }), searchParams: Promise.resolve({}) }))
       .rejects.toThrow('NOT_FOUND')
     expect(notFound).toHaveBeenCalled()
     expect(getCoachClientMeasurements).not.toHaveBeenCalled()
