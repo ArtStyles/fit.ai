@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ export const SUPABASE_CLI_PACKAGE = 'supabase@2.101.0'
 
 const MIGRATION_NAME = /^(?<version>\d{14})_(?<name>[a-z0-9]+(?:_[a-z0-9]+)*)\.sql$/
 const FORBIDDEN_NAME = /(?:rollback|reset|test_accounts)/i
+const MANAGED_DEFAULT_PRIVILEGES = /\bALTER\s+DEFAULT\s+PRIVILEGES\s+FOR\s+ROLE\s+supabase_admin\b/i
 
 export function validateMigrationNames(fileNames) {
   const versions = new Set()
@@ -30,6 +31,12 @@ export function validateMigrationNames(fileNames) {
     versions.add(version)
     return version
   })
+}
+
+export function validateMigrationSql(sql, fileName) {
+  if (MANAGED_DEFAULT_PRIVILEGES.test(sql)) {
+    throw new Error(`Migration must not change supabase_admin default privileges: ${fileName}`)
+  }
 }
 
 export function buildSupabaseCliArguments(argumentsWithoutWorkdir) {
@@ -76,7 +83,14 @@ export function validateActiveMigrationDirectory(repoRoot) {
     .filter(entry => entry.isFile())
     .map(entry => entry.name)
 
-  return validateMigrationNames(migrationFiles)
+  const versions = validateMigrationNames(migrationFiles)
+
+  for (const fileName of migrationFiles) {
+    const migrationPath = path.join(migrationDirectory, fileName)
+    validateMigrationSql(readFileSync(migrationPath, 'utf8'), fileName)
+  }
+
+  return versions
 }
 
 function isMainModule() {
