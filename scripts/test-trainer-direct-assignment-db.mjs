@@ -40,6 +40,78 @@ const race = input => new Promise((resolve, reject) => {
   child.stdin.end(input)
 })
 
+function openSql(input, { hold = false } = {}) {
+  const child = spawn('docker', sqlArgs, { stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 })
+  const state = { stdout: '', stderr: '' }
+  const done = new Promise((resolve, reject) => {
+    child.stdout.on('data', data => { state.stdout += data })
+    child.stderr.on('data', data => { state.stderr += data })
+    child.on('error', reject)
+    child.on('close', status => resolve({ status, ...state }))
+  })
+  if (hold) child.stdin.write(input)
+  else child.stdin.end(input)
+  return { state, done, release: () => child.stdin.end('COMMIT;\n') }
+}
+
+async function waitForDatabaseGate(predicate, label) {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (predicate()) return
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  throw new Error(`Timed out waiting for ${label}`)
+}
+
+async function removalRelationshipRace(prefix, operation) {
+  const fixture = phases.fixtures.replaceAll('59000000', prefix)
+    .replaceAll('single-pending', `removal-${operation}`)
+    .replaceAll('@example.test', `+${operation}@example.test`)
+  check(sql(fixture), `Create ${operation} race fixtures`)
+  const trainer = `${prefix}-0000-4000-8000-000000000001`
+  const client = `${prefix}-0000-4000-8000-000000000002`
+  const relationship = `${prefix}-0000-4000-8000-000000000041`
+  const authenticate = id => `SET SESSION AUTHORIZATION authenticator; SET LOCAL ROLE authenticated;
+    SELECT set_config('request.jwt.claim.sub','${id}',true); SELECT set_config('request.jwt.claim.role','authenticated',true);`
+  const setup = sql(`BEGIN; ${authenticate(trainer)}
+    SELECT assignment_id AS aid,workout_plan_id AS pid FROM assign_trainer_program('${relationship}','${prefix}-0000-4000-8000-000000000061',NULL,'removal-${operation}') \\gset
+    SELECT set_config('request.jwt.claim.sub','${client}',true);
+    SELECT activate_plan_version(:'pid'); SELECT 'RESULT:'||:'aid'||','||:'pid'; COMMIT;`)
+  check(setup, `Assign and select ${operation} fixture`)
+  const match = setup.stdout.match(/RESULT:([0-9a-f-]+),([0-9a-f-]+)/)
+  if (!match) throw new Error('Race fixture did not return assignment and plan')
+  const [, assignment, plan] = match
+  // An independent transaction gates the assignment row. The real removal RPC
+  // blocks there first; end/revoke then blocks under its real lock protocol.
+  // Releasing this gate deadlocks the old assignment-before-relationship flow.
+  const gate = openSql(`BEGIN; SELECT id FROM trainer_plan_assignments WHERE id='${assignment}' FOR UPDATE; SELECT 'ASSIGNMENT_GATE_HELD';\n`, { hold: true })
+  let removal; let transition
+  try {
+    await waitForDatabaseGate(() => gate.state.stdout.includes('ASSIGNMENT_GATE_HELD'), 'assignment gate')
+    const removingName = `removal-${operation}-${process.pid}`
+    const endingName = `transition-${operation}-${process.pid}`
+    removal = openSql(`BEGIN; SET application_name='${removingName}'; SET deadlock_timeout='200ms'; SET statement_timeout='15s'; ${authenticate(client)} SELECT remove_trainer_assignment('${plan}'); COMMIT;`)
+    const isWaiting = name => {
+      const result = sql(`SELECT count(*) FROM pg_stat_activity WHERE application_name='${name}' AND wait_event_type='Lock';`)
+      if (result.status !== 0) throw new Error(result.stderr)
+      return result.stdout.trim() === '1'
+    }
+    await waitForDatabaseGate(() => isWaiting(removingName), 'removal blocked by assignment gate')
+    const call = operation === 'end'
+      ? `end_coaching_relationship('${relationship}',NULL,'${prefix}-0000-4000-8000-000000000099')`
+      : `revoke_training_profile_consent('${relationship}','${prefix}-0000-4000-8000-000000000099')`
+    transition = openSql(`BEGIN; SET application_name='${endingName}'; SET deadlock_timeout='200ms'; SET statement_timeout='15s'; ${authenticate(client)} SELECT * FROM ${call}; COMMIT;`)
+    await waitForDatabaseGate(() => isWaiting(endingName), `${operation} blocked during removal`)
+  } finally {
+    gate.release()
+    const results = await Promise.allSettled([gate.done, removal?.done, transition?.done].filter(Boolean))
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'rejected') throw result.reason
+      check(result.value, `${operation} lifecycle race connection ${index + 1}`)
+    }
+  }
+  check(sql(phases.lifecycle_race_verify.replaceAll('RACE_PREFIX', prefix)), `${operation} leaves cancellation and consent coherent`, { tap: true })
+}
+
 try {
   check(run(['run', '--detach', '--rm', '--name', container, '--env', 'POSTGRES_PASSWORD=postgres', image]), 'Start disposable PostgreSQL')
   let ready = false
@@ -88,6 +160,9 @@ try {
     if (beforeRerun.stdout !== afterRerun.stdout) throw new Error('Migration rerun changed library or selection history')
     console.log('Migration rerun preserves exact library, request and selection rows: OK')
     check(sql(phases.rerun_verify), 'Migration rerun preserves data and history', { tap: true })
+    await removalRelationshipRace('59200000', 'end')
+    await removalRelationshipRace('59300000', 'revoke')
+    check(sql(phases.cleanup), 'Fixture cleanup preserves unrelated histories', { tap: true })
   }
 } catch (error) {
   console.error(error.message)

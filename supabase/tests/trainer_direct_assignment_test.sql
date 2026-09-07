@@ -252,6 +252,60 @@ SELECT is((SELECT count(*)::int FROM workout_plans WHERE is_active),0,'removing 
 RESET ROLE;
 RESET SESSION AUTHORIZATION;
 SELECT * FROM finish();
+
+COMMIT;
+
+-- phase: lifecycle_race_verify
+SET search_path=public,extensions;
+SELECT no_plan();
+SELECT is((SELECT status FROM coaching_relationships WHERE id='RACE_PREFIX-0000-4000-8000-000000000041'),'ended','concurrent relationship transition commits');
+SELECT is((SELECT status FROM trainer_plan_assignments WHERE client_user_id='RACE_PREFIX-0000-4000-8000-000000000002'),'cancelled','concurrent removal stays cancelled');
+SELECT is((SELECT count(*)::int FROM coaching_consents WHERE relationship_id='RACE_PREFIX-0000-4000-8000-000000000041' AND revoked_at IS NULL),0,'concurrent transition revokes active consent');
+SELECT is((SELECT count(*)::int FROM workout_plans WHERE user_id='RACE_PREFIX-0000-4000-8000-000000000002' AND library_slot='professional' AND retired_at IS NULL),0,'concurrent removal retires the professional library copy');
+SELECT is((SELECT count(*)::int FROM private.trainer_assignment_requests WHERE trainer_user_id='RACE_PREFIX-0000-4000-8000-000000000001'),1,'ordinary removal retains request history');
+SELECT is((SELECT count(*)::int FROM private.trainer_plan_selection_periods WHERE client_user_id='RACE_PREFIX-0000-4000-8000-000000000002' AND ended_at IS NOT NULL),1,'ordinary removal closes and retains selection history');
+SELECT * FROM finish();
+
+-- phase: cleanup
+BEGIN;
+SET search_path=public,extensions;
+SELECT no_plan();
+UPDATE auth.users SET raw_user_meta_data=jsonb_build_object('e2e_run_id','direct-assignment-cleanup')
+WHERE id IN ('59000000-0000-4000-8000-000000000001','59000000-0000-4000-8000-000000000002','59000000-0000-4000-8000-000000000003');
+SELECT ok((SELECT count(*)>0 FROM private.trainer_assignment_requests WHERE trainer_user_id='59000000-0000-4000-8000-000000000001'),'cleanup fixture contains assignment requests');
+SELECT ok((SELECT count(*)>0 FROM private.trainer_plan_selection_periods WHERE client_user_id='59000000-0000-4000-8000-000000000002'),'cleanup fixture contains selected plan history');
+SELECT version.materialized_plan_id AS cleanup_selected_plan
+FROM trainer_plan_assignments assignment JOIN trainer_assignment_versions version ON version.id=assignment.active_version_id
+WHERE assignment.client_user_id='59000000-0000-4000-8000-000000000002' AND assignment.status='active' \gset
+SELECT md5(jsonb_build_array(
+  (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM trainer_plan_assignments row WHERE row.trainer_user_id='59200000-0000-4000-8000-000000000001'),
+  (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.idempotency_key) FROM private.trainer_assignment_requests row WHERE row.trainer_user_id='59200000-0000-4000-8000-000000000001'),
+  (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM private.trainer_plan_selection_periods row WHERE row.client_user_id='59200000-0000-4000-8000-000000000002')
+)::text) AS unrelated_fingerprint \gset
+SET SESSION AUTHORIZATION authenticator;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000002',true);
+SELECT is(activate_plan_version(:'cleanup_selected_plan'),:'cleanup_selected_plan'::uuid,'cleanup also includes a currently selected professional plan');
+SELECT throws_ok($$SELECT cleanup_trainer_security_e2e_fixture('direct-assignment-cleanup',ARRAY['59000000-0000-4000-8000-000000000001'::uuid])$$,'42501',NULL,'authenticated cannot invoke fixture cleanup');
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+SELECT set_config('request.jwt.claim.sub','',true);
+SELECT throws_ok($$SELECT cleanup_trainer_security_e2e_fixture('direct-assignment-cleanup',ARRAY['59000000-0000-4000-8000-000000000001'::uuid,'59200000-0000-4000-8000-000000000001'::uuid])$$,'P0001','TRAINER_SECURITY_CLEANUP_SCOPE_MISMATCH','cleanup rejects unrelated participant mixed into fixture scope');
+SELECT is(cleanup_trainer_security_e2e_fixture('direct-assignment-cleanup',ARRAY['59000000-0000-4000-8000-000000000001'::uuid,'59000000-0000-4000-8000-000000000002'::uuid,'59000000-0000-4000-8000-000000000003'::uuid]),3,'cleanup removes exactly the three validated fixture users');
+SELECT is(cleanup_trainer_security_e2e_fixture('direct-assignment-cleanup',ARRAY['59000000-0000-4000-8000-000000000001'::uuid,'59000000-0000-4000-8000-000000000002'::uuid,'59000000-0000-4000-8000-000000000003'::uuid]),0,'repeated cleanup succeeds without remaining fixture users');
+RESET ROLE;
+RESET SESSION AUTHORIZATION;
+SELECT is((SELECT count(*)::int FROM private.trainer_assignment_requests WHERE trainer_user_id='59000000-0000-4000-8000-000000000001'),0,'cleanup removes scoped request ledger rows');
+SELECT is((SELECT count(*)::int FROM private.trainer_plan_selection_periods WHERE client_user_id='59000000-0000-4000-8000-000000000002'),0,'cleanup removes scoped selection periods');
+SELECT is((SELECT count(*)::int FROM trainer_plan_assignments WHERE trainer_user_id='59000000-0000-4000-8000-000000000001'),0,'cleanup removes fixture assignment parents');
+SELECT is(md5(jsonb_build_array(
+  (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM trainer_plan_assignments row WHERE row.trainer_user_id='59200000-0000-4000-8000-000000000001'),
+  (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.idempotency_key) FROM private.trainer_assignment_requests row WHERE row.trainer_user_id='59200000-0000-4000-8000-000000000001'),
+  (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM private.trainer_plan_selection_periods row WHERE row.client_user_id='59200000-0000-4000-8000-000000000002')
+)::text),:'unrelated_fingerprint','cleanup preserves exact unrelated assignment and private histories');
+SELECT is((SELECT count(*)::int FROM auth.users WHERE id IN ('59200000-0000-4000-8000-000000000001','59200000-0000-4000-8000-000000000002','59200000-0000-4000-8000-000000000003')),3,'cleanup preserves all unrelated users');
+SELECT * FROM finish();
 COMMIT;
 
 -- phase: permissions
