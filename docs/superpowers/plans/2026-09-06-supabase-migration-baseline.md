@@ -231,7 +231,7 @@ un `db push` real.
 
 **Files:** Todos los archivos intencionales anteriores.
 
-- [ ] **Step 1: Ejecutar controles frescos**
+- [x] **Step 1: Ejecutar controles frescos**
 
 ```powershell
 pnpm run check:supabase-migrations
@@ -241,19 +241,37 @@ pnpm lint
 git diff --check
 ```
 
-- [ ] **Step 2: Revisar alcance y secretos**
+En la rama y de nuevo sobre el resultado integrado, el validador confirmó una
+sola migración activa; las pruebas focales pasaron 3 archivos / 51 tests;
+type-check y lint terminaron en 0; y la suite completa pasó 298 archivos / 2.781
+tests. El reset local final aplicó únicamente el baseline y devolvió preflight
+59 con cinco buckets.
+
+- [x] **Step 2: Revisar alcance y secretos**
 
 Inspeccionar `git status`, `git diff --stat`, el diff completo y patrones de
 secretos. Confirmar que no están staged `infra/supabase/.temp`, `.env.local`,
 `.artifacts` ni cambios ajenos del checkout principal.
 
-- [ ] **Step 3: Completar revisión independiente e integración**
+La revisión de líneas añadidas no encontró credenciales, JWTs, URLs específicas
+del proyecto ni claves privadas. `.temp`, `.branches`, `.env.local` y la carpeta
+preexistente `.artifacts/` quedaron fuera de Git.
+
+- [x] **Step 3: Completar revisión independiente e integración**
 
 Revisar el cambio completo contra esta spec, corregir hallazgos y confirmar que
 cada commit contiene solo archivos intencionales.
 
-- [ ] **Step 4: Publicar sin sobrescribir trabajo concurrente**
+Tres revisiones independientes aprobaron el runner, el baseline y la
+documentación después de bloquear resets remotos, validar antes de push/reset y
+rotular todo 040–059 como historial no ejecutable.
+
+- [x] **Step 4: Publicar sin sobrescribir trabajo concurrente**
 
 Verificar que `origin/main` no avanzó. Integrar la rama aislada, repetir los
 controles relevantes en `main` y hacer push normal a `origin/main`. Nunca usar
 force-push.
+
+`main` había avanzado con la actualización a Next 16. Se preservaron esos
+cambios mediante un merge normal, se verificó el árbol combinado y se publicó el
+merge `5f5c1a6` a `origin/main` sin force-push.

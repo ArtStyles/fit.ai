@@ -1,8 +1,7 @@
 # Baseline trazable de migraciones Supabase — Diseño
 
 **Fecha:** 2026-09-06
-**Estado:** Implementación y evidencia remota completas; controles finales e
-integración Git pendientes
+**Estado:** Implementado, verificado e integrado en `main`
 
 ## Problema confirmado
 
