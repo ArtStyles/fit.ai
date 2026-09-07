@@ -29,3 +29,9 @@ La conexión HTTP de Node a Google Fonts devolvió `EACCES` en esta máquina. Pa
 Estas pruebas solo escriben fixtures locales. La aplicación remota se acredita por separado mediante el registro de migración, `trainer_security_preflight() = 60` bajo el rol autenticado y la comparación de los cuerpos y propietarios de las 19 funciones con la migración revisada. Un push de Git por sí solo no acredita el despliegue de la base de datos ni una prueba con clientes reales.
 
 La limitación heredada de lectura de `plan_generation_events` se describe en el [procedimiento de migración](trainer-direct-assignment-migration.md); este cambio conserva esa política y no amplía permisos.
+
+## Aplicación remota verificada
+
+El 7 de septiembre de 2026, a las 19:56 UTC, se comprobó la aplicación de `20260907190000_trainer_direct_assignment.sql` en el proyecto enlazado. Antes de aplicarla, el preflight era 59 y todavía no existía el registro privado de selección, condición necesaria para recuperar el historial en la primera ejecución.
+
+La comprobación posterior confirmó la migración registrada, `trainer_security_preflight() = 60` bajo el rol `authenticated`, los cuerpos y propietarios exactos de las 19 funciones revisadas, el índice único de copias retenidas y el trigger de selección habilitado. El CLI agotó su espera durante la aplicación; se consultó directamente el estado remoto y se verificó el resultado completo sin repetir la migración. La evidencia de despliegue de base de datos es independiente de las pruebas locales y no constituye una prueba del flujo con cuentas reales ni del despliegue web.
