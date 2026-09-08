@@ -76,7 +76,7 @@
 **Files:**
 - Merge only the intended feature commits; preserve unrelated `.artifacts/` work.
 
-- [ ] Confirm feature and main worktrees are clean except known ignored/untracked artifacts.
-- [ ] Commit the scoped implementation on `codex/exercise-visual-pilot`.
-- [ ] Fast-forward local `main` to the verified branch and rerun the focused migration/catalog gate from `D:\work\project`.
-- [ ] Do not push or claim an application deployment unless separately authorized; the remote catalog assets live in Supabase Storage and do not depend on a Vercel deployment.
+- [x] Confirm feature and main worktrees are clean except known ignored/untracked artifacts.
+- [x] Commit the scoped implementation on `codex/exercise-visual-pilot`.
+- [x] Fast-forward local `main` to the verified branch and rerun the focused migration/catalog gate from `D:\work\project`.
+- [x] Do not push or claim an application deployment unless separately authorized; the remote catalog assets live in Supabase Storage and do not depend on a Vercel deployment.
