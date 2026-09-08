@@ -46,5 +46,6 @@ export async function publishTrainerAssignmentRevision(formData: FormData) {
   const target = window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }
   target.__ASSIGNMENT_ACTIONS__ ??= []
   target.__ASSIGNMENT_ACTIONS__.push(Object.fromEntries(formData.entries()) as Record<string, string>)
+  if (new URLSearchParams(window.location.search).get('revision') === 'error-once' && target.__ASSIGNMENT_ACTIONS__.length === 1) return { ok: false as const, error: 'No se pudo publicar la revisión.' }
   return { ok: true as const, assignmentId: '11111111-1111-4111-8111-111111111111', assignmentVersionId: '22222222-2222-4222-8222-222222222222', workoutPlanId: '33333333-3333-4333-8333-333333333333' }
 }

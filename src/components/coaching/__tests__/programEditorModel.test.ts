@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isTemplateExerciseAvailable,
   moveItem,
   shouldPruneTemplateExerciseDraft,
   summarizeRoutine,
@@ -64,6 +65,14 @@ const originalExerciseDraft: TemplateExerciseDraft = {
 }
 
 describe('program editor model', () => {
+  it('requires explicit saved public availability, including when nested catalog data is missing', () => {
+    expect(isTemplateExerciseAvailable(persistedExercise)).toBe(false)
+    expect(isTemplateExerciseAvailable({ ...persistedExercise, exercise: undefined })).toBe(false)
+    expect(isTemplateExerciseAvailable({ ...persistedExercise, exercise: { name: 'Retired', is_public: false } })).toBe(false)
+    expect(isTemplateExerciseAvailable({ ...persistedExercise, exercise: { name: 'Missing flag' } as never })).toBe(false)
+    expect(isTemplateExerciseAvailable({ ...persistedExercise, exercise: { name: 'Available', is_public: true } })).toBe(true)
+  })
+
   it('summarizes routine volume with the explicit guidance estimate', () => {
     expect(summarizeRoutine(workouts)).toEqual({
       days: 2,

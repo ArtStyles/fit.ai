@@ -246,7 +246,7 @@ ALTER FUNCTION public.create_manual_plan_atomic(jsonb,jsonb,boolean) SECURITY IN
 ALTER FUNCTION public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb) SECURITY DEFINER;
 SELECT throws_ok('SELECT trainer_security_preflight()','P0001','TRAINER_SECURITY_PREFLIGHT_FAILED','preflight rejects privileged engine creation');
 ALTER FUNCTION public.create_engine_plan_v2(jsonb,jsonb,integer,text,uuid,uuid,jsonb) SECURITY INVOKER;
-SELECT is(trainer_security_preflight(),60,'preflight remains 60 after restoring original invoker boundaries');
+SELECT is(trainer_security_preflight(),61,'preflight remains 61 after restoring original invoker boundaries');
 -- Validate the same deferred integrity checks that a real commit must satisfy.
 SET CONSTRAINTS ALL IMMEDIATE;
 SELECT * FROM finish();
@@ -302,7 +302,7 @@ SELECT set_config('request.jwt.claim.sub','59000000-0000-4000-8000-000000000001'
 SELECT set_config('request.jwt.claim.role','authenticated',true);
 SELECT is(session_user::text,'authenticator','API session identity is authenticator');
 SELECT is(current_user::text,'authenticated','API effective role is authenticated');
-SELECT is(public.trainer_security_preflight(),60,'professional security preflight includes direct assignment');
+SELECT is(public.trainer_security_preflight(),61,'professional security preflight includes direct assignment');
 SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000064',NULL,'incomplete')$$,'P0001','TRAINER_ASSIGNMENT_TEMPLATE_INCOMPLETE','incomplete template is atomic rejection');
 SELECT throws_ok($$SELECT * FROM assign_trainer_program('59000000-0000-4000-8000-000000000042','59000000-0000-4000-8000-000000000062',NULL,'no-consent')$$,'P0001','TRAINER_ASSIGNMENT_CONSENT_REQUIRED','missing consent rejects assignment');
 SELECT assignment_id AS second_assignment,assignment_version_id AS second_version,workout_plan_id AS second_plan FROM assign_trainer_program('59000000-0000-4000-8000-000000000041','59000000-0000-4000-8000-000000000062',NULL,'second-template') \gset

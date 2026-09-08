@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
 import { SaveStateIndicator } from './SaveStateIndicator'
+import { isTemplateExerciseAvailable } from './model'
 import type { SaveState, TemplateExerciseDraft, TemplateExerciseView } from './types'
 
 type Result = { ok: boolean; error?: string }
@@ -38,6 +39,28 @@ export function TemplateExerciseCard({
 }) {
   const name = exercise.exercise?.name ?? 'Ejercicio'
   const [editing, setEditing] = useState(saveState !== 'saved')
+  const selectorRef = useRef<HTMLSelectElement>(null)
+  const focusReplacement = useRef(false)
+  const unavailable = !isTemplateExerciseAvailable(exercise)
+  const availableOptions = options.filter(option => !unavailable || option.id !== exercise.exercise_id)
+  const savedOptionMissing = !availableOptions.some(option => option.id === exercise.exercise_id)
+  // The saved catalog row is authoritative even outside the current public options page.
+  const selectionAvailable = draft.exerciseId === exercise.exercise_id
+    ? !unavailable
+    : availableOptions.some(option => option.id === draft.exerciseId)
+
+  useEffect(() => {
+    if (editing && focusReplacement.current) {
+      selectorRef.current?.focus()
+      focusReplacement.current = false
+    }
+  }, [editing])
+
+  function replaceExercise() {
+    focusReplacement.current = true
+    setEditing(true)
+    selectorRef.current?.focus()
+  }
 
   function captureDraft(event: FormEvent<HTMLFormElement>) {
     const formData = new FormData(event.currentTarget)
@@ -46,7 +69,8 @@ export function TemplateExerciseCard({
       return typeof value === 'string' ? value : ''
     }
     onDraftChange({
-      exerciseId: field('exerciseId'),
+      // A disabled retained option is omitted by FormData; preserve its actual ID.
+      exerciseId: field('exerciseId') || draft.exerciseId,
       sets: field('sets'),
       reps: field('reps'),
       weightKg: field('weightKg'),
@@ -59,7 +83,7 @@ export function TemplateExerciseCard({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (saveState === 'saving') return
+    if (saveState === 'saving' || !selectionAvailable) return
     const formData = new FormData(event.currentTarget)
     onSaveStateChange('saving')
     const result = await onSave(formData)
@@ -84,6 +108,11 @@ export function TemplateExerciseCard({
         </div>
       </div>
 
+      {unavailable ? <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <p><strong>No disponible.</strong> Sustituye este ejercicio antes de guardar sus cambios o enviar la rutina.</p>
+        <button type="button" onClick={replaceExercise} className="mt-2 min-h-11 rounded-lg border border-border px-3 font-semibold">Sustituir ejercicio</button>
+      </div> : null}
+
       <dl data-exercise-metrics className="mt-3 grid min-w-0 grid-cols-3 gap-2 text-center">
         <div className="min-w-0 rounded-lg bg-muted/40 px-1.5 py-2"><dt className="text-[10px] leading-tight text-muted-foreground sm:text-[11px]">Series × reps</dt><dd className="truncate text-sm font-semibold">{exercise.sets} × {exercise.reps}</dd></div>
         <div className="min-w-0 rounded-lg bg-muted/40 px-1.5 py-2"><dt className="text-[10px] leading-tight text-muted-foreground sm:text-[11px]">Intensidad</dt><dd className="truncate text-sm font-semibold">{exercise.target_rpe ? `RPE ${exercise.target_rpe}` : 'Libre'}</dd></div>
@@ -94,7 +123,11 @@ export function TemplateExerciseCard({
         <form onSubmit={event => void submit(event)} onInput={captureDraft} className="mt-3 rounded-xl border border-border/60 p-3">
           <fieldset aria-label={`Editar ejercicio ${name}`} disabled={saveState === 'saving'} className="grid gap-3 sm:grid-cols-4">
             <input type="hidden" name="templateExerciseId" value={exercise.id} />
-            <label className="text-xs sm:col-span-2">Ejercicio<select name="exerciseId" value={draft.exerciseId} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2">{options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
+            <label className="text-xs sm:col-span-2">Ejercicio<select ref={selectorRef} aria-label="Ejercicio" name="exerciseId" value={draft.exerciseId} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2">
+              {savedOptionMissing ? <option value={exercise.exercise_id} disabled={unavailable}>{name}{unavailable ? ' — No disponible' : ''}</option> : null}
+              {!selectionAvailable && draft.exerciseId !== exercise.exercise_id ? <option value={draft.exerciseId} disabled>{name} — No disponible</option> : null}
+              {availableOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+            </select></label>
             <label className="text-xs">Series<input name="sets" type="number" min="1" max="20" value={draft.sets} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2" /></label>
             <label className="text-xs">Repeticiones<input name="reps" type="number" min="1" max="100" value={draft.reps} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2" /></label>
             <label className="text-xs">Peso (kg)<input name="weightKg" type="number" min="0" max="1000" step="0.25" value={draft.weightKg} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2" /></label>
@@ -102,9 +135,10 @@ export function TemplateExerciseCard({
             <label className="text-xs">Descanso (seg.)<input name="restSeconds" type="number" min="0" max="3600" value={draft.restSeconds} onChange={() => undefined} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-2" /></label>
             <label className="text-xs sm:col-span-3">Indicaciones para el cliente<textarea name="notes" maxLength={1000} value={draft.notes} onChange={() => undefined} rows={2} className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-2 py-2" /></label>
             <div className="flex items-center gap-3 sm:col-span-4">
-              <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">Guardar ejercicio</button>
+              <button type="submit" disabled={!selectionAvailable} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">Guardar ejercicio</button>
               <SaveStateIndicator state={saveState} />
             </div>
+            {!selectionAvailable ? <p className="text-xs text-muted-foreground sm:col-span-4">Selecciona un ejercicio disponible para guardar. Se conservarán los demás valores de la prescripción.</p> : null}
           </fieldset>
         </form>
       ) : null}

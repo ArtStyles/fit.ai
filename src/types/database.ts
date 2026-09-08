@@ -1649,6 +1649,10 @@ export interface Database {
         }
         Returns: boolean
       }
+      get_coach_relationship_management: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       get_coach_clients_summary: {
         Args: Record<string, never>
         Returns: Json

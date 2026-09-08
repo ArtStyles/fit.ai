@@ -21,7 +21,7 @@ export default async function CoachProgramDetailPage({ params: paramsPromise, se
   if (error) throw new Error('No se pudo cargar la rutina.')
   if (!template) notFound()
   const [workoutResponse, exerciseResponse, relationshipResponse] = await Promise.all([
-    (supabase.from('trainer_template_workouts') as any).select('id, name, day_of_week, order_in_plan, trainer_template_exercises(id, exercise_id, order_index, sets, reps, weight_kg, target_rpe, rest_seconds, notes, exercises(name, muscle_groups, equipment, image_url))').eq('template_id', template.id).order('order_in_plan'),
+    (supabase.from('trainer_template_workouts') as any).select('id, name, day_of_week, order_in_plan, trainer_template_exercises(id, exercise_id, order_index, sets, reps, weight_kg, target_rpe, rest_seconds, notes, exercises(name, is_public, muscle_groups, equipment, image_url))').eq('template_id', template.id).order('order_in_plan'),
     (supabase.from('exercises') as any).select('id, name, image_url, muscle_groups, equipment, difficulty, exercise_type, is_compound').eq('is_public', true).order('name').limit(200),
     (supabase.from('coaching_relationships') as any).select('id, client_user_id, started_at, trainer_service_offerings(name)').eq('trainer_user_id', user.id).eq('status', 'active').order('created_at', { ascending: false }).order('id', { ascending: false }),
   ])

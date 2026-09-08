@@ -89,6 +89,14 @@ describe('CoachProgramDetailPage', () => {
     editorProps = null
   })
 
+  it('fetches persisted catalog availability for nested exercise rows', async () => {
+    const supabase = supabaseForChoices()
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, profile: { timezone: 'America/Havana' }, supabase })
+    const { default: Page } = await import('../page')
+    await Page({ params: Promise.resolve({ templateId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }) })
+    expect(supabase.calls.find(call => call.table === 'trainer_template_workouts' && call.method === 'select')?.args[0]).toContain('exercises(name, is_public,')
+  })
+
   it('projects owned client choices and blocks only the same retained template across relationships', async () => {
     const supabase = supabaseForChoices()
     requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-1' }, profile: { timezone: 'America/Havana' }, supabase })

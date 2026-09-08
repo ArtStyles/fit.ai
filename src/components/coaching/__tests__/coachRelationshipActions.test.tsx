@@ -9,8 +9,19 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 import { CoachRelationshipActions, performCoachRelationshipEnd } from '../CoachRelationshipActions'
 
 describe('CoachRelationshipActions', () => {
+  it('rejects success for another relationship', async () => {
+    const refresh=vi.fn(), setMessage=vi.fn()
+    expect(await performCoachRelationshipEnd('rel-a','key',async()=>({ok:true,relationshipId:'rel-b',changed:true}),{refresh,setMessage,setBusy:vi.fn()})).toBe(false)
+    expect(refresh).not.toHaveBeenCalled()
+    expect(setMessage).toHaveBeenCalledWith({text:'No se pudo finalizar el acompañamiento.',error:true})
+  })
+  it('does not enable anonymous finalization', () => {
+    const html=renderToStaticMarkup(<CoachRelationshipActions relationshipId="missing" status="active" clientName={null} serviceName="Fuerza" />)
+    expect(html).toContain('Identidad no disponible')
+    expect(html).toContain('disabled=""')
+  })
   it('requires an accessible confirmation before a trainer can finish a relationship', () => {
-    const html = renderToStaticMarkup(<CoachRelationshipActions relationshipId="relationship-1" status="paused_by_platform" />)
+    const html = renderToStaticMarkup(<CoachRelationshipActions relationshipId="relationship-1" status="paused_by_platform" clientName="Ada" serviceName="Fuerza" />)
 
     expect(html).toContain('Finalizar acompañamiento')
     expect(html).toContain('aria-controls')

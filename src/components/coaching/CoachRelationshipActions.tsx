@@ -23,11 +23,12 @@ export async function performCoachRelationshipEnd(
     formData.set('relationshipId', relationshipId)
     formData.set('idempotencyKey', idempotencyKey)
     const result = await action(formData)
-    update.setMessage(result.ok
+    const succeeded = result.ok && result.relationshipId === relationshipId
+    update.setMessage(succeeded
       ? { text: result.changed ? 'El acompañamiento fue finalizado.' : 'Este acompañamiento ya estaba finalizado.', error: false }
-      : { text: result.error ?? 'No se pudo finalizar el acompañamiento.', error: true })
-    if (result.ok) update.refresh()
-    return result.ok
+      : { text: (result.ok ? undefined : result.error) ?? 'No se pudo finalizar el acompañamiento.', error: true })
+    if (succeeded) update.refresh()
+    return succeeded
   } catch {
     update.setMessage({ text: 'No se pudo finalizar el acompañamiento.', error: true })
     return false
@@ -36,7 +37,7 @@ export async function performCoachRelationshipEnd(
   }
 }
 
-export function CoachRelationshipActions({ relationshipId, status }: { relationshipId: string; status: 'active' | 'paused_by_platform' }) {
+export function CoachRelationshipActions({ relationshipId, status, clientName, serviceName }: { relationshipId: string; status: 'active' | 'paused_by_platform'; clientName: string | null; serviceName: string }) {
   const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -44,7 +45,10 @@ export function CoachRelationshipActions({ relationshipId, status }: { relations
   const attemptKey = useRef<string | undefined>(undefined)
   const descriptionId = `coach-relationship-end-${relationshipId}`
 
+  const identityAvailable = Boolean(clientName?.trim())
+
   async function finish() {
+    if (!identityAvailable || busy) return
     const key = attemptKey.current ?? nextIdempotencyKey()
     attemptKey.current = key
     const ended = await performCoachRelationshipEnd(relationshipId, key, async formData => {
@@ -58,15 +62,15 @@ export function CoachRelationshipActions({ relationshipId, status }: { relations
   }
 
   return <section className="space-y-3" aria-labelledby={`${descriptionId}-title`}>
-    <h2 id={`${descriptionId}-title`} className="text-lg font-bold text-foreground">Gestionar acompañamiento</h2>
+    <h2 id={`${descriptionId}-title`} className="sr-only">Gestionar acompañamiento de {clientName ?? 'Identidad no disponible'}</h2>
     {status === 'paused_by_platform' ? <p className="text-sm text-muted-foreground">Pausado por la plataforma: pendiente de confirmación del cliente. No hay acceso al progreso mientras permanezca pausado.</p> : null}
-    <button type="button" aria-controls={descriptionId} aria-expanded={confirming} onClick={() => setConfirming(value => !value)}
-      disabled={busy} className="min-h-11 rounded-xl border border-red-500/40 px-4 text-sm font-semibold text-foreground disabled:opacity-50">Finalizar acompañamiento</button>
+    <button type="button" aria-label={`Finalizar acompañamiento de ${clientName ?? 'Identidad no disponible'}`} aria-controls={descriptionId} aria-expanded={confirming} onClick={() => setConfirming(value => !value)}
+      disabled={busy || !identityAvailable} className="min-h-11 rounded-xl border border-red-500/40 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:opacity-50">Finalizar acompañamiento</button>
     {confirming ? <div id={descriptionId} role="group" aria-describedby={`${descriptionId}-description`} className="rounded-2xl border border-red-500/30 p-4">
-      <p id={`${descriptionId}-description`} className="text-sm text-muted-foreground">El acceso a los datos se revocará de inmediato. Esta acción no se puede deshacer.</p>
-      <div className="mt-3 flex gap-2">
-        <button type="button" onClick={() => void finish()} disabled={busy} className="min-h-11 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Finalizando…' : 'Confirmar finalización'}</button>
-        <button type="button" onClick={() => setConfirming(false)} disabled={busy} className="min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground disabled:opacity-50">Cancelar</button>
+      <p id={`${descriptionId}-description`} className="text-sm text-muted-foreground">Finalizarás el acompañamiento de {clientName} en {serviceName}. El acceso a los datos se revocará de inmediato. Esta acción no se puede deshacer.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" onClick={() => void finish()} disabled={busy || !identityAvailable} className="min-h-11 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:opacity-50">{busy ? 'Finalizando…' : 'Confirmar finalización'}</button>
+        <button type="button" onClick={() => setConfirming(false)} disabled={busy || !identityAvailable} className="min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:opacity-50">Cancelar</button>
       </div>
     </div> : null}
     {message.text ? <p {...(message.error ? { role: 'alert' } : { 'aria-live': 'polite' })} className="text-sm text-muted-foreground">{message.text}</p> : null}

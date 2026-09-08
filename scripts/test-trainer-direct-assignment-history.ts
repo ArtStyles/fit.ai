@@ -11,6 +11,7 @@ for (const [label, payload] of Object.entries({ baseline, migrated, beforeRerun,
   const detail = adaptCoachClientInsights(payload.detail, payload)
   assert.deepEqual(detail.adherence, detailExpected, `${label}: historical prescribed/completed counts`)
   assert.equal(detail.sessions[0].classification, 'prescribed', `${label}: trusted completion classification`)
+  assert.ok(payload.summary.clients.every((client: { relationshipId?: unknown }) => typeof client.relationshipId === 'string' && client.relationshipId.length > 0), `${label}: SQL emits exact relationship identity`)
   const summary = adaptCoachClientsSummary(payload.summary, payload.now)
   assert.deepEqual(summary.clients.find(client => client.clientId.endsWith('002'))?.adherence, summaryExpected, `${label}: summary prescribed/completed counts`)
   if (label !== 'baseline') {

@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import '@/styles/globals.css'
 import { useEffect, useRef, useState } from 'react'
 import { NewProgramTemplateForm } from '../../NewProgramTemplateForm'
 import { ProgramTemplateEditor } from '../../ProgramTemplateEditor'
@@ -58,7 +59,7 @@ const options = [
     exercise_type: 'strength',
     is_compound: false,
   })),
-]
+].map(option => ({ ...option, is_public: true }))
 
 const initialWorkouts: TemplateWorkoutView[] = [
   {
@@ -75,6 +76,11 @@ const initialWorkouts: TemplateWorkoutView[] = [
     ],
   },
 ]
+
+if (query.get('availability') === 'retired') {
+  initialWorkouts[0].exercises[0] = { ...initialWorkouts[0].exercises[0], exercise_id: '99999999-9999-4999-8999-999999999999', weight_kg: 82.5, notes: 'Conservar técnica', exercise: { name: 'Ejercicio retirado', is_public: false } }
+}
+if (query.get('availability') === 'missing') initialWorkouts[0].exercises[0].exercise = null
 
 function field(fields: RecordedFields, name: string) {
   const value = fields[name]
@@ -121,6 +127,7 @@ function applyEvent(workouts: TemplateWorkoutView[], event: ServerEvent): Templa
       exercises: workout.exercises.map(exercise => exercise.id !== event.exerciseId ? exercise : {
         ...exercise,
         exercise_id: event.update.exerciseId,
+        exercise: options.find(option => option.id === event.update.exerciseId) ?? null,
         sets: event.update.sets,
         reps: event.update.reps,
         weight_kg: event.update.weightKg,
@@ -144,7 +151,7 @@ function applyEvent(workouts: TemplateWorkoutView[], event: ServerEvent): Templa
         target_rpe: 7,
         rest_seconds: 60,
         notes: null,
-        exercise: option ? { name: option.name, muscle_groups: option.muscle_groups, equipment: option.equipment } : null,
+        exercise: option ? { is_public: true, name: option.name, muscle_groups: option.muscle_groups, equipment: option.equipment } : null,
       }
     })],
   })
@@ -170,7 +177,7 @@ function EditorFixture() {
   return <ProgramTemplateEditor
     template={{ id: '11111111-1111-4111-8111-111111111111', name: 'Fuerza', goal: null, description: null, days_per_week: 3, status: 'draft' }}
     workouts={workouts}
-    options={options}
+    options={query.get('availability') === 'omitted-public' ? options.filter(option => option.id !== options[0].id) : options}
     relationships={[
       { id: 'relationship-a', clientUserId: 'client-a', canReceiveAssignment: true, label: 'Entrenamiento personal · iniciado 24 ago 2026 · ref. relationship-a' },
       { id: 'relationship-b', clientUserId: 'client-b', canReceiveAssignment: true, label: 'Entrenamiento personal · iniciado 10 ago 2026 · ref. relationship-b' },
@@ -185,7 +192,7 @@ function EditorFixture() {
 createRoot(document.getElementById('root')!).render(
   <I18nProvider language="es" timeZone="America/Havana" syncDocumentLanguage={false}>
     <AccountWorkspaceProvider model={editorAccountModel}>
-      <main>
+      <main className="mx-auto max-w-6xl px-4 py-8">
         <div className="flex justify-end p-2">
           <AccountWorkspaceMenu surface="dashboard" />
         </div>

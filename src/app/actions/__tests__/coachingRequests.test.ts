@@ -135,6 +135,7 @@ describe('coaching request actions', () => {
       idempotency_key: '44444444-4444-4444-8444-444444444444',
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
+    for (const path of ['/coach', '/coach/requests', '/coach/clients']) expect(revalidatePath).toHaveBeenCalledWith(path)
   })
 
   it('maps an acceptance race conflict to a refreshed state instead of a generic failure', async () => {

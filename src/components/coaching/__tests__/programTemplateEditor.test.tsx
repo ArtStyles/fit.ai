@@ -15,6 +15,20 @@ async function openTemplateDetails(page: Page) {
   }
 }
 
+async function expectSendingBlocked(page: Page, message?: string) {
+  await page.getByRole('button', { name: 'Asignar a un cliente', exact: true }).click()
+  await pwExpect(page.locator('#assign-program-form')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Publicar revisión', exact: true }).click()
+  await pwExpect(page.locator('#publish-program-revision-form')).toHaveCount(0)
+  if (message) await pwExpect(page.getByRole('region', { name: 'Publicar una revisión' }).getByRole('status')).toHaveText(message)
+}
+
+async function expectSendingReady(page: Page) {
+  await page.getByRole('button', { name: 'Asignar a un cliente', exact: true }).click()
+  await pwExpect(page.locator('#assign-program-form')).toBeVisible()
+  await page.getByRole('region', { name: 'Asignar rutina profesional' }).getByRole('button', { name: 'Cerrar', exact: true }).click()
+}
+
 describe('professional template editor browser interactions', () => {
   let browser: Browser
   let viteServer: { listen: () => Promise<void>; close: () => Promise<void>; httpServer: { address: () => string | { port: number } | null } }
@@ -68,6 +82,117 @@ describe('professional template editor browser interactions', () => {
   afterAll(async () => {
     await browser?.close()
     await viteServer?.close()
+  })
+
+  it('keeps a saved public exercise omitted from paged options editable without changing its ID', async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 900 } })
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?availability=omitted-public`)
+      await page.getByRole('button', { name: 'Editar Sentadilla', exact: true }).click()
+      const selector = page.getByLabel('Ejercicio', { exact: true })
+      await pwExpect(selector).toHaveValue('44444444-4444-4444-8444-444444444444')
+      await pwExpect(selector.locator('option:checked')).toHaveText('Sentadilla')
+      await pwExpect(selector.locator('option:checked')).toBeEnabled()
+      await page.getByLabel('Series', { exact: true }).fill('5')
+      await page.getByLabel('Indicaciones para el cliente').fill('Pausa controlada')
+      await pwExpect(selector).toHaveValue('44444444-4444-4444-8444-444444444444')
+      await pwExpect(page.getByRole('button', { name: 'Guardar ejercicio', exact: true })).toBeEnabled()
+      await selector.evaluate(element => element.scrollIntoView({ block: 'center' }))
+      await page.screenshot({ path: '.superpowers/sdd/2026-09-08-coaching-catalog-management/final-fix-omitted-public-390.png' })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+      await page.getByRole('button', { name: 'Guardar ejercicio', exact: true }).click()
+      await pwExpect(page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })).toHaveCount(0)
+      const calls = await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])
+      expect(calls).toEqual([{ action: 'update-exercise', fields: {
+        templateExerciseId: '33333333-3333-4333-8333-333333333333', exerciseId: '44444444-4444-4444-8444-444444444444',
+        sets: '5', reps: '10', weightKg: '', targetRpe: '7', restSeconds: '60', notes: 'Pausa controlada',
+      } }])
+      await page.getByRole('button', { name: 'Editar Sentadilla', exact: true }).click()
+      await pwExpect(selector).toHaveValue('44444444-4444-4444-8444-444444444444')
+      await pwExpect(page.getByLabel('Series', { exact: true })).toHaveValue('5')
+    } finally { await page.close() }
+  })
+
+  it.each([390, 1280])('requires explicit replacement of a retired exercise and preserves its prescription at %ipx', async width => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } })
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?availability=retired&refresh=stale`)
+      const retiredId = '99999999-9999-4999-8999-999999999999'
+      await expectSendingBlocked(page, 'La rutina contiene ejercicios que ya no están disponibles. Sustitúyelos antes de enviarla.')
+      await page.getByRole('region', { name: 'Asignar rutina profesional' }).evaluate(element => element.scrollIntoView({ block: 'start' }))
+      if (width >= 1024) await page.evaluate(() => { document.body.scrollTop = 0; document.documentElement.scrollTop = 0 })
+      await page.screenshot({ path: `.superpowers/sdd/2026-09-08-coaching-catalog-management/final-fix-summary-${width}.png` })
+      await page.getByRole('button', { name: 'Sustituir ejercicio', exact: true }).click()
+      const selector = page.getByLabel('Ejercicio', { exact: true })
+      await pwExpect(selector).toBeFocused()
+      await pwExpect(selector).toHaveValue(retiredId)
+      await page.getByLabel('Indicaciones para el cliente').fill('Conservar técnica y pausa')
+      await pwExpect(selector).toHaveValue(retiredId)
+      await pwExpect(page.getByRole('button', { name: 'Guardar ejercicio', exact: true })).toBeDisabled()
+      expect(await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])).toEqual([])
+      await page.getByRole('button', { name: 'Sustituir ejercicio', exact: true }).evaluate(element => element.scrollIntoView({ block: 'start' }))
+      await page.screenshot({ path: `.superpowers/sdd/2026-09-08-coaching-catalog-management/final-fix-retired-${width}.png` })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+      await selector.selectOption('66666666-6666-4666-8666-666666666666')
+      await page.getByRole('button', { name: 'Guardar ejercicio', exact: true }).click()
+      await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'update-exercise')))
+      const calls = await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])
+      expect(calls.find(call => call.action === 'update-exercise')?.fields).toEqual({
+        templateExerciseId: '33333333-3333-4333-8333-333333333333', exerciseId: '66666666-6666-4666-8666-666666666666',
+        sets: '3', reps: '10', weightKg: '82.5', targetRpe: '7', restSeconds: '60', notes: 'Conservar técnica y pausa',
+      })
+      await expectSendingBlocked(page)
+      await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await pwExpect(page.getByText('1. Prensa', { exact: true })).toBeVisible()
+      await pwExpect(page.getByRole('region', { name: 'Asignar rutina profesional' }).getByRole('status')).toHaveCount(0)
+      await pwExpect(page.getByRole('region', { name: 'Publicar una revisión' }).getByRole('status')).toHaveCount(0)
+      await expectSendingReady(page)
+      await page.getByRole('button', { name: 'Editar Prensa', exact: true }).click()
+      await pwExpect(selector).toHaveValue('66666666-6666-4666-8666-666666666666')
+      await pwExpect(page.getByLabel('Peso (kg)')).toHaveValue('82.5')
+      await pwExpect(page.getByLabel('Indicaciones para el cliente')).toHaveValue('Conservar técnica y pausa')
+      await selector.evaluate(element => element.scrollIntoView({ block: 'start' }))
+      await page.screenshot({ path: `.superpowers/sdd/2026-09-08-coaching-catalog-management/final-fix-replaced-${width}.png` })
+    } finally { await page.close() }
+  })
+
+  it('treats a missing nested catalog row as unavailable even when the option list contains its ID', async () => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?availability=missing`)
+      await expectSendingBlocked(page)
+      await page.getByRole('button', { name: 'Sustituir ejercicio', exact: true }).click()
+      await pwExpect(page.getByRole('button', { name: 'Guardar ejercicio', exact: true })).toBeDisabled()
+    } finally { await page.close() }
+  })
+
+  it.each(['assign', 'revision'])('preserves real %s errors, form fields and retry keys across a resolved editor guard', async operation => {
+    const page = await browser.newPage()
+    try {
+      await page.goto(`${baseUrl}/src/components/coaching/__tests__/fixtures/programTemplateEditorInteraction.html?${operation}=error-once`)
+      const region = page.getByRole('region', { name: operation === 'assign' ? 'Asignar rutina profesional' : 'Publicar una revisión' })
+      await region.getByRole('button', { name: operation === 'assign' ? 'Asignar a un cliente' : 'Publicar revisión', exact: true }).click()
+      const recipient = region.getByRole('radio').last()
+      await recipient.check()
+      const summary = region.locator('textarea[name="changeSummary"]')
+      await summary.fill('Conservar este resumen')
+      const submit = region.getByRole('button', { name: operation === 'assign' ? 'Asignar rutina' : 'Publicar para sesiones futuras', exact: true })
+      await submit.click()
+      const error = operation === 'assign' ? 'No se pudo enviar la rutina.' : 'No se pudo publicar la revisión.'
+      await pwExpect(region.getByRole('status')).toHaveText(error)
+      await page.getByRole('button', { name: 'Editar Sentadilla', exact: true }).click()
+      await page.getByLabel('Indicaciones para el cliente').fill('Nota nueva')
+      await pwExpect(region.getByRole('status')).toHaveText(error)
+      await page.getByRole('button', { name: 'Guardar ejercicio', exact: true }).click()
+      await pwExpect(page.getByRole('group', { name: 'Editar ejercicio Sentadilla' })).toHaveCount(0)
+      await pwExpect(region.getByRole('status')).toHaveText(error)
+      await pwExpect(recipient).toBeChecked()
+      await pwExpect(summary).toHaveValue('Conservar este resumen')
+      await submit.click()
+      await page.waitForFunction(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: unknown[] }).__ASSIGNMENT_ACTIONS__?.length === 2)
+      const calls = await page.evaluate(() => (window as Window & { __ASSIGNMENT_ACTIONS__?: Array<Record<string, string>> }).__ASSIGNMENT_ACTIONS__ ?? [])
+      expect(calls[1]).toEqual(calls[0])
+    } finally { await page.close() }
   })
 
   it('keeps this editable professional template separate from published assignments', async () => {
@@ -589,7 +714,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(addDay).toBeDisabled()
       expect((await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])).filter(call => call.action === 'create-workout')).toHaveLength(1)
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('tab', { name: /Día C/ })).toBeVisible()
       await pwExpect(addDay).toHaveCount(0)
     } finally { await page.close() }
@@ -606,7 +733,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(page.getByRole('button', { name: 'Bajar Día A' })).toBeDisabled()
       await pwExpect(dayTabs.first()).toContainText('Día A')
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(dayTabs.first()).toContainText('Día B')
       await pwExpect(page.getByRole('button', { name: 'Subir Día A' })).toBeEnabled()
     } finally { await page.close() }
@@ -711,7 +840,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(addBatch).toBeDisabled()
       await pwExpect(page.locator('[data-template-exercise-id]')).toHaveCount(2)
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.locator('[data-template-exercise-id]')).toHaveCount(3)
       await pwExpect(page.getByText('3. Prensa', { exact: true })).toBeVisible()
       await pwExpect(addBatch).toBeEnabled()
@@ -731,7 +862,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(page.getByRole('button', { name: 'Bajar Sentadilla' })).toBeDisabled()
       expect(await exerciseIds.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-template-exercise-id')))).toEqual(before)
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       expect(await exerciseIds.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-template-exercise-id')))).toEqual([...before].reverse())
       await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
     } finally { await page.close() }
@@ -749,7 +882,9 @@ describe('professional template editor browser interactions', () => {
       await page.getByRole('tab', { name: /Día A/ }).click()
       await pwExpect(page.getByRole('button', { name: 'Bajar Sentadilla' })).toBeDisabled()
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
     } finally { await page.close() }
   })
@@ -766,7 +901,9 @@ describe('professional template editor browser interactions', () => {
       const overlapCalls = await page.evaluate(() => (window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__ ?? [])
       expect(overlapCalls.filter(call => call.action === 'delete-exercise' || call.action === 'add-exercises')).toHaveLength(0)
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('button', { name: 'Eliminar Sentadilla' })).toBeEnabled()
       await pwExpect(page.getByRole('button', { name: 'Agregar varios ejercicios' })).toBeEnabled()
 
@@ -778,7 +915,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeDisabled()
       await pwExpect(page.getByRole('button', { name: 'Eliminar Sentadilla' })).toBeDisabled()
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
       await pwExpect(page.getByRole('button', { name: 'Eliminar Prensa' })).toBeEnabled()
 
@@ -788,7 +927,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeDisabled()
       await pwExpect(page.getByRole('button', { name: 'Agregar varios ejercicios' })).toBeDisabled()
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('button', { name: 'Subir Sentadilla' })).toBeEnabled()
       await pwExpect(page.getByRole('button', { name: 'Agregar varios ejercicios' })).toBeEnabled()
       await pwExpect(page.getByRole('button', { name: 'Eliminar Prensa' })).toHaveCount(0)
@@ -803,7 +944,9 @@ describe('professional template editor browser interactions', () => {
       await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'reorder-workouts')))
       await pwExpect(page.getByRole('button', { name: 'Eliminar día' })).toBeDisabled()
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('button', { name: 'Eliminar día' })).toBeEnabled()
 
       page.once('dialog', confirmation => void confirmation.accept())
@@ -811,7 +954,9 @@ describe('professional template editor browser interactions', () => {
       await page.waitForFunction(() => Boolean((window as Window & { __PROGRAM_ACTIONS__?: RecordedCall[] }).__PROGRAM_ACTIONS__?.some(call => call.action === 'delete-workout')))
       await pwExpect(page.getByRole('button', { name: 'Subir Día A' })).toBeDisabled()
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
       await pwExpect(page.getByRole('button', { name: 'Agregar día' })).toBeEnabled()
     } finally { await page.close() }
@@ -829,7 +974,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(deleteExercise).toBeDisabled()
       await pwExpect(page.locator('[data-template-exercise-id="33333333-3333-4333-8333-333333333333"]')).toBeVisible()
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.locator('[data-template-exercise-id="33333333-3333-4333-8333-333333333333"]')).toHaveCount(0)
     } finally { await page.close() }
   })
@@ -846,7 +993,9 @@ describe('professional template editor browser interactions', () => {
       await pwExpect(deleteDay).toBeDisabled()
       await pwExpect(page.getByRole('tabpanel', { name: /Día A/ })).toBeVisible()
 
+      await expectSendingBlocked(page)
       await page.evaluate(() => (window as Window & { __PROGRAM_APPLY_SERVER_STATE__?: () => void }).__PROGRAM_APPLY_SERVER_STATE__?.())
+      await expectSendingReady(page)
       await pwExpect(page.getByRole('tab', { name: /Día A/ })).toHaveCount(0)
       await pwExpect(page.getByRole('tabpanel', { name: /Día B/ })).toBeVisible()
     } finally { await page.close() }

@@ -12,6 +12,7 @@ import {
 type UnknownRecord = Record<string, unknown>
 
 export type CoachClientSummary = {
+  relationshipId: string
   clientId: string
   fullName: string | null
   avatarUrl: string | null
@@ -171,6 +172,7 @@ function parseClient(value: unknown, now: string): CoachClientSummary {
   }))
   const lastProfessionalEvidenceAt = dateOrNull(value.lastProfessionalEvidenceAt)
   return {
+    relationshipId: requiredString(value.relationshipId),
     clientId,
     fullName: nullableString(client.fullName),
     avatarUrl: nullableString(client.avatarUrl),

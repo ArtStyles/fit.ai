@@ -23,7 +23,7 @@ function supabaseWithPausedRelationship() {
   const requestTrainerEq = vi.fn(() => ({ eq: requestStatusEq }))
   const requestSelect = vi.fn(() => ({ eq: requestTrainerEq }))
   const from = vi.fn((table: string) => ({ select: table === 'coaching_relationships' ? relationshipSelect : requestSelect }))
-  return { from, relationshipIn }
+  return { from, relationshipIn, rpc: vi.fn().mockResolvedValue({data:{counts:{pendingRequests:0,activeRelationships:0,pausedRelationships:1},relationships:[{relationshipId:'paused-relationship',clientId:'paused-client',clientName:'Ada',username:null,avatarUrl:null,serviceName:'Fuerza',status:'paused_by_platform',startedAt:'2026-08-01T00:00:00Z',trainingConsentActive:true,trainingAccessAvailable:false}]},error:null}) }
 }
 
 function supabaseWithPendingRequest(profile: {
@@ -70,16 +70,18 @@ function supabaseWithPendingRequest(profile: {
 }
 
 describe('CoachRequestsPage', () => {
-  it('queries and renders platform-paused relationships for trainer-only ending', async () => {
+  it('links to named management with independent paused count without anonymous actions', async () => {
     const supabase = supabaseWithPausedRelationship()
     requireActiveTrainerContext.mockResolvedValue({ supabase, user: { id: 'trainer-1' } })
     const { default: CoachRequestsPage } = await import('../page')
 
     const html = renderToStaticMarkup(await CoachRequestsPage())
 
-    expect(supabase.relationshipIn).toHaveBeenCalledWith('status', ['active', 'paused_by_platform'])
-    expect(html).toContain('paused-relationship:paused_by_platform')
-    expect(html).toMatch(/Acompa.+amientos activos o pausados/)
+    expect(supabase.relationshipIn).not.toHaveBeenCalled()
+    expect(supabase.rpc).toHaveBeenCalledWith('get_coach_relationship_management')
+    expect(html).toContain('href="/coach/clients"')
+    expect(html).toContain('0 activos · 1 pausados')
+    expect(html).not.toContain('paused-relationship:paused_by_platform')
   })
 
   it('renders the requesting client identity beside the existing request details', async () => {

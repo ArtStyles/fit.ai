@@ -1,5 +1,9 @@
 import type { RoutineSummary, SaveState, TemplateExerciseDraft, TemplateExerciseView, TemplateWorkoutView } from './types'
 
+export function isTemplateExerciseAvailable(exercise: TemplateExerciseView) {
+  return exercise.exercise?.is_public === true
+}
+
 export function createTemplateExerciseDraft(exercise: TemplateExerciseView): TemplateExerciseDraft {
   return {
     exerciseId: exercise.exercise_id,

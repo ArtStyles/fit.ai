@@ -52,7 +52,12 @@ function renderAuthenticatedPage(page: React.ReactNode): string {
 }
 
 describe('professional workspace routes', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    summaryRpc.mockImplementation(async (name: string) => ({data:name === 'get_coach_relationship_management'
+      ? {counts:{pendingRequests:0,activeRelationships:0,pausedRelationships:0},relationships:[]}
+      : {schemaVersion:1,counts:{pendingRequests:0,activeClients:0,pausedRelationships:0},clients:[]},error:null}))
+  })
 
   it.each([
     ['../page', 'Resumen profesional', undefined],
@@ -213,12 +218,28 @@ describe('professional workspace routes', () => {
     expect(html).not.toContain('href="/dashboard"')
   })
 
-  it.each(['../page', '../clients/page'] as const)('loads %s from exactly one summary RPC', async modulePath => {
+  it.each(['../page', '../clients/page'] as const)('loads %s from independent metadata and protected summary RPCs', async modulePath => {
     const Page = (await import(modulePath)).default
 
     await Page()
 
-    expect(summaryRpc).toHaveBeenCalledTimes(1)
+    expect(summaryRpc).toHaveBeenCalledTimes(2)
+    expect(summaryRpc).toHaveBeenCalledWith('get_coach_relationship_management')
     expect(summaryRpc).toHaveBeenCalledWith('get_coach_clients_summary')
   })
+})
+
+it('keeps management visible when protected summary fails but surfaces management errors', async () => {
+  const Page=(await import('../clients/page')).default
+  const relationship={relationshipId:'rel-a',clientId:'client-a',clientName:'Ada',username:null,avatarUrl:null,serviceName:'Fuerza',status:'active',startedAt:'2026-08-01T00:00:00Z',trainingConsentActive:true,trainingAccessAvailable:true}
+  summaryRpc.mockImplementation(async (name:string)=>name==='get_coach_relationship_management'
+    ? {data:{counts:{pendingRequests:1,activeRelationships:1,pausedRelationships:0},relationships:[relationship]},error:null}
+    : {data:null,error:{message:'private failure'}})
+  let html=renderAuthenticatedPage(await Page())
+  expect(html).toContain('Ada')
+  expect(html).toContain('No se pudo cargar el seguimiento')
+  summaryRpc.mockResolvedValue({data:null,error:{message:'private failure'}})
+  html=renderAuthenticatedPage(await Page())
+  expect(html).toContain('No se pudo cargar la lista de clientes')
+  expect(html).not.toContain('Todavía no tienes')
 })

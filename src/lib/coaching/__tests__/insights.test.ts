@@ -46,6 +46,12 @@ function payload(overrides: Record<string, unknown> = {}) {
 }
 
 describe('adaptCoachClientsSummary', () => {
+  it('requires and retains the exact relationship identity', () => {
+    expect(adaptCoachClientsSummary(payload(), NOW).clients[0].relationshipId).toBe('relationship-b')
+    const invalid = payload()
+    delete (invalid.clients[0] as Partial<typeof invalid.clients[0]>).relationshipId
+    expect(() => adaptCoachClientsSummary(invalid, NOW)).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
+  })
   it('rejects an unversioned or malformed summary rather than inventing client access', () => {
     expect(() => adaptCoachClientsSummary({ schemaVersion: 2, clients: [] }, NOW)).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')
     expect(() => adaptCoachClientsSummary({ schemaVersion: 1, counts: {}, clients: [{ client: { id: 'x' } }] }, NOW)).toThrow('COACH_CLIENT_INSIGHTS_UNAVAILABLE')

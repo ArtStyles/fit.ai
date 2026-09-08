@@ -12,6 +12,8 @@ function formString(formData: FormData, name: string) {
 }
 
 function revalidateConsentPaths() {
+  revalidatePath('/coach')
+  revalidatePath('/coach/requests')
   revalidatePath('/dashboard')
   revalidatePath('/coaching')
   revalidatePath('/coach/clients')
@@ -20,7 +22,6 @@ function revalidateConsentPaths() {
 
 function revalidateRelationshipPaths() {
   revalidateConsentPaths()
-  revalidatePath('/coach/requests')
 }
 
 function parseConsentRpcResult(data: unknown, expectedRelationshipId: string) {
@@ -96,11 +97,11 @@ async function invokeRelationshipAction(
       ? { p_relationship_id: relationshipId, p_reason: reason || null, p_idempotency_key: idempotencyKey }
       : { p_relationship_id: relationshipId, p_idempotency_key: idempotencyKey }
     const { data, error } = await (supabase as any).rpc(rpcName, args)
-    const result = Array.isArray(data) ? data[0] : data
-    if (error || !result?.relationship_id) return { ok: false, error: 'No se pudo actualizar el acompañamiento.' }
+    const result = error ? null : parseConsentRpcResult(data, relationshipId)
+    if (!result) return { ok: false, error: 'No se pudo actualizar el acompañamiento.' }
 
     revalidateRelationshipPaths()
-    return { ok: true, relationshipId: result.relationship_id, changed: result.changed === true }
+    return { ok: true, relationshipId: result.relationshipId, changed: result.changed }
   } catch {
     return { ok: false, error: 'No se pudo actualizar el acompañamiento.' }
   }

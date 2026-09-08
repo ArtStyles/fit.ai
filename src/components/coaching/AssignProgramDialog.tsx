@@ -43,7 +43,8 @@ export function AssignProgramDialog({
 } & PendingChangeGuardProps) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState<string | { kind: 'blocked' }>('')
+  const visibleMessage = typeof message === 'string' ? message : blocked ? blockedMessage : ''
   const attemptKeys = useRef(new Map<string, string>())
   const [assignedRecipients, setAssignedRecipients] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState(selectedRelationshipId)
@@ -63,7 +64,7 @@ export function AssignProgramDialog({
 
   function explainBlocked() {
     setOpen(false)
-    setMessage(blockedMessage)
+    setMessage({ kind: 'blocked' })
     requestAnimationFrame(() => statusRef.current?.focus())
   }
 
@@ -144,6 +145,6 @@ export function AssignProgramDialog({
       <label className="block text-sm font-semibold text-foreground">Resumen para el cliente <span className="font-normal text-muted-foreground">(opcional)</span><textarea name="changeSummary" maxLength={1000} rows={3} disabled={busy} className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 font-normal" /></label>
       <button type="submit" disabled={busy || !hasReadyRelationship} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{busy ? 'Enviando…' : 'Asignar rutina'}</button>
     </form> : null}
-    {message ? <p ref={statusRef} tabIndex={-1} role="status" aria-live="polite" className="mt-3 text-sm text-muted-foreground outline-none">{message}</p> : null}
+    {visibleMessage ? <p ref={statusRef} tabIndex={-1} role="status" aria-live="polite" className="mt-3 text-sm text-muted-foreground outline-none">{visibleMessage}</p> : null}
   </section>
 }

@@ -527,7 +527,7 @@ export async function endSuspendReinstateAndResumeTrainerRelationship(
   return relationshipId
 }
 
-/** Probes direct assignment and preflight 60 before fixture writes so a partially deployed database never
+/** Probes direct assignment and preflight 61 before fixture writes so a partially deployed database never
  * receives an unrecoverable professional materialization from E2E. */
 export async function assertTrainerProgrammingE2EReady(): Promise<void> {
   if (!isTrainerProgrammingE2EEnabled(process.env)) {
@@ -555,8 +555,8 @@ export async function assertTrainerProgrammingE2EReady(): Promise<void> {
   const tableError = tables.find(result => result.error)?.error
   const missingRpc = [propose.error, save.error].some(error =>
     /Could not find the function|PGRST202/i.test(error?.message ?? ''))
-  if (tableError || missingRpc || marker.error || marker.data !== 60) {
-    throw new Error('Trainer direct assignment (preflight 60) must be deployed to the dedicated E2E project')
+  if (tableError || missingRpc || marker.error || marker.data !== 61) {
+    throw new Error('Trainer direct assignment (preflight 61) must be deployed to the dedicated E2E project')
   }
 }
 

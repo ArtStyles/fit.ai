@@ -32,6 +32,8 @@ function rpcError(error: unknown, fallback: string) {
 }
 
 function revalidateCoachingPaths() {
+  revalidatePath('/coach')
+  revalidatePath('/coach/clients')
   revalidatePath('/coaching')
   revalidatePath('/trainers')
   revalidatePath('/coach/requests')

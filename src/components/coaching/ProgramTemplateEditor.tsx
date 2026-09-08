@@ -9,7 +9,8 @@ import {
   EMPTY_WORKOUT_STRUCTURAL_PENDING,
   type WorkoutStructuralPending,
 } from './program-editor/ActiveTemplateWorkout'
-import { createTemplateExerciseDraft, moveItem, shouldPruneTemplateExerciseDraft, summarizeRoutine } from './program-editor/model'
+import { createTemplateExerciseDraft, isTemplateExerciseAvailable, moveItem, shouldPruneTemplateExerciseDraft, summarizeRoutine } from './program-editor/model'
+import { mapTrainerAssignmentProposalError } from '@/lib/coaching/trainerAssignmentProposalErrors'
 import { ProgramTemplateActions } from './program-editor/ProgramTemplateActions'
 import { ProgramTemplateSummary } from './program-editor/ProgramTemplateSummary'
 import { TemplateDayTabs } from './program-editor/TemplateDayTabs'
@@ -68,6 +69,10 @@ export function ProgramTemplateEditor({
   const canAddWorkout = orderedWorkouts.length < template.days_per_week
   const guardedSaveStates = [templateSaveState, ...Object.values(workoutSaveStates), ...Object.values(exerciseSaveStates)]
   const hasPendingDescriptions = guardedSaveStates.some(state => state !== 'saved')
+  const hasPendingStructure = dayStructurePending || Object.values(workoutStructuralPending).some(pending =>
+    pending.reorderExpectedIds !== null || pending.deletePendingId !== null || pending.batchExpectedIds !== null,
+  )
+  const hasUnavailableExercises = templateExercises.some(exercise => !isTemplateExerciseAvailable(exercise))
   useWorkspaceNavigationGuard({
     blocked: hasPendingDescriptions,
     message: LEAVE_EDITOR_MESSAGE,
@@ -307,8 +312,10 @@ export function ProgramTemplateEditor({
             summary={routineSummary}
             relationships={relationships}
             assignments={assignments}
-            blocked={hasPendingDescriptions}
-            blockedMessage={PENDING_DESCRIPTION_MESSAGE}
+            blocked={hasPendingDescriptions || hasPendingStructure || hasUnavailableExercises}
+            blockedMessage={hasUnavailableExercises
+              ? mapTrainerAssignmentProposalError('TRAINER_ASSIGNMENT_TEMPLATE_EXERCISE_UNAVAILABLE')
+              : PENDING_DESCRIPTION_MESSAGE}
             selectedRelationshipId={selectedRelationshipId}
           />
         </aside>

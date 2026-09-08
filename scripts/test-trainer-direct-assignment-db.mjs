@@ -13,6 +13,10 @@ const run = (args, input) => spawnSync('docker', args, {
 })
 const sqlArgs = ['exec', '-i', '--env', 'PGPASSWORD=postgres', container, 'psql', '-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', 'supabase_admin', '-d', 'postgres']
 const sql = input => run(sqlArgs, input)
+const activeFunctionFingerprint = `SELECT md5(jsonb_agg(jsonb_build_array(n.nspname,p.proname,pg_get_functiondef(p.oid)) ORDER BY n.nspname,p.proname)::text)
+FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+WHERE n.nspname IN ('public','private') AND (p.proname IN ('assign_trainer_program','publish_trainer_assignment_revision','get_coach_relationship_management','trainer_security_preflight') OR p.proname LIKE '%exercise_catalog_v1%');`
+
 function check(result, label, { tap = false } = {}) {
   const output = result.stdout ?? ''
   const plans = [...output.matchAll(/^1\.\.(\d+)(?:\s.*)?$/gm)]
@@ -41,8 +45,14 @@ function legacyHistory(migrationDirectory, migrations, baseline) {
   const verifyAdapters = payload => check(spawnSync(process.execPath, ['--import', 'tsx', path.join(root, 'scripts/test-trainer-direct-assignment-history.ts')], {
     input: JSON.stringify(payload), encoding: 'utf8', cwd: root, timeout: 30000,
   }), 'Real detail and summary adapters preserve historical adherence and completion classification')
+  const installedOnce = new Set()
+  const oneTimeCatalog = new Set(['20260907230000_exercise_catalog_v1_cutover.sql', '20260907233000_exercise_catalog_v1_semantic_digest.sql'])
   const apply = () => {
     for (const migration of migrations.filter(name => name > baseline)) {
+      // These deployed catalog migrations move/rename a function and are install-only.
+      // The assignment/selection and subsequent contract migrations remain rerun-tested.
+      if (oneTimeCatalog.has(migration) && installedOnce.has(migration)) continue
+      installedOnce.add(migration)
       check(historySql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, migration), 'utf8')}`), `Legacy history: apply ${migration}`)
     }
   }
@@ -82,8 +92,10 @@ function legacyHistory(migrationDirectory, migrations, baseline) {
   check(historySql(historyPhases.later_revisions), 'Revise never-selected direct copy and deselected accepted legacy copy as API role')
   const beforeRerun = read('before rerun')
   const beforeRerunRows = fingerprint()
+  const activeFunctionsBeforeRerun = historySql(activeFunctionFingerprint)
   apply()
   same(beforeRerunRows, fingerprint(), 'Legacy rerun preserves library, selections, requests, prescriptions and sessions')
+  same(activeFunctionsBeforeRerun, historySql(activeFunctionFingerprint), 'Legacy rerun restores exact active function definitions')
   const afterRerun = read('after rerun')
   // now is observational metadata; the actual report payloads must be identical.
   for (const key of ['detail', 'frozen', 'summary']) {
@@ -190,7 +202,7 @@ async function startBaseline(migrationDirectory, baseline) {
     await new Promise(resolve => setTimeout(resolve, 1000))
   }
   if (!ready) throw new Error('Disposable database did not become healthy')
-  check(sql('CREATE TABLE storage.buckets (id text PRIMARY KEY, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]); ALTER TABLE storage.buckets OWNER TO postgres;'), 'Bootstrap baseline storage dependency')
+  check(sql(`CREATE TABLE storage.buckets (id text PRIMARY KEY, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]); ALTER TABLE storage.buckets OWNER TO postgres; CREATE TABLE storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text NOT NULL, name text NOT NULL DEFAULT '', owner_id text, metadata jsonb); ALTER TABLE storage.objects OWNER TO postgres; ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;`), 'Bootstrap baseline storage dependency')
   check(sql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, baseline), 'utf8')}`), 'Load active baseline with postgres ownership')
 }
 
@@ -240,11 +252,21 @@ try {
       (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.id) FROM private.trainer_plan_selection_periods row),
       (SELECT jsonb_agg(to_jsonb(row) ORDER BY row.idempotency_key) FROM private.trainer_assignment_requests row)
     )::text);`
+    const functionsBeforeRerun = sql(activeFunctionFingerprint)
+    check(functionsBeforeRerun, 'Snapshot active assignment, management and catalog function definitions')
     const beforeRerun = sql(fingerprint)
     check(beforeRerun, 'Capture library and selection history fingerprint')
     for (const migration of migrations.filter(name => name.endsWith('_trainer_direct_assignment.sql'))) {
       check(sql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, migration), 'utf8')}`), 'Rerun forward migration with retained and removed history')
     }
+    // Restore the active chain after testing the historical migration rerun itself.
+    const directAssignment = migrations.find(name => name.endsWith('_trainer_direct_assignment.sql'))
+    for (const migration of migrations.filter(name => name > directAssignment && !name.includes('_exercise_catalog_v1_'))) {
+      check(sql(`SET ROLE postgres;\n${readFileSync(path.join(migrationDirectory, migration), 'utf8')}`), `Restore active migration ${migration}`)
+    }
+    const functionsAfterRerun = sql(activeFunctionFingerprint)
+    check(functionsAfterRerun, 'Read restored active function definitions')
+    if (functionsBeforeRerun.stdout !== functionsAfterRerun.stdout) throw new Error('Rerun restoration changed active function definitions')
     const afterRerun = sql(fingerprint)
     check(afterRerun, 'Capture fingerprint after migration rerun')
     if (beforeRerun.stdout !== afterRerun.stdout) throw new Error('Migration rerun changed library or selection history')

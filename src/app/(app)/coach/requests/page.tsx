@@ -1,6 +1,7 @@
 import { ClipboardList } from 'lucide-react'
 import { CoachRequestQueue } from '@/components/coaching/CoachRequestQueue'
-import { CoachRelationshipActions } from '@/components/coaching/CoachRelationshipActions'
+import Link from 'next/link'
+import { getCoachRelationshipManagement } from '@/lib/coaching/relationshipManagement'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
 
@@ -41,12 +42,7 @@ export default async function CoachRequestsPage() {
       clientAvatarUrl: profile?.avatar_url || null,
     }
   })
-  const { data: relationships, error: relationshipsError } = await (supabase as any)
-    .from('coaching_relationships')
-    .select('id, status')
-    .eq('trainer_user_id', user.id)
-    .in('status', ['active', 'paused_by_platform'])
-    .order('started_at', { ascending: false })
+  const management = await getCoachRelationshipManagement(supabase as any).catch(() => null)
 
   return <div className="min-h-screen bg-background pb-28">
     <PageTopBar title="Solicitudes" subtitle="Nuevas relaciones profesionales" backHref="/coach" backLabel="Resumen" icon={<ClipboardList className="h-5 w-5" />} />
@@ -56,7 +52,7 @@ export default async function CoachRequestsPage() {
         : clientProfilesError
           ? <p role="alert" className="rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudo cargar la identidad de las personas que enviaron estas solicitudes. Inténtalo de nuevo más tarde.</p>
           : <CoachRequestQueue requests={requests} />}
-      {relationshipsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar los acompañamientos activos o pausados.</p> : relationships?.length ? <section className="mt-6 space-y-4" aria-labelledby="coach-relationships-title"><h2 id="coach-relationships-title" className="text-lg font-bold text-foreground">Acompañamientos activos o pausados</h2>{relationships.map((relationship: { id: string; status: 'active' | 'paused_by_platform' }) => <CoachRelationshipActions key={relationship.id} relationshipId={relationship.id} status={relationship.status} />)}</section> : null}
+      {management ? <Link href="/coach/clients" className="mt-6 flex min-h-11 items-center rounded-xl border border-border/70 px-4 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">Gestionar clientes: {management.counts.activeRelationships} activos · {management.counts.pausedRelationships} pausados</Link> : <p role="alert" className="mt-4 text-sm text-foreground">No se pudieron cargar los acompañamientos activos o pausados.</p>}
     </main>
   </div>
 }

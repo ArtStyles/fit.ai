@@ -32,6 +32,7 @@ function supabaseFixture(result = { assignment_id: ids.assignment, assignment_ve
 
 describe('trainer assignment proposal errors', () => {
   it.each([
+    ['TRAINER_ASSIGNMENT_TEMPLATE_EXERCISE_UNAVAILABLE', { message: 'TRAINER_ASSIGNMENT_TEMPLATE_EXERCISE_UNAVAILABLE' }, 'La rutina contiene ejercicios que ya no están disponibles. Sustitúyelos antes de enviarla.'],
     [
       'TRAINER_ASSIGNMENT_CONSENT_REQUIRED',
       { message: 'TRAINER_ASSIGNMENT_CONSENT_REQUIRED' },
@@ -143,6 +144,14 @@ describe('trainer assignment actions', () => {
       ok: false,
       error: 'No se puede enviar la rutina porque la autorización de datos de entrenamiento del cliente no está activa. Pídele que revise Acompañamiento.',
     })
+  })
+
+  it('explains catalog retirement detected by the server after the editor loaded', async () => {
+    const supabase = { rpc: vi.fn(async () => ({ data: null, error: { message: 'TRAINER_ASSIGNMENT_TEMPLATE_EXERCISE_UNAVAILABLE' } })) }
+    requireActiveTrainerContext.mockResolvedValue({ user: { id: 'trainer-user-1' }, supabase })
+    const { assignTrainerProgram } = await import('../trainerAssignments')
+    await expect(assignTrainerProgram(form({ relationshipId: ids.relationship, templateId: ids.template, changeSummary: '', idempotencyKey: 'fresh-retired' }))).resolves.toEqual({ ok: false, error: 'La rutina contiene ejercicios que ya no est\u00e1n disponibles. Sustit\u00fayelos antes de enviarla.' })
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 
   it('uses the generic tenant-safe message when the proposal response is malformed', async () => {
@@ -294,6 +303,7 @@ describe('trainer assignment actions', () => {
   })
 
   it.each([
+    ['TRAINER_ASSIGNMENT_TEMPLATE_EXERCISE_UNAVAILABLE', 'La rutina contiene ejercicios que ya no est\u00e1n disponibles. Sustit\u00fayelos antes de enviarla.'],
     ['TRAINER_ASSIGNMENT_TEMPLATE_ALREADY_ASSIGNED', 'Este cliente ya tiene esta rutina asignada.'],
     ['TRAINER_ASSIGNMENT_NOT_ACTIVE', 'Esta rutina ya no está asignada. Actualiza la lista antes de publicar una revisión.'],
   ])('explains a revision rejected with %s', async (token, error) => {

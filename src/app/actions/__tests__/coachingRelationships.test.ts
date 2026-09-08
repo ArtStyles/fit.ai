@@ -61,6 +61,8 @@ describe('coaching relationship consent actions', () => {
     })
     expect(JSON.stringify(supabase.rpc.mock.calls)).not.toContain('attacker')
     expect(revalidatePath.mock.calls).toEqual([
+      ['/coach'],
+      ['/coach/requests'],
       ['/dashboard'],
       ['/coaching'],
       ['/coach/clients'],
@@ -141,7 +143,7 @@ describe('coaching relationship consent actions', () => {
 
   it('ends a relationship through the authenticated participant RPC with an optional normalized reason', async () => {
     const supabase = consentSupabase({
-      end_coaching_relationship: { data: [{ relationship_id: 'relationship-1', changed: true }], error: null },
+      end_coaching_relationship: { data: [{ relationship_id: relationshipId, changed: true }], error: null },
     })
     requireAppUserContext.mockResolvedValue({ user: { id: 'trainer-1' }, supabase })
     const formData = relationshipForm()
@@ -149,7 +151,7 @@ describe('coaching relationship consent actions', () => {
     formData.set('clientUserId', 'injected-client')
     const { endCoachingRelationship } = await import('../coachingRelationships')
 
-    await expect(endCoachingRelationship(formData)).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
+    await expect(endCoachingRelationship(formData)).resolves.toEqual({ ok: true, relationshipId, changed: true })
     expect(supabase.rpc).toHaveBeenCalledWith('end_coaching_relationship', {
       p_relationship_id: '11111111-1111-4111-8111-111111111111',
       p_reason: 'Meta cumplida',
@@ -171,14 +173,14 @@ describe('coaching relationship consent actions', () => {
 
   it('resumes a paused relationship only through its server-authorized client RPC', async () => {
     const supabase = consentSupabase({
-      resume_paused_coaching_relationship: { data: [{ relationship_id: 'relationship-1', changed: true }], error: null },
+      resume_paused_coaching_relationship: { data: [{ relationship_id: relationshipId, changed: true }], error: null },
     })
     requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
     const formData = relationshipForm()
     formData.set('trainerUserId', 'injected-trainer')
     const { resumePausedCoachingRelationship } = await import('../coachingRelationships')
 
-    await expect(resumePausedCoachingRelationship(formData)).resolves.toEqual({ ok: true, relationshipId: 'relationship-1', changed: true })
+    await expect(resumePausedCoachingRelationship(formData)).resolves.toEqual({ ok: true, relationshipId, changed: true })
     expect(supabase.rpc).toHaveBeenCalledWith('resume_paused_coaching_relationship', {
       p_relationship_id: '11111111-1111-4111-8111-111111111111',
       p_idempotency_key: '22222222-2222-4222-8222-222222222222',
@@ -208,4 +210,13 @@ describe('coaching relationship consent actions', () => {
     expect(signatures).toMatch(/end_coaching_relationship\(\s*p_relationship_id UUID, p_reason TEXT, p_idempotency_key UUID\s*\)/i)
     expect(signatures).toMatch(/resume_paused_coaching_relationship\(\s*p_relationship_id UUID, p_idempotency_key UUID\s*\)/i)
   })
+})
+
+it.each(['endCoachingRelationship','resumePausedCoachingRelationship'] as const)('rejects another relationship returned by %s', async name => {
+  const rpc=vi.fn().mockResolvedValue({data:[{relationship_id:'wrong-id',changed:true}],error:null})
+  requireAppUserContext.mockResolvedValue({supabase:{rpc}})
+  revalidatePath.mockClear()
+  const actions=await import('../coachingRelationships')
+  expect((await actions[name](relationshipForm())).ok).toBe(false)
+  expect(revalidatePath).not.toHaveBeenCalled()
 })

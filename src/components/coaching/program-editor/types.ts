@@ -31,6 +31,7 @@ export type TemplateExerciseView = {
   notes: string | null
   exercise?: {
     name: string
+    is_public: boolean
     muscle_groups?: string[] | null
     equipment?: string[] | null
     image_url?: string | null
