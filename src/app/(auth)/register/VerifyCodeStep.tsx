@@ -1,5 +1,7 @@
 'use client'
 
+import { authInputClassName, authLabelClassName, authSubmitClassName } from '@/components/auth/authStyles'
+
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, MailCheck } from 'lucide-react'
@@ -8,6 +10,7 @@ import { trackEvent } from '@/lib/analytics/events'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import type { AppLanguage } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 import {
   normalizeCode,
   validateCode,
@@ -166,7 +169,7 @@ export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale
         )}
 
         <div className="space-y-1.5">
-          <label htmlFor="otp_code" className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <label htmlFor="otp_code" className={authLabelClassName}>
             {copy.label}
           </label>
           <input
@@ -184,14 +187,14 @@ export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale
             onChange={event => setCode(normalizeCode(event.target.value))}
             aria-invalid={Boolean(error)}
             aria-describedby={error ? 'otp-error' : undefined}
-            className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-center text-lg font-semibold tracking-[0.35em] text-foreground placeholder:tracking-[0.35em] placeholder:text-muted-foreground/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70 sm:tracking-[0.5em] sm:placeholder:tracking-[0.5em]"
+            className={cn(authInputClassName, 'px-3 text-center font-mono text-lg font-semibold')}
           />
         </div>
 
         <button
           type="submit"
           disabled={verifying}
-          className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-indigo-600 text-sm font-semibold tracking-wide text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
+          className={authSubmitClassName}
         >
           {verifying && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
           {verifying ? copy.verifying : copy.verify}
@@ -203,7 +206,7 @@ export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale
           type="button"
           onClick={handleResend}
           disabled={cooldown > 0 || resending}
-          className="inline-flex min-h-11 cursor-pointer items-center rounded-md font-semibold text-indigo-400 transition-colors hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
+          className="inline-flex min-h-11 cursor-pointer items-center rounded-md font-semibold text-violet-300 transition-colors hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
         >
           {cooldown > 0 ? `${copy.resendIn} ${cooldown}s` : copy.resend}
         </button>

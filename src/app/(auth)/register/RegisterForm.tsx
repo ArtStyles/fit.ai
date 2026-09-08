@@ -1,5 +1,7 @@
 'use client'
 
+import { authInputClassName, authLabelClassName, authSubmitClassName } from '@/components/auth/authStyles'
+
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -235,7 +237,7 @@ function PasswordToggleButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={visible ? copy.hidePassword : copy.showPassword}
-      className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+      className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {visible ? <EyeOff aria-hidden="true" className="h-4 w-4" /> : <Eye aria-hidden="true" className="h-4 w-4" />}
     </button>
@@ -337,7 +339,7 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
       )}
 
       <div className="space-y-1.5">
-        <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        <label htmlFor="email" className={authLabelClassName}>
           {copy.emailLabel}
         </label>
         <input
@@ -352,13 +354,13 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
           placeholder={copy.emailPlaceholder}
           aria-invalid={Boolean(fieldErrors.email)}
           aria-describedby={fieldErrors.email ? 'register-email-error' : undefined}
-          className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
+          className={authInputClassName}
         />
         <FieldError id="register-email-error" message={fieldErrors.email} />
       </div>
 
       <div className="space-y-1.5">
-        <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        <label htmlFor="password" className={authLabelClassName}>
           {copy.passwordLabel}
         </label>
         <div className="relative">
@@ -374,7 +376,7 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
             onChange={e => setPassword(e.target.value)}
             aria-invalid={Boolean(fieldErrors.password)}
             aria-describedby={fieldErrors.password ? 'register-password-error register-password-help' : 'register-password-help'}
-            className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 pr-12 text-base text-foreground placeholder:text-muted-foreground/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70 sm:text-sm"
+            className={`${authInputClassName} pr-14`}
           />
           <PasswordToggleButton
             visible={showPass}
@@ -392,7 +394,7 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
       <button
         type="submit"
         disabled={loading}
-        className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-indigo-600 text-sm font-semibold tracking-wide text-white transition-colors hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
+        className={authSubmitClassName}
       >
         {loading && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />}
         {loading ? copy.creating : copy.createAccount}
@@ -419,11 +421,11 @@ export function RegisterForm({ locale }: { locale: AppLanguage }) {
         {copy.setupHint}
       </p>
 
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-center text-sm text-muted-foreground">
         {copy.accountQuestion}{' '}
         <PendingLink
           href="/login"
-          className="inline-flex min-h-11 items-center rounded-md font-semibold text-indigo-400 transition-colors hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+          className="inline-flex min-h-11 items-center rounded-md font-semibold text-violet-300 transition-colors hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
           spinnerClassName="h-3.5 w-3.5"
         >
           {copy.signIn}

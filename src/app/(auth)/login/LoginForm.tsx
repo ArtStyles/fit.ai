@@ -1,5 +1,7 @@
 'use client'
 
+import { authInputClassName, authLabelClassName, authSubmitClassName } from '@/components/auth/authStyles'
+
 import { useState, type FormEvent } from 'react'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -140,7 +142,7 @@ export function LoginForm() {
       <div className="space-y-1.5">
         <label
           htmlFor="email"
-          className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground"
+          className={authLabelClassName}
         >
           Correo electrónico
         </label>
@@ -156,7 +158,7 @@ export function LoginForm() {
           placeholder="tu@email.com"
           aria-invalid={Boolean(fieldErrors.email)}
           aria-describedby={fieldErrors.email ? 'login-email-error' : undefined}
-          className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70"
+          className={authInputClassName}
         />
         <FieldError id="login-email-error" message={fieldErrors.email} />
       </div>
@@ -164,7 +166,7 @@ export function LoginForm() {
       <div className="space-y-1.5">
         <label
           htmlFor="password"
-          className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground"
+          className={authLabelClassName}
         >
           Contraseña
         </label>
@@ -179,14 +181,14 @@ export function LoginForm() {
             placeholder="••••••••"
             aria-invalid={Boolean(fieldErrors.password)}
             aria-describedby={fieldErrors.password ? 'login-password-error' : undefined}
-            className="flex h-11 w-full rounded-md border border-input bg-muted/30 px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70"
+            className={`${authInputClassName} pr-14`}
           />
           <button
             type="button"
             onClick={() => setShowPass(v => !v)}
             disabled={loading}
             aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-            className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -197,17 +199,17 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-indigo-600 text-sm font-semibold text-white tracking-wide transition-all hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+        className={authSubmitClassName}
       >
         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
         {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
       </button>
 
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-center text-sm text-muted-foreground">
         ¿No tienes cuenta?{' '}
         <PendingLink
           href="/register"
-          className="inline-flex items-center font-semibold text-indigo-400 transition-colors hover:text-indigo-300"
+          className="inline-flex items-center font-semibold text-violet-300 transition-colors hover:text-violet-200"
           spinnerClassName="h-3.5 w-3.5"
         >
           Crear cuenta
