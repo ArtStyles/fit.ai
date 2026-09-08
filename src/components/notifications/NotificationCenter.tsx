@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'framer-motion'
 import { Bell, ChevronRight, Loader2, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
-import { shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
+import { notificationDismissalMotion, shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
 import { dateLocale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -194,6 +194,20 @@ function formatCreatedAt(value: string, formatter: Intl.DateTimeFormat): string 
   return Number.isFinite(timestamp) ? formatter.format(timestamp) : value
 }
 
+function NotificationDismissalRow({ children }: { children: ReactNode }) {
+  const isPresent = useIsPresent()
+
+  return (
+    <div
+      inert={!isPresent}
+      className="relative overflow-hidden rounded-2xl"
+      data-swipe-dismiss="product-notification"
+    >
+      {children}
+    </div>
+  )
+}
+
 export function NotificationCenter({
   initialPage,
   unreadCount: aggregateUnreadCount,
@@ -206,6 +220,7 @@ export function NotificationCenter({
   suppressEmptyState?: boolean
 }) {
   const router = useRouter()
+  const reduceMotion = useReducedMotion()
   const { language, timeZone, t } = useI18n()
   const { showToast } = useToast()
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(dateLocale(language), {
@@ -221,13 +236,14 @@ export function NotificationCenter({
   const [announcement, setAnnouncement] = useState(initialPage.error ?? '')
   const [errorMessage, setErrorMessage] = useState<string | null>(initialPage.error ?? null)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [hasExitingNotifications, setHasExitingNotifications] = useState(false)
   const suppressOpenClickIdRef = useRef<string | null>(null)
   const restoreDismissFocusIdRef = useRef<string | null>(null)
   const dismissButtonRefs = useRef(new Map<string, HTMLButtonElement>())
 
   useEffect(() => {
     const notificationId = restoreDismissFocusIdRef.current
-    if (!notificationId) return
+    if (!notificationId || !notifications.some(notification => notification.id === notificationId)) return
     const button = dismissButtonRefs.current.get(notificationId)
     if (!button) return
     restoreDismissFocusIdRef.current = null
@@ -275,12 +291,14 @@ export function NotificationCenter({
   async function dismiss(notification: ProductNotificationView) {
     if (busyId) return
     setBusyId(notification.id)
+    setHasExitingNotifications(true)
     setNotifications(current => current.filter(item => item.id !== notification.id))
     const result = await dismissNotificationInteraction(notification)
     setBusyId(null)
 
     if (!result.ok) {
       setNotifications(current => mergeNotificationPageIntoCurrent(current, [notification]))
+      setHasExitingNotifications(false)
       setErrorMessage(result.error)
       setAnnouncement(result.announcement)
       if (result.toast) showToast(result.toast)
@@ -312,7 +330,7 @@ export function NotificationCenter({
     }
   }
 
-  if (notifications.length === 0) {
+  if (notifications.length === 0 && !hasExitingNotifications) {
     if (errorMessage) {
       return (
         <section
@@ -326,7 +344,7 @@ export function NotificationCenter({
       )
     }
 
-    if (suppressEmptyState) return null
+    if (suppressEmptyState) return <p className="sr-only" aria-live="polite">{announcement}</p>
 
     return (
       <section className="px-5 py-10 text-center">
@@ -365,6 +383,7 @@ export function NotificationCenter({
       ) : null}
 
       <div className="space-y-3">
+        <AnimatePresence initial={false} onExitComplete={() => setHasExitingNotifications(false)}>
         {notifications.map(notification => {
           const destination = getSafeInternalNotificationUrl(notification.url)
           const unread = notification.readAt === null
@@ -372,11 +391,7 @@ export function NotificationCenter({
           const canAct = Boolean(destination) || unread
 
           return (
-            <div
-              key={notification.id}
-              className="relative overflow-hidden rounded-2xl"
-              data-swipe-dismiss="product-notification"
-            >
+            <NotificationDismissalRow key={notification.id}>
               <div
                 aria-hidden="true"
                 className="absolute inset-y-0 right-0 flex w-28 items-center justify-center gap-2 bg-red-500/15 text-xs font-semibold text-red-200"
@@ -394,23 +409,22 @@ export function NotificationCenter({
                 onDragStart={() => {
                   suppressOpenClickIdRef.current = notification.id
                 }}
-                onDragEnd={(_, info) => {
+                onDragEnd={(event, info) => {
                   setTimeout(() => {
                     if (suppressOpenClickIdRef.current === notification.id) {
                       suppressOpenClickIdRef.current = null
                     }
                   }, 0)
-                  if (shouldDismissNotificationSwipe(info.offset.x, info.velocity.x)) {
+                  if (event.type !== 'pointercancel' && shouldDismissNotificationSwipe(info.offset.x, info.velocity.x)) {
                     void dismiss(notification)
                   }
                 }}
-                initial={{ x: 0 }}
-                animate={{ x: 0 }}
+                {...notificationDismissalMotion(reduceMotion)}
                 className={cn(
-                  'relative rounded-2xl border p-4 transition-colors touch-pan-y',
+                  'relative rounded-2xl border bg-card p-4 shadow-sm transition-colors touch-pan-y sm:px-5',
                   unread
-                    ? 'border-violet-500/35 bg-violet-500/[0.08]'
-                    : 'border-border/60 bg-muted/10',
+                    ? 'border-violet-500/35'
+                    : 'border-border/60',
                 )}
               >
               <div className="flex items-start gap-3">
@@ -444,7 +458,7 @@ export function NotificationCenter({
                   }}
                   disabled={busy}
                   aria-label={`${t('Quitar notificación')}: ${notification.title}`}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busy
                     ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -466,9 +480,10 @@ export function NotificationCenter({
                 </button>
               ) : null}
               </motion.article>
-            </div>
+            </NotificationDismissalRow>
           )
         })}
+        </AnimatePresence>
       </div>
 
       {cursor ? (

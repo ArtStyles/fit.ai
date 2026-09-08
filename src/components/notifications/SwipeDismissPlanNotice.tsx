@@ -8,7 +8,7 @@ import { dismissNotificationAttention } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
-import { shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
+import { notificationDismissalMotion, shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
 
 type PersistDismissal = (
   noticeKey: string,
@@ -111,10 +111,7 @@ export function SwipeDismissPlanNotice({
             onDragEnd={(_, info) => {
               if (shouldDismissPlanNotice(info.offset.x, info.velocity.x)) void dismiss()
             }}
-            initial={{ opacity: 1, x: 0 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -180 }}
-            transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
+            {...notificationDismissalMotion(reduceMotion)}
             className="relative rounded-2xl border border-border/70 bg-card px-4 py-4 shadow-sm touch-pan-y sm:px-5"
           >
             <div className="flex items-start gap-3">
