@@ -1622,6 +1622,18 @@ export interface Database {
         }
         Returns: number
       }
+      can_read_referenced_private_exercise: {
+        Args: {
+          p_exercise_id: string
+        }
+        Returns: boolean
+      }
+      replace_exercise_catalog_v1: {
+        Args: {
+          p_exercises: Json
+        }
+        Returns: Json
+      }
       apply_workout_adjustment_atomic: {
         Args: {
           p_workout_id: string
