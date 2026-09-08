@@ -26,6 +26,7 @@ const browserFixtureTests = [
   'src/components/settings/__tests__/SettingsActionsInteraction.test.tsx',
   'src/lib/native/__tests__/useNowPlayingSessionInteraction.test.tsx',
   'src/components/plan/__tests__/planInteractions.test.tsx',
+  'src/components/plan/__tests__/generatePlanReadinessInteraction.test.tsx',
   'src/components/notifications/__tests__/dismissibleAttentionNoticeInteraction.test.tsx',
   'src/components/notifications/__tests__/notificationCenterInteraction.test.tsx',
   'src/components/notifications/__tests__/swipeDismissPlanNoticeInteraction.test.tsx',

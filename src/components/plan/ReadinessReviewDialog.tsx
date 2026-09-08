@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentProps } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { loadReadinessReview, saveReadinessReview } from '@/app/actions/readiness'
 import type { CardioModality, MovementLimitation } from '@/lib/training-engine'
 
@@ -26,6 +26,9 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSaved: () => void
+  title?: string
+  submitLabel?: string
+  onCloseAutoFocus?: ComponentProps<typeof DialogContent>['onCloseAutoFocus']
 }
 
 function editableLimitation(limitation?: MovementLimitation, index = 0): EditableLimitation {
@@ -39,7 +42,14 @@ function editableLimitation(limitation?: MovementLimitation, index = 0): Editabl
   }
 }
 
-export function ReadinessReviewDialog({ open, onOpenChange, onSaved }: Props) {
+export function ReadinessReviewDialog({
+  open,
+  onOpenChange,
+  onSaved,
+  title = 'Revisión antes de regenerar',
+  submitLabel = 'Guardar y regenerar',
+  onCloseAutoFocus,
+}: Props) {
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>('insufficiently_active')
   const [cardio, setCardio] = useState<CardioModality[]>(['walking'])
   const [warning, setWarning] = useState(false)
@@ -74,6 +84,10 @@ export function ReadinessReviewDialog({ open, onOpenChange, onSaved }: Props) {
       setMedicallyCleared(result.data.medicallyCleared)
       setLimitations(result.data.limitations.map(editableLimitation))
       setProfileLoaded(true)
+    }).catch(() => {
+      if (cancelled) return
+      setLoadingProfile(false)
+      setError('No se pudo cargar la revisión actual. Vuelve a intentarlo.')
     })
 
     return () => { cancelled = true }
@@ -95,6 +109,7 @@ export function ReadinessReviewDialog({ open, onOpenChange, onSaved }: Props) {
   }
 
   async function save() {
+    if (saving || !profileLoaded) return
     if (limitations.some(item => !item.region.trim() || !item.movementsText.trim())) {
       setError('Cada limitación necesita una zona y los movimientos que deben evitarse.')
       return
@@ -102,46 +117,52 @@ export function ReadinessReviewDialog({ open, onOpenChange, onSaved }: Props) {
 
     setSaving(true)
     setError(null)
-    const result = await saveReadinessReview({
-      activityLevel,
-      cardioPreferences: cardio,
-      warningSymptoms: warning ? ['self_reported_warning_symptom'] : [],
-      knownDisease,
-      recentSurgery,
-      medicallyCleared,
-      limitations: limitations.map(({ clientId: _clientId, movementsText, ...limitation }) => ({
-        ...limitation,
-        movementsToAvoid: movementsText.split(',').map(value => value.trim()).filter(Boolean),
-      })),
-    })
-    setSaving(false)
-    if (!result.success) {
-      setError(result.error ?? 'No se pudo guardar la revisión.')
+    try {
+      const result = await saveReadinessReview({
+        activityLevel,
+        cardioPreferences: cardio,
+        warningSymptoms: warning ? ['self_reported_warning_symptom'] : [],
+        knownDisease,
+        recentSurgery,
+        medicallyCleared,
+        limitations: limitations.map(({ clientId: _clientId, movementsText, ...limitation }) => ({
+          ...limitation,
+          movementsToAvoid: movementsText.split(',').map(value => value.trim()).filter(Boolean),
+        })),
+      })
+      if (!result.success) {
+        setError(result.error ?? 'No se pudo guardar la revisión.')
+        return
+      }
+    } catch {
+      setError('No se pudo guardar la revisión. Tus respuestas se conservan; vuelve a intentarlo.')
       return
+    } finally {
+      setSaving(false)
     }
     onOpenChange(false)
     onSaved()
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Revisión antes de regenerar</DialogTitle></DialogHeader>
-        <p className="text-xs leading-relaxed text-muted-foreground">
+    <Dialog open={open} onOpenChange={nextOpen => { if (!saving) onOpenChange(nextOpen) }}>
+      <DialogContent className="max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <DialogDescription className="text-xs leading-relaxed text-muted-foreground">
           No es un diagnóstico. Si declaras señales de alarma o una lesión aguda, la generación automática se detendrá.
-        </p>
+        </DialogDescription>
 
         {loadingProfile ? (
           <p className="py-8 text-center text-sm text-muted-foreground">Cargando tu revisión actual…</p>
         ) : !profileLoaded ? (
           <div className="space-y-3 py-5 text-center">
-            <p className="text-sm text-red-400">{error ?? 'No se pudo cargar la revisión actual.'}</p>
+            <p role="alert" className="text-sm text-red-400">{error ?? 'No se pudo cargar la revisión actual.'}</p>
             <button type="button" onClick={() => onOpenChange(false)} className="h-10 rounded-lg border border-border px-4 text-sm">
               Cerrar
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <fieldset disabled={saving} className="min-w-0 space-y-4">
             <label className="block text-sm font-medium">Actividad habitual
               <select value={activityLevel} onChange={event => setActivityLevel(event.target.value as ActivityLevel)}
                 className="mt-1 h-11 w-full rounded-lg border border-border bg-background px-3">
@@ -213,12 +234,12 @@ export function ReadinessReviewDialog({ open, onOpenChange, onSaved }: Props) {
               ))}
             </section>
 
-            {error ? <p className="text-sm text-red-400">{error}</p> : null}
+            {error ? <p role="alert" className="text-sm text-red-400">{error}</p> : null}
             <button type="button" disabled={saving || cardio.length === 0} onClick={save}
               className="h-11 w-full rounded-lg bg-primary font-semibold text-primary-foreground disabled:opacity-50">
-              {saving ? 'Guardando…' : 'Guardar y regenerar'}
+              {saving ? 'Guardando…' : submitLabel}
             </button>
-          </div>
+          </fieldset>
         )}
       </DialogContent>
     </Dialog>

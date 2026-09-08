@@ -10,6 +10,7 @@ import { Button }        from '@/components/ui/button'
 import { cn }            from '@/lib/utils'
 import { generatePlan }  from '@/app/actions/generatePlan'
 import { useToast }      from '@/components/feedback/ToastProvider'
+import { ReadinessReviewDialog } from '@/components/plan/ReadinessReviewDialog'
 import type { GeneratePlanResult } from '@/app/actions/generatePlan'
 import { createPersistentRequestId, runPersistentPlanRequest } from '@/lib/plans/persistentRequestId'
 
@@ -85,12 +86,15 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
   const { showToast } = useToast()
   const autoStartedRef = useRef(false)
   const planRequestRef = useRef(createPersistentRequestId())
+  const generateButtonRef = useRef<HTMLButtonElement>(null)
 
   const [status,  setStatus]  = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [result,  setResult]  = useState<GeneratePlanResult | null>(null)
   const [msgIdx,  setMsgIdx]  = useState(0)
+  const [readinessOpen, setReadinessOpen] = useState(false)
 
   const loadingMessage = LOADING_MESSAGES[msgIdx]
+  const needsReadinessReview = status === 'error' && result?.requiresReadinessReview === true
 
   const handleGenerate = useCallback(async () => {
     setStatus('loading')
@@ -109,13 +113,17 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
       clearInterval(interval)
       setResult(res)
       setStatus(res.success ? 'success' : 'error')
-      showToast({
-        title: res.success ? 'Plan generado' : 'No se pudo generar',
-        description: res.success
-          ? 'Tu plan está listo para revisar.'
-          : res.error ?? 'Inténtalo de nuevo.',
-        variant: res.success ? 'success' : 'error',
-      })
+      if (!res.success && res.requiresReadinessReview) {
+        setReadinessOpen(true)
+      } else {
+        showToast({
+          title: res.success ? 'Plan generado' : 'No se pudo generar',
+          description: res.success
+            ? 'Tu plan está listo para revisar.'
+            : res.error ?? 'Inténtalo de nuevo.',
+          variant: res.success ? 'success' : 'error',
+        })
+      }
       if (res.success && autoStart) {
         window.dispatchEvent(new Event('fitai:navigation-start'))
         router.replace('/dashboard')
@@ -207,6 +215,7 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
 
       {/* ── Botón principal ────────────────────────────────────────────────── */}
       <Button
+        ref={generateButtonRef}
         className={cn(
           'w-full h-14 font-bold text-base gap-2',
           status === 'loading'
@@ -214,12 +223,17 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
             : 'bg-indigo-500 hover:bg-indigo-600 text-white',
         )}
         disabled={status === 'loading'}
-        onClick={handleGenerate}
+        onClick={needsReadinessReview ? () => setReadinessOpen(true) : handleGenerate}
       >
         {status === 'loading' ? (
           <>
             <Loader2 className="h-5 w-5 animate-spin" />
             {loadingMessage}
+          </>
+        ) : needsReadinessReview ? (
+          <>
+            <CheckCircle2 className="h-5 w-5" />
+            Completar preparación
           </>
         ) : status === 'error' ? (
           <>
@@ -233,6 +247,20 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
           </>
         )}
       </Button>
+
+      <ReadinessReviewDialog
+        open={readinessOpen}
+        onOpenChange={setReadinessOpen}
+        onSaved={() => { void handleGenerate() }}
+        title="Revisión antes de generar"
+        submitLabel="Guardar y generar"
+        onCloseAutoFocus={event => {
+          if (generateButtonRef.current && !generateButtonRef.current.disabled && !readinessOpen) {
+            event.preventDefault()
+            generateButtonRef.current.focus()
+          }
+        }}
+      />
 
       {status === 'idle' && (
         <p className="text-center text-xs text-muted-foreground">
