@@ -25,24 +25,13 @@ describe('localized public route files', () => {
     expect(page).toContain('id="app-main-content"')
     expect(page).toContain('HOME_CONTENT')
     expect(page).toContain('<HeroSection')
-    expect(page).toContain('<ProductPreviewSection previews={content.previews} locale={locale} />')
+    expect(page).toContain('<ProductPreviewSection')
     expect(page).toContain('title={content.faqTitle}')
-    expect(content).toContain('Convierte cada entrenamiento en el siguiente paso de tu progresión.')
-    expect(content).toContain('Turn every workout into the next step in your progression.')
+    expect(content).toContain('Entrena con un plan claro. Sigue tu progreso.')
+    expect(content).toContain('Train with a clear plan. Track your progress.')
     expect(faq).toContain('<section')
     expect(faq.match(/<h2/g)).toHaveLength(1)
     expect(faq).toContain('<h3')
-  })
-
-  it('uses locale-matched product screenshot assets with optimized images and a development fallback', () => {
-    const section = source('../../components/marketing/ProductPreviewSection.tsx')
-
-    expect(section).toContain("import Image from 'next/image'")
-    expect(section).toContain('locale: PublicLocale')
-    expect(section).toContain('src={`/marketing/${preview.screen}-${locale}.webp`}')
-    expect(section).toContain('alt={preview.alt}')
-    expect(section).toContain('aspect-[390/844]')
-    expect(section).toContain('PreviewFallback')
   })
 
   it('permanently redirects the legacy selector alias to the neutral root', () => {

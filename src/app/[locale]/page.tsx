@@ -39,15 +39,16 @@ export default async function LocalizedHome({ params: paramsPromise }: Localized
 
   const locale = params.locale
   const content = HOME_CONTENT[locale]
+  const sessionPreview = content.previews.find(preview => preview.screen === 'session')!
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <TrackPageView locale={locale} />
       <MarketingHeader locale={locale} cta={content.hero.cta} />
       <main id="app-main-content">
-        <HeroSection content={content.hero} locale={locale} />
+        <HeroSection content={content.hero} locale={locale} preview={sessionPreview} demoCaption={content.demoCaption} />
         <TrainingLoopSection problem={content.problem} loop={content.loop} />
-        <ProductPreviewSection previews={content.previews} locale={locale} />
+        <ProductPreviewSection previews={content.previews} locale={locale} demoCaption={content.demoCaption} />
         <SafetySection content={content.safety} />
         <MarketingFaq title={content.faqTitle} items={content.faq} />
       </main>

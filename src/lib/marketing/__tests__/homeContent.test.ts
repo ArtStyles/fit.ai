@@ -5,7 +5,7 @@ describe('bilingual home content', () => {
   it.each(['es', 'en'] as const)('%s has every approved section', locale => {
     const content = HOME_CONTENT[locale]
     expect(content.hero.title.length).toBeGreaterThan(30)
-    expect(content.loop).toHaveLength(4)
+    expect(content.loop).toHaveLength(3)
     expect(content.previews).toHaveLength(3)
     expect(typeof content.faqTitle).toBe('string')
     expect(content.faqTitle?.trim()).not.toBe('')

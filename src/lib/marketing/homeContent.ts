@@ -1,10 +1,11 @@
 import type { PublicLocale } from '@/lib/i18n/routing'
 
 export type HomeContent = {
-  hero: { eyebrow: string; title: string; body: string; cta: string; secondary: string }
+  hero: { eyebrow: string; title: string; titleAccent: string; body: string; cta: string; secondary: string; hint: string; highlights: string[] }
   problem: { title: string; body: string }
   loop: Array<{ title: string; body: string }>
   previews: Array<{ title: string; body: string; screen: 'dashboard' | 'session' | 'progress'; alt: string }>
+  demoCaption: string
   safety: { title: string; body: string }
   faqTitle: string
   faq: Array<{ question: string; answer: string }>
@@ -14,27 +15,30 @@ export type HomeContent = {
 export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
   es: {
     hero: {
-      eyebrow: 'Entrenamiento con dirección',
-      title: 'Convierte cada entrenamiento en el siguiente paso de tu progresión.',
-      body: 'Vekira adapta tu semana a tu nivel, tiempo, equipo y rendimiento real.',
-      cta: 'Crear mi plan gratis',
+      eyebrow: 'Tu semana de entrenamiento, organizada',
+      title: 'Entrena con un plan claro. Sigue tu progreso.',
+      titleAccent: 'Sigue tu progreso.',
+      body: 'Organiza tu semana según tu tiempo y equipo, registra cada sesión y consulta cómo avanzas.',
+      cta: 'Crear tu cuenta',
       secondary: 'Ver cómo funciona',
+      hint: 'Después, completa tu perfil y prepara tu primera semana.',
+      highlights: ['Plan para tu semana', 'Registro de tus sesiones', 'Progreso a la vista'],
     },
     problem: {
-      title: 'Deja de improvisar tu progreso.',
-      body: 'Sigue una estructura clara, registra lo que haces y recibe el siguiente ajuste con contexto.',
+      title: 'De tu plan al progreso, en tres pasos.',
+      body: 'Prepara tu semana, registra cada sesión y vuelve a tu historial para ver cómo avanzas.',
     },
     loop: [
-      { title: 'Define tu contexto', body: 'Objetivo, experiencia, días, tiempo y equipo.' },
-      { title: 'Recibe una semana viable', body: 'Sesiones construidas alrededor de tu disponibilidad.' },
+      { title: 'Prepara tu semana', body: 'Organiza tus sesiones según tu objetivo, tiempo y equipo.' },
       { title: 'Entrena y registra', body: 'Peso, repeticiones, esfuerzo y descansos en una sola vista.' },
-      { title: 'Progresa con evidencia', body: 'Tu historial orienta la siguiente recomendación.' },
+      { title: 'Revisa tu progreso', body: 'Consulta tu constancia, volumen y marcas personales.' },
     ],
     previews: [
-      { title: 'Tu día, sin ruido', body: 'Ve la sesión de hoy y la acción siguiente.', screen: 'dashboard', alt: 'Vista móvil del dashboard de Vekira con el entrenamiento de hoy y el estado semanal.' },
-      { title: 'Registra mientras entrenas', body: 'Controles grandes, descanso y referencia anterior.', screen: 'session', alt: 'Vista móvil de una sesión activa en Vekira con campos para peso, repeticiones y sincronización.' },
-      { title: 'Entiende el avance', body: 'Constancia, volumen y marcas en contexto.', screen: 'progress', alt: 'Vista móvil del progreso en Vekira con constancia, volumen y marcas personales.' },
+      { title: 'Sabe qué toca hoy', body: 'Encuentra tu próxima sesión y consulta tu semana de entrenamiento.', screen: 'dashboard', alt: 'Vista móvil del dashboard de Vekira con el entrenamiento de hoy y el estado semanal.' },
+      { title: 'Registra tu sesión', body: 'Anota peso y repeticiones, controla el descanso y consulta tu sesión anterior.', screen: 'session', alt: 'Vista móvil de una sesión activa en Vekira con campos para peso, repeticiones y sincronización.' },
+      { title: 'Ve cómo avanzas', body: 'Revisa tu constancia, el volumen de tus sesiones y tus marcas personales.', screen: 'progress', alt: 'Vista de progreso en Vekira con constancia, volumen y marcas personales.' },
     ],
+    demoCaption: 'Vistas de la app con datos de ejemplo.',
     safety: {
       title: 'Un plan debe respetar tu contexto.',
       body: 'Vekira combina progresión, historial, carga registrada y restricciones declaradas. Pro está en beta, sin cobros todavía. No sustituye orientación médica.',
@@ -48,34 +52,37 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
       { question: '¿Vekira reemplaza a un profesional?', answer: 'No. Es una herramienta de planificación y registro, no un servicio médico.' },
     ],
     finalCta: {
-      title: 'Tu próxima sesión puede tener dirección.',
-      body: 'Crea tu perfil y recibe una primera semana adaptada.',
-      cta: 'Crear mi plan gratis',
+      title: 'Empieza por tu próxima sesión.',
+      body: 'Crea tu cuenta, completa tu perfil y prepara tu primera semana.',
+      cta: 'Crear tu cuenta',
     },
   },
   en: {
     hero: {
-      eyebrow: 'Training with direction',
-      title: 'Turn every workout into the next step in your progression.',
-      body: 'Vekira adapts your week to your level, time, equipment, and actual performance.',
-      cta: 'Create my free plan',
+      eyebrow: 'Your training week, organized',
+      title: 'Train with a clear plan. Track your progress.',
+      titleAccent: 'Track your progress.',
+      body: 'Plan your week around your time and equipment, log each workout, and see how you progress.',
+      cta: 'Create your account',
       secondary: 'See how it works',
+      hint: 'Next, complete your profile and plan your first week.',
+      highlights: ['Your weekly plan', 'Your workout log', 'Your progress at a glance'],
     },
     problem: {
-      title: 'Stop guessing your way forward.',
-      body: 'Follow a clear structure, log your work, and get the next adjustment with context.',
+      title: 'From plan to progress in three steps.',
+      body: 'Plan your week, log each workout, and check your history to see how you progress.',
     },
     loop: [
-      { title: 'Define your context', body: 'Goal, experience, days, time, and equipment.' },
-      { title: 'Get a realistic week', body: 'Sessions built around your availability.' },
+      { title: 'Plan your week', body: 'Organize your sessions around your goal, time, and equipment.' },
       { title: 'Train and log', body: 'Weight, reps, effort, and rest in one view.' },
-      { title: 'Progress with evidence', body: 'Your history guides the next recommendation.' },
+      { title: 'Review your progress', body: 'Check your consistency, training volume, and personal records.' },
     ],
     previews: [
-      { title: 'Your day, without noise', body: 'See today’s session and the next action.', screen: 'dashboard', alt: 'Mobile Vekira dashboard showing today’s workout and weekly training status.' },
-      { title: 'Log while you train', body: 'Large controls, rest, and previous-session reference.', screen: 'session', alt: 'Mobile active workout in Vekira with weight, reps, and sync feedback controls.' },
-      { title: 'Understand progress', body: 'Consistency, volume, and records in context.', screen: 'progress', alt: 'Mobile Vekira progress hub showing consistency, volume, and personal records.' },
+      { title: 'Know what’s next today', body: 'Find your next session and see your training week.', screen: 'dashboard', alt: 'Mobile Vekira dashboard showing today’s workout and weekly training status.' },
+      { title: 'Log your workout', body: 'Enter weight and reps, track rest, and check your previous session.', screen: 'session', alt: 'Mobile active workout in Vekira with weight, reps, and sync feedback controls.' },
+      { title: 'See your progress', body: 'Review your consistency, training volume, and personal records.', screen: 'progress', alt: 'Vekira progress view showing consistency, volume, and personal records.' },
     ],
+    demoCaption: 'App views with sample data.',
     safety: {
       title: 'A plan should respect your context.',
       body: 'Vekira combines progression, history, logged load, and declared restrictions. Pro is in beta, with no charges yet. It does not replace medical guidance.',
@@ -89,9 +96,9 @@ export const HOME_CONTENT: Record<PublicLocale, HomeContent> = {
       { question: 'Does Vekira replace a professional?', answer: 'No. It is a planning and logging tool, not a medical service.' },
     ],
     finalCta: {
-      title: 'Your next session can have direction.',
-      body: 'Create your profile and get an adapted first week.',
-      cta: 'Create my free plan',
+      title: 'Start with your next session.',
+      body: 'Create your account, complete your profile, and plan your first week.',
+      cta: 'Create your account',
     },
   },
 }
