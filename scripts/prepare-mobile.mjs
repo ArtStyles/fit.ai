@@ -7,6 +7,7 @@ const target = resolve(root, 'mobile/public')
 mkdirSync(target, { recursive: true })
 const assets = [
   ['public/icon.svg', 'icon.svg'],
+  ['public/fonts/vekira', 'fonts/vekira'],
   ['public/exercises/catalog/v1', 'exercises/catalog/v1'],
   ['node_modules/sql.js/dist/sql-wasm.wasm', 'sql-wasm.wasm'],
 ]

@@ -187,7 +187,7 @@ export function CompletionScreen({
         if (cleanupResult.ok) {
           setSaveError(null)
           void hapticSuccess()
-          showToast({ title: t('Sesión guardada'), description: t('Tu progreso quedó sincronizado.'), variant: 'success' })
+          showToast({ title: t('Sesión guardada'), description: process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? t('Tu progreso quedó guardado en este dispositivo.') : t('Tu progreso quedó sincronizado.'), variant: 'success' })
         } else {
           const cleanupMessage = t('La sesión está guardada, pero falta limpiar el respaldo local.')
           setSaveError(cleanupMessage)

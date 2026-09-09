@@ -18,6 +18,8 @@ import { FixedTopBar } from '@/components/navigation/FixedTopBar'
 // ─── Dev guard ────────────────────────────────────────────────────────────────
 
 function isDevAccess(email: string | undefined): boolean {
+  // The APK reads its bundled catalogue through the account-scoped local adapter.
+  if (process.env.NEXT_PUBLIC_LOCAL_APP === 'true') return true
   if (process.env.NODE_ENV !== 'production') return true
   const allowed = (process.env.ADMIN_EMAILS ?? '')
     .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)

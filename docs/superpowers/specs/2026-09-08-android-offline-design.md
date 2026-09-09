@@ -1,5 +1,11 @@
 # Vekira Android offline
 
+## Corrección aprobada: conservar la aplicación original
+
+El usuario corrigió el alcance después de revisar la primera implementación: el APK debe adaptar Vekira existente, conservar sus pestañas y recorridos y permitir solamente mejoras visuales puntuales. La entrada vigente es `mobile/src/original/OriginalApp.tsx`; carga las páginas originales, AppShell, onboarding, sesión, medidas, progreso y ajustes. Los adaptadores sustituyen límites de servidor y almacenamiento, no los componentes de producto. Todo permanece en `codex/android-offline`.
+
+La descripción histórica que sigue no autoriza reconstruir una interfaz alternativa. Los contratos actuales están en [android-offline.md](../../android-offline.md) y [android-original-sync.md](../../android-original-sync.md).
+
 Approved in the conversation: Android APK; personal training works offline; trainers and account synchronization work online. The user requires a separate branch so the current web remains usable.
 
 ## Isolation and delivery

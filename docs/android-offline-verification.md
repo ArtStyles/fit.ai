@@ -1,38 +1,45 @@
-# Verificación de Vekira Android offline
+# Verificación de Vekira original en Android offline
 
-Fecha local: 2026-09-08. Rama: `codex/android-offline`; base web: `f8eca6263075b2972b86128c10e8df302ca384f4`.
+Fecha: 2026-09-09. Rama: `codex/android-offline`; base web: `f8eca6263075b2972b86128c10e8df302ca384f4`.
 
-## Resultado reproducible
+La versión `1.1.1-offline` sustituye la interfaz alternativa anterior. Reutiliza 48 módulos de página originales, el AppShell, la navegación Inicio/Plan/Entrenar/Progreso/Entrenadores, el onboarding, las sesiones, los gráficos y los ajustes. Los cambios en `src/` son tres condiciones específicas del APK: acceso al catálogo local y mensajes de guardado local. La navegación y las pantallas de la web mantienen su comportamiento predeterminado.
+
+## Resultados
 
 | Comprobación | Resultado |
 | --- | --- |
-| `pnpm mobile:test` | 49/49: SQLite real, importación, outbox, dominio, recuperación y nube |
-| `pnpm mobile:type-check` y ESLint de archivos modificados | Aprobados |
-| `node mobile/tests/offline-journey.mjs` | Aprobado sobre la compilación final: perfil, rutina, 3 series editadas, recarga, finalización, historial, respaldo, aislamiento y reapertura de perfil sin selección activa |
-| `node mobile/tests/ui-surfaces.mjs` | Aprobado: preparación, medidas, catálogo, imágenes, teclado, entrenadores sin conexión y anchos 360/390/768; sin errores de página |
-| `node mobile/src/cloud/__tests__/run-postgres.mjs` | Aprobado sobre PostgreSQL desechable y esquema completo con todas las migraciones; autorización, idempotencia, rollback y conflictos |
-| `pnpm type-check` y `pnpm build` | Web Next.js aprobada; advertencias existentes de Browserslist/Tailwind |
-| Suite unitaria web | Primera ejecución: 2720/2725 aprobadas con timeouts en 7 archivos. Repetición aislada de los 7: 108/108 aprobadas. No se modificaron pruebas web ni reglas de negocio para sortearlos |
-| `pnpm android:offline:release` | Aprobado; incluye `testDebugUnitTest` y `assembleRelease` |
-| Pruebas Android JVM | 37/37 aprobadas; corresponden a las pruebas existentes del proyecto nativo |
-| Revisión independiente | Hallazgos de persistencia, respaldos, arranque y logout corregidos y revisados nuevamente; sin P1/P2 pendientes en los alcances revisados |
+| `pnpm mobile:test` | 127 pruebas en 20 archivos aprobadas; incluye SQLite real, acciones, recuperación, sincronización, medios y aislamiento |
+| `pnpm mobile:type-check` y ESLint de los archivos modificados | Aprobados |
+| `node mobile/tests/original-journey.mjs` | Aprobado sobre `mobile/dist` empaquetado: onboarding, cinco pestañas exactas, generación, sesión original, RPE y corrección de una serie tras recarga, guardado durable, historial, progreso y las ocho medidas |
+| Recorrido ampliado del mismo script | Calendario, catálogo con búsqueda real, ficha con historial de la sesión guardada, todas las rutas de ajustes, exportación/importación, estado offline de entrenadores y registro original; sin errores JavaScript |
+| Inspección visual | Capturas revisadas de Inicio, Plan, sesión, progreso, catálogo, ficha y registro; sin desbordamiento en 360/390/768/1440 px |
+| `node mobile/src/original/run-sync-postgres.mjs --full` | Aprobado en PostgreSQL efímero: todas las migraciones juntas, aislamiento, RLS, suspensión, revisión optimista y recibos de reintento; producción sin cambios |
+| `pnpm type-check` y `pnpm build` | Web Next.js aprobada después de los cambios compartidos |
+| `pnpm android:offline:release` | Aprobado: Vite, sincronización Capacitor, `testDebugUnitTest` y `assembleRelease` |
+| Pruebas Android JVM | 37 pruebas existentes aprobadas, sin fallos ni errores |
+| Revisión independiente | Corregidos contratos de onboarding, filtros de relaciones/búsqueda, reinicio de sesión por recarga de datos, mezcla de cuentas, privacidad y retirada profesional; sin otros bloqueos confirmados en los alcances revisados |
 
-Para repetir las pruebas de navegador, ejecutar `pnpm mobile:build`, mantener `pnpm mobile:preview` en otra terminal (puerto 4178) y ejecutar ambos scripts. Los tests usan contextos temporales, SQLite WASM real en IndexedDB y bloquean toda solicitud externa. El servidor local representa los archivos internos que sirve Capacitor. Las capturas generadas están en `mobile/tests/*.png` y se excluyen de Git.
+La prueba de navegador usa SQLite WASM real en IndexedDB, permite solo el servidor local de archivos y bloquea internet. Sus comprobaciones esperan la finalización de la carga antes de descartar errores. No se usan capturas de la interfaz alternativa como evidencia de esta entrega.
 
-## APK
+Para reproducir: ejecutar `pnpm mobile:build`, iniciar `pnpm mobile:preview` en el puerto 4178 y ejecutar `node mobile/tests/original-journey.mjs`. El informe y las capturas se guardan en `.artifacts/original-journey/`. `scripts/verify-android-offline.ps1` inspecciona el APK y compara los archivos empaquetados con `mobile/dist`.
 
-- Archivo de compilación: `android/app/build/outputs/apk/release/app-release.apk`.
-- Copia para instalar: `.artifacts/Vekira-1.1.0-offline.apk`.
-- Tamaño: 17 273 210 bytes.
-- SHA-256: `bce1b912797c9de65a15b323fa3fae4722f53106b1ee75184437b2aecfb7b9aa`.
-- Aplicación `com.fitai.app`, versión `1.1.0-offline`, código 2.
-- `apksigner verify --print-certs`: firma válida, misma huella SHA-256 que el APK anterior disponible en el checkout web: `745fafc84e47312960f942cd3118bd1e57036d3993163fa3d6943bfd468c4784`.
-- Archivo inspeccionado: sin `server.url`, con entrada local, SQLite WASM y 50 imágenes revisadas cuyos hashes coinciden con el catálogo. Los JS/CSS empaquetados coinciden byte a byte con la compilación probada; no contiene el service worker web. Splash con cierre automático a los 500 ms.
+## APK entregado
+
+- Archivo: `.artifacts/Vekira-1.1.1-offline.apk`.
+- Tamaño: 17 944 092 bytes.
+- SHA-256: `5f5e4bf33480a9f4480d11c2fc197f847c70a304dd9d76998c0b241f54fad625`.
+- Aplicación `com.fitai.app`, versión `1.1.1-offline`, código 3; Android mínimo 24, destino 36.
+- Firma verificada con `apksigner`, misma huella SHA-256 que la instalación anterior: `745fafc84e47312960f942cd3118bd1e57036d3993163fa3d6943bfd468c4784`.
+- Sin `server.url` ni service worker web; entrada local `mobile/dist` y Splash con cierre automático.
+- SQLite WASM, 50 imágenes revisadas, animación revisada y 16 archivos de las tipografías originales verificados dentro del archivo. Los JS/CSS coinciden byte a byte con el build del recorrido final.
+- La compilación rechaza las acciones personales de servidor y las dependencias de Firebase Admin/Anthropic excluidas si alcanzan el bundle móvil. La configuración móvil usa solo credenciales públicas de Supabase.
 
 ## Límites pendientes
 
-No hay teléfono conectado ni emulador configurado. Falta ejecutar en un Android real el arranque en modo avión, SQLite nativo, cierre del proceso, exportación con el selector Android, actualización sobre el APK anterior y lectura del almacenamiento WebView antiguo. La firma y el contenido del archivo no prueban esos recorridos.
+No hay dispositivo conectado ni emulador configurado, comprobado nuevamente al cerrar la entrega. Falta probar arranque en modo avión, SQLite nativo, cierre del proceso, selector de respaldo, actualización firmada sobre una instalación anterior y recuperación del origen WebView en un teléfono. La compilación y la firma no prueban esos recorridos.
 
-No se desplegó la migración adicional ni se probó el recorrido remoto con cuentas reales. Las APIs existentes permiten conectar la cuenta, consultar entrenadores y descargar datos web; el nuevo respaldo entre instalaciones móviles requiere desplegar `20260909030000_mobile_offline_backup.sql`. Un fallo de respaldo conserva la cola, permite descargar y muestra el error. Los registros nuevos de Android aún no alimentan el historial web ni las estadísticas web del entrenador. El panel profesional continúa en la web.
+No se desplegó la migración `20260911003000_original_app_snapshot_backup.sql` ni se ejecutó un recorrido con cuentas reales. Descargar datos web usa las APIs existentes. El respaldo completo entre instalaciones Android requiere esa migración; su ausencia muestra un aviso y conserva los datos. Los registros nuevos de Android todavía no alimentan el historial web ni las estadísticas profesionales.
 
-El trabajo se conserva en su propia rama y worktree. No se mezcló ni se subió a `main`, ni se publicó en Vercel.
+Las operaciones que necesitan servicios privilegiados (IA remota, eliminación de cuenta y determinadas cargas de imágenes/notificaciones) siguen pendientes de adaptación del backend. Las acciones ordinarias de entrenadores conservan sus RPC y permisos; su verificación aquí es de contratos y código, no una validación completa contra producción.
+
+El trabajo permanece en su rama y worktree. No se mezcló ni subió a `main`, ni se publicó en Vercel. La copia principal sigue limpia en el SHA de base indicado.

@@ -1,0 +1,197 @@
+import { chromium, expect } from '@playwright/test'
+import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
+import initSqlJs from 'sql.js'
+
+const origin = process.env.MOBILE_PREVIEW_URL || 'http://127.0.0.1:4178'
+const artifacts = '.artifacts/original-journey'
+await mkdir(artifacts, { recursive: true })
+const browser = await chromium.launch({ headless: true })
+const errors = []
+let page
+
+async function screenshot(name) {
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `horizontal overflow: ${name}`)
+  await page.waitForTimeout(350) // Let entrance/rest animations settle before visual evidence.
+  await page.screenshot({ path: `${artifacts}/${name}.png`, fullPage: true })
+}
+async function readStoredState() {
+  const bytes = await page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.open('vekira-mobile-sqlite', 1)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const database = request.result
+      const read = database.transaction('databases').objectStore('databases').get('vekira-offline')
+      read.onerror = () => reject(read.error)
+      read.onsuccess = () => { resolve(Array.from(read.result)); database.close() }
+    }
+  }))
+  const SQL = await initSqlJs()
+  const db = new SQL.Database(new Uint8Array(bytes))
+  try {
+    const rows = db.exec("SELECT state_json FROM original_app_accounts WHERE account_id = (SELECT value FROM original_app_settings WHERE key = 'active_account')")
+    return JSON.parse(rows[0].values[0][0])
+  } finally { db.close() }
+}
+
+try {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true })
+  await context.addInitScript(() => Object.defineProperty(navigator, 'onLine', { get: () => false }))
+  await context.route('**/*', route => route.request().url().startsWith(`${origin}/`) ? route.continue() : route.abort())
+  page = await context.newPage()
+  page.setDefaultTimeout(15000)
+  await page.clock.setFixedTime(new Date('2026-09-07T15:00:00.000Z'))
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto(origin)
+  await page.getByRole('button', { name: 'Usar sin conexión', exact: true }).click()
+  await page.getByLabel('Nombre completo', { exact: true }).fill('Prueba original')
+  await page.getByLabel('Nombre de usuario', { exact: true }).fill('prueba_original')
+  await page.getByRole('button', { name: /Ganar músculo/ }).click()
+  await page.getByRole('button', { name: /Principiante/ }).click()
+  await page.getByRole('button', { name: 'Continuar con mi disponibilidad', exact: true }).click()
+  await page.getByRole('button', { name: '3', exact: true }).click()
+  console.log('PASS original profile and username onboarding stage')
+  await page.getByRole('button', { name: '45 min', exact: true }).click()
+  await page.getByRole('button', { name: 'Caminar', exact: true }).click()
+  await page.getByRole('button', { name: /Algo de actividad/ }).click()
+  await page.getByRole('button', { name: 'Continuar con mi espacio', exact: true }).click()
+  await page.getByRole('button', { name: /Gimnasio completo/ }).click()
+  await page.getByRole('button', { name: 'Continuar con seguridad', exact: true }).click()
+  await page.getByRole('button', { name: 'Revisar mi información', exact: true }).click()
+  await page.getByRole('button', { name: 'Mujer', exact: true }).click()
+  await page.getByLabel('Edad', { exact: true }).fill('30')
+  await page.getByLabel('Peso (kg)', { exact: true }).fill('65')
+  await page.getByLabel('Altura (cm)', { exact: true }).fill('168')
+  console.log('PASS original availability, equipment, safety and demographic screens')
+  await page.getByRole('button', { name: 'Generar mi plan automáticamente', exact: true }).click()
+  await page.waitForFunction(() => location.pathname === '/dashboard' || document.body.innerText.includes('No pudimos guardar tu perfil') || document.body.innerText.includes('No pudimos generar tu plan'), undefined, { timeout: 45000 })
+  assert.match(page.url(), /\/dashboard/, 'original onboarding should save and generate successfully')
+  const nav = page.getByRole('navigation', { name: 'Navegación principal', exact: true })
+  await nav.waitFor()
+  assert.deepEqual(await nav.locator('[data-bottom-nav-item]').evaluateAll(items => items.map(item => ({ href: item.getAttribute('href'), label: item.getAttribute('aria-label') }))), [
+    { href: '/dashboard', label: 'Inicio' }, { href: '/plan', label: 'Plan' }, { href: '/entrenar', label: 'Entrenar' }, { href: '/progress', label: 'Progreso' }, { href: '/trainers', label: 'Entrenadores' },
+  ])
+  console.log('PASS original onboarding, generation and exact five original tabs')
+  await screenshot('dashboard-390')
+  await nav.getByRole('link', { name: 'Plan', exact: true }).click()
+  await page.waitForURL(/\/plan$/)
+  await page.locator('[data-plan-library]').waitFor()
+  await screenshot('plan-390')
+  await nav.getByRole('link', { name: 'Entrenar', exact: true }).click()
+  await page.waitForURL(/\/session\//)
+  const withoutChanges = page.getByRole('button', { name: 'Empezar sin cambios', exact: true })
+  if (await withoutChanges.isVisible().catch(() => false)) await withoutChanges.click()
+  await page.getByLabel('Peso en kilogramos', { exact: true }).first().fill('20')
+  await page.getByLabel('Repeticiones', { exact: true }).first().fill('12')
+  await page.getByRole('button', { name: 'Aumentar RPE', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Completar serie 1', exact: true }).click()
+  await page.getByRole('button', { name: /Serie anterior/ }).waitFor()
+  await screenshot('session-390')
+  await page.reload()
+  await page.getByRole('button', { name: /Serie anterior/ }).click()
+  const correction = page.getByRole('dialog')
+  assert.equal(await correction.getByLabel('Peso kg', { exact: true }).inputValue(), '20')
+  assert.equal(await correction.getByLabel('Repeticiones', { exact: true }).inputValue(), '12')
+  await correction.getByLabel('Repeticiones', { exact: true }).fill('13')
+  await correction.getByRole('button', { name: 'Guardar corrección', exact: true }).click()
+  await page.getByRole('button', { name: 'Finalizar', exact: true }).click()
+  await page.getByRole('button', { name: 'Guardar sesión', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Volver al dashboard', exact: true })).toBeEnabled()
+  const afterSession = await readStoredState()
+  assert.equal(afterSession.tables.progress_logs.length, 1)
+  assert.equal(afterSession.tables.exercise_logs[0].weights_kg[0], 20)
+  assert.equal(afterSession.tables.exercise_logs[0].reps_completed[0], 13)
+  assert.equal(afterSession.tables.exercise_logs[0].rpe_values[0], 8)
+  console.log('PASS original session, set RPE, reload recovery and durable completion')
+  await page.goto(`${origin}/history`)
+  await page.getByRole('link', { name: /min/ }).first().waitFor()
+  await screenshot('history-390')
+  await page.reload()
+  await page.goto(`${origin}/progress`)
+  await page.getByRole('heading', { name: /Progreso/ }).first().waitFor()
+  await screenshot('progress-390')
+  await page.goto(`${origin}/medidas`)
+  await page.getByRole('button', { name: 'Registrar', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Peso (kg)', { exact: true }).fill('66.5')
+  await dialog.getByLabel('Grasa corporal (%)', { exact: true }).fill('21')
+  await dialog.getByLabel('Cintura (cm)', { exact: true }).fill('72')
+  await dialog.getByLabel('Masa muscular (kg)', { exact: true }).fill('48')
+  await dialog.getByRole('button', { name: 'Más perímetros', exact: true }).click()
+  for (const [label, value] of [['Pecho (cm)', '90'], ['Cadera (cm)', '98'], ['Brazos (cm)', '29'], ['Piernas (cm)', '52']]) await dialog.getByLabel(label, { exact: true }).fill(value)
+  await dialog.getByLabel('Notas', { exact: true }).fill('Medida completa original')
+  await dialog.getByRole('button', { name: 'Guardar', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await page.reload()
+  await page.getByRole('button', { name: /Editar medida del/ }).first().click()
+  for (const [label, value] of [['Peso (kg)', '66.5'], ['Grasa corporal (%)', '21'], ['Masa muscular (kg)', '48'], ['Cintura (cm)', '72'], ['Pecho (cm)', '90'], ['Cadera (cm)', '98'], ['Brazos (cm)', '29'], ['Piernas (cm)', '52']]) assert.equal(await dialog.getByLabel(label, { exact: true }).inputValue(), value)
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  await screenshot('measurements-390')
+  console.log('PASS original history/progress and all eight measurement fields after reload')
+  await page.goto(`${origin}/settings/notificaciones`)
+  const preference = page.getByRole('switch', { name: /Notificaciones profesionales/ })
+  const before = await preference.getAttribute('aria-checked')
+  await preference.click()
+  await page.getByRole('status').filter({ hasText: 'Preferencias guardadas' }).first().waitFor()
+  await page.reload()
+  assert.notEqual(await page.getByRole('switch', { name: /Notificaciones profesionales/ }).getAttribute('aria-checked'), before)
+  await page.goto(`${origin}/settings/almacenamiento`)
+  const pendingDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Exportar respaldo', exact: true }).click()
+  const download = await pendingDownload
+  await page.getByLabel('Importar respaldo').setInputFiles(await download.path())
+  await page.getByRole('status').filter({ hasText: 'Respaldo importado.' }).waitFor()
+  const afterBackup = await readStoredState()
+  assert.equal(afterBackup.tables.progress_logs.length, 1)
+  assert.equal(afterBackup.tables.measurements[0].legs_cm, 52)
+  const exercisedRoute = `/exercises/${afterBackup.tables.exercise_logs[0].exercise_id}`
+  for (const route of ['/calendario', '/exercises', exercisedRoute, '/settings', '/settings/perfil', '/settings/datos', '/settings/entrenamiento', '/settings/notificaciones', '/settings/idioma', '/settings/musica', '/settings/cuenta']) {
+    console.log(`Checking original route ${route}`)
+    await page.goto(`${origin}${route}`)
+    await page.getByRole('navigation', { name: 'Navegación principal', exact: true }).waitFor()
+    await expect(page.getByText('Abriendo tus datos…', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: /No se pudo abrir esta pantalla|No se pudo mostrar esta pantalla/ })).toHaveCount(0)
+    if (route === '/exercises') {
+      await page.getByRole('heading', { name: 'Biblioteca de ejercicios', exact: true }).waitFor()
+      await page.getByPlaceholder('Buscar ejercicios…', { exact: true }).fill('Sentadilla')
+      await page.getByPlaceholder('Buscar ejercicios…', { exact: true }).press('Enter')
+      await page.waitForURL(/search=Sentadilla/)
+      await expect(page.getByText('Abriendo tus datos…', { exact: true })).toHaveCount(0)
+      await expect(page.getByRole('heading', { name: /No se pudo abrir esta pantalla|No se pudo mostrar esta pantalla/ })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: /^Sentadilla/ }).first()).toBeVisible()
+      await screenshot('catalogue-390')
+    }
+    if (route === exercisedRoute) {
+      await expect(page.locator(`section[aria-labelledby="exercise-history-title"] a[href="/history/${afterBackup.tables.progress_logs[0].id}"]`)).toBeVisible()
+      await screenshot('exercise-detail-390')
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `horizontal overflow: ${route}`)
+  }
+  await page.goto(`${origin}/trainers`)
+  await page.getByRole('heading', { name: /conexión|internet/i }).waitFor()
+  console.log('PASS original calendar, catalogue, exercise detail and all settings routes; offline trainer boundary')
+  for (const width of [360, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto(`${origin}/dashboard`)
+    await page.getByRole('navigation', { name: 'Navegación principal', exact: true }).waitFor()
+    await screenshot(`dashboard-${width}`)
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await screenshot('dashboard-1440')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`${origin}/register`)
+  await page.getByRole('heading', { name: 'Crea tu cuenta.', exact: true }).waitFor()
+  await screenshot('register-390')
+  console.log('PASS original registration screen without external requests')
+  assert.deepEqual(errors, [])
+  await writeFile(`${artifacts}/report.json`, JSON.stringify({ status: 'passed', tests: ['original onboarding', 'five original tabs', 'original session persistence', 'RPE and completed-set correction', 'history', 'progress', 'eight body measurements', 'all settings routes', 'calendar and catalogue', 'exercise session history', 'offline trainer boundary', 'settings persistence', 'backup', '360/390/768/1440 overflow', 'original registration'], pageErrors: errors }, null, 2))
+  console.log('PASS original settings, backup and 360/390/768 responsive checks; no page errors')
+} catch (error) {
+  if (page) {
+    await page.screenshot({ path: `${artifacts}/failure.png`, fullPage: true }).catch(() => {})
+    await writeFile(`${artifacts}/failure.txt`, `${page.url()}\n\n${error.stack}\n\n${await page.locator('body').innerText()}\n\nPAGE ERRORS: ${JSON.stringify(errors)}`)
+    console.error(`Failure URL: ${page.url()}`)
+    console.error((await page.locator('body').innerText()).slice(0, 1800))
+  }
+  throw error
+} finally { await browser.close() }

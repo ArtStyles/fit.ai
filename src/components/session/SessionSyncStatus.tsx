@@ -15,7 +15,9 @@ export function SessionSyncStatus({
   className?: string
 }) {
   const { language } = useI18n()
-  const label = sessionSyncLabel(state, language)
+  const label = process.env.NEXT_PUBLIC_LOCAL_APP === 'true' && state === 'synced'
+    ? language === 'en' ? 'Saved on this device' : 'Guardado en este dispositivo'
+    : sessionSyncLabel(state, language)
 
   if (state === 'error') {
     return (

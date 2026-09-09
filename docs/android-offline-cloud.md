@@ -1,5 +1,7 @@
 # Respaldo móvil y conexión directa
 
+> Documento histórico de la primera implementación `1.1.0-offline`, cuya interfaz fue rechazada. La versión corregida reutiliza las pantallas originales y el contrato vigente está en [android-original-sync.md](android-original-sync.md). Las tablas anteriores se conservan para recuperar datos; no representan el almacenamiento de la entrada actual.
+
 La aplicación de `mobile/` conecta directamente a Supabase mediante su SDK público. No llama a rutas de Next.js/Vercel y no contiene claves de servicio. Configuración de compilación: `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`. Sin ambas variables, el entrenamiento y los respaldos locales funcionan; las acciones online muestran que falta configurar la conexión.
 
 ## Lo que funciona con las APIs existentes

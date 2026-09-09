@@ -1,6 +1,6 @@
 # Vekira Android offline
 
-Esta versión se desarrolla en `codex/android-offline`, dentro de `.worktrees/android-offline`. La web Next.js conserva sus comandos y rutas. No mezclar esta rama en `main` hasta decidir cómo integrar ambos productos.
+Esta adaptación se desarrolla en `codex/android-offline`, dentro de `.worktrees/android-offline`. Reutiliza las páginas y componentes de Vekira: Inicio, Plan, Entrenar, Progreso y Entrenadores mantienen su navegación original. La web Next.js conserva sus comandos y rutas. La rama permanece separada de `main`.
 
 ## Desarrollo y compilación
 
@@ -14,7 +14,7 @@ pnpm android:offline:debug
 pnpm android:offline:release
 ```
 
-La compilación móvil usa exclusivamente `mobile/`, el motor compartido y el catálogo revisado. `mobile:prepare` copia el catálogo y SQLite WASM a `mobile/public`, un directorio generado e ignorado por Git. La web mantiene `pnpm dev`, `pnpm build` y `pnpm start`.
+La entrada `mobile/src/original/OriginalApp.tsx` carga los módulos originales de `src/app` y su AppShell. Los alias de compilación adaptan navegación, lectura de datos y acciones a un entorno local; no hay un servidor Next dentro del teléfono. La interfaz alternativa de la primera versión queda fuera de la entrada y del APK. `mobile:prepare` copia el catálogo, las tipografías originales y SQLite WASM a `mobile/public`, un directorio generado e ignorado por Git. La web mantiene `pnpm dev`, `pnpm build` y `pnpm start`.
 
 Los comandos Android seleccionan el JDK de Android Studio y el SDK instalado en Windows si no existen variables explícitas. La compilación de release requiere los archivos de firma originales `android/keystore.properties` y su almacén de claves; nunca deben confirmarse en Git. No generar una nueva clave para actualizar una instalación existente.
 
@@ -26,17 +26,21 @@ Las sesiones, medidas, rutinas y operaciones pendientes se guardan en SQLite en 
 
 La conexión con Supabase es opcional. Copia `mobile/.env.example` a `mobile/.env.local` y configura únicamente la URL pública y la clave anónima del proyecto. El navegador del APK nunca necesita claves de servicio ni claves de IA. El primer acceso a una cuenta existente y la descarga de sus datos requieren internet; los datos ya descargados siguen disponibles después.
 
-Consulta `docs/android-offline-cloud.md` para el contrato de sincronización móvil y la capacidad adicional del servidor. Los datos nuevos del APK se sincronizan entre instalaciones móviles mediante registros independientes. No actualizan automáticamente el historial de la web. Una capacidad de servidor que aún no se haya desplegado debe mantener las operaciones pendientes y presentar el error, nunca informar que están sincronizadas.
+Consulta [el contrato de respaldo completo](android-original-sync.md) para la descarga y sincronización. Se preservan filas y snapshots completos, incluidas las ocho medidas. Los datos nuevos del APK se respaldan entre instalaciones móviles mediante registros independientes. No actualizan automáticamente el historial de la web. La migración nueva está validada localmente y pendiente de despliegue. Su ausencia no impide descargar datos web; una subida pendiente debe mostrar esa condición.
+
+Los recorridos profesionales que usan los RPC existentes mantienen sus permisos y necesitan una cuenta conectada. Las operaciones que dependían de secretos de servidor (IA remota, eliminación de cuenta y determinadas cargas de imágenes o notificaciones) aún requieren adaptar el servicio remoto; el APK no incluye esos secretos ni simula su éxito. El entrenamiento personal funciona sin Vercel. Esta compilación no prueba que todas las funciones profesionales estén listas en producción.
 
 ## Respaldo y actualización
 
 En Ajustes, exporta un respaldo antes de cambiar de teléfono o actualizar. El archivo contiene datos de entrenamiento de un perfil, sin credenciales. Guárdalo en un lugar de confianza. Al importar, la aplicación valida el formato y el propietario y preserva cambios locales pendientes o posteriores.
 
-El identificador Android sigue siendo `com.fitai.app`; la versión de este cambio es `1.1.0-offline` (código 2). Instala la versión firmada con la clave original sobre la anterior. No desinstales ni borres los datos para resolver un conflicto de firma: eso elimina el almacenamiento privado.
+El identificador Android sigue siendo `com.fitai.app`; la versión corregida es `1.1.1-offline` (código 3), que sustituye la interfaz alternativa de `1.1.0-offline`. Instala la versión firmada con la clave original sobre la anterior. No desinstales ni borres los datos para resolver un conflicto de firma: eso elimina el almacenamiento privado.
 
-Las sesiones antiguas pendientes pueden estar en el almacenamiento WebView del origen Vercel. La opción «Recuperar sesión de la versión anterior», disponible en Android para una cuenta vinculada, lee solo los borradores v2 de esa cuenta utilizando una página local con el origen anterior y las cargas de red bloqueadas. Valida las sesiones con el analizador existente y exige que sus rutinas estén descargadas. No elimina los originales. Los borradores sin propietario, corruptos, vencidos o de rutinas no descargadas no se importan automáticamente; se informa cuántos se omitieron y se conservan sus bytes originales.
+Las sesiones antiguas pendientes pueden estar en el almacenamiento WebView del origen Vercel. La opción «Recuperar sesión de la versión anterior», disponible en Android para una cuenta vinculada, lee solo los borradores v2 de esa cuenta utilizando una página local con el origen anterior y las cargas de red bloqueadas. Valida las sesiones con el analizador existente y exige que sus rutinas estén descargadas. Los borradores válidos vencidos se archivan íntegros sin activarlos ni inventar una autorización. Los que carecen de propietario, están corruptos o pertenecen a rutinas no descargadas se omiten y conservan en su origen.
 
 ## Verificación antes de distribuir
+
+La pantalla de acceso permite recuperar explícitamente perfiles del APK `1.1.0-offline` si encuentra sus tablas anteriores. Se añaden como perfiles locales independientes, conservando los datos fuente y la selección actual. Los campos que aquella versión no guardaba permanecen vacíos; no se inventan series, medidas ni permisos profesionales. Las tablas originales nunca se eliminan.
 
 1. Abrir el APK en modo avión, generar/consultar una rutina, completar series y finalizar.
 2. Cerrar el proceso y reabrir; comprobar sesión en curso e historial.
