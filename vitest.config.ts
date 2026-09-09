@@ -7,6 +7,7 @@ const baseExclude = [
   '**/.worktrees/**',
   '**/android/**/build/**',
   '**/tests/e2e/**',
+  '**/mobile/**',
 ]
 
 const browserFixtureTests = [

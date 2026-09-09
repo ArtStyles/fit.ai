@@ -257,7 +257,7 @@ function normalizeStoredExercise(value: unknown): ExerciseSession | null {
   }
 }
 
-function normalizeSessionSnapshot(
+export function normalizeSessionSnapshot(
   value: unknown,
   workoutId: string,
   expectedUserId?: string,

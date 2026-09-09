@@ -3,10 +3,9 @@ import type { CapacitorConfig } from '@capacitor/cli'
 const config: CapacitorConfig = {
   appId: 'com.fitai.app',
   appName: 'Vekira',
-  webDir: 'public',
+  webDir: 'mobile/dist',
   server: {
-    url: 'https://fit-ai-kohl.vercel.app',
-    cleartext: false,
+    androidScheme: 'https',
   },
   android: {
     backgroundColor: '#0d0d14',
@@ -18,9 +17,10 @@ const config: CapacitorConfig = {
       hidden: false,
     },
     SplashScreen: {
-      // Lo ocultamos manualmente al cargar la web (NativeAppInit), porque con
-      // server.url remoto el contenido puede tardar y autohide dejaría un flash.
-      launchAutoHide: false,
+      // The local app renders loading/error states while SQLite opens.
+      // Never leave those states covered by a splash that needs remote code.
+      launchAutoHide: true,
+      launchShowDuration: 500,
       backgroundColor: '#0d0d14',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,
@@ -29,6 +29,9 @@ const config: CapacitorConfig = {
     },
     PushNotifications: {
       presentationOptions: ['badge', 'sound', 'alert'],
+    },
+    CapacitorSQLite: {
+      androidIsEncryption: false,
     },
   },
 }

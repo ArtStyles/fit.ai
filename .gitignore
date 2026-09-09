@@ -54,3 +54,9 @@ __pycache__/
 # Local Superpowers planning artifacts
 .superpowers/brainstorm/
 .superpowers/start-vekira-brainstorm.sh
+
+# Generated local Android web bundle inputs and verification reports
+mobile/public/
+mobile/test-results/
+mobile/tests/*.png
+.superpowers/sdd/
