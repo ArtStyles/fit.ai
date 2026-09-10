@@ -41,6 +41,7 @@ try {
   }
   if ($archive.GetEntry('assets/public/sw.js')) { throw 'Web service worker must not be packaged' }
   if ((Zip-Hash 'assets/public/sql-wasm.wasm') -ne (Get-FileHash mobile/dist/sql-wasm.wasm -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'SQLite runtime mismatch' }
+  if ((Zip-Hash 'assets/public/third-party/MuscleMap-LICENSE.txt') -ne (Get-FileHash public/third-party/MuscleMap-LICENSE.txt -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'MuscleMap license mismatch' }
   $result = [ordered]@{
     apk = $apkPath
     sha256 = (Get-FileHash $apkPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -53,6 +54,7 @@ try {
     originalFontsVerified = $fonts.Count
     builtAssetsMatch = $true
     sqliteRuntimeBundled = $true
+    muscleMapLicenseVerified = $true
   }
   $json = $result | ConvertTo-Json
   $json | Set-Content .artifacts/apk-verification.json

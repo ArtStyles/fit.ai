@@ -1,5 +1,7 @@
 # Primera fase Android: entrega y validación
 
+Este informe registra el cierre local de la fase en `248e2e6`. La publicación y el APK solicitados después se documentan en [Vekira Android 1.1.12](../../android-opengym-release.md).
+
 ## Rama y base
 
 - Rama de trabajo: `codex/android-offline-opengym`.
