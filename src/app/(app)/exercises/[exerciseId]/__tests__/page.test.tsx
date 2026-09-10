@@ -6,6 +6,7 @@ vi.mock('@/lib/auth/server', () => ({ requireAppUserContext: auth.context }))
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
 vi.mock('@/components/navigation/PageTopBar', () => ({ PageTopBar: ({ title }: { title: string }) => <h1>{title}</h1> }))
 vi.mock('@/components/exercises/ExerciseMotionPreview', () => ({ ExerciseMotionPreview: () => <div>Motion preview</div> }))
+vi.mock('@/components/exercises/ExerciseImage', () => ({ ExerciseImage: () => <div>Exercise poster</div> }))
 vi.mock('@/components/exercises/ExerciseProgressChart', () => ({ ExerciseProgressChart: () => null }))
 vi.mock('@/components/evidence/SessionSummaryRow', () => ({
   SessionSummaryRow: ({ href, title }: { href: string; title: string }) => <a href={href}>{title}</a>,
@@ -144,7 +145,8 @@ describe('exercise detail preserved history', () => {
     const html = await renderPage()
     expect(html).toContain('Press público')
     expect(html).toContain('Descripción publicada')
-    expect(html).toContain('Revisar técnica')
+    expect(html).toContain('id="tecnica"')
+    expect(html).toContain('Técnica y preparación')
     expect(html).not.toContain('Información conservada en tu historial')
   })
 

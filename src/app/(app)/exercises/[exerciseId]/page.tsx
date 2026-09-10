@@ -1,15 +1,15 @@
 import { notFound } from 'next/navigation'
-import { ArrowDown, Dumbbell, Info, PlayCircle, Target, Trophy } from 'lucide-react'
+import { ChartNoAxesColumnIncreasing, ChevronDown, Dumbbell, Info, PlayCircle, Target } from 'lucide-react'
 import { DisclosureSection } from '@/components/evidence/DisclosureSection'
-import { EvidenceInsight } from '@/components/evidence/EvidenceInsight'
 import { MetricStrip } from '@/components/evidence/MetricStrip'
+import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import { ExerciseMotionPreview } from '@/components/exercises/ExerciseMotionPreview'
 import { ExerciseProgressChart } from '@/components/exercises/ExerciseProgressChart'
 import { buildExerciseDetailView } from '@/components/exercises/exerciseDetailViewModel'
 import { SessionSummaryRow } from '@/components/evidence/SessionSummaryRow'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { requireAppUserContext } from '@/lib/auth/server'
-import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
+import { exerciseLanguage, localizeEquipment, localizeExercise, localizeMuscleGroup } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
 import { toExerciseHistoryPresentation } from '@/lib/exercises/historyPresentation'
 import { parseSessionContextSnapshot } from '@/lib/session/contextSnapshot'
@@ -263,123 +263,116 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
   const pointByLogId = new Map(view.points.map(point => [point.logId, point]))
   const description = cleanText(exercise.description)
   const instructions = cleanText(exercise.instructions)
-  const context = [exercise.exercise_type, exercise.difficulty, exercise.is_compound ? t('compuesto') : null]
+  const technicalLabels: Record<string, string> = language === 'es' ? {
+    strength: 'Fuerza', cardio: 'Cardio', stretching: 'Estiramiento', flexibility: 'Flexibilidad',
+    plyometrics: 'Pliometría', powerlifting: 'Levantamiento de potencia', olympic_weightlifting: 'Halterofilia',
+    beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzado', expert: 'Experto',
+  } : {}
+  const context = [exercise.exercise_type, exercise.difficulty]
     .filter(Boolean)
+    .map(value => technicalLabels[value!] ?? value)
     .join(' · ')
+  const muscleGroups = Array.from(new Set((exercise.muscle_groups ?? []).map(group => localizeMuscleGroup(group, language))))
+  const equipment = (exercise.equipment ?? []).map(item => localizeEquipment(item, language)).join(' · ')
 
   return (
     <div className="min-h-screen bg-background pb-20">
       <ExerciseHistoryAnchor />
       <PageTopBar
-        title={exercise.name}
-        subtitle={t('Ficha de ejercicio')}
+        title={t('Ficha de ejercicio')}
         backHref="/history"
         backLabel={t('Historial')}
         icon={<Dumbbell className="h-5 w-5" />}
       />
 
-      <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
-        <section className={`overflow-hidden rounded-3xl border border-violet-500/20 bg-violet-500/[0.06]${payload.historical ? '' : ' grid md:grid-cols-[minmax(0,1fr)_22rem]'}`}>
-          <div className="p-5 sm:p-7">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-violet-300">{t('Pasaporte del movimiento')}</p>
-            <h2 className="mt-2 font-display text-4xl font-bold leading-tight text-foreground">{exercise.name}</h2>
-            {payload.historical ? <p className="mt-3 text-sm text-muted-foreground">{language === 'en' ? 'Information preserved in your history' : 'Información conservada en tu historial'}</p> : null}
-            {context ? <p className="mt-2 text-sm capitalize text-muted-foreground">{context}</p> : null}
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              {[...(exercise.muscle_groups ?? []), ...(exercise.equipment ?? [])].slice(0, 7).map((item, index) => (
-                <span key={`${item}-${index}`} className="rounded-full border border-border/60 bg-background/40 px-3 py-1 text-xs capitalize text-muted-foreground">{item}</span>
-              ))}
+      <main className="mx-auto max-w-4xl space-y-4 px-4 py-5 sm:space-y-5 sm:px-6">
+        <section data-exercise-overview aria-labelledby="exercise-name" className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-500/[0.08] via-card to-card p-4 sm:p-5">
+          <div className="flex items-start gap-4">
+            {!payload.historical ? <ExerciseImage
+              src={exercise.image_url}
+              alt={exercise.name}
+              variant="thumb"
+              imageFit="contain"
+              zoomable
+              className="h-24 w-24 shrink-0 sm:h-28 sm:w-28"
+            /> : null}
+            <div className="min-w-0 flex-1 self-center">
+              {context ? <p className="text-xs capitalize leading-relaxed text-muted-foreground">{context}</p> : null}
+              <h2 id="exercise-name" className="mt-1 break-words font-display text-2xl font-bold leading-tight text-foreground sm:text-3xl">{exercise.name}</h2>
+              {payload.historical ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{language === 'en' ? 'Information preserved in your history' : 'Información conservada en tu historial'}</p> : null}
+              {exercise.is_compound !== null ? <p className="mt-2 text-xs text-violet-300">{exercise.is_compound ? (language === 'en' ? 'Compound movement' : 'Movimiento compuesto') : (language === 'en' ? 'Isolation movement' : 'Movimiento de aislamiento')}</p> : null}
             </div>
-            {!payload.historical ? <a href="#tecnica" className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/25 bg-violet-500/10 px-4 text-sm font-semibold text-violet-100 hover:bg-violet-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
-              {language === 'en' ? 'Review technique' : 'Revisar técnica'}
-              <ArrowDown className="h-4 w-4" aria-hidden="true" />
-            </a> : null}
           </div>
-          {!payload.historical ? <ExerciseMotionPreview
-            posterSrc={exercise.image_url}
-            motionSrc={exercise.motion_preview_url}
-            alt={exercise.name}
-            language={language}
-            className="h-full min-h-56 w-full border-t border-border/50 md:border-l md:border-t-0"
-          /> : null}
+          {muscleGroups.length > 0 || equipment ? (
+            <dl className="mt-4 grid gap-3 border-t border-border/60 pt-3 sm:grid-cols-2">
+              {muscleGroups.length > 0 ? <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">{language === 'en' ? 'Muscles' : 'Músculos'}</dt>
+                <dd className="mt-1 flex flex-wrap gap-1.5">{muscleGroups.map(group => <span key={group} className="break-words rounded-md bg-violet-400/10 px-2 py-1 text-xs capitalize text-violet-200">{group}</span>)}</dd>
+              </div> : null}
+              {equipment ? <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">{t('Equipo')}</dt>
+                <dd className="mt-1 break-words text-sm capitalize leading-relaxed text-foreground">{equipment}</dd>
+              </div> : null}
+            </dl>
+          ) : null}
         </section>
 
-        <MetricStrip
-          items={[
-            { label: t('Sesiones'), value: view.sessions },
-            { label: t('Mejor peso'), value: view.best && view.best.maxWeightKg > 0 ? `${formatNumber(view.best.maxWeightKg, language)} kg` : '—', detail: view.best?.repsAtMaxWeight ? `${view.best.repsAtMaxWeight} reps` : undefined },
-            { label: t('Último estímulo'), value: view.latest ? `${formatNumber(view.latest.volumeKg, language)} kg` : '—', detail: language === 'en' ? 'latest volume' : 'volumen más reciente' },
-            { label: 'RPE', value: view.latestAverageRpe ?? '—', detail: language === 'en' ? 'latest appearance' : 'última aparición' },
-          ]}
-        />
-
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-          <ExerciseProgressChart points={view.points} todayStr={todayStr} locale={language} />
-          <aside className="space-y-4 lg:sticky lg:top-24">
-            <EvidenceInsight title={t('Último estímulo')} tone={view.trend === 'up' ? 'success' : view.trend === 'down' ? 'warning' : 'neutral'}>
-              {trendCopy(view.trend, language)}
-            </EvidenceInsight>
-            {view.latest ? (
-              <section className="rounded-3xl border border-border/60 bg-muted/[0.05] p-5">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{language === 'en' ? 'Latest appearance' : 'Última aparición'}</p>
-                <dl className="mt-4 space-y-3 text-sm">
-                  <div className="flex justify-between gap-3 border-t border-border/50 pt-3"><dt className="text-muted-foreground">{t('Peso')}</dt><dd className="font-semibold text-foreground">{formatNumber(view.latest.maxWeightKg, language)} kg</dd></div>
-                  <div className="flex justify-between gap-3 border-t border-border/50 pt-3"><dt className="text-muted-foreground">{t('Reps')}</dt><dd className="font-semibold text-foreground">{view.latest.repsAtMaxWeight}</dd></div>
-                  <div className="flex justify-between gap-3 border-t border-border/50 pt-3"><dt className="text-muted-foreground">{t('Volumen')}</dt><dd className="font-semibold text-foreground">{formatNumber(view.latest.volumeKg, language)} kg</dd></div>
-                </dl>
-              </section>
-            ) : null}
-            {view.best && view.best.maxWeightKg > 0 ? (
-              <section className="rounded-3xl border border-amber-500/15 bg-amber-500/[0.04] p-5">
-                <div className="flex items-center gap-2 text-amber-200"><Trophy className="h-4 w-4" aria-hidden="true" /><p className="text-sm font-semibold">{t('Mejor marca')}</p></div>
-                <p className="mt-3 font-display text-3xl font-bold text-foreground">{formatNumber(view.best.maxWeightKg, language)} kg</p>
-                <p className="mt-1 text-xs text-muted-foreground">{view.best.repsAtMaxWeight} reps · {view.best.dateLabel}</p>
-              </section>
-            ) : null}
-          </aside>
-        </div>
-
-        {!payload.historical ? <section id="tecnica" className="scroll-mt-24 rounded-3xl border border-border/60 bg-muted/[0.035] p-5 sm:p-7" aria-labelledby="technique-title">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{language === 'en' ? 'Movement context' : 'Contexto del movimiento'}</p>
-              <h2 id="technique-title" className="mt-1 font-display text-2xl font-bold text-foreground">{language === 'en' ? 'Technique and setup' : 'Técnica y preparación'}</h2>
-            </div>
-            <Target className="h-5 w-5 text-violet-300" aria-hidden="true" />
-          </div>
-          {description ? <p className="mt-5 max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
-          {(exercise.equipment?.length ?? 0) > 0 ? (
-            <div className="mt-5 border-t border-border/50 pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('Equipo')}</p>
-              <p className="mt-2 text-sm capitalize text-foreground">{exercise.equipment!.join(' · ')}</p>
-            </div>
-          ) : null}
-          {instructions || exercise.video_url ? (
-            <DisclosureSection summary={t('Mostrar instrucciones')} className="mt-5">
-              {instructions ? <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{instructions}</p> : null}
-              {exercise.video_url ? (
-                <a href={exercise.video_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-4 text-sm font-semibold text-violet-100 hover:bg-violet-500/20">
-                  <PlayCircle className="h-4 w-4" aria-hidden="true" />
-                  {language === 'en' ? 'Open technique video' : 'Abrir video de técnica'}
-                </a>
-              ) : null}
+        {!payload.historical ? <section id="tecnica" className="scroll-mt-24 rounded-2xl border border-border/60 bg-card p-4 sm:p-5" aria-labelledby="technique-title">
+          <h2 id="technique-title" className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Target className="h-4 w-4 text-violet-300" aria-hidden="true" />
+            {language === 'en' ? 'Technique and setup' : 'Técnica y preparación'}
+          </h2>
+          {description ? <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
+          {!description && !instructions && !exercise.video_url && !exercise.motion_preview_url ? <p className="mt-3 text-sm text-muted-foreground">{language === 'en' ? 'No technique information available for this exercise yet.' : 'Aún no hay indicaciones técnicas para este ejercicio.'}</p> : null}
+          {instructions ? (
+            <DisclosureSection summary={t('Mostrar instrucciones')} className="mt-3">
+              <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{instructions}</p>
             </DisclosureSection>
           ) : null}
+          {exercise.motion_preview_url ? <DisclosureSection summary={language === 'en' ? 'View demonstration' : 'Ver demostración'} className="mt-3">
+            <ExerciseMotionPreview posterSrc={exercise.image_url} motionSrc={exercise.motion_preview_url} alt={exercise.name} language={language} className="mx-auto max-w-lg" />
+          </DisclosureSection> : null}
+          {exercise.video_url ? <a href={exercise.video_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg border border-border/60 px-3 text-sm font-semibold text-violet-300 hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+            <PlayCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {language === 'en' ? 'Open technique video' : 'Abrir video de técnica'}
+          </a> : null}
         </section> : null}
 
-        <section aria-labelledby="exercise-history-title">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{language === 'en' ? 'Chronology' : 'Cronología'}</p>
-          <h2 id="exercise-history-title" className="mt-1 scroll-mt-24 font-display text-2xl font-bold text-foreground">{t('Historial del ejercicio')}</h2>
+        <section aria-labelledby="exercise-records-title" className="rounded-2xl border border-border/60 bg-card px-4 pt-4 sm:px-5 sm:pt-5">
+          <h2 id="exercise-records-title" className="mb-3 text-sm font-semibold text-foreground">{language === 'en' ? 'Your records' : 'Tus registros'}</h2>
+          <MetricStrip
+            className="grid-cols-2 gap-x-4 gap-y-3 [&_dd]:text-xl"
+            items={[
+              { label: t('Sesiones'), value: view.sessions, detail: view.latest ? `${language === 'en' ? 'Last: ' : 'Última: '}${view.latest.dateLabel}` : undefined },
+              { label: t('Mejor peso'), value: view.best && view.best.maxWeightKg > 0 ? `${formatNumber(view.best.maxWeightKg, language)} kg` : '—', detail: view.best && view.best.maxWeightKg > 0 ? `${view.best.repsAtMaxWeight} reps · ${view.best.dateLabel}` : undefined },
+              { label: language === 'en' ? 'Latest volume' : 'Último volumen', value: view.latest ? `${formatNumber(view.latest.volumeKg, language)} kg` : '—', detail: language === 'en' ? 'load × reps' : 'carga × repeticiones' },
+              { label: 'RPE', value: view.latestAverageRpe ?? '—', detail: language === 'en' ? 'latest session' : 'última sesión' },
+            ]}
+          />
+          <details className="group/progress mt-4 border-t border-border/60">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 py-3 text-sm font-semibold text-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+              <ChartNoAxesColumnIncreasing className="h-4 w-4" aria-hidden="true" />
+              {language === 'en' ? 'View progress' : 'Ver progreso'}
+              <ChevronDown className="ml-auto h-4 w-4 transition-transform group-open/progress:rotate-180" aria-hidden="true" />
+            </summary>
+            <div className="space-y-3 pb-4">
+              <p className="text-xs leading-relaxed text-muted-foreground">{trendCopy(view.trend, language)}</p>
+              <ExerciseProgressChart points={view.points} todayStr={todayStr} locale={language} />
+            </div>
+          </details>
+        </section>
+
+        <section aria-labelledby="exercise-history-title" className="rounded-2xl border border-border/60 bg-card p-4 sm:p-5">
+          <h2 id="exercise-history-title" className="scroll-mt-24 font-display text-xl font-bold text-foreground">{t('Historial del ejercicio')}</h2>
 
           {payload.logs.length === 0 ? (
-            <div className="mt-5 rounded-3xl border border-dashed border-border bg-muted/20 p-7 text-center">
+            <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center">
               <Info className="mx-auto h-6 w-6 text-muted-foreground" aria-hidden="true" />
               <p className="mt-3 text-sm font-semibold text-foreground">{t('Sin registros todavía')}</p>
               <p className="mt-1 text-sm text-muted-foreground">{t('Cuando completes este ejercicio, aquí verás su progreso.')}</p>
             </div>
           ) : (
-            <div className="mt-4">
+            <div className="mt-2">
               {payload.logs.map(row => {
                 const progressLog = getProgressLog(row)!
                 const point = pointByLogId.get(progressLog.id)
@@ -394,6 +387,7 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
                 return (
                   <SessionSummaryRow
                     key={row.id}
+                    className="py-3"
                     href={`/history/${progressLog.id}`}
                     dateLabel={point?.dateLabel ?? getLocalDateString(new Date(progressLog.completed_at), timeZone)}
                     title={workoutName}
