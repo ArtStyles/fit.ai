@@ -40,6 +40,7 @@ type BrowserHarness = Window & typeof globalThis & {
   __resolveDismissal?: (result: { ok: true } | { ok: false; error: string }) => void
   __toast?: { title: string; variant: string }
   __unreadChangeCount?: number
+  __refreshNotifications?: (mode: 'empty' | 'new' | 'read' | 'original' | 'error') => void
 }
 
 type FixtureOptions = {
@@ -49,6 +50,7 @@ type FixtureOptions = {
   suppressEmptyState?: boolean
   reducedMotion?: 'reduce' | 'no-preference'
   scrollable?: boolean
+  paginated?: boolean
 }
 
 const NOTIFICATION_ID = '00000000-0000-4000-8000-000000000001'
@@ -110,7 +112,8 @@ async function buildBrowserFixture(): Promise<string> {
           readAt: '2026-08-07T15:10:00.000Z',
           createdAt: '2026-08-07T14:00:00.000Z',
         }] : [first]
-        root.render(
+        window.__nextPage = { notifications: [{ ...first, id: '00000000-0000-4000-8000-000000000002', title: 'Actividad anterior', readAt: first.createdAt, createdAt: '2026-08-06T12:00:00.000Z' }], nextCursor: null, unreadCount: 1 }
+        const render = (initialPage) => root.render(
           <main style={{ maxWidth: 768, margin: '0 auto', padding: 16 }}>
           {options.reference ? (
             <section data-plan-reference style={{ marginBottom: 24 }}>
@@ -124,11 +127,7 @@ async function buildBrowserFixture(): Promise<string> {
           ) : null}
           <div data-activity>
           <NotificationCenter
-            initialPage={{
-              notifications,
-              nextCursor: null,
-              unreadCount: 1,
-            }}
+            initialPage={initialPage}
             suppressEmptyState={options.suppressEmptyState}
             onNotificationRead={() => {
               window.__unreadChangeCount = (window.__unreadChangeCount || 0) + 1
@@ -138,6 +137,14 @@ async function buildBrowserFixture(): Promise<string> {
           {options.scrollable ? <div aria-hidden="true" style={{ height: 1600 }} /> : null}
           </main>
         )
+        window.__refreshNotifications = mode => render({
+          notifications: mode === 'empty' || mode === 'error' ? [] : mode === 'new' ? [{ ...first, id: '00000000-0000-4000-8000-000000000003', title: 'Nueva rutina' }]
+            : mode === 'read' ? [{ ...first, readAt: '2026-08-08T12:00:00.000Z' }] : notifications,
+          nextCursor: mode === 'original' && options.paginated ? 'more' : null,
+          unreadCount: mode === 'error' ? null : mode === 'read' || mode === 'empty' ? 0 : 1,
+          ...(mode === 'error' ? { error: 'Error temporal de conexión' } : {}),
+        })
+        render({ notifications, nextCursor: options.paginated ? 'more' : null, unreadCount: 1 })
         requestAnimationFrame(() => { window.__notificationReady = true })
       `,
     },
@@ -154,7 +161,7 @@ async function buildBrowserFixture(): Promise<string> {
           ['@/app/actions/notifications', `
             export const dismissNotificationAttention = async () => ({ ok: true })
             export const dismissProductNotification = id => window.__dismiss(id)
-            export const listProductNotifications = async () => ({ notifications: [], nextCursor: null, unreadCount: 0 })
+            export const listProductNotifications = async () => window.__nextPage
             export const markProductNotificationRead = async () => ({ ok: true })
           `],
           ['@/components/feedback/ToastProvider', `
@@ -331,6 +338,49 @@ afterAll(async () => {
 })
 
 describe('NotificationCenter mounted swipe interaction', () => {
+  it('keeps loaded older pages when the route refreshes its first page', async () => {
+    await preparePage({ paginated: true })
+    await page.getByRole('button', { name: 'Cargar más', exact: true }).click()
+    await page.getByRole('heading', { name: 'Actividad anterior', exact: true }).waitFor()
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('original'))
+    await animationFrames(3)
+    expect(await page.getByRole('heading', { name: 'Actividad anterior', exact: true }).count()).toBe(1)
+    expect(await page.getByRole('heading', { name: 'Solicitud aceptada', exact: true }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Cargar más', exact: true }).count()).toBe(0)
+  })
+
+  it('retains the visible activity through a failed refresh and recovers on the next response', async () => {
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('error'))
+    await page.getByRole('alert').waitFor()
+    expect(await page.getByRole('heading', { name: 'Solicitud aceptada', exact: true }).count()).toBe(1)
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('new'))
+    await page.getByRole('heading', { name: 'Nueva rutina', exact: true }).waitFor()
+    expect(await page.getByRole('alert').count()).toBe(0)
+  })
+
+  it('refreshes rows and unread count in the same mounted center after sync', async () => {
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('read'))
+    await page.getByText('0 sin leer', { exact: true }).waitFor({ timeout: 2_000 })
+    expect(await page.getByText('Nueva', { exact: true }).count()).toBe(0)
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('empty'))
+    await page.getByText('No tienes notificaciones todavía', { exact: true }).waitFor({ timeout: 2_000 })
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('new'))
+    await page.getByRole('heading', { name: 'Nueva rutina', exact: true }).waitFor({ timeout: 2_000 })
+    expect(await page.getByText('1 sin leer', { exact: true }).count()).toBe(1)
+  })
+
+  it('keeps a confirmed dismissal hidden when an earlier snapshot arrives after the action', async () => {
+    await page.getByRole('button', { name: DISMISS_LABEL }).click()
+    await page.evaluate(() => (window as BrowserHarness).__resolveDismissal?.({ ok: true }))
+    await page.waitForFunction(() => (window as BrowserHarness).__unreadChangeCount === 1)
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('original'))
+    await page.locator(ACTIVITY_ARTICLE).waitFor({ state: 'detached' })
+    expect(await page.getByText('No tienes notificaciones todavía', { exact: true }).count()).toBe(1)
+    await page.evaluate(() => (window as BrowserHarness).__refreshNotifications?.('new'))
+    await page.getByRole('heading', { name: 'Nueva rutina', exact: true }).waitFor({ timeout: 2_000 })
+    expect(await page.getByText('1 sin leer', { exact: true }).count()).toBe(1)
+  })
+
   it('allows the left drag to begin on the full-width open control', async () => {
     const openButton = page.getByRole('button', { name: 'Abrir: Solicitud aceptada' })
 

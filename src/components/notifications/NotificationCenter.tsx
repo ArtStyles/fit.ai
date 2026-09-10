@@ -237,9 +237,38 @@ export function NotificationCenter({
   const [errorMessage, setErrorMessage] = useState<string | null>(initialPage.error ?? null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasExitingNotifications, setHasExitingNotifications] = useState(false)
+  const [pageSnapshot, setPageSnapshot] = useState(initialPage)
+  const [confirmedChanges, setConfirmedChanges] = useState<Record<string, {
+    readAt?: string
+    dismissed?: true
+    wasUnread: boolean
+    source: ProductNotificationPage
+  }>>({})
   const suppressOpenClickIdRef = useRef<string | null>(null)
   const restoreDismissFocusIdRef = useRef<string | null>(null)
   const dismissButtonRefs = useRef(new Map<string, HTMLButtonElement>())
+
+  // Route refreshes reuse this component. Reconcile the first page, keeping any older pages
+  // already opened and successful local actions that an earlier response has not seen yet.
+  if (pageSnapshot !== initialPage && !busyId && !loadingMore) {
+    setPageSnapshot(initialPage)
+    if (!initialPage.error) {
+      const incoming = mergeNotificationPageIntoCurrent([], initialPage.notifications)
+      const oldest = incoming.at(-1)
+      const older = initialPage.nextCursor && oldest ? notifications.filter(item => (
+        Date.parse(item.createdAt) < Date.parse(oldest.createdAt)
+          || (item.createdAt === oldest.createdAt && item.id < oldest.id)
+      )) : []
+      const refreshed = mergeNotificationPageIntoCurrent(incoming, older).flatMap(item => {
+        const change = confirmedChanges[item.id]
+        if (change?.dismissed) return []
+        return [{ ...item, readAt: change?.readAt ?? item.readAt }]
+      })
+      setNotifications(refreshed)
+      if (!older.length) setCursor(initialPage.nextCursor)
+    }
+    setErrorMessage(initialPage.error ?? null)
+  }
 
   useEffect(() => {
     const notificationId = restoreDismissFocusIdRef.current
@@ -250,12 +279,12 @@ export function NotificationCenter({
     button.focus()
   }, [notifications])
 
-  const loadedUnreadCount = useMemo(
-    () => notifications.filter(notification => notification.readAt === null).length,
-    [notifications],
-  )
+  const confirmedUnreadChanges = Object.entries(confirmedChanges).filter(([id, change]) => (
+    change.wasUnread && (change.source === pageSnapshot
+      || pageSnapshot.notifications.some(item => item.id === id && item.readAt === null))
+  )).length
   const unreadCount = aggregateUnreadCount === undefined
-    ? loadedUnreadCount
+    ? pageSnapshot.unreadCount === null ? null : Math.max(0, pageSnapshot.unreadCount - confirmedUnreadChanges)
     : aggregateUnreadCount
 
   async function openOrMark(notification: ProductNotificationView, destination: string | null) {
@@ -281,8 +310,12 @@ export function NotificationCenter({
       setNotifications(current => current.map(item => (
         item.id === notification.id ? result.notification : item
       )))
+      setConfirmedChanges(current => ({ ...current, [notification.id]: {
+        readAt: result.notification.readAt!, wasUnread: true, source: pageSnapshot,
+      } }))
       onNotificationRead?.()
       setAnnouncement(result.announcement)
+      router.refresh()
     }
 
     if (destination) router.push(destination)
@@ -307,8 +340,13 @@ export function NotificationCenter({
 
     setErrorMessage(null)
     restoreDismissFocusIdRef.current = null
+    setConfirmedChanges(current => ({ ...current, [notification.id]: {
+      dismissed: true, wasUnread: notification.readAt === null || current[notification.id]?.wasUnread === true,
+      source: notification.readAt === null ? pageSnapshot : current[notification.id]?.source ?? pageSnapshot,
+    } }))
     if (notification.readAt === null) onNotificationRead?.()
     setAnnouncement(result.announcement)
+    router.refresh()
   }
 
   async function loadMore() {

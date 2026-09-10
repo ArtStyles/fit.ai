@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NodeSqliteDriver } from '../../data/__tests__/node-sqlite-driver'
 import { createAppStore } from '../storage'
 import { createAppClient } from '../query'
@@ -31,6 +31,23 @@ async function store() {
 }
 
 describe('original application SQLite state', () => {
+  it('isolates display caches by account without dirtying or exporting user data', async () => {
+    const app = await store(); await app.create(state())
+    const before = JSON.parse(await app.exportBackup()).state
+    await app.setAccountCache('summary', { allowed: true }, app.sessionVersion(), 'account-a')
+    expect(await app.getAccountCache('summary', 'account-a')).toEqual({ allowed: true })
+    expect(JSON.parse(await app.exportBackup()).state).toEqual(before)
+    await app.create(state('account-b'))
+    expect(await app.getAccountCache('summary', 'account-a')).toBeNull()
+    expect(await app.getAccountCache('summary', 'account-b')).toBeNull()
+    await expect(app.setAccountCache('summary', { allowed: true }, app.sessionVersion(), 'account-a')).rejects.toThrow()
+    await app.activate('account-a')
+    expect(await app.getAccountCache('summary', 'account-a')).toEqual({ allowed: true })
+    const session = app.sessionVersion()
+    await app.deactivate()
+    expect(await app.getAccountCache('summary', 'account-a')).toBeNull()
+    await expect(app.setAccountCache('summary', {}, session, 'account-a')).rejects.toThrow()
+  })
   it('preserves complete original metric and session rows through SQLite and backup', async () => {
     const app = await store()
     const initial = state()
@@ -38,6 +55,7 @@ describe('original application SQLite state', () => {
     expect(await app.read()).toEqual(initial)
     const backup = await app.exportBackup()
     const restored = await store()
+    await restored.create(state('signed-in-account'))
     await restored.importBackup(backup)
     expect((await restored.read())?.tables).toEqual(initial.tables)
   })
@@ -113,6 +131,65 @@ describe('original application SQLite state', () => {
     expect((await app.read())?.accountId).toBe('account-b')
     await app.activate('account-a')
     expect((await app.read())?.tables.measurements).toEqual([])
+  })
+
+  it('does not use a backup to enter the application without a session', async () => {
+    const source = await store(); await source.create(state())
+    const app = await store()
+    await expect(app.importBackup(await source.exportBackup())).rejects.toThrow(/inicia sesi[oó]n/i)
+    expect(await app.read()).toBeNull()
+    expect(await app.list()).toEqual([])
+  })
+
+  it.each([false, true])('does not reopen a signed-out linked=%s account by importing its backup', async linked => {
+    const app = await store()
+    const initial = state()
+    if (linked) initial.remoteUserId = initial.accountId
+    await app.create(initial)
+    const backup = await app.exportBackup()
+    await app.deactivate()
+    await expect(app.importBackup(backup)).rejects.toThrow(/inicia sesi[oó]n/i)
+    expect(await app.read()).toBeNull()
+    expect(await app.list()).toEqual([initial])
+  })
+
+  it.each(['before', 'after'] as const)('rejects a queued backup import invoked %s logout starts', async order => {
+    const app = await store(); const initial = state(); await app.create(initial)
+    const source = await store(); await source.create(state('account-b'))
+    const backup = await source.exportBackup()
+    const importing = order === 'before' ? app.importBackup(backup) : null
+    const signingOut = app.deactivate()
+    const pendingImport = importing ?? app.importBackup(backup)
+    await Promise.all([signingOut, expect(pendingImport).rejects.toThrow(/sesi[oó]n/i)])
+    expect(await app.read()).toBeNull()
+    expect(await app.list()).toEqual([initial])
+  })
+
+  it('rolls back an in-progress backup import when logout starts before activation', async () => {
+    const driver = new NodeSqliteDriver(':memory:'); drivers.push(driver)
+    const app = await createAppStore(driver); const initial = state(); await app.create(initial)
+    const source = await store(); await source.create(state('account-b'))
+    const backup = await source.exportBackup()
+    let release!: () => void; let started!: () => void
+    const paused = new Promise<void>(resolve => { release = resolve })
+    const entered = new Promise<void>(resolve => { started = resolve })
+    const execute = driver.execute.bind(driver)
+    vi.spyOn(driver, 'execute').mockImplementation(async (sql, parameters) => {
+      const result = await execute(sql, parameters)
+      if (sql.startsWith('INSERT INTO original_app_accounts') && parameters?.[0] === 'account-b') {
+        started(); await paused
+      }
+      return result
+    })
+    const importing = app.importBackup(backup).then(() => null, error => error)
+    await entered
+    const signingOut = app.deactivate()
+    release()
+    const result = await importing
+    await signingOut
+    expect(result).toBeInstanceOf(Error)
+    expect(await app.read()).toBeNull()
+    expect(await app.list()).toEqual([initial])
   })
 
   it('rejects remote identity collision and forged descendant ownership', async () => {

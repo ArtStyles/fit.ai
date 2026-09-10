@@ -57,7 +57,7 @@ export function validateAppState(input: unknown): AppState {
   return state
 }
 
-function emit(accountId: string) {
+function emit(accountId: string | null) {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(ORIGINAL_STATE_CHANGED, { detail: { accountId } }))
 }
 
@@ -65,6 +65,12 @@ type StoredState = SqliteRow & { account_id: string; remote_user_id: string | nu
 
 export async function createAppStore(driver: MobileSqliteDriver): Promise<AppStore> {
   let tail: Promise<unknown> = Promise.resolve()
+  let sessionVersion = 0
+  function requireCurrentSession(expected: number | undefined) {
+    if (expected !== undefined && expected !== sessionVersion) {
+      throw new Error('La sesión se cerró durante el acceso. Vuelve a iniciar sesión para continuar.')
+    }
+  }
   function serial<T>(fn: () => Promise<T>): Promise<T> {
     const current = tail.then(fn)
     tail = current.catch(() => undefined)
@@ -82,7 +88,7 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
     );
   `)
   const initiallySelected = await driver.query<{ value: string }>('SELECT value FROM original_app_settings WHERE key = ?', ['active_account'])
-  let selectedAccountId = initiallySelected[0]?.value ?? null
+  let selectedAccountId: string | null = initiallySelected[0]?.value ?? null
   const readAccount = async (id: string) => {
     const rows = await driver.query<StoredState>('SELECT account_id, remote_user_id, state_json FROM original_app_accounts WHERE account_id = ?', [id])
     return rows.length ? validateAppState(JSON.parse(rows[0].state_json)) : null
@@ -99,12 +105,34 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
   }
 
   return {
+    sessionVersion: () => sessionVersion,
+    getAccountCache: (key, expectedAccountId) => {
+      const invokedAccountId = selectedAccountId
+      return serial(async () => {
+        if (invokedAccountId !== expectedAccountId || (await active())?.accountId !== expectedAccountId) return null
+        const rows = await driver.query<{ value: string }>('SELECT value FROM original_app_settings WHERE key = ?', [`cache:${invokedAccountId}:${key}`])
+        try { return rows.length ? JSON.parse(rows[0].value) : null } catch { return null }
+      })
+    },
+    setAccountCache: (key, value, expectedSessionVersion, expectedAccountId) => {
+      const invokedAccountId = selectedAccountId
+      return serial(async () => {
+        requireCurrentSession(expectedSessionVersion)
+        if (invokedAccountId !== expectedAccountId || (await active())?.accountId !== expectedAccountId) throw new Error('No active application account')
+        await driver.transaction(async () => {
+          await driver.execute('INSERT INTO original_app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [`cache:${invokedAccountId}:${key}`, JSON.stringify(value)])
+          requireCurrentSession(expectedSessionVersion)
+        })
+        // Read-only presentation snapshots do not dirty user data or refresh the page.
+      })
+    },
     read: () => serial(active),
     list: () => serial(async () => {
       const rows = await driver.query<StoredState>('SELECT account_id, remote_user_id, state_json FROM original_app_accounts ORDER BY rowid')
       return rows.map(row => validateAppState(JSON.parse(row.state_json)))
     }),
-    create: input => serial(async () => {
+    create: (input, expectedSessionVersion) => serial(async () => {
+      requireCurrentSession(expectedSessionVersion)
       const state = validateAppState(input)
       await driver.transaction(async () => {
         if (await readAccount(state.accountId)) throw new Error('Application account already exists')
@@ -114,7 +142,8 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
       selectedAccountId = state.accountId
       emit(state.accountId)
     }),
-    activate: accountId => serial(async () => {
+    activate: (accountId, expectedSessionVersion) => serial(async () => {
+      requireCurrentSession(expectedSessionVersion)
       await driver.transaction(async () => {
         if (!await readAccount(accountId)) throw new Error('Application account not found')
         await select(accountId)
@@ -122,6 +151,17 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
       selectedAccountId = accountId
       emit(accountId)
     }),
+    deactivate: () => {
+      // Invalidate pending authentication before it can queue a late activation.
+      sessionVersion++
+      return serial(async () => {
+        await driver.transaction(async () => {
+          await driver.execute('DELETE FROM original_app_settings WHERE key = ?', ['active_account'])
+        })
+        selectedAccountId = null
+        emit(null)
+      })
+    },
     mutate: fn => {
       const invokedAccountId = selectedAccountId
       return serial(async () => {
@@ -151,27 +191,38 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
       if (!state) throw new Error('No active application account')
       return JSON.stringify({ format: FORMAT, version: 1, exportedAt: new Date().toISOString(), state })
     }),
-    importBackup: json => serial(async () => {
-      if (new TextEncoder().encode(json).byteLength > MAX_BACKUP_BYTES) throw new Error('Application backup is too large')
-      const parsed = JSON.parse(json) as { format?: string; version?: number; state?: unknown }
-      if (parsed.format !== FORMAT || parsed.version !== 1) throw new Error('Unsupported application backup format')
-      const incoming = validateAppState(parsed.state)
-      await driver.transaction(async () => {
-        const existing = await readAccount(incoming.accountId)
-        if (existing) {
-          // Never replay stale rows into an account: missing rows may represent intentional deletion.
-          if (existing.remoteUserId !== incoming.remoteUserId || stable(existing.tables) !== stable(incoming.tables) || existing.email !== incoming.email) {
-            throw new Error('Backup conflict: this account has different local data. Existing data was preserved.')
-          }
-        } else {
-          // A copied backup has not been verified against the current remote server.
-          await persist({ ...incoming, lastSyncedRevision: 0, remoteRevision: null })
+    importBackup: json => {
+      const invokedAccountId = selectedAccountId
+      const expectedSessionVersion = sessionVersion
+      return serial(async () => {
+        requireCurrentSession(expectedSessionVersion)
+        const current = await active()
+        if (!invokedAccountId || current?.accountId !== invokedAccountId) {
+          throw new Error('Inicia sesión para importar un respaldo.')
         }
-        await select(incoming.accountId)
+        if (new TextEncoder().encode(json).byteLength > MAX_BACKUP_BYTES) throw new Error('Application backup is too large')
+        const parsed = JSON.parse(json) as { format?: string; version?: number; state?: unknown }
+        if (parsed.format !== FORMAT || parsed.version !== 1) throw new Error('Unsupported application backup format')
+        const incoming = validateAppState(parsed.state)
+        await driver.transaction(async () => {
+          const existing = await readAccount(incoming.accountId)
+          if (existing) {
+            // Never replay stale rows into an account: missing rows may represent intentional deletion.
+            if (existing.remoteUserId !== incoming.remoteUserId || stable(existing.tables) !== stable(incoming.tables) || existing.email !== incoming.email) {
+              throw new Error('Backup conflict: this account has different local data. Existing data was preserved.')
+            }
+          } else {
+            // A copied backup has not been verified against the current remote server.
+            await persist({ ...incoming, lastSyncedRevision: 0, remoteRevision: null })
+          }
+          await select(incoming.accountId)
+          // A logout during a SQLite operation must roll back the whole import.
+          requireCurrentSession(expectedSessionVersion)
+        })
+        selectedAccountId = incoming.accountId
+        emit(incoming.accountId)
       })
-      selectedAccountId = incoming.accountId
-      emit(incoming.accountId)
-    }),
+    },
     markSynced: (accountId, expectedLocalRevision, remoteRevision) => serial(async () => {
       await driver.transaction(async () => {
         const state = await readAccount(accountId)

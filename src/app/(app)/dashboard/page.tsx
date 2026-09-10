@@ -1,5 +1,7 @@
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { CoachingSummaryCard } from '@/components/dashboard/CoachingSummaryCard'
+import { CompanionCard } from '@/components/companions/CompanionCard'
+import { loadCompanion } from '@/app/actions/companions'
 import { DashboardPrimaryFlow } from '@/components/dashboard/DashboardPrimaryFlow'
 import { DashboardMainNotice } from '@/components/dashboard/DashboardNotice'
 import { DashboardWeekJourney } from '@/components/dashboard/DashboardWeekJourney'
@@ -33,11 +35,8 @@ import {
   type DashboardBannerData,
 } from '@/lib/dashboard/banner'
 import { getDashboardGreeting } from '@/components/dashboard/dashboardFormatters'
-import {
-  hasDashboardNotificationAttention,
-  loadUnreadProductNotificationAttention,
-  type UnreadProductNotificationClient,
-} from '@/lib/dashboard/notificationAttention'
+import { hasDashboardNotificationAttention } from '@/lib/dashboard/notificationAttention'
+import { listProductNotifications, loadNotificationAttention } from '@/app/actions/notifications'
 import { loadClientCoachingSummary } from '@/lib/coaching/clientSummary'
 
 export const metadata = { title: 'Dashboard · Vekira' }
@@ -411,8 +410,10 @@ export default async function DashboardPage() {
   const [
     dashboardPayload,
     { data: bannerRaw },
-    hasUnreadProductNotifications,
+    notificationPage,
+    notificationAttention,
     { summary: coachingSummary, error: coachingSummaryError },
+    companionResult,
   ] = await Promise.all([
     loadDashboardPayload(
       supabase,
@@ -425,8 +426,10 @@ export default async function DashboardPage() {
       .select('slot, kind, title, description, image_url, cta_label, cta_href, status, starts_on, ends_on, updated_at')
       .eq('slot', DASHBOARD_BANNER_SLOT)
       .maybeSingle(),
-    loadUnreadProductNotificationAttention(supabase as unknown as UnreadProductNotificationClient, user.id),
+    listProductNotifications(),
+    loadNotificationAttention(),
     loadClientCoachingSummary(supabase, user.id),
+    loadCompanion(),
   ])
   const bannerCandidate = bannerRaw as DashboardBannerData | null
   const dashboardBanner = isDashboardBannerVisible(bannerCandidate, todayStr)
@@ -607,8 +610,9 @@ export default async function DashboardPage() {
               username: profile.username,
             })}
             hasNotificationAttention={hasDashboardNotificationAttention({
-              hasDashboardNotice: dashboard.noticePlacement === 'hub',
-              hasUnreadProductNotifications,
+              hasDashboardNotice: notificationAttention.status === 'ready' && notificationAttention.attention !== null,
+              hasUnreadProductNotifications: (notificationPage.unreadCount ?? 0) > 0
+                || notificationPage.notifications.some(notification => notification.readAt === null),
             })}
           />
         )}
@@ -633,7 +637,7 @@ export default async function DashboardPage() {
             placement={dashboard.noticePlacement ?? 'inline'}
           />
         ) : null}
-        journey={<DashboardWeekJourney dashboard={dashboard} />}
+        journey={<DashboardWeekJourney dashboard={dashboard} companion={<CompanionCard initial={companionResult} />} />}
       />
     </div>
   )

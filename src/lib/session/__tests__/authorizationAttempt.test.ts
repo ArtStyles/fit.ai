@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest'
 import { runSessionAuthorizationAttempt } from '../authorization'
 
 describe('session authorization request', () => {
+  it('preserves confirmed absence of a lease only for the current failed attempt', async () => {
+    const request = async () => ({ success: false as const, error: 'Already completed', authorizationAbsent: true as const })
+    await expect(runSessionAuthorizationAttempt(request, () => true, 'transport failure')).resolves.toEqual({ status: 'failed', error: 'Already completed', authorizationAbsent: true })
+    await expect(runSessionAuthorizationAttempt(request, () => false, 'transport failure')).resolves.toEqual({ status: 'stale' })
+  })
+  it.each(['pending', 'professional_clearance_required'] as const)('preserves %s readiness recovery without marking the session ready', async readinessStatus => {
+    await expect(runSessionAuthorizationAttempt(
+      async () => ({ success: false as const, error: 'Readiness needs attention', readinessStatus }),
+      () => true,
+      'transport failure',
+    )).resolves.toEqual({ status: 'failed', error: 'Readiness needs attention', readinessStatus })
+  })
+
+  it('discards readiness metadata from an obsolete attempt', async () => {
+    await expect(runSessionAuthorizationAttempt(
+      async () => ({ success: false as const, error: 'Old profile', readinessStatus: 'pending' as const }),
+      () => false,
+      'transport failure',
+    )).resolves.toEqual({ status: 'stale' })
+  })
+
   it('turns a transport rejection into a retryable localized failure', async () => {
     await expect(runSessionAuthorizationAttempt(
       async () => { throw new Error('network down') },

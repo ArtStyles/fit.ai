@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { ClipboardCheck, LoaderCircle, ShieldAlert } from 'lucide-react'
 import { useSessionStore }    from '@/store/sessionStore'
 import { useRestTimer }       from '@/hooks/useRestTimer'
 import { useWakeLock }        from '@/hooks/useWakeLock'
@@ -9,6 +11,7 @@ import { ExerciseCard }       from '@/components/session/ExerciseCard'
 import { CompletionScreen }   from '@/components/session/CompletionScreen'
 import { SessionRoutineTools } from '@/components/session/SessionRoutineTools'
 import { PreSessionScreen }   from '@/components/session/PreSessionScreen'
+import { ReadinessReviewDialog } from '@/components/plan/ReadinessReviewDialog'
 import {
   buildSessionFocusWindow,
   nextSessionSyncState,
@@ -27,6 +30,7 @@ import {
   nextSessionAuthorizationState,
   runSessionAuthorizationAttempt,
   type SessionAuthorizationState,
+  type SessionReadinessBlock,
 } from '@/lib/session/authorization'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -72,6 +76,15 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
   const storeExercises    = useSessionStore(s => s.exercises)
   const [authorizationState, setAuthorizationState] = useState<SessionAuthorizationState>('authorizing')
   const [authorizationError, setAuthorizationError] = useState<string | null>(null)
+  const [readinessStatus, setReadinessStatus] = useState<SessionReadinessBlock | null>(null)
+  const [readinessGeneration, setReadinessGeneration] = useState(0)
+  const [readinessOpen, setReadinessOpen] = useState(false)
+  const readinessTriggerRef = useRef<HTMLButtonElement>(null)
+  const autoOpenedReadinessSessionRef = useRef<string | null>(null)
+  const sessionLifecycleRef = useRef({ generation: 0, active: false })
+  const isCurrentSessionLifecycle = useCallback((generation: number) => (
+    sessionLifecycleRef.current.active && sessionLifecycleRef.current.generation === generation
+  ), [])
   const [syncState, setSyncState] = useState<SessionSyncState>('syncing')
   const [syncErrorSource, setSyncErrorSource] = useState<SessionSyncErrorSource>(null)
   const focusWindow = buildSessionFocusWindow(storeExercises)
@@ -90,10 +103,13 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
     onSyncEvent(syncEventForStorageResult('write', result), result.ok ? null : 'backup-write')
     return result
   }, [onSyncEvent])
-  const authorizeCurrentSession = useCallback(async () => {
+  const authorizeCurrentSession = useCallback(async (generation: number) => {
+    if (!isCurrentSessionLifecycle(generation)) return
     const attempt = ++authorizationAttemptRef.current
     setAuthorizationState(current => nextSessionAuthorizationState(current, 'retry'))
     setAuthorizationError(null)
+    setReadinessStatus(null)
+    setReadinessGeneration(0)
 
     const state = useSessionStore.getState()
     if (!state.clientSessionId || state.workoutId !== workoutId || state.userId !== userId) {
@@ -105,6 +121,7 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
     const snapshot: SessionSnapshot = {
       userId,
       clientSessionId: state.clientSessionId,
+      activationState: state.activationState,
       workoutId: state.workoutId,
       workoutName: state.workoutName,
       startedAt: state.startedAt,
@@ -128,19 +145,31 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
 
     const result = await runSessionAuthorizationAttempt(
       () => authorizeSessionStart(state.clientSessionId, workoutId),
-      () => attempt === authorizationAttemptRef.current,
+      () => isCurrentSessionLifecycle(generation) && attempt === authorizationAttemptRef.current,
       t('No se pudo preparar la sesión. Inténtalo nuevamente.'),
     )
     if (result.status === 'stale') return
 
     if (result.status === 'failed') {
+      if (result.authorizationAbsent) {
+        // Older backups published themselves before authorization. Keep every
+        // exercise and the retry ID, but stop presenting a verified non-start as active.
+        useSessionStore.getState().markSessionPreparing(state.clientSessionId)
+      }
       setAuthorizationState(current => nextSessionAuthorizationState(current, 'failed'))
       setAuthorizationError(t(result.error))
+      setReadinessStatus(result.readinessStatus ?? null)
+      setReadinessGeneration(generation)
+      if (result.readinessStatus === 'pending' && autoOpenedReadinessSessionRef.current !== state.clientSessionId) {
+        autoOpenedReadinessSessionRef.current = state.clientSessionId
+        setReadinessOpen(true)
+      }
       return
     }
 
+    if (!useSessionStore.getState().markSessionActive(state.clientSessionId)) return
     setAuthorizationState(current => nextSessionAuthorizationState(current, 'succeeded'))
-  }, [onSyncEvent, t, userId, workoutId])
+  }, [isCurrentSessionLifecycle, onSyncEvent, t, userId, workoutId])
 
   // Pre-calcular progresiones desde la prop del servidor (antes de hidratación)
   const progressions = extractProgressions(exercises)
@@ -153,9 +182,10 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
   useEffect(() => useSessionStore.subscribe((state, previous) => {
     if (state.userId !== userId || state.workoutId !== workoutId || !state.clientSessionId) return
     if (state.exercises === previous.exercises && state.finishedAt === previous.finishedAt
-      && state.clientSessionId === previous.clientSessionId) return
+      && state.clientSessionId === previous.clientSessionId && state.activationState === previous.activationState) return
     const snapshot: SessionSnapshot = {
       userId, clientSessionId: state.clientSessionId, workoutId,
+      activationState: state.activationState,
       workoutName: state.workoutName, startedAt: state.startedAt,
       finishedAt: state.finishedAt, exercises: state.exercises,
     }
@@ -164,15 +194,19 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
     onSyncEvent(syncEventForStorageResult('write', result), result.ok ? null : 'backup-write')
   }), [onSyncEvent, userId, workoutId])
 
-  const prepareCurrentSession = useCallback(async () => {
+  const prepareCurrentSession = useCallback(async (generation = sessionLifecycleRef.current.generation) => {
+    if (!isCurrentSessionLifecycle(generation)) return
     const attempt = ++initializationAttemptRef.current
     setAuthorizationState('authorizing')
     setAuthorizationError(null)
+    setReadinessStatus(null)
+    setReadinessGeneration(0)
+    setReadinessOpen(false)
     try {
       const state = useSessionStore.getState()
       if (state.userId !== userId || state.workoutId !== workoutId || !state.clientSessionId) {
         const backup = await recoverSessionBackup(userId, workoutId, verifySessionBackupOwner)
-        if (attempt !== initializationAttemptRef.current) return
+        if (!isCurrentSessionLifecycle(generation) || attempt !== initializationAttemptRef.current) return
         if (backup) {
           restoreSession(backup, prescriptionLocked)
           setShowPreSession(false)
@@ -181,17 +215,20 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
           setShowPreSession(!prescriptionLocked && extractProgressions(exercises).length > 0)
         }
       }
-      await authorizeCurrentSession()
+      await authorizeCurrentSession(generation)
     } catch {
-      if (attempt !== initializationAttemptRef.current) return
+      if (!isCurrentSessionLifecycle(generation) || attempt !== initializationAttemptRef.current) return
       setAuthorizationState('error')
       setAuthorizationError(t('No se pudo recuperar la sesión. Inténtalo nuevamente.'))
     }
-  }, [authorizeCurrentSession, exercises, initSession, prescriptionLocked, restoreSession, t, userId, workoutId, workoutName])
+  }, [authorizeCurrentSession, exercises, initSession, isCurrentSessionLifecycle, prescriptionLocked, restoreSession, t, userId, workoutId, workoutName])
 
   useEffect(() => {
-    void prepareCurrentSession()
+    const generation = sessionLifecycleRef.current.generation + 1
+    sessionLifecycleRef.current = { generation, active: true }
+    void prepareCurrentSession(generation)
     return () => {
+      if (sessionLifecycleRef.current.generation === generation) sessionLifecycleRef.current.active = false
       initializationAttemptRef.current += 1
       authorizationAttemptRef.current += 1
     }
@@ -204,15 +241,44 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
   useWakeLock(!isFinished)
 
   if (authorizationState !== 'ready') {
+    const needsProfessional = readinessStatus === 'professional_clearance_required'
+    const readinessDescription = t('Revisa tus respuestas antes de continuar con este entrenamiento.')
     return (
-      <main className="flex min-h-[60vh] items-center justify-center px-6" aria-live="polite">
-        <div className="w-full max-w-sm space-y-4 text-center">
-          <p role={authorizationState === 'error' ? 'alert' : 'status'} className="text-sm text-muted-foreground">
+      <main className="flex min-h-[60vh] items-center justify-center px-4 py-6" aria-live="polite">
+        <section className="w-full max-w-sm space-y-4 rounded-3xl border border-border/60 bg-card p-6 text-center shadow-sm">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary" aria-hidden="true">
+            {authorizationState === 'authorizing'
+              ? <LoaderCircle className="h-6 w-6 animate-spin motion-reduce:animate-none" />
+              : needsProfessional ? <ShieldAlert className="h-6 w-6" /> : <ClipboardCheck className="h-6 w-6" />}
+          </span>
+          {readinessStatus ? (
+            <h1 className="font-display text-2xl font-bold leading-tight">
+              {needsProfessional ? t('Necesitas autorización profesional') : t('Completa tu preparación')}
+            </h1>
+          ) : null}
+          <p role={authorizationState === 'error' ? 'alert' : 'status'} className="text-sm leading-relaxed text-muted-foreground">
             {authorizationState === 'authorizing'
               ? t('Preparando sesión…')
-              : authorizationError ?? t('No se pudo preparar la sesión.')}
+              : needsProfessional
+                ? t('Tus respuestas indican que necesitas autorización de un profesional de salud antes de comenzar. Revisa tus respuestas si tu situación ha cambiado.')
+                : readinessStatus === 'pending' ? readinessDescription
+                  : authorizationError ?? t('No se pudo preparar la sesión.')}
           </p>
-          {authorizationState === 'error' && (
+          {authorizationState === 'error' && readinessStatus ? (
+            <div className="grid gap-2">
+              <button
+                ref={readinessTriggerRef}
+                type="button"
+                onClick={() => setReadinessOpen(true)}
+                className="min-h-11 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {needsProfessional ? t('Revisar respuestas') : t('Completar preparación')}
+              </button>
+              <Link href="/plan" className="inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {t('Volver al plan')}
+              </Link>
+            </div>
+          ) : authorizationState === 'error' ? (
             <button
               type="button"
               onClick={() => void prepareCurrentSession()}
@@ -220,8 +286,20 @@ export function SessionClient({ userId, workoutId, workoutName, exercises, exerc
             >
               {t('Reintentar autorización')}
             </button>
-          )}
-        </div>
+          ) : null}
+        </section>
+        <ReadinessReviewDialog
+          open={readinessOpen}
+          onOpenChange={setReadinessOpen}
+          title={t('Preparación antes de entrenar')}
+          description={readinessDescription}
+          submitLabel={t('Guardar y continuar')}
+          onSaved={() => { void authorizeCurrentSession(readinessGeneration) }}
+          onCloseAutoFocus={event => {
+            event.preventDefault()
+            readinessTriggerRef.current?.focus()
+          }}
+        />
       </main>
     )
   }

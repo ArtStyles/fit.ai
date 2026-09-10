@@ -14,10 +14,6 @@ vi.mock('react', async importOriginal => ({
   useActionState: () => [actionState, vi.fn()],
 }))
 
-vi.mock('../SettingsSaveBar', () => ({
-  SettingsSaveBar: () => <button type="submit">Save</button>,
-}))
-
 function renderForm() {
   return renderToStaticMarkup(
     <I18nProvider language="en" syncDocumentLanguage={false}>

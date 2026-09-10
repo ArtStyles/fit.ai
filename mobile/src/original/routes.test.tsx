@@ -14,6 +14,11 @@ vi.mock('@/app/(app)/session/[workoutId]/page', () => ({
 import { loadOriginalRoute, matchOriginalRoute } from './routes'
 
 describe('original application routes in the local bundle', () => {
+  it('opens the companion page offline so cached summaries and message drafts remain available', () => {
+    const match = matchOriginalRoute('/companion')
+    expect(match?.route.source).toBe('src/app/(app)/companion/page.tsx')
+    expect(match?.route.connectivity).toBe('local')
+  })
   it('keeps the existing five personal destinations and their real page modules', () => {
     for (const pathname of ['/dashboard', '/plan', '/entrenar', '/progress', '/trainers']) {
       const match = matchOriginalRoute(pathname)

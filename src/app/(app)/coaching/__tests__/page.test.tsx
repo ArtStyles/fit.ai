@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import { createClient } from '@supabase/supabase-js'
 
 const { requireAppUserContext } = vi.hoisted(() => ({
   requireAppUserContext: vi.fn(),
@@ -7,7 +8,7 @@ const { requireAppUserContext } = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth/server', () => ({ requireAppUserContext }))
 vi.mock('@/components/coaching/ClientCoachingStatus', () => ({
-  ClientCoachingStatus: ({ requests, relationship }: { requests: Array<{ trainerName: string; serviceName: string }>; relationship?: { id: string; status: string; trainerName: string; serviceName: string } }) => <>{relationship ? <p>{`relationship:${relationship.status}:${relationship.trainerName}:${relationship.serviceName}`}</p> : null}<p>{requests.length ? requests.map(request => `${request.trainerName}:${request.serviceName}`).join(',') : !relationship ? 'No tienes solicitudes de acompañamiento.' : ''}</p></>,
+  ClientCoachingStatus: ({ requests, relationship, children }: { requests: Array<{ trainerName: string; serviceName: string }>; relationship?: { id: string; status: string; trainerName: string; serviceName: string }; children?: React.ReactNode }) => <>{relationship ? <p>{`relationship:${relationship.status}:${relationship.trainerName}:${relationship.serviceName}`}</p> : null}{children}<p>{requests.length ? requests.map(request => `${request.trainerName}:${request.serviceName}`).join(',') : !relationship ? 'No tienes solicitudes de acompañamiento.' : ''}</p></>,
 }))
 vi.mock('@/components/coaching/ConsentManager', () => ({
   ConsentManager: ({ relationshipId, consents }: { relationshipId: string; consents: unknown[] }) => <><p>consents:{relationshipId}</p><p>consent-count:{consents.length}</p></>,
@@ -262,6 +263,41 @@ describe('CoachingPage', () => {
     expect(html).not.toContain('Aceptar rutina')
     expect(html).not.toContain('No aceptar rutina')
     expect(html).not.toContain('consents:')
+  })
+
+  it('loads the active routine version when the assignment schema has two foreign-key relationships', async () => {
+    const current = proposedAssignmentFixture('relationship-current')[0]
+    const historical = {
+      ...current.trainer_assignment_versions[0],
+      id: '99999999-9999-4999-8999-999999999999',
+      status: 'superseded',
+      snapshot: { ...current.trainer_assignment_versions[0].snapshot, name: 'Rutina anterior' },
+    }
+    const database = createClient('https://coaching.test', 'test-public-key', {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: async input => {
+        const url = new URL(String(input))
+        // PostgREST exposes both assignments.active_version_id and versions.assignment_id.
+        // An unqualified embed is ambiguous even when the client owns both rows.
+        const selection = url.searchParams.get('select') ?? ''
+        if (!selection.includes('trainer_assignment_versions!trainer_assignment_versions_assignment_id_fkey(')) {
+          return new Response(JSON.stringify({ code: 'PGRST201', message: 'More than one relationship found' }), { status: 300 })
+        }
+        return new Response(JSON.stringify([{ ...current, trainer_assignment_versions: [historical, ...current.trainer_assignment_versions] }]), { status: 200 })
+      } },
+    })
+    const supabase = requestQuery({ data: [], error: null })
+    const defaultFrom = supabase.from.getMockImplementation()!
+    supabase.from.mockImplementation(table => table === 'trainer_plan_assignments' ? database.from(table) : defaultFrom(table))
+    requireAppUserContext.mockResolvedValue({ user: { id: 'client-1' }, supabase })
+    const { default: CoachingPage } = await import('../page')
+
+    const html = renderToStaticMarkup(await CoachingPage())
+
+    expect(html).toContain('Rutina con detalle pendiente')
+    expect(html).toContain('Prioriza la técnica.')
+    expect(html).not.toContain('Rutina anterior')
+    expect(html).not.toContain('No se pudieron cargar tus rutinas asignadas.')
   })
 
   it('preserves the library destination when historical snapshot details are incomplete', async () => {

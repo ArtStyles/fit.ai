@@ -3,6 +3,7 @@ import { authorizeInState } from './authorizeSession'
 import { saveInState, type SaveSessionPayload } from './saveSession'
 import { changeMeasurement } from './measurements'
 import { createManualInState, reorderInState } from './plan'
+import { applyReadiness, type ReadinessReviewInput } from './readiness'
 import type { AppState } from '../storage'
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -17,6 +18,10 @@ function fixture(): AppState {
   } }
 }
 const now = new Date('2026-09-08T15:00:00.000Z')
+const review: ReadinessReviewInput = {
+  activityLevel: 'insufficiently_active', cardioPreferences: ['walking'], warningSymptoms: [],
+  knownDisease: false, recentSurgery: false, medicallyCleared: false, limitations: [],
+}
 function payload(): SaveSessionPayload {
   return { clientSessionId: id(6), workoutId: id(3), startedAt: now.getTime(), finishedAt: now.getTime() + 60_000, moodRating: 4, exercises: [{ workoutExerciseId: id(4), exerciseId: id(5), name: 'Sentadilla', targetSets: 2, targetReps: 8, targetRpe: 8, status: 'completed', sets: [{ weightKg: '20', reps: '8', rpe: 7, completed: true }, { weightKg: '22', reps: '9', rpe: 8, completed: true }] }] }
 }
@@ -44,14 +49,70 @@ describe('original screen action contracts', () => {
     expect(state.tables.session_authorizations[0].policy_date).toBe('2026-09-08')
     expect(Date.parse(state.tables.session_authorizations[0].expires_at)).toBe(now.getTime() + 12 * 60 * 60_000)
   })
-  it('rejects readiness blocks and a second session on the same day', async () => {
+  it.each(['pending', null, undefined, 'unexpected_status'])('identifies %s readiness as needing review without creating a lease', async readinessStatus => {
     const state = fixture()
-    state.tables.profiles[0].readiness_status = 'professional_clearance_required'
-    expect((await authorizeInState(state, id(6), id(3), now)).success).toBe(false)
-    state.tables.profiles[0].readiness_status = 'cleared'
+    state.tables.profiles[0].readiness_status = readinessStatus
+    const before = structuredClone(state)
+    expect(await authorizeInState(state, id(6), id(3), now)).toEqual({
+      success: false, error: 'Completa la revisión de preparación antes de entrenar.', readinessStatus: 'pending', authorizationAbsent: true,
+    })
+    expect(state).toEqual(before)
+    expect(state.tables.session_authorizations).toHaveLength(0)
+  })
+  it.each(['cleared', 'modified'] as const)('authorizes the same attempt only after the saved review calculates %s', async expectedStatus => {
+    const state = fixture()
+    state.tables.profiles[0].readiness_status = 'pending'
+    expect(await authorizeInState(state, id(6), id(3), now)).toMatchObject({ success: false, readinessStatus: 'pending' })
+    expect(state.tables.session_authorizations).toHaveLength(0)
+    const limitations: ReadinessReviewInput['limitations'] = expectedStatus === 'modified'
+      ? [{ region: 'knee', side: 'left', status: 'stable', movementsToAvoid: ['deep_squat'], clinicianCleared: true }]
+      : []
+    expect(applyReadiness(state.tables.profiles[0], { ...review, limitations })).toBe(expectedStatus)
+    const authorized = await authorizeInState(state, id(6), id(3), now)
+    expect(authorized.success).toBe(true)
+    expect(state.tables.session_authorizations).toHaveLength(1)
+    expect(state.tables.session_authorizations[0].client_session_id).toBe(id(6))
+    expect(await authorizeInState(state, id(6), id(3), now)).toEqual(authorized)
+    expect(state.tables.session_authorizations).toHaveLength(1)
+  })
+  it('keeps professional clearance blocked after saving until the existing readiness calculation clears it', async () => {
+    const state = fixture()
+    const warningReview = { ...review, warningSymptoms: ['self_reported_warning_symptom'] }
+    expect(applyReadiness(state.tables.profiles[0], warningReview)).toBe('professional_clearance_required')
+    const blocked = {
+      success: false,
+      error: 'Tu revisión de preparación requiere autorización profesional antes de entrenar.',
+      readinessStatus: 'professional_clearance_required',
+      authorizationAbsent: true,
+    }
+    expect(await authorizeInState(state, id(6), id(3), now)).toEqual(blocked)
+    expect(state.tables.session_authorizations).toHaveLength(0)
+    applyReadiness(state.tables.profiles[0], warningReview)
+    expect(await authorizeInState(state, id(6), id(3), now)).toEqual(blocked)
+    expect(state.tables.session_authorizations).toHaveLength(0)
+    expect(applyReadiness(state.tables.profiles[0], { ...warningReview, medicallyCleared: true })).toBe('cleared')
+    expect((await authorizeInState(state, id(6), id(3), now)).success).toBe(true)
+    expect(state.tables.session_authorizations).toHaveLength(1)
+  })
+  it('preserves an existing valid lease before evaluating readiness for new attempts', async () => {
+    const state = fixture()
+    const authorized = await authorizeInState(state, id(6), id(3), now)
+    applyReadiness(state.tables.profiles[0], { ...review, recentSurgery: true })
+    expect(await authorizeInState(state, id(6), id(3), now)).toEqual(authorized)
+    expect(await authorizeInState(state, id(7), id(3), now)).toMatchObject({ success: false, readinessStatus: 'professional_clearance_required' })
+    expect(state.tables.session_authorizations).toHaveLength(1)
+  })
+  it('rejects a second session on the same day', async () => {
+    const state = fixture()
     await authorizeInState(state, id(6), id(3), now)
     await saveInState(state, payload(), new Date(now.getTime() + 60_000))
-    expect((await authorizeInState(state, id(7), id(3), now)).success).toBe(false)
+    expect(await authorizeInState(state, id(7), id(3), now)).toMatchObject({ success: false, authorizationAbsent: true })
+    expect((await authorizeInState(state, id(6), id(3), now)).success).toBe(true)
+  })
+  it('never declares an existing expired lease absent', async () => {
+    const state = fixture()
+    await authorizeInState(state, id(6), id(3), now)
+    expect(await authorizeInState(state, id(6), id(3), new Date(now.getTime() + 13 * 60 * 60_000))).toEqual({ success: false, error: 'La autorización de esta sesión expiró. Inicia una nueva sesión.' })
   })
   it('retains all eight optional measurement fields and their original validation', () => {
     const state = fixture()

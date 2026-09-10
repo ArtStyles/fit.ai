@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { VerifyCodeStep } from '../register/VerifyCodeStep'
-import { isEmailNotConfirmedError } from './authError'
+import { getLoginErrorMessage, isEmailNotConfirmedError } from './authError'
 
 type LoginFieldErrors = {
   email?: string
@@ -33,24 +33,6 @@ function validateLogin(email: string, password: string): LoginFieldErrors {
   return errors
 }
 
-function getLoginErrorMessage(message: string) {
-  const normalized = message.toLowerCase()
-
-  if (normalized.includes('invalid login credentials')) {
-    return 'Correo o contraseña incorrectos.'
-  }
-
-  if (normalized.includes('email not confirmed')) {
-    return 'Confirma tu correo antes de iniciar sesión.'
-  }
-
-  if (normalized.includes('too many requests') || normalized.includes('rate limit')) {
-    return 'Demasiados intentos. Espera un momento e intenta de nuevo.'
-  }
-
-  return 'No se pudo iniciar sesión. Revisa tus datos e intenta nuevamente.'
-}
-
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null
 
@@ -68,6 +50,13 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
+
+  function showLoginError(reason: unknown) {
+    const message = getLoginErrorMessage(reason)
+    setError(message)
+    setLoading(false)
+    showToast({ title: 'No se pudo iniciar sesión', description: message, variant: 'error' })
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -92,10 +81,21 @@ export function LoginForm() {
       return
     }
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    let authError
+    try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        showLoginError({ code: 'offline' })
+        return
+      }
+      const supabase = createClient()
+      const result = await supabase.auth.signInWithPassword({ email, password })
+      authError = result.error
+    } catch (reason) {
+      showLoginError(reason)
+      return
+    }
 
-    if (error && isEmailNotConfirmedError(error)) {
+    if (authError && isEmailNotConfirmedError(authError)) {
       setLoading(false)
       setVerifyEmail(email)
       showToast({
@@ -106,15 +106,8 @@ export function LoginForm() {
       return
     }
 
-    if (error) {
-      const message = getLoginErrorMessage(error.message)
-      setError(message)
-      showToast({
-        title: 'No se pudo iniciar sesión',
-        description: message,
-        variant: 'error',
-      })
-      setLoading(false)
+    if (authError) {
+      showLoginError(authError)
       return
     }
 

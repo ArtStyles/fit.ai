@@ -1,7 +1,7 @@
 import { chromium, expect } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
-import initSqlJs from 'sql.js'
+import { installAccountFixture, newTestAccount, storedAccountSnapshot } from './account-fixture.mjs'
 
 const origin = process.env.MOBILE_PREVIEW_URL || 'http://127.0.0.1:4178'
 const artifacts = '.artifacts/original-journey'
@@ -16,22 +16,9 @@ async function screenshot(name) {
   await page.screenshot({ path: `${artifacts}/${name}.png`, fullPage: true })
 }
 async function readStoredState() {
-  const bytes = await page.evaluate(() => new Promise((resolve, reject) => {
-    const request = indexedDB.open('vekira-mobile-sqlite', 1)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => {
-      const database = request.result
-      const read = database.transaction('databases').objectStore('databases').get('vekira-offline')
-      read.onerror = () => reject(read.error)
-      read.onsuccess = () => { resolve(Array.from(read.result)); database.close() }
-    }
-  }))
-  const SQL = await initSqlJs()
-  const db = new SQL.Database(new Uint8Array(bytes))
-  try {
-    const rows = db.exec("SELECT state_json FROM original_app_accounts WHERE account_id = (SELECT value FROM original_app_settings WHERE key = 'active_account')")
-    return JSON.parse(rows[0].values[0][0])
-  } finally { db.close() }
+  const { active, accounts } = await storedAccountSnapshot(page)
+  assert.ok(active, 'journey requires a previously authenticated active account')
+  return accounts.find(account => account.accountId === active)
 }
 
 try {
@@ -42,8 +29,11 @@ try {
   page.setDefaultTimeout(15000)
   await page.clock.setFixedTime(new Date('2026-09-07T15:00:00.000Z'))
   page.on('pageerror', error => errors.push(error.message))
-  await page.goto(origin)
-  await page.getByRole('button', { name: 'Usar sin conexión', exact: true }).click()
+  await page.goto(`${origin}/login`)
+  await expect(page.getByLabel('Correo electrónico', { exact: true })).toBeVisible()
+  await expect(page.getByText('Opciones sin conexión', { exact: true })).toHaveCount(0)
+  await installAccountFixture(page, await newTestAccount({ linked: false }))
+  await page.goto(`${origin}/onboarding`)
   await page.getByLabel('Nombre completo', { exact: true }).fill('Prueba original')
   await page.getByLabel('Nombre de usuario', { exact: true }).fill('prueba_original')
   await page.getByRole('button', { name: /Ganar músculo/ }).click()
@@ -149,14 +139,14 @@ try {
     console.log(`Checking original route ${route}`)
     await page.goto(`${origin}${route}`)
     await page.getByRole('navigation', { name: 'Navegación principal', exact: true }).waitFor()
-    await expect(page.getByText('Abriendo tus datos…', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('status').filter({ hasText: 'Preparando tu espacio' })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: /No se pudo abrir esta pantalla|No se pudo mostrar esta pantalla/ })).toHaveCount(0)
     if (route === '/exercises') {
       await page.getByRole('heading', { name: 'Biblioteca de ejercicios', exact: true }).waitFor()
       await page.getByPlaceholder('Buscar ejercicios…', { exact: true }).fill('Sentadilla')
       await page.getByPlaceholder('Buscar ejercicios…', { exact: true }).press('Enter')
       await page.waitForURL(/search=Sentadilla/)
-      await expect(page.getByText('Abriendo tus datos…', { exact: true })).toHaveCount(0)
+      await expect(page.getByRole('status').filter({ hasText: 'Preparando tu espacio' })).toHaveCount(0)
       await expect(page.getByRole('heading', { name: /No se pudo abrir esta pantalla|No se pudo mostrar esta pantalla/ })).toHaveCount(0)
       await expect(page.getByRole('button', { name: /^Sentadilla/ }).first()).toBeVisible()
       await screenshot('catalogue-390')

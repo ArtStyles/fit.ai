@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(MusicSessionPlugin.class);
         registerPlugin(LegacyRecoveryPlugin.class);
+        registerPlugin(NavigationFeedbackPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Let the WebView draw behind both system bars. Capacitor 8's bundled

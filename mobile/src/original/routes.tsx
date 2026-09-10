@@ -32,6 +32,7 @@ export const originalRoutes: readonly OriginalRouteDefinition[] = [
   route('/register', () => import('@/app/(auth)/register/page'), 'local', 'src/app/(auth)/register/page.tsx'),
   route('/suspended', () => import('@/app/suspended/page'), 'local', 'src/app/suspended/page.tsx'),
   route('/dashboard', () => import('@/app/(app)/dashboard/page')),
+  route('/companion', () => import('@/app/(app)/companion/page')),
   route('/plan', () => import('@/app/(app)/plan/page')),
   route('/entrenar', () => import('@/app/(app)/entrenar/page')),
   route('/session/:workoutId', () => import('@/app/(app)/session/[workoutId]/page')),

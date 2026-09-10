@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, expect as pwExpect, type Browser, type Page } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -653,7 +654,7 @@ describe('account workspace responsive acceptance in a local browser', () => {
     }
   })
 
-  it('uses only the sidebar account trigger on desktop dashboard', async () => {
+  it('opens the same account menu from dashboard greeting on desktop and retains the sidebar', async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
     const page = await context.newPage()
     try {
@@ -661,10 +662,114 @@ describe('account workspace responsive acceptance in a local browser', () => {
       await pwExpect(page.locator('header')).toContainText('Buenos días, Ana')
       await pwExpect(page.locator('header')).toContainText('sábado, 5 de septiembre')
       const visibleTrigger = page.locator('[data-account-workspace-trigger]:visible')
-      await pwExpect(visibleTrigger).toHaveCount(1)
+      await pwExpect(visibleTrigger).toHaveCount(2)
       await pwExpect(page.locator('aside:visible').locator('[data-account-workspace-trigger]:visible'))
         .toHaveCount(1)
-      await pwExpect(page.locator('main [data-account-workspace-trigger]:visible')).toHaveCount(0)
+      const greeting = page.locator('header [data-account-workspace-trigger]:visible')
+      await pwExpect(greeting).toContainText('Buenos días, Ana')
+      await pwExpect(greeting).toHaveAccessibleName(/^Abrir cuenta y espacios.*sábado, 5 de septiembre.*Buenos días, Ana/)
+      await greeting.focus()
+      await page.keyboard.press('Enter')
+      await pwExpect(page.getByRole('menu')).toBeVisible()
+      await pwExpect(page.getByRole('menuitem', { name: 'Perfil personal' })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await pwExpect(page.getByRole('menu')).toHaveCount(0)
+      await pwExpect(greeting).toBeFocused()
+    } finally {
+      await context.close()
+    }
+  })
+
+  it.each([
+    { width: 320, height: 800 },
+    { width: 390, height: 844 },
+    { width: 640, height: 800 },
+    { width: 1280, height: 800 },
+  ])('separates dashboard photo preview from account access at $width px', async viewport => {
+    const context = await browser.newContext({ viewport, reducedMotion: 'reduce' })
+    const page = await context.newPage()
+    try {
+      await openFixture(page, 'surface=dashboard&pathname=/dashboard&photo=loaded')
+      const photo = page.getByRole('button', { name: 'Ampliar foto de perfil' })
+      const greeting = page.locator('header [data-account-workspace-trigger]:visible')
+      const viewer = page.getByRole('dialog', { name: 'Foto de perfil', exact: true })
+      await pwExpect(photo).toBeEnabled()
+      await pwExpect(greeting).toContainText('Buenos días, Ana')
+      await pwExpect(greeting).toHaveAccessibleName(/^Abrir cuenta y espacios.*sábado, 5 de septiembre.*Buenos días, Ana/)
+      await pwExpect(greeting.locator('img, a')).toHaveCount(0)
+      await expectWorkspaceChromeContained(page)
+
+      await photo.focus()
+      await page.keyboard.press('Enter')
+      await pwExpect(viewer).toBeVisible()
+      await pwExpect(page.getByRole('dialog', { name: 'Cuenta y espacios' })).toHaveCount(0)
+      const fullPhoto = viewer.getByRole('img', { name: 'Ana Pérez Entrenamiento de Rendimiento' })
+      await pwExpect(fullPhoto).toBeVisible()
+      expect(await fullPhoto.evaluate(image => {
+        const photoNode = image as HTMLImageElement
+        const rect = photoNode.getBoundingClientRect()
+        return {
+          loaded: photoNode.complete && photoNode.naturalWidth > 0,
+          fit: getComputedStyle(photoNode).objectFit,
+          inViewport: rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight,
+        }
+      })).toEqual({ loaded: true, fit: 'contain', inViewport: true })
+      await capture(page, `dashboard-photo-${viewport.width}.png`)
+      const photoAudit = await new AxeBuilder({ page }).include('[role="dialog"]').analyze()
+      expect(photoAudit.violations.filter(violation => (
+        violation.impact === 'critical' || violation.impact === 'serious'
+      ))).toEqual([])
+
+      await page.keyboard.press('Escape')
+      await pwExpect(viewer).toHaveCount(0)
+      await pwExpect(photo).toBeFocused()
+      await photo.click()
+      await pwExpect(viewer).toBeVisible()
+      await viewer.getByRole('button', { name: 'Cerrar' }).click()
+      await pwExpect(viewer).toHaveCount(0)
+      await pwExpect(photo).toBeFocused()
+      await photo.click()
+      await pwExpect(viewer).toBeVisible()
+      await page.locator('div.fixed.inset-0[data-state="open"]').click({ position: { x: 2, y: 100 } })
+      await pwExpect(viewer).toHaveCount(0)
+      await pwExpect(photo).toBeFocused()
+      await photo.click()
+      await pwExpect(viewer).toBeVisible()
+      expect(await page.evaluate(() => (window as unknown as WorkspaceWindow).__ANDROID_BACK__())).toBe(true)
+      await pwExpect(viewer).toHaveCount(0)
+      await pwExpect(photo).toBeFocused()
+
+      await greeting.click()
+      const accountMenu = viewport.width >= 1024
+        ? page.getByRole('menu')
+        : page.getByRole('dialog', { name: 'Cuenta y espacios' })
+      await pwExpect(accountMenu).toBeVisible()
+      await pwExpect(accountMenu.getByText('ana.entrenamiento.muy.largo@example.com')).toBeVisible()
+      await pwExpect(viewer).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await pwExpect(accountMenu).toHaveCount(0)
+      await pwExpect(greeting).toBeFocused()
+      await capture(page, `dashboard-account-text-${viewport.width}.png`)
+      const headerAudit = await new AxeBuilder({ page }).include('header').analyze()
+      expect(headerAudit.violations.filter(violation => (
+        violation.impact === 'critical' || violation.impact === 'serious'
+      ))).toEqual([])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it.each(['missing', 'failed'])('uses an inert fallback for a $s dashboard photo while keeping account access', async photoState => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await context.newPage()
+    try {
+      await openFixture(page, `surface=dashboard&pathname=/dashboard&photo=${photoState}`)
+      await pwExpect(page.getByRole('img', { name: 'Foto de perfil', exact: true })).toBeVisible()
+      await pwExpect(page.getByRole('button', { name: 'Ampliar foto de perfil' })).toHaveCount(0)
+      await page.getByRole('img', { name: 'Foto de perfil', exact: true }).click()
+      await pwExpect(page.getByRole('dialog')).toHaveCount(0)
+      await page.locator('header [data-account-workspace-trigger]:visible').click()
+      await pwExpect(page.getByRole('dialog', { name: 'Cuenta y espacios' })).toBeVisible()
     } finally {
       await context.close()
     }

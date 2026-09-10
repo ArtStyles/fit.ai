@@ -6,7 +6,7 @@ import { PendingLink } from './PendingLink'
 import { getAppNavIcon, isAppNavItemActive } from './appNavigation'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/components/i18n/I18nProvider'
-import { hapticImpact } from '@/lib/native/haptics'
+import { navigationTapFeedback } from '@/lib/native/navigationFeedback'
 import type { Workspace } from '@/lib/coaching/workspace'
 import { ChevronUp, Trash2 } from 'lucide-react'
 import {
@@ -136,6 +136,7 @@ export function shouldShowActiveWorkoutDock({
 }): boolean {
   return workspace === 'personal'
     && snapshot !== null
+    && snapshot.activationState !== 'preparing'
     && !isRouteWithinPrefix(pathname, '/session')
 }
 
@@ -286,7 +287,10 @@ export function BottomNav() {
               showSpinner={false}
               aria-label={t(label)}
               aria-current={isActive ? 'page' : undefined}
-              onClick={() => { void hapticImpact('light') }}
+              onClick={event => {
+                if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                void navigationTapFeedback()
+              }}
               className="group relative flex min-w-0 cursor-pointer touch-manipulation flex-col items-center justify-center px-0 py-1.5 outline-none [aria-busy=true]:opacity-100"
             >
               <span

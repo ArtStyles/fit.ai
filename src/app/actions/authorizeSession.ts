@@ -2,11 +2,11 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { parseSessionContextSnapshot, type SessionContextSnapshotV1 } from '@/lib/session/contextSnapshot'
-import { authorizationErrorMessage } from '@/lib/session/authorization'
+import { authorizationErrorMessage, type SessionReadinessBlock } from '@/lib/session/authorization'
 
 export type AuthorizeSessionStartResult =
   | { success: true; contextSnapshot: SessionContextSnapshotV1 }
-  | { success: false; error: string }
+  | { success: false; error: string; readinessStatus?: SessionReadinessBlock; authorizationAbsent?: true }
 
 export type ReleaseSessionAuthorizationResult =
   | { success: true }

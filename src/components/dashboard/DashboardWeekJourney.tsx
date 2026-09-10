@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   CheckCircle2,
@@ -265,7 +265,7 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
   )
 }
 
-export function DashboardWeekJourney({ dashboard }: { dashboard: DashboardViewModel }) {
+export function DashboardWeekJourney({ dashboard, companion }: { dashboard: DashboardViewModel; companion?: ReactNode }) {
   const { t } = useI18n()
   const currentItem = dashboard.weekly.timeline.find(item => item.position === 'today')
   const beforeToday = currentItem
@@ -296,9 +296,10 @@ export function DashboardWeekJourney({ dashboard }: { dashboard: DashboardViewMo
         {currentItem && <JourneySegment items={beforeToday} title={t('Pasado')} />}
       </div>
 
-      {currentItem && (
-        <div className="py-4 lg:col-start-2 lg:row-start-1 lg:py-0">
-          <TodayJourneyCard today={dashboard.today} />
+      {(currentItem || companion) && (
+        <div className="space-y-4 py-4 lg:col-start-2 lg:row-start-1 lg:py-0">
+          {currentItem && <TodayJourneyCard today={dashboard.today} />}
+          {companion}
         </div>
       )}
 

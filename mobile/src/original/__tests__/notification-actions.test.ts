@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NodeSqliteDriver } from '../../data/__tests__/node-sqlite-driver'
-import { createAppStore, setAppStoreForTests, type AppState } from '../storage'
+import { createAppStore, setAppStoreForTests, type AppRow, type AppState } from '../storage'
 
 const mocks = vi.hoisted(() => ({ remote: null as any }))
 vi.mock('../bridge-client', () => ({ get remote() { return mocks.remote } }))
@@ -20,7 +20,139 @@ async function setup(linked = false) {
   } }
   await store.create(state); return store
 }
+
+function remotePage(rows: AppRow[], options: { countError?: boolean; beforeResponse?: () => Promise<void> } = {}) {
+  vi.stubGlobal('navigator', { onLine: true })
+  mocks.remote = {
+    auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) },
+    from: () => {
+      let head = false
+      const query = {
+        select: (_columns: string, selectOptions?: { head?: boolean }) => { head = !!selectOptions?.head; return query },
+        eq: () => query, is: () => query, order: () => query, limit: () => query, or: () => query,
+        update: () => query, maybeSingle: async () => ({ data: { id: NOTICE }, error: null }),
+        then: async (resolve: (value: unknown) => void) => {
+          await options.beforeResponse?.()
+          return resolve(head ? { count: rows.filter(row => !row.read_at).length, error: options.countError ? { message: 'count unavailable' } : null }
+            : { data: rows, error: null })
+        },
+      }
+      return query
+    },
+  }
+}
 describe('original notification actions', () => {
+  it('reconciles a remotely empty inbox so cached unread notifications do not return offline', async () => {
+    const store = await setup(true)
+    remotePage([])
+    expect(await listProductNotifications()).toMatchObject({ notifications: [], unreadCount: 0 })
+    vi.stubGlobal('navigator', { onLine: false })
+    expect(await listProductNotifications()).toMatchObject({ notifications: [], unreadCount: 0 })
+    expect((await store.read())?.tables.product_notifications).toEqual([])
+  })
+
+  it('reconciles only the fetched range, preserving older cached pages and newer rows on page two', async () => {
+    const store = await setup(true)
+    const sample = (await store.read())!.tables.product_notifications[0]
+    const rows = Array.from({ length: 35 }, (_, index) => ({ ...sample,
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      created_at: `2026-09-${String(index < 31 ? 10 : 9).padStart(2, '0')}T12:00:00.000Z`,
+    })).sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
+    await store.mutate(draft => { draft.tables.product_notifications = rows })
+    remotePage(rows.slice(0, 31))
+    const first = await listProductNotifications()
+    expect((await store.read())?.tables.product_notifications).toHaveLength(35)
+    remotePage(rows.slice(30, 34)) // The oldest notification was removed remotely.
+    const second = await listProductNotifications({ cursor: first.nextCursor })
+    expect(second.notifications).toHaveLength(4)
+    vi.stubGlobal('navigator', { onLine: false })
+    const cached = (await store.read())!.tables.product_notifications
+    expect(cached).toHaveLength(34)
+    expect(cached.some(row => row.id === rows[0].id)).toBe(true)
+    expect(cached.some(row => row.id === rows[34].id)).toBe(false)
+  })
+
+  it('does not substitute an old cached unread count when the live count fails', async () => {
+    await setup(true)
+    remotePage([], { countError: true })
+    expect(await listProductNotifications()).toMatchObject({ notifications: [], unreadCount: null })
+  })
+
+  it('discards an in-flight remote notification response after logout', async () => {
+    const store = await setup(true)
+    const rows = (await store.read())!.tables.product_notifications
+    let deactivated = false
+    remotePage(rows, { beforeResponse: async () => {
+      if (!deactivated) { deactivated = true; await store.deactivate() }
+    } })
+    expect(await listProductNotifications()).toMatchObject({ notifications: [], unreadCount: null, error: expect.any(String) })
+    expect(await store.read()).toBeNull()
+  })
+
+  it.each(['read', 'dismiss'] as const)('does not restore unread activity from a GET started before a confirmed %s', async action => {
+    const store = await setup(true)
+    const rows = (await store.read())!.tables.product_notifications
+    let release!: () => void
+    let started!: () => void
+    const pending = new Promise<void>(resolve => { release = resolve })
+    const requested = new Promise<void>(resolve => { started = resolve })
+    remotePage(rows, { beforeResponse: async () => { started(); await pending } })
+    const request = listProductNotifications()
+    await requested
+    expect(await (action === 'read' ? markProductNotificationRead(NOTICE) : dismissProductNotification(NOTICE))).toEqual({ ok: true })
+    release()
+    const page = await request
+    expect(page.unreadCount).toBeNull()
+    if (action === 'dismiss') expect(page.notifications).toEqual([])
+    else expect(page.notifications[0].readAt).toEqual(expect.any(String))
+    vi.stubGlobal('navigator', { onLine: false })
+    expect((await listProductNotifications()).unreadCount).toBe(0)
+  })
+
+  it('keeps a notification cached by a newer refresh when an older empty response finishes', async () => {
+    const store = await setup(true)
+    const sample = (await store.read())!.tables.product_notifications[0]
+    await store.mutate(draft => { draft.tables.product_notifications = [] })
+    remotePage([], { beforeResponse: async () => {
+      await store.mutate(draft => { draft.tables.product_notifications = [sample] })
+    } })
+    const page = await listProductNotifications()
+    expect(page.notifications.map(row => row.id)).toEqual([NOTICE])
+    expect(page.unreadCount).toBeNull()
+    vi.stubGlobal('navigator', { onLine: false })
+    expect((await listProductNotifications()).unreadCount).toBe(1)
+  })
+
+  it('keeps a newer empty inbox when an earlier response still contains the removed activity', async () => {
+    const store = await setup(true)
+    const rows = (await store.read())!.tables.product_notifications
+    remotePage(rows, { beforeResponse: async () => {
+      await store.mutate(draft => { draft.tables.product_notifications = [] })
+    } })
+    expect((await listProductNotifications()).notifications).toEqual([])
+    vi.stubGlobal('navigator', { onLine: false })
+    expect((await listProductNotifications()).unreadCount).toBe(0)
+  })
+
+  it('retains the remote next-page cursor when a concurrent archive shrinks a full page', async () => {
+    const store = await setup(true)
+    const sample = (await store.read())!.tables.product_notifications[0]
+    const rows = Array.from({ length: 31 }, (_, index) => ({ ...sample,
+      id: `10000000-0000-4000-8000-${String(31 - index).padStart(12, '0')}`,
+    }))
+    await store.mutate(draft => { draft.tables.product_notifications = rows })
+    let archived = false
+    remotePage(rows, { beforeResponse: async () => {
+      if (archived) return
+      archived = true
+      expect(await dismissProductNotification(rows[0].id)).toEqual({ ok: true })
+    } })
+    const page = await listProductNotifications()
+    expect(page.notifications).toHaveLength(29)
+    expect(page.notifications.some(row => row.id === rows[0].id)).toBe(false)
+    expect(page.nextCursor).toEqual(expect.any(String))
+  })
+
   it('preserves local preferences and read/dismiss state durably', async () => {
     const store = await setup()
     expect(await updateProductNotificationPreferences({ professionalEnabled: false, pushEnabled: false })).toEqual({ ok: true })

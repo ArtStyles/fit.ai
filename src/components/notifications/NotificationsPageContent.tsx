@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import type {
   NotificationAttentionResult,
   ProductNotificationPage,
@@ -19,7 +18,6 @@ export function NotificationsPageContent({
   initialPage: ProductNotificationPage
   attentionResult: NotificationAttentionResult
 }) {
-  const [unreadCount, setUnreadCount] = useState(initialPage.unreadCount)
   const attention = attentionResult.status === 'ready' ? attentionResult.attention : null
 
   return (
@@ -37,8 +35,6 @@ export function NotificationsPageContent({
 
       <NotificationCenter
         initialPage={initialPage}
-        unreadCount={unreadCount}
-        onNotificationRead={() => setUnreadCount(current => decrementUnreadCount(current))}
         suppressEmptyState={Boolean(attention)}
       />
     </main>

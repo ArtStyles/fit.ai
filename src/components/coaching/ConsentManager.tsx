@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { dateLocale } from '@/lib/i18n'
@@ -85,33 +86,46 @@ export function ConsentManager({ relationshipId, consents }: { relationshipId: s
     }
   }
 
-  return <section aria-labelledby="consent-manager-title" className="mt-6 space-y-3 rounded-3xl border border-border/70 p-5">
-    <div>
-      <h2 id="consent-manager-title" className="text-lg font-bold text-foreground">Tus consentimientos</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Decide qué información puede consultar tu entrenador mientras el acompañamiento esté activo.</p>
-    </div>
-    <article className="rounded-2xl bg-muted/30 p-4">
-      <h3 className="font-semibold text-foreground">Datos para preparar tu rutina — Necesario</h3>
-      {trainingGranted ? <>
-        <p className="mt-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">Autorización activa</p>
-        <ConsentStatus consent={training} />
-        <p className="mt-2 text-sm text-muted-foreground">Al revocar estos datos se finalizará el acompañamiento y se revocarán todos los accesos profesionales.</p>
-        <button type="button" onClick={() => void act('revoke-training')} disabled={busy !== null}
-          className="mt-3 min-h-11 rounded-xl border border-red-500/40 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{busy === 'revoke-training' ? 'Guardando…' : 'Revocar datos de entrenamiento'}</button>
-      </> : <div className="mt-3 rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4">
-        <h4 className="font-semibold text-foreground">Falta un paso para recibir tu rutina</h4>
-        <p className="mt-2 text-sm text-muted-foreground">Confirma que tu entrenador puede consultar tus datos de entrenamiento mientras dure este acompañamiento. Tus medidas corporales no se incluyen.</p>
-        <button type="button" onClick={() => void act('grant-training')} disabled={busy !== null}
-          className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 disabled:opacity-50">{busy === 'grant-training' ? 'Autorizando…' : 'Autorizar datos de entrenamiento'}</button>
-      </div>}
-    </article>
-    <article className="rounded-2xl bg-muted/30 p-4">
-      <h3 className="font-semibold text-foreground">Medidas corporales — Opcional</h3>
-      <ConsentStatus consent={body} />
-      <p className="mt-2 text-sm text-muted-foreground">Puedes autorizar o revocar estas medidas; no finalizará el acompañamiento.</p>
-      <button type="button" onClick={() => void act(bodyGranted ? 'revoke-body' : 'grant-body')} disabled={busy !== null}
-        className="mt-3 min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{busy === 'grant-body' || busy === 'revoke-body' ? 'Guardando…' : bodyGranted ? 'Revocar medidas corporales' : 'Autorizar medidas corporales'}</button>
-    </article>
-    {message.text ? <p {...(message.error ? { role: 'alert' } : { 'aria-live': 'polite' })} className="text-sm text-muted-foreground">{message.text}</p> : null}
+  return <section id="shared-coaching-data" aria-labelledby="consent-manager-title" className="rounded-2xl border border-border/70 bg-card p-4">
+    <h2 id="consent-manager-title" className="text-base font-bold text-foreground">Datos compartidos</h2>
+    <dl className="mt-2 divide-y divide-border/60 text-sm">
+      <div className="flex items-start justify-between gap-4 py-3">
+        <dt className="min-w-0 text-muted-foreground">Datos de entrenamiento</dt>
+        <dd className={`shrink-0 font-semibold ${trainingGranted ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-800 dark:text-amber-200'}`}>{trainingGranted ? 'Autorizados' : 'Sin autorizar'}</dd>
+      </div>
+      <div className="flex items-start justify-between gap-4 py-3">
+        <dt className="min-w-0 text-muted-foreground">Medidas corporales <span className="block text-xs">Opcional</span></dt>
+        <dd className="shrink-0 font-semibold text-foreground">{bodyGranted ? 'Compartidas' : 'Privadas'}</dd>
+      </div>
+    </dl>
+    {!trainingGranted ? <div className="my-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-4">
+      <h3 className="font-semibold text-foreground">Falta un paso para recibir tu rutina</h3>
+      <p className="mt-2 text-sm text-muted-foreground">Autoriza a tu entrenador a consultar tus datos de entrenamiento. Tus medidas corporales no se incluyen.</p>
+      <button type="button" onClick={() => void act('grant-training')} disabled={busy !== null}
+        className="mt-3 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-2 disabled:opacity-50">{busy === 'grant-training' ? 'Autorizando…' : 'Autorizar datos de entrenamiento'}</button>
+    </div> : null}
+    <details className="group border-t border-border/70">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-sm font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">Gestionar datos compartidos<ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" /></summary>
+      <div className="space-y-4 pb-1 pt-2">
+        <article className="rounded-xl bg-muted/30 p-4">
+          <h3 className="font-semibold text-foreground">Datos para preparar tu rutina — Necesario</h3>
+          {trainingGranted ? <>
+            <p className="mt-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">Autorización activa</p>
+            <ConsentStatus consent={training} />
+            <p className="mt-2 text-sm text-muted-foreground">Al revocar estos datos se finalizará el acompañamiento y se revocarán todos los accesos profesionales.</p>
+            <button type="button" onClick={() => void act('revoke-training')} disabled={busy !== null}
+              className="mt-3 min-h-11 rounded-xl border border-red-500/40 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{busy === 'revoke-training' ? 'Guardando…' : 'Revocar datos de entrenamiento'}</button>
+          </> : <p className="mt-2 text-sm text-muted-foreground">No hay una autorización activa para este alcance.</p>}
+        </article>
+        <article className="rounded-xl bg-muted/30 p-4">
+          <h3 className="font-semibold text-foreground">Medidas corporales — Opcional</h3>
+          <ConsentStatus consent={body} />
+          <p className="mt-2 text-sm text-muted-foreground">Puedes autorizar o revocar estas medidas; no finalizará el acompañamiento.</p>
+          <button type="button" onClick={() => void act(bodyGranted ? 'revoke-body' : 'grant-body')} disabled={busy !== null}
+            className="mt-3 min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{busy === 'grant-body' || busy === 'revoke-body' ? 'Guardando…' : bodyGranted ? 'Revocar medidas corporales' : 'Autorizar medidas corporales'}</button>
+        </article>
+      </div>
+    </details>
+    {message.text ? <p {...(message.error ? { role: 'alert' } : { 'aria-live': 'polite' })} className="mt-3 text-sm text-muted-foreground">{message.text}</p> : null}
   </section>
 }

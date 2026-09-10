@@ -1,4 +1,5 @@
 import { ClientCoachingStatus } from '@/components/coaching/ClientCoachingStatus'
+import { AssignedCoachingRoutines } from '@/components/coaching/AssignedCoachingRoutines'
 import { ConsentManager, type CoachingConsentView } from '@/components/coaching/ConsentManager'
 import { AccountWorkspaceMenu } from '@/components/navigation/AccountWorkspaceMenu'
 import { requireAppUserContext } from '@/lib/auth/server'
@@ -70,7 +71,7 @@ export default async function CoachingPage() {
 
   const { data: assignedPrograms, error: assignmentsError } = await (supabase as any)
     .from('trainer_plan_assignments')
-    .select('id, trainer_user_id, active_version_id, status, trainer_assignment_versions(id, version_number, snapshot, change_summary)')
+    .select('id, trainer_user_id, active_version_id, status, trainer_assignment_versions!trainer_assignment_versions_assignment_id_fkey(id, version_number, snapshot, change_summary)')
     .eq('client_user_id', user.id)
     .in('status', ['active', 'frozen'])
     .order('created_at', { ascending: false })
@@ -151,25 +152,19 @@ export default async function CoachingPage() {
   })
 
   return <main className="mx-auto max-w-lg px-4 pb-24 pt-6">
-    <CoachingHeader description="Consulta el estado real de tus solicitudes. No se comparten datos de entrenamiento hasta que exista una relación aceptada." />
-    <ClientCoachingStatus requests={requests} relationship={relationshipView} />
-    {serviceLookupFailures.size ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">Algunos servicios de acompañamiento no se pudieron cargar. Inténtalo de nuevo más tarde.</p> : null}
-    {relationshipsError || consentsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus consentimientos.</p> : relationship?.status === 'active' ? <ConsentManager relationshipId={relationship.id} consents={((consents ?? []) as Array<{ scope: CoachingConsentView['scope']; text_version: string; granted_at: string; revoked_at: string | null }>).map(consent => ({
-      scope: consent.scope,
-      textVersion: consent.text_version,
-      grantedAt: consent.granted_at,
-      revokedAt: consent.revoked_at,
-    }))} /> : null}
-    {assignmentsError ? <p role="alert" className="mt-4 rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus rutinas asignadas.</p> : routines.length ? <section className="mt-6 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4" aria-labelledby="assigned-routines-title">
-      <h2 id="assigned-routines-title" className="font-bold text-foreground">Rutinas de tu entrenador</h2>
-      <p className="mt-2 text-sm text-muted-foreground">Ya están en tu lista. En Plan puedes usar una como principal o eliminarla; recibirlas no cambia tu selección.</p>
-      <ul className="mt-4 space-y-3">{routines.map(routine => <li key={routine.id} className="rounded-xl border border-border/70 bg-background p-3">
-        <h3 className="font-semibold text-foreground">{routine.name}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">{routine.trainerName}{routine.version ? ` · Versión ${routine.version}` : ''}</p>
-        {routine.message ? <p className="mt-2 text-sm text-foreground"><span className="font-medium">Mensaje del entrenador: </span>{routine.message}</p> : null}
-      </li>)}</ul>
-      <a href="/plan" className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">Ver mis rutinas</a>
-    </section> : relationship ? <p className="mt-4 text-sm text-muted-foreground">Las rutinas que te asigne tu entrenador aparecerán en tu lista de Plan.</p> : null}
-
+    <CoachingHeader description="Tu entrenador, tus rutinas y los datos que compartes." />
+    <ClientCoachingStatus requests={requests} relationship={relationshipView}>
+      {assignmentsError ? <p role="alert" className="rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus rutinas asignadas.</p> : routines.length ? <AssignedCoachingRoutines routines={routines} /> : relationship ? <section className="rounded-2xl border border-border/70 bg-card p-4">
+        <h2 className="font-semibold text-foreground">Tus próximas rutinas</h2>
+        <p className="mt-2 text-sm text-muted-foreground">Cuando tu entrenador te asigne una rutina, la encontrarás aquí y en Plan.</p>
+      </section> : null}
+      {consentsError ? <p role="alert" className="rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">No se pudieron cargar tus consentimientos.</p> : relationship?.status === 'active' ? <ConsentManager relationshipId={relationship.id} consents={((consents ?? []) as Array<{ scope: CoachingConsentView['scope']; text_version: string; granted_at: string; revoked_at: string | null }>).map(consent => ({
+        scope: consent.scope,
+        textVersion: consent.text_version,
+        grantedAt: consent.granted_at,
+        revokedAt: consent.revoked_at,
+      }))} /> : null}
+      {serviceLookupFailures.size ? <p role="alert" className="rounded-2xl border border-red-500/30 p-4 text-sm text-foreground">Algunos servicios de acompañamiento no se pudieron cargar. Inténtalo de nuevo más tarde.</p> : null}
+    </ClientCoachingStatus>
   </main>
 }

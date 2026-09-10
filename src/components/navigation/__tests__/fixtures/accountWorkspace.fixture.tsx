@@ -19,6 +19,10 @@ const surface = query.get('surface') ?? 'shell'
 const preferred = query.get('preferred') ?? 'personal'
 const access = query.get('access') ?? 'granted'
 const language = query.get('language') ?? 'es'
+const photo = query.get('photo')
+const avatarUrl = photo === 'loaded'
+  ? 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="720"><rect width="400" height="720" fill="#7c3aed"/><circle cx="200" cy="240" r="100" fill="#ddd6fe"/><rect x="80" y="370" width="240" height="300" rx="80" fill="#ddd6fe"/></svg>')
+  : photo === 'failed' ? 'data:image/png;base64,invalid-image' : null
 
 const personalNavItems = getPersonalNavItems({ communityEnabled: false })
 const coachNavItems = getCoachNavItems()
@@ -26,7 +30,7 @@ const model: AccountWorkspaceModel = {
   account: { id: 'account-a',
     name: 'Ana P\u00e9rez Entrenamiento de Rendimiento',
     email: 'ana.entrenamiento.muy.largo@example.com',
-    avatarUrl: null,
+    avatarUrl,
   },
   trainerAccess: access === 'denied'
     ? { granted: false, reason: 'inactive' }

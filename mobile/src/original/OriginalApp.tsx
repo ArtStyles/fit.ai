@@ -14,6 +14,8 @@ import type { AppState } from './types'
 import { LoginScreen } from './LoginScreen'
 import { StorageSettings } from './StorageSettings'
 import { LocalActionNotices } from './LocalActionNotices'
+import { AppLoadingScreen } from './AppLoadingScreen'
+import { installCompanionBackupSync } from './companion-backup'
 
 class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -24,6 +26,12 @@ class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolea
 }
 
 export default function OriginalApp() {
+  useEffect(() => {
+    let disposed = false
+    let cleanup: (() => void) | undefined
+    void installCompanionBackupSync().then(stop => { if (disposed) stop(); else cleanup = stop }).catch(() => {})
+    return () => { disposed = true; cleanup?.() }
+  }, [])
   const locationKey = useLocationKey()
   const [state, setState] = useState<AppState | null>(null)
   const [page, setPage] = useState<ReactNode>(null)
@@ -43,17 +51,26 @@ export default function OriginalApp() {
     let alive = true
     setLoading(true); setError('')
     void (async () => {
+      const pathname = location.pathname
+      // Signing in must remain available even when local storage cannot open.
+      if (pathname === '/login') {
+        setState(null)
+        setPage(<LoginScreen />)
+        setPageRoute(':/login')
+        loadedRoute.current = `:${locationKey}`
+        return
+      }
       const next = await (await getAppStore()).read()
       if (!alive) return
       setState(next)
-      const pathname = location.pathname
       if (['/', '/es', '/en'].includes(pathname)) { navigate(next ? '/dashboard' : '/login', true); return }
+      const publicRoute = pathname === '/register' || /^\/(es|en)\/(privacidad|terminos|privacy|terms)\/?$/.test(pathname)
+      if (!next && !publicRoute) { navigate('/login', true); return }
       const loadKey = `${next?.accountId ?? ''}:${locationKey}`
       // The existing SessionClient owns its live draft. A SQLite commit updates
       // the surrounding account state without reinitializing its exercise props.
       if (pathname.startsWith('/session/') && loadedRoute.current === loadKey) return
-      const rendered = pathname === '/login' ? <LoginScreen />
-        : pathname === '/settings/almacenamiento' ? <StorageSettings />
+      const rendered = pathname === '/settings/almacenamiento' ? <StorageSettings />
           : await loadOriginalRoute(pathname, new URLSearchParams(location.search))
       const current = await (await getAppStore()).read()
       if (current?.accountId !== next?.accountId) return
@@ -61,6 +78,7 @@ export default function OriginalApp() {
     })().catch(reason => {
       if (!alive) return
       if (reason instanceof RouteRedirect) { navigate(reason.href, true); return }
+      if (['/', '/es', '/en'].includes(location.pathname)) { navigate('/login', true); return }
       setError(reason instanceof Error ? reason.message : 'No se pudo abrir esta pantalla.')
     }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -69,7 +87,7 @@ export default function OriginalApp() {
   const language = profile?.language === 'en' ? 'en' : 'es'
   const chrome = state && !/^\/(login|register|onboarding|suspended)(\/|$)/.test(location.pathname)
   const body = error ? <main className="mx-auto max-w-lg space-y-4 px-5 py-12"><h1 className="font-display text-2xl font-bold">No se pudo abrir esta pantalla</h1><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button onClick={() => navigate('/dashboard')}>Volver a Inicio</Button><Button variant="outline" onClick={() => navigate('/settings/almacenamiento')}>Cuenta y almacenamiento</Button></main>
-    : (loading && !page) || pageRoute !== `${state?.accountId ?? ''}:${location.pathname}` ? <div className="mx-auto max-w-lg px-5 py-14" role="status">Abriendo tus datos…</div> : <ScreenBoundary key={pageRoute}>{page}</ScreenBoundary>
+    : (loading && !page) || pageRoute !== `${state?.accountId ?? ''}:${location.pathname}` ? <AppLoadingScreen /> : <ScreenBoundary key={pageRoute}>{page}</ScreenBoundary>
   const trainer = state?.tables.trainer_profiles?.find(row => row.user_id === state.accountId && row.status === 'active')
   return <I18nProvider language={language} timeZone={String(profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone)}><ToastProvider><NativeAppInit /><AndroidBackHandler /><LocalActionNotices /><ActionNotice />{chrome ? <AppShell accountWorkspace={{ account: { id: state.accountId, name: String(profile?.full_name || 'Vekira'), email: state.email, avatarUrl: profile?.avatar_url ?? null }, trainerAccess: trainer ? { granted: true } : { granted: false, reason: 'missing_profile' }, preferredWorkspace: location.pathname.startsWith('/coach') && trainer ? 'coach' : 'personal', personalNavItems: getPersonalNavItems({ communityEnabled: false }), coachNavItems: getCoachNavItems() }}>{body}{location.pathname === '/settings' && <div className="mx-auto max-w-lg px-4 pb-24"><Button variant="outline" className="w-full" onClick={() => navigate('/settings/almacenamiento')}>Sin conexión, cuentas y respaldo</Button></div>}</AppShell> : body}</ToastProvider></I18nProvider>
 }

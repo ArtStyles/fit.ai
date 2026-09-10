@@ -337,6 +337,7 @@ export async function dismissNotificationAttention(noticeKey: string): Promise<P
   }
 
   revalidatePath('/notifications')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
 
@@ -440,6 +441,8 @@ export async function markProductNotificationRead(id: string): Promise<PushToken
     .is('read_at', null)
 
   if (error) return { ok: false, error: 'No se pudo marcar la notificación.' }
+  revalidatePath('/notifications')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
 
@@ -462,6 +465,7 @@ export async function dismissProductNotification(id: string): Promise<PushTokenR
 
   if (error) return { ok: false, error: 'No se pudo quitar la notificación.' }
   revalidatePath('/notifications')
+  revalidatePath('/dashboard')
   return { ok: true }
 }
 

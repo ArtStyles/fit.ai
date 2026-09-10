@@ -79,7 +79,7 @@ describe('coaching request UI', () => {
     expect(html).toContain('Fuerza guiada')
     expect(html).toContain('Iniciado el')
     expect(html).toContain('Esta solicitud aceptada corresponde a un acompañamiento anterior.')
-    expect(html.indexOf('Marina Pérez')).toBeLessThan(html.indexOf('Tus solicitudes'))
+    expect(html.indexOf('Marina Pérez')).toBeLessThan(html.indexOf('Historial de solicitudes'))
   })
 
   it('guides a client without a trainer to the public directory', () => {
@@ -88,6 +88,38 @@ describe('coaching request UI', () => {
     expect(html).toContain('Aún no tienes un entrenador conectado.')
     expect(html).toContain('href="/trainers"')
     expect(html).toContain('Buscar entrenadores')
+  })
+
+  it('keeps routines ahead of collapsed history and puts active relationship management in details', () => {
+    const html = renderStatus(<ClientCoachingStatus
+      relationship={{ id: 'relationship-current', status: 'active', startedAt: '2026-08-12T12:00:00.000Z', sourceRequestId: 'current-request', trainerName: 'Marina Pérez', trainerAvatarUrl: null, serviceName: 'Fuerza guiada' }}
+      requests={[
+        { id: 'old-request', status: 'accepted', createdAt: '2026-08-01T12:00:00.000Z', trainerName: 'Luis Sosa', trainerAvatarUrl: null, serviceName: 'Movilidad' },
+        { id: 'pending-request', status: 'pending', createdAt: '2026-08-13T12:00:00.000Z', trainerName: 'Ana Pérez', trainerAvatarUrl: null, serviceName: 'Fuerza' },
+      ]}
+    ><section>Mi rutina disponible</section></ClientCoachingStatus>)
+
+    expect(html.indexOf('Marina Pérez')).toBeLessThan(html.indexOf('Mi rutina disponible'))
+    expect(html.indexOf('Mi rutina disponible')).toBeLessThan(html.indexOf('Historial de solicitudes'))
+    expect(html).toMatch(/<details[^>]*>\s*<summary[^>]*>[\s\S]*?Gestionar acompañamiento/)
+    expect(html).toMatch(/<details[^>]*>\s*<summary[^>]*>[\s\S]*?Historial de solicitudes/)
+    expect(html).not.toMatch(/<details[^>]*\sopen(?:=|>)/)
+    expect(html.indexOf('Cancelar solicitud')).toBeLessThan(html.indexOf('Historial de solicitudes'))
+  })
+
+  it('keeps retained routines reachable without an active relationship or request history', () => {
+    const html = renderStatus(<ClientCoachingStatus requests={[]}><a href="/plan">Mi rutina guardada</a></ClientCoachingStatus>)
+    expect(html).toContain('Mi rutina guardada')
+    expect(html).not.toContain('Historial de solicitudes')
+  })
+
+  it('does not describe accepted requests as previous relationships when their origin is unknown', () => {
+    const html = renderStatus(<ClientCoachingStatus
+      relationship={{ id: 'relationship-current', status: 'active', startedAt: '2026-08-12T12:00:00.000Z', sourceRequestId: null, trainerName: 'Marina Pérez', trainerAvatarUrl: null, serviceName: 'Fuerza guiada' }}
+      requests={[{ id: 'accepted-request', status: 'accepted', createdAt: '2026-08-12T12:00:00.000Z', trainerName: 'Marina Pérez', trainerAvatarUrl: null, serviceName: 'Fuerza guiada' }]}
+    />)
+    expect(html).toContain('Aceptada')
+    expect(html).not.toContain('corresponde a un acompañamiento anterior')
   })
 })
 

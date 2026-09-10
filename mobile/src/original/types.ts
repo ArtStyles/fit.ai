@@ -15,8 +15,12 @@ export interface AppState {
 export interface AppStore {
   read(): Promise<AppState | null>
   list(): Promise<AppState[]>
-  create(state: AppState): Promise<void>
-  activate(accountId: string): Promise<void>
+  create(state: AppState, expectedSessionVersion?: number): Promise<void>
+  activate(accountId: string, expectedSessionVersion?: number): Promise<void>
+  deactivate(): Promise<void>
+  sessionVersion(): number
+  getAccountCache(key: string, expectedAccountId: string): Promise<unknown>
+  setAccountCache(key: string, value: unknown, expectedSessionVersion: number, expectedAccountId: string): Promise<void>
   mutate<T>(fn: (draft: AppState) => T | Promise<T>): Promise<T>
   importBackup(json: string): Promise<void>
   exportBackup(): Promise<string>

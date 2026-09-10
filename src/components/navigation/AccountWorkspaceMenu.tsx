@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useId, useRef, useState, type MouseEvent, type ReactElement } from 'react'
 import { Briefcase, LogOut, Settings, UserRound } from 'lucide-react'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import {
@@ -280,8 +280,12 @@ function AccountWorkspaceMenuTitle() {
 
 export function AccountWorkspaceMenu({
   surface,
+  trigger,
+  className,
 }: {
   surface: 'topbar' | 'dashboard' | 'sidebar'
+  trigger?: ReactElement
+  className?: string
 }) {
   const context = useOptionalAccountWorkspace()
   const desktopTitleId = useId()
@@ -307,7 +311,7 @@ export function AccountWorkspaceMenu({
     : surface === 'sidebar'
       ? 'sidebar'
       : 'compact'
-  const renderTrigger = () => (
+  const renderTrigger = () => trigger ?? (
     <AccountWorkspaceTrigger
       variant={triggerVariant}
       workspace={context.presentedWorkspace}
@@ -347,7 +351,7 @@ export function AccountWorkspaceMenu({
   return (
     <>
       {surface !== 'sidebar' ? (
-        <div className="lg:hidden">
+        <div className={cn('lg:hidden', className)}>
           <Dialog open={mobileOpen} onOpenChange={changeMobileOpen}>
             <DialogTrigger asChild>{renderTrigger()}</DialogTrigger>
             <DialogContent
@@ -370,8 +374,8 @@ export function AccountWorkspaceMenu({
           </Dialog>
         </div>
       ) : null}
-      {surface === 'sidebar' ? (
-        <div className="hidden lg:block">
+      {surface === 'sidebar' || (surface === 'dashboard' && trigger) ? (
+        <div className={cn('hidden lg:block', className)}>
           <DropdownMenu modal={false} open={desktopOpen} onOpenChange={changeDesktopOpen}>
             <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
             <DropdownMenuContent

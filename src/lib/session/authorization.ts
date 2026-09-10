@@ -7,14 +7,15 @@ export interface SessionAuthorizationValidity {
 
 export type SessionAuthorizationState = 'authorizing' | 'ready' | 'error'
 export type SessionAuthorizationEvent = 'succeeded' | 'failed' | 'retry'
+export type SessionReadinessBlock = 'pending' | 'professional_clearance_required'
 
 type SessionAuthorizationResponse =
   | { success: true }
-  | { success: false; error: string }
+  | { success: false; error: string; readinessStatus?: SessionReadinessBlock; authorizationAbsent?: true }
 
 export type SessionAuthorizationAttemptOutcome =
   | { status: 'succeeded' }
-  | { status: 'failed'; error: string }
+  | { status: 'failed'; error: string; readinessStatus?: SessionReadinessBlock; authorizationAbsent?: true }
   | { status: 'stale' }
 
 export async function runSessionAuthorizationAttempt(
@@ -27,7 +28,11 @@ export async function runSessionAuthorizationAttempt(
     if (!isCurrent()) return { status: 'stale' }
     return result.success
       ? { status: 'succeeded' }
-      : { status: 'failed', error: result.error }
+      : {
+        status: 'failed', error: result.error,
+        ...(result.readinessStatus ? { readinessStatus: result.readinessStatus } : {}),
+        ...(result.authorizationAbsent === true ? { authorizationAbsent: true as const } : {}),
+      }
   } catch {
     return isCurrent()
       ? { status: 'failed', error: transportError }

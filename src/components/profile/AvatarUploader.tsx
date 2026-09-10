@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Loader2, Trash2 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -35,56 +35,98 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
   const { showToast } = useToast()
   const { t } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
+  const mounted = useRef(true)
+  const busy = useRef(false)
+  const previewUrl = useRef<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
-  const [pending, startTransition] = useTransition()
+  const [confirmed, setConfirmed] = useState({ source: avatarUrl, url: avatarUrl })
+  const [pending, setPending] = useState(false)
   const s = SIZES[size]
+
+  if (confirmed.source !== avatarUrl) {
+    setConfirmed({ source: avatarUrl, url: avatarUrl })
+  }
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (previewUrl.current) URL.revokeObjectURL(previewUrl.current)
+      previewUrl.current = null
+    }
+  }, [])
+
+  function finishOperation() {
+    if (previewUrl.current) URL.revokeObjectURL(previewUrl.current)
+    previewUrl.current = null
+    busy.current = false
+    if (mounted.current) {
+      setPreview(null)
+      setPending(false)
+    }
+  }
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = '' // permite re-seleccionar el mismo archivo
-    if (!file) return
+    if (!file || busy.current) return
 
-    let processed: { blob: Blob; contentType: string }
+    busy.current = true
+    setPending(true)
+    let uploading = false
     try {
-      processed = await resizeImageToSquare(file)
-    } catch {
-      showToast({ title: t('No se pudo procesar la imagen'), variant: 'error' })
-      return
-    }
+      const processed = await resizeImageToSquare(file)
+      if (!mounted.current) return
 
-    const localUrl = URL.createObjectURL(processed.blob)
-    setPreview(localUrl)
+      previewUrl.current = URL.createObjectURL(processed.blob)
+      setPreview(previewUrl.current)
 
-    const fd = new FormData()
-    fd.append('file', processed.blob, 'avatar.webp')
+      const fd = new FormData()
+      fd.append('file', processed.blob, 'avatar.webp')
 
-    startTransition(async () => {
+      uploading = true
       const res = await updateAvatar(fd)
-      URL.revokeObjectURL(localUrl)
+      if (!mounted.current) return
       if (res.ok) {
+        setConfirmed({ source: avatarUrl, url: res.url })
         showToast({ title: t('Foto actualizada'), variant: 'success' })
         router.refresh()
       } else {
-        setPreview(null)
         showToast(avatarUploadFailureToast(t, res.error))
       }
-    })
+    } catch {
+      if (mounted.current) {
+        showToast(uploading
+          ? avatarUploadFailureToast(t, 'No se pudo subir la imagen.')
+          : { title: t('No se pudo procesar la imagen'), variant: 'error' })
+      }
+    } finally {
+      finishOperation()
+    }
   }
 
-  function handleRemove() {
-    startTransition(async () => {
+  async function handleRemove() {
+    if (busy.current) return
+    busy.current = true
+    setPending(true)
+    try {
       const res = await removeAvatar()
+      if (!mounted.current) return
       if (res.ok) {
-        setPreview(null)
+        setConfirmed({ source: avatarUrl, url: null })
         showToast({ title: t('Foto eliminada'), variant: 'success' })
         router.refresh()
       } else {
         showToast({ title: t('No se pudo eliminar la foto'), variant: 'error' })
       }
-    })
+    } catch {
+      if (mounted.current) showToast({ title: t('No se pudo eliminar la foto'), variant: 'error' })
+    } finally {
+      finishOperation()
+    }
   }
 
-  const shown = preview ?? avatarUrl
+  const shown = preview ?? (confirmed.source === avatarUrl ? confirmed.url : avatarUrl)
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -92,11 +134,12 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={pending}
+        aria-busy={pending}
         className="relative rounded-full ring-offset-background transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         aria-label={t('Cambiar foto')}
       >
         <Avatar className={s.box}>
-          {shown && <AvatarImage src={shown} alt={t('Foto de perfil')} />}
+          <AvatarImage src={shown ?? undefined} alt={t('Foto de perfil')} className="object-cover" />
           <AvatarFallback className={cn('bg-gradient-to-br from-violet-500 to-violet-700 font-semibold text-white', s.text)}>
             {initials}
           </AvatarFallback>
@@ -110,9 +153,9 @@ export function AvatarUploader({ avatarUrl, initials, size = 'header', showRemov
         </span>
       </button>
 
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" disabled={pending} onChange={handleFile} />
 
-      {showRemove && avatarUrl && !pending && (
+      {showRemove && shown && !pending && (
         <button
           type="button"
           onClick={handleRemove}

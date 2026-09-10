@@ -66,10 +66,13 @@ export interface RestTimerState {
   isRunning:        boolean
 }
 
+export type SessionActivationState = 'preparing' | 'active'
+
 export interface SessionState {
   // ── Datos ──────────────────────────────────────────────────────────────────
   clientSessionId: string
   userId: string
+  activationState: SessionActivationState
   workoutId:   string
   workoutName: string
   startedAt:   number            // Date.now()
@@ -81,7 +84,9 @@ export interface SessionState {
 
   // ── Acciones ───────────────────────────────────────────────────────────────
   initSession:     (workoutId: string, workoutName: string, exercises: ExerciseSession[], prescriptionLocked?: boolean, userId?: string) => void
-  restoreSession:  (snapshot: { userId?: string; clientSessionId?: string; workoutId: string; workoutName: string; startedAt: number; finishedAt?: number; exercises: ExerciseSession[] }, prescriptionLocked?: boolean) => void
+  restoreSession:  (snapshot: { userId?: string; clientSessionId?: string; activationState?: SessionActivationState; workoutId: string; workoutName: string; startedAt: number; finishedAt?: number; exercises: ExerciseSession[] }, prescriptionLocked?: boolean) => void
+  markSessionActive: (clientSessionId: string) => boolean
+  markSessionPreparing: (clientSessionId: string) => boolean
   toggleExpanded:  (workoutExerciseId: string) => void
   updateSetField:  (weId: string, setIdx: number, field: 'weightKg' | 'reps', value: string) => void
   updateSetDuration: (weId: string, setIdx: number, seconds: number) => void
@@ -206,6 +211,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   // ── Estado inicial ─────────────────────────────────────────────────────────
   clientSessionId: '',
   userId: '',
+  activationState: 'preparing',
   workoutId:   '',
   workoutName: '',
   startedAt:   0,
@@ -226,6 +232,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({
       clientSessionId: createClientSessionId(),
       userId,
+      activationState: 'preparing',
       workoutId,
       workoutName,
       startedAt:  Date.now(),
@@ -239,11 +246,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // ── restoreSession ────────────────────────────────────────────────────────
   // Restaura el estado completo desde un backup (localStorage) sin resetear
-  restoreSession({ userId = '', clientSessionId, workoutId, workoutName, startedAt, finishedAt = 0, exercises }, prescriptionLocked = false) {
+  restoreSession({ userId = '', clientSessionId, activationState = 'active', workoutId, workoutName, startedAt, finishedAt = 0, exercises }, prescriptionLocked = false) {
     set({
       clientSessionId: isClientSessionId(clientSessionId) ? clientSessionId : createClientSessionId(),
       workoutId,
       userId,
+      activationState,
       workoutName,
       startedAt,
       finishedAt,
@@ -261,6 +269,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       restTimer:  null,
       isFinished: finishedAt > 0,
     })
+  },
+
+  // The local draft exists before authorization so retries retain the same ID.
+  // Only a successful start can make that draft a resumable active workout.
+  markSessionActive(clientSessionId) {
+    if (!clientSessionId || get().clientSessionId !== clientSessionId) return false
+    set({ activationState: 'active' })
+    return true
+  },
+
+  markSessionPreparing(clientSessionId) {
+    if (!clientSessionId || get().clientSessionId !== clientSessionId) return false
+    set({ activationState: 'preparing' })
+    return true
   },
 
   // ── toggleExpanded ────────────────────────────────────────────────────────
@@ -522,6 +544,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({
       clientSessionId: '',
       userId: '',
+      activationState: 'preparing',
       workoutId:   '',
       workoutName: '',
       startedAt:   0,

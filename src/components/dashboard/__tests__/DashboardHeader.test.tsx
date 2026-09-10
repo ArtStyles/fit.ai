@@ -37,13 +37,16 @@ const baseProps: ComponentProps<typeof DashboardHeader> = {
   profileHref: null,
 }
 
-function renderHeader(overrides: Partial<ComponentProps<typeof DashboardHeader>> = {}) {
+function renderHeader(
+  overrides: Partial<ComponentProps<typeof DashboardHeader>> = {},
+  avatarUrl: string | null = null,
+) {
   return renderToStaticMarkup(
     createElement(I18nProvider, {
       language: 'es',
       syncDocumentLanguage: false,
       children: createElement(AccountWorkspaceProvider, {
-        model,
+        model: { ...model, account: { ...model.account, avatarUrl } },
         children: createElement(DashboardHeader, { ...baseProps, ...overrides }),
       }),
     }),
@@ -51,10 +54,17 @@ function renderHeader(overrides: Partial<ComponentProps<typeof DashboardHeader>>
 }
 
 describe('DashboardHeader account access', () => {
-  it('uses the large avatar as account trigger and keeps notifications', () => {
+  it('opens account access from the greeting text and keeps notifications', () => {
     const html = renderHeader()
 
-    expect(html).toContain('aria-label="Abrir cuenta y espacios"')
+    const accountButton = html.match(/<button[^>]*data-account-workspace-trigger[^>]*>[\s\S]*?<\/button>/)?.[0]
+    expect(accountButton).toContain('aria-labelledby=')
+    expect(accountButton).toContain('Abrir cuenta y espacios')
+    expect(accountButton).not.toContain('aria-label=')
+    expect(accountButton).toContain('Buenos días')
+    expect(accountButton).toContain('Ana')
+    expect(accountButton).toContain('sábado, 15 de agosto')
+    expect(accountButton).not.toContain('data-account-workspace-avatar')
     expect(html).toContain('href="/notifications"')
     expect(html).toContain('aria-label="Abrir notificaciones"')
     expect(html).not.toContain('href="/settings"')
@@ -74,11 +84,21 @@ describe('DashboardHeader account access', () => {
     expect(html).not.toContain('aria-label="Abrir ajustes"')
   })
 
-  it('renders the user name as text unless an available social profile href is supplied', () => {
+  it('keeps the account action on the name even when a social profile is available', () => {
     const unavailable = renderHeader({ profileHref: null })
     const available = renderHeader({ profileHref: '/u/ana' })
 
     expect(unavailable).not.toContain('href="/u/ana"')
-    expect(available).toContain('href="/u/ana"')
+    expect(available).not.toContain('href="/u/ana"')
+    expect(available).toContain('Abrir cuenta y espacios')
+  })
+
+  it('gives the photo its own preview control only when an image exists', () => {
+    const withoutPhoto = renderHeader()
+    const withPhoto = renderHeader({}, '/profile-photo.jpg')
+
+    expect(withoutPhoto).not.toContain('aria-label="Ampliar foto de perfil"')
+    expect(withoutPhoto).toContain('aria-label="Foto de perfil"')
+    expect(withPhoto).toContain('aria-label="Ampliar foto de perfil"')
   })
 })

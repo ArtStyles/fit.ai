@@ -621,6 +621,7 @@ describe('product notification actions', () => {
 
     expect(state.notifications[0]?.read_at).toEqual(expect.any(String))
     expect(state.notifications[1]?.read_at).toBeNull()
+    expect(revalidatePathMock).toHaveBeenCalledWith('/dashboard')
   })
 
   it('preserves the first read timestamp when marking the same notification twice', async () => {
@@ -661,6 +662,7 @@ describe('product notification actions', () => {
     expect(state.notifications[0]?.dismissed_at).toEqual(expect.any(String))
     expect(state.notifications[1]?.dismissed_at).toBeNull()
     expect(revalidatePathMock).toHaveBeenCalledWith('/notifications')
+    expect(revalidatePathMock).toHaveBeenCalledWith('/dashboard')
   })
 
   it('rejects a malformed archive id before opening a session', async () => {

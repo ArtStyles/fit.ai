@@ -27,6 +27,7 @@ interface Props {
   onOpenChange: (open: boolean) => void
   onSaved: () => void
   title?: string
+  description?: string
   submitLabel?: string
   onCloseAutoFocus?: ComponentProps<typeof DialogContent>['onCloseAutoFocus']
 }
@@ -47,6 +48,7 @@ export function ReadinessReviewDialog({
   onOpenChange,
   onSaved,
   title = 'Revisión antes de regenerar',
+  description = 'No es un diagnóstico. Si declaras señales de alarma o una lesión aguda, la generación automática se detendrá.',
   submitLabel = 'Guardar y regenerar',
   onCloseAutoFocus,
 }: Props) {
@@ -149,7 +151,7 @@ export function ReadinessReviewDialog({
       <DialogContent className="max-w-md" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <DialogDescription className="text-xs leading-relaxed text-muted-foreground">
-          No es un diagnóstico. Si declaras señales de alarma o una lesión aguda, la generación automática se detendrá.
+          {description}
         </DialogDescription>
 
         {loadingProfile ? (

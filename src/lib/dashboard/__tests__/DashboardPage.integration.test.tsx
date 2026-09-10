@@ -49,6 +49,17 @@ async function renderDashboardWithCommunityDisabled() {
     })),
   }))
   vi.doMock('@/lib/features/community', () => ({ isCommunityEnabled }))
+  vi.doMock('@/components/navigation/AccountWorkspaceContext', () => ({
+    useOptionalAccountWorkspace: () => ({
+      account: { id: 'dashboard-user', name: 'Ana', avatarUrl: null },
+      presentedWorkspace: 'personal',
+      pendingWorkspace: null,
+    }),
+  }))
+  vi.doMock('@/app/actions/notifications', () => ({
+    listProductNotifications: async () => ({ notifications: [], unreadCount: 0, nextCursor: null }),
+    loadNotificationAttention: async () => ({ status: 'ready', attention: null }),
+  }))
   vi.doMock('@/components/navigation/AccountWorkspaceMenu', () => ({
     AccountWorkspaceMenu: () => (
       <button type="button" aria-label="Abrir cuenta y espacios">Cuenta</button>

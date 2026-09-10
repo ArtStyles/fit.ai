@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { dismissNotificationAttention } from '@/app/actions/notifications'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
-import { shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
+import { notificationDismissalMotion, shouldDismissNotificationSwipe } from '@/components/notifications/swipeDismissal'
 
 type PersistDismissal = (
   noticeKey: string,
@@ -111,11 +111,11 @@ export function DismissibleAttentionNotice({
             onDragStart={() => {
               suppressChildClickRef.current = true
             }}
-            onDragEnd={(_, info) => {
+            onDragEnd={(event, info) => {
               setTimeout(() => {
                 suppressChildClickRef.current = false
               }, 0)
-              if (shouldDismissNotificationSwipe(info.offset.x, info.velocity.x)) void dismiss()
+              if (event.type !== 'pointercancel' && shouldDismissNotificationSwipe(info.offset.x, info.velocity.x)) void dismiss()
             }}
             onClickCapture={event => {
               if (!suppressChildClickRef.current) return
@@ -123,11 +123,8 @@ export function DismissibleAttentionNotice({
               event.preventDefault()
               event.stopPropagation()
             }}
-            initial={{ opacity: 1, x: 0 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -180 }}
-            transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-            className="relative touch-pan-y"
+            {...notificationDismissalMotion(reduceMotion)}
+            className="relative rounded-2xl bg-card touch-pan-y"
           >
             {children}
             <button

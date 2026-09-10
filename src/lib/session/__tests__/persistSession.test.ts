@@ -24,6 +24,38 @@ let storage: MemoryStorage
 beforeEach(() => { storage = new MemoryStorage(); vi.stubGlobal('localStorage', storage) })
 
 describe('owner-scoped session persistence', () => {
+  it('keeps an unstarted authorization draft recoverable without advertising an active workout', () => {
+    const draft = snapshot({ activationState: 'preparing', exercises: [legacyExercise as never] })
+    expect(saveBackup(draft)).toEqual({ ok: true })
+    expect(loadActiveSession(USER_A)).toBeNull()
+    expect(storage.getItem(pointerKey(USER_A))).toBeNull()
+    expect(loadBackup(USER_A, WORKOUT)).toMatchObject({ clientSessionId: draft.clientSessionId, activationState: 'preparing', exercises: [{ sets: legacyExercise.sets }] })
+  })
+
+  it('does not replace another active workout while preparing a denied or pending attempt', () => {
+    saveBackup(snapshot({ workoutId: 'active-workout', activationState: 'active' }))
+    const pointer = storage.getItem(pointerKey(USER_A))
+    saveBackup(snapshot({ activationState: 'preparing' }))
+    expect(storage.getItem(pointerKey(USER_A))).toBe(pointer)
+    expect(loadActiveSession(USER_A)?.workoutId).toBe('active-workout')
+    expect(loadBackup(USER_A, WORKOUT)?.activationState).toBe('preparing')
+  })
+
+  it('publishes the exact same draft only after its start was authorized', () => {
+    const draft = snapshot({ activationState: 'preparing' })
+    saveBackup(draft)
+    saveBackup({ ...draft, activationState: 'active' })
+    expect(loadActiveSession(USER_A)).toMatchObject({ clientSessionId: draft.clientSessionId, startedAt: draft.startedAt, activationState: 'active' })
+  })
+
+  it('ignores an old pointer to a preparing draft without deleting its saved exercises', () => {
+    const draft = snapshot({ activationState: 'preparing', exercises: [legacyExercise as never] })
+    saveBackup(draft)
+    storage.setItem(pointerKey(USER_A), JSON.stringify({ version: 2, userId: USER_A, workoutId: WORKOUT }))
+    expect(loadActiveSession(USER_A)).toBeNull()
+    expect(loadBackup(USER_A, WORKOUT)?.exercises[0].sets).toEqual(legacyExercise.sets)
+  })
+
   it('isolates A -> B -> A saves and active pointers', () => {
     saveBackup(snapshot({ workoutName: 'A' })); saveBackup(snapshot({ userId: USER_B, workoutName: 'B' }))
     expect(loadActiveSession(USER_A)?.workoutName).toBe('A')

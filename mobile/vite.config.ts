@@ -22,6 +22,7 @@ export default defineConfig({
       const modules = Object.values(bundle).flatMap(entry => entry.type === 'chunk' ? entry.moduleIds : []).map(id => id.replaceAll('\\', '/'))
       const forbidden = modules.filter(id =>
         id.endsWith('/src/app/onboarding/actions.ts') ||
+        id.endsWith('/src/app/actions/companions.ts') ||
         personalActions.some(name => id.endsWith(`/src/app/actions/${name}.ts`)) ||
         /\/src\/lib\/(supabase\/service|anthropic\/client|ai\/real-coachGenerator)\.ts$/.test(id) ||
         /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:firebase-admin|@anthropic-ai\/sdk)\//.test(id),
@@ -33,7 +34,9 @@ export default defineConfig({
     ...personalActions.map(name => ({ find: `@/app/actions/${name}`, replacement: original(`actions/${name}.ts`) })),
     ...['@/app/(auth)/actions', '@/app/actions/workspace', '@/app/actions/username', '@/app/actions/account'].map(find => ({ find, replacement: original('auxiliary-actions.ts') })),
     { find: '@/app/actions/notifications', replacement: original('notification-actions.ts') },
+    { find: '@/app/actions/companions', replacement: original('companion-actions.ts') },
     { find: '@/lib/auth/server', replacement: original('auth-context.ts') },
+    { find: '@/lib/coaching/clientSummary', replacement: original('coaching-summary.ts') },
     { find: '@/lib/supabase/server', replacement: original('bridge-client.ts') },
     { find: '@/lib/supabase/client', replacement: original('browser-client.ts') },
     { find: '@/lib/anthropic/client', replacement: original('server-boundary.ts') },

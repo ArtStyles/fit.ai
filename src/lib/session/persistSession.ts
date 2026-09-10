@@ -7,7 +7,7 @@
  *            a mitad del entrenamiento (crash recovery).
  */
 
-import type { ExerciseSession, PreviousPerformanceData, SetData } from '@/store/sessionStore'
+import type { ExerciseSession, PreviousPerformanceData, SessionActivationState, SetData } from '@/store/sessionStore'
 import {
   MAX_SESSION_AGE_MS,
   MAX_SESSION_DURATION_SECONDS,
@@ -23,6 +23,7 @@ import {
 export interface SessionSnapshot {
   userId: string
   clientSessionId: string
+  activationState?: SessionActivationState
   workoutId:   string
   workoutName: string
   startedAt:   number
@@ -268,6 +269,7 @@ export function normalizeSessionSnapshot(
     (expectedUserId !== undefined && value.userId !== expectedUserId) ||
     (value.userId !== undefined && (typeof value.userId !== 'string' || !validOwner(value.userId))) ||
     (value.clientSessionId !== undefined && typeof value.clientSessionId !== 'string') ||
+    (value.activationState !== undefined && value.activationState !== 'preparing' && value.activationState !== 'active') ||
     typeof value.workoutName !== 'string' ||
     !isFiniteNumber(value.startedAt) ||
     value.startedAt > now + MAX_SESSION_FUTURE_SKEW_MS ||
@@ -288,6 +290,7 @@ export function normalizeSessionSnapshot(
   return {
     userId: typeof value.userId === 'string' ? value.userId : (expectedUserId ?? ''),
     ...(value.clientSessionId === undefined ? {} : { clientSessionId: value.clientSessionId }),
+    ...(value.activationState === undefined ? {} : { activationState: value.activationState }),
     workoutId,
     workoutName: value.workoutName,
     startedAt: value.startedAt,
@@ -300,7 +303,9 @@ export function saveBackup(snapshot: SessionSnapshot): PersistenceResult {
   if (!validOwner(snapshot.userId)) return { ok: false, error: 'Session owner is required' }
   try {
     localStorage.setItem(backupKey(snapshot.userId, snapshot.workoutId), JSON.stringify({ version: 2, ...snapshot }))
-    localStorage.setItem(activeKey(snapshot.userId), JSON.stringify({ version: 2, userId: snapshot.userId, workoutId: snapshot.workoutId }))
+    if (snapshot.activationState !== 'preparing') {
+      localStorage.setItem(activeKey(snapshot.userId), JSON.stringify({ version: 2, userId: snapshot.userId, workoutId: snapshot.workoutId }))
+    }
     dispatchActiveSessionChanged()
     return { ok: true }
   } catch (error) {
@@ -315,7 +320,8 @@ export function loadActiveSession(userId: string): RestorableSessionSnapshot | n
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
     if (!isRecord(parsed) || parsed.version !== 2 || parsed.userId !== userId || typeof parsed.workoutId !== 'string' || !parsed.workoutId) return null
-    return loadBackup(userId, parsed.workoutId)
+    const snapshot = loadBackup(userId, parsed.workoutId)
+    return snapshot?.activationState === 'preparing' ? null : snapshot
   } catch {
     return null
   }
@@ -401,7 +407,7 @@ export async function recoverSessionBackup(
     if (owner !== userId) return null
 
     const newer = loadBackup(userId, legacyWorkoutId)
-    if (newer) return newer
+    if (newer) return workoutId !== null || newer.activationState !== 'preparing' ? newer : null
     if (localStorage.getItem(legacyKey) !== capturedBackup) {
       throw new Error('Legacy session changed during ownership verification')
     }
@@ -413,7 +419,7 @@ export async function recoverSessionBackup(
     const migrated: RestorableSessionSnapshot = { ...candidate, userId }
     try {
       localStorage.setItem(backupKey(userId, legacyWorkoutId), JSON.stringify({ version: 2, ...migrated }))
-      if (!scopedPointerChanged) {
+      if (!scopedPointerChanged && migrated.activationState !== 'preparing') {
         localStorage.setItem(scopedPointerKey, JSON.stringify({ version: 2, userId, workoutId: legacyWorkoutId }))
       }
     } catch (error) {
@@ -426,7 +432,7 @@ export async function recoverSessionBackup(
       localStorage.removeItem(LEGACY_ACTIVE_SESSION_KEY)
     }
     dispatchActiveSessionChanged()
-    return migrated
+    return workoutId !== null || migrated.activationState !== 'preparing' ? migrated : null
   } catch (error) {
     if (error instanceof Error && error.message !== 'Local storage unavailable') throw error
     return null

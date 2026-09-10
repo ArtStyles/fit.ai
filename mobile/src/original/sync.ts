@@ -161,16 +161,17 @@ export function createOriginalSynchronizer(
   }
   return {
     async connectAccount(email: string, password: string): Promise<void> {
+      const expectedSessionVersion = store.sessionVersion()
       await gateway.signIn(email, password)
-      await this.prepareSignedInAccount()
+      await this.prepareSignedInAccount(expectedSessionVersion)
     },
-    async prepareSignedInAccount(): Promise<void> {
+    async prepareSignedInAccount(expectedSessionVersion = store.sessionVersion()): Promise<void> {
       const identity = await gateway.identity()
       const accounts = await store.list()
       const existing = accounts.find(account => account.accountId === identity.id)
       if (existing) {
         if (existing.remoteUserId !== identity.id) throw new Error('Existe un perfil local con una identidad distinta; se conservó sin modificar.')
-        await store.activate(existing.accountId)
+        await store.activate(existing.accountId, expectedSessionVersion)
         // Reauthentication never replaces dirty local data with a server copy.
         const remote = await backup()
         if (remote.snapshot) {
@@ -201,7 +202,7 @@ export function createOriginalSynchronizer(
         initial = { version: 1, accountId: identity.id, remoteUserId: identity.id, email: identity.email, revision: 1, lastSyncedRevision: 0, remoteRevision: null,
           tables: { ...incoming, exercises, mobile_web_base: [{ id: 'canonical', tables: incoming }] } }
       }
-      await store.create(validateAppState(initial))
+      await store.create(validateAppState(initial), expectedSessionVersion)
     },
     synchronize(): Promise<{ pending: boolean; message: string }> {
       inFlight ??= synchronizeNow().finally(() => { inFlight = null })
@@ -304,5 +305,5 @@ export async function connectAccount(email: string, password: string): Promise<v
   const { remote } = await import('./bridge-client')
   await remote?.auth.startAutoRefresh()
 }
-export async function prepareSignedInAccount(): Promise<void> { await (await defaultSync()).prepareSignedInAccount() }
+export async function prepareSignedInAccount(expectedSessionVersion?: number): Promise<void> { await (await defaultSync()).prepareSignedInAccount(expectedSessionVersion) }
 export async function synchronize(): Promise<{ pending: boolean; message: string }> { return (await defaultSync()).synchronize() }

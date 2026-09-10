@@ -96,30 +96,59 @@ export async function listProductNotifications(input: { cursor?: string | null }
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Solicitud no válida.')
     const cursor = decodeCursor(input.cursor)
     const { store, state } = await active()
+    const sessionVersion = store.sessionVersion()
+    let remoteNextCursor: string | null | undefined
     let rows = ownRows(state, 'product_notifications').filter(row => row.dismissed_at == null)
-    let unreadCount = rows.filter(row => row.read_at == null).length
+    let unreadCount: number | null = rows.filter(row => row.read_at == null).length
     if (state.remoteUserId && (typeof navigator === 'undefined' || navigator.onLine)) {
       const client = await verifiedRemote(state.accountId)
       let query = client.from('product_notifications').select('*').eq('user_id', state.accountId).is('dismissed_at', null).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(PAGE_SIZE + 1)
       if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`)
       const [response, unread] = await Promise.all([query, client.from('product_notifications').select('id', { count: 'exact', head: true }).eq('user_id', state.accountId).is('dismissed_at', null).is('read_at', null)])
       if (response.error) throw new Error('No se pudieron cargar las notificaciones de tu cuenta.')
+      const current = await store.read()
+      if (store.sessionVersion() !== sessionVersion || current?.accountId !== state.accountId) throw new Error('La cuenta cambió. Vuelve a abrir esta pantalla.')
       rows = (response.data ?? []).filter(row => row.user_id === state.accountId)
-      unreadCount = unread.error ? unreadCount : unread.count ?? 0
-      const existing = new Map(ownRows(state, 'product_notifications').map(row => [row.id, row]))
-      if (rows.some(row => JSON.stringify(existing.get(row.id)) !== JSON.stringify(row))) {
-        await store.mutate(draft => {
-          requireSame(draft, state.accountId)
-          const merged = new Map(ownRows(draft, 'product_notifications').map(row => [row.id, row]))
-          for (const row of rows) merged.set(row.id, row)
-          draft.tables.product_notifications = [...merged.values()]
-        })
-      }
+      const remoteVisible = rows.slice(0, PAGE_SIZE)
+      remoteNextCursor = rows.length > PAGE_SIZE ? encodeCursor(remoteVisible.at(-1)!) : null
+      unreadCount = unread.error ? null : unread.count ?? 0
+      const incoming = new Map(rows.map(row => [row.id, row]))
+      const baseline = new Map(ownRows(state, 'product_notifications').map(row => [row.id, row]))
+      const oldest = rows.at(-1)
+      const beforeCursor = (row: AppRow) => !cursor || row.created_at < cursor.createdAt || (row.created_at === cursor.createdAt && row.id < cursor.id)
+      // A full page only proves absence inside its range; the final page covers all older rows.
+      const covered = (row: AppRow) => beforeCursor(row) && (rows.length <= PAGE_SIZE || !oldest
+        || row.created_at > oldest.created_at || (row.created_at === oldest.created_at && row.id >= oldest.id))
+      await store.mutate(draft => {
+        requireSame(draft, state.accountId)
+        if (store.sessionVersion() !== sessionVersion) throw new Error('La cuenta cambió. Vuelve a abrir esta pantalla.')
+        const present = ownRows(draft, 'product_notifications')
+        const presentIds = new Set(present.map(row => row.id))
+        for (const id of baseline.keys()) {
+          if (!presentIds.has(id) && incoming.delete(id)) unreadCount = null
+        }
+        const changedSinceRequest = (row: AppRow) => JSON.stringify(baseline.get(row.id)) !== JSON.stringify(row)
+        for (const local of present) {
+          const fetched = incoming.get(local.id)
+          if (!changedSinceRequest(local)) continue
+          // The list and count are separate requests; a concurrent write makes that count ambiguous.
+          unreadCount = null
+          // A read, archive or newer refresh already committed after this GET began.
+          if (fetched) incoming.set(local.id, local)
+        }
+        const retained = present.filter(row => (!covered(row) || changedSinceRequest(row)) && !incoming.has(row.id))
+        draft.tables.product_notifications = [...retained, ...incoming.values()]
+          .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
+        const boundary = remoteVisible.at(-1)
+        rows = draft.tables.product_notifications.filter(row => row.dismissed_at == null && beforeCursor(row)
+          && (!remoteNextCursor || !boundary || row.created_at > boundary.created_at || (row.created_at === boundary.created_at && row.id >= boundary.id)))
+        if (rows.length > PAGE_SIZE) remoteNextCursor = encodeCursor(rows[PAGE_SIZE - 1])
+      })
     }
     rows = rows.filter(row => !cursor || row.created_at < cursor.createdAt || (row.created_at === cursor.createdAt && row.id < cursor.id))
       .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))
     const visible = rows.slice(0, PAGE_SIZE)
-    return { notifications: visible.map(view), nextCursor: rows.length > PAGE_SIZE ? encodeCursor(visible.at(-1)!) : null, unreadCount }
+    return { notifications: visible.map(view), nextCursor: remoteNextCursor !== undefined ? remoteNextCursor : rows.length > PAGE_SIZE ? encodeCursor(visible.at(-1)!) : null, unreadCount }
   } catch (error) { return { notifications: [], nextCursor: null, unreadCount: null, error: error instanceof Error ? error.message : 'No se pudieron cargar las notificaciones.' } }
 }
 

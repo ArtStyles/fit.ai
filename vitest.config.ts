@@ -11,6 +11,8 @@ const baseExclude = [
 ]
 
 const browserFixtureTests = [
+  'src/components/companions/__tests__/companionInteraction.test.tsx',
+  'src/components/profile/__tests__/avatarUploaderInteraction.test.tsx',
   'src/components/coaching/__tests__/relationshipManagementInteraction.test.tsx',
   'src/components/session/__tests__/sessionRecoveryInteraction.test.tsx',
   'src/components/coaching/__tests__/applicationForm.test.tsx',

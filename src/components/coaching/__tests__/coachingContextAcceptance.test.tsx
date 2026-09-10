@@ -17,7 +17,7 @@ const IMPORTANT_COPY = [
   '2 rutinas en tu lista',
   'Falta un paso para recibir tu rutina',
   'Autorizar datos de entrenamiento',
-  'Medidas corporales — Opcional',
+  'Gestionar datos compartidos',
   'Listo para recibir rutina',
   'Rutina asignada',
   'Este cliente ya tiene esta rutina asignada.',

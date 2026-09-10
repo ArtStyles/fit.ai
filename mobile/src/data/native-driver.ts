@@ -11,9 +11,21 @@ import type {
 } from './driver'
 
 const DATABASE_NAME = 'vekira_offline'
+const sqlite = new SQLiteConnection(CapacitorSQLite)
+let activeDriver: Promise<MobileSqliteDriver> | null = null
 
-export async function openNativeSqliteDriver(): Promise<MobileSqliteDriver> {
-  const sqlite = new SQLiteConnection(CapacitorSQLite)
+export function openNativeSqliteDriver(): Promise<MobileSqliteDriver> {
+  // A fresh SQLiteConnection has an empty registry. Its consistency check
+  // closes Android's existing connections, including the active app store.
+  // Share both the registry and pending initialization across all readers.
+  activeDriver ??= initializeNativeSqliteDriver().catch(error => {
+    activeDriver = null
+    throw error
+  })
+  return activeDriver
+}
+
+async function initializeNativeSqliteDriver(): Promise<MobileSqliteDriver> {
   await sqlite.checkConnectionsConsistency()
   const existing = await sqlite.isConnection(DATABASE_NAME, false)
   const connection = existing.result
@@ -61,6 +73,7 @@ function capacitorDriver(connection: SQLiteDBConnection): MobileSqliteDriver {
 
     async close(): Promise<void> {
       await connection.close()
+      activeDriver = null
     },
   }
 }

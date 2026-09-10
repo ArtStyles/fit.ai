@@ -21,6 +21,12 @@ const snapshot: RestorableSessionSnapshot = {
 }
 
 describe('persistent active workout panel', () => {
+  it('never minimizes a preparing draft while retaining active and legacy recovery', () => {
+    const input = { workspace: 'personal' as const, pathname: '/dashboard' }
+    expect(bottomNavigation.shouldShowActiveWorkoutDock({ ...input, snapshot: { ...snapshot, activationState: 'preparing' } })).toBe(false)
+    expect(bottomNavigation.shouldShowActiveWorkoutDock({ ...input, snapshot: { ...snapshot, activationState: 'active' } })).toBe(true)
+    expect(bottomNavigation.shouldShowActiveWorkoutDock({ ...input, snapshot })).toBe(true)
+  })
   it.each([
     { workspace: 'personal', pathname: '/dashboard', expected: true },
     { workspace: 'coach', pathname: '/coach', expected: false },

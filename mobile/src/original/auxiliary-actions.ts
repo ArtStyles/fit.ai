@@ -5,8 +5,9 @@ import { WORKSPACE_COOKIE, workspaceDestination } from '@/lib/coaching/workspace
 import { validateUsername } from '@/lib/social/username'
 
 export async function signOut() {
+  await (await getAppStore()).deactivate()
   await signOutLocally()
-  navigate('/login')
+  navigate('/login', true)
 }
 export async function setWorkspace(formData: FormData) {
   const workspace = formData.get('workspace')
