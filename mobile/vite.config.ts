@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const original = (name: string) => fileURLToPath(new URL(`./src/original/${name}`, import.meta.url))
-const personalActions = ['authorizeSession', 'saveSession', 'rescheduleWorkout', 'plan', 'generatePlan', 'adjustPlan', 'measurements', 'settings', 'readiness']
+const personalActions = ['authorizeSession', 'saveSession', 'rescheduleWorkout', 'plan', 'generatePlan', 'adjustPlan', 'measurements', 'settings', 'readiness', 'avatar']
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   envDir: fileURLToPath(new URL('.', import.meta.url)),
