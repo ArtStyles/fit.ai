@@ -21,14 +21,32 @@ import type {
   DashboardTimelineItem,
   DashboardToday,
   DashboardViewModel,
+  DashboardCompletedEvidence,
 } from './dashboardViewModel'
 
 function toneLabel(tone: DashboardTimelineItem['tone'], t: (source: string) => string) {
   if (tone === 'completed') return t('Completado')
+  if (tone === 'recovered') return t('Otro día')
   if (tone === 'active') return t('Hoy')
   if (tone === 'rest') return t('Descanso')
   if (tone === 'missed') return t('Pendiente')
   return t('Próximo')
+}
+
+function civilDateLabel(date: string, language: string) {
+  return new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
+    weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00Z`))
+}
+
+function OtherDateCompletionLink({ evidence }: { evidence: DashboardCompletedEvidence }) {
+  const { t, language } = useI18n()
+  if (!evidence.completedDate) return null
+  return (
+    <PendingLink href={`/history/${evidence.logId}`} className="mt-2 block min-h-11 rounded-xl border border-blue-400/50 bg-blue-500/10 px-4 py-3 text-sm text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 dark:text-blue-300">
+      {evidence.workoutName} · {t('Completada el {date}', { date: civilDateLabel(evidence.completedDate, language) })}
+    </PendingLink>
+  )
 }
 
 function JourneySegment({
@@ -38,7 +56,7 @@ function JourneySegment({
   items: DashboardTimelineItem[]
   title: string
 }) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const [activeMessage, setActiveMessage] = useState<string | null>(null)
 
   if (items.length === 0) return null
@@ -50,9 +68,12 @@ function JourneySegment({
         {items.map(item => {
           const dayName = t(DASHBOARD_DAY_KEYS[item.isoDay])
           const dateNumber = Number(item.dateStr.slice(-2))
+          const evidence = item.completedEvidence ?? item.completionOnAnotherDate
+          const otherDate = item.completionOnAnotherDate
           const completedWithPreviousPlan = Boolean(
-            item.completedEvidence &&
+            evidence &&
             item.scheduledWorkout &&
+            evidence.isFromActivePlan !== true &&
             !item.isScheduledWorkoutCompleted,
           )
           const unavailableMessage = !item.scheduledWorkout
@@ -64,6 +85,7 @@ function JourneySegment({
             <div className={cn(
               'min-h-14 rounded-2xl border border-border/70 bg-[hsl(var(--surface-1))] px-4 py-3 transition-[border-color,transform] duration-[var(--motion-press)] motion-reduce:transition-none',
               item.tone === 'completed' && 'border-[hsl(var(--training-complete)/0.35)]',
+              item.tone === 'recovered' && 'border-blue-400/50 bg-blue-500/10',
               item.tone === 'missed' && 'border-[hsl(var(--training-warning)/0.35)]',
             )}>
               <div className="flex items-center justify-between gap-4">
@@ -72,11 +94,11 @@ function JourneySegment({
                     {dayName} · {dateNumber}
                   </p>
                   <p className="mt-1 truncate text-base font-semibold text-foreground">
-                    {item.completedEvidence?.workoutName ?? item.scheduledWorkout?.name ?? t('Día de descanso')}
+                    {evidence?.workoutName ?? item.scheduledWorkout?.name ?? t('Día de descanso')}
                   </p>
-                  {item.completedEvidence && (
+                  {evidence && (
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {t('{minutes} min', { minutes: item.completedEvidence.durationMinutes })}
+                      {t('{minutes} min', { minutes: evidence.durationMinutes })}
                     </p>
                   )}
                   {completedWithPreviousPlan && (
@@ -96,15 +118,25 @@ function JourneySegment({
                   {toneLabel(item.tone, t)}
                 </span>
               </div>
+              {item.tone === 'recovered' && otherDate?.completedDate && (
+                <p className="mt-2 text-sm font-medium text-blue-700 dark:text-blue-300">
+                  {t('Completada el {date}', { date: civilDateLabel(otherDate.completedDate, language) })}
+                </p>
+              )}
+              {item.completedEvidence?.sourceDate && item.completedEvidence.sourceDate !== item.dateStr && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t('Sesión del {date}', { date: civilDateLabel(item.completedEvidence.sourceDate, language) })}
+                </p>
+              )}
             </div>
           )
 
           return (
             <TimelineNode key={item.isoDay} tone={item.tone} label={toneLabel(item.tone, t)}>
-              {item.completedEvidence ? (
+              {evidence ? (
                 <PendingLink
-                  href={`/history/${item.completedEvidence.logId}`}
-                  aria-label={`${t('Ver sesión completada')}: ${item.completedEvidence.workoutName}`}
+                  href={`/history/${evidence.logId}`}
+                  aria-label={`${t('Ver sesión completada')}: ${evidence.workoutName}`}
                   className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
                 >
                   {body}
@@ -127,6 +159,9 @@ function JourneySegment({
                   {body}
                 </button>
               )}
+              {item.completedEvidence && otherDate?.completedDate && (
+                <OtherDateCompletionLink evidence={otherDate} />
+              )}
             </TimelineNode>
           )
         })}
@@ -135,6 +170,22 @@ function JourneySegment({
         {activeMessage ?? ''}
       </p>
     </section>
+  )
+}
+
+function CompletedSessionLink({ today }: { today: DashboardToday }) {
+  const { t, language } = useI18n()
+  const evidence = today.completedEvidence
+  if (!evidence) return null
+  return (
+    <div className="mt-3">
+      {evidence.sourceDate && evidence.sourceDate !== evidence.completedDate && (
+        <p className="text-sm text-muted-foreground">{t('Sesión del {date}', { date: civilDateLabel(evidence.sourceDate, language) })}</p>
+      )}
+      <PendingLink href={`/history/${evidence.logId}`} className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-xl text-sm font-semibold text-[hsl(var(--training-complete))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+        {t('Ver sesión completada')}<ArrowRight className="h-4 w-4" aria-hidden="true" />
+      </PendingLink>
+    </div>
   )
 }
 
@@ -168,7 +219,7 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
   }
 
   if (today.state === 'completed-for-today') {
-    const completedWithPreviousPlan = Boolean(today.completedEvidence && today.workout)
+    const completedWithPreviousPlan = Boolean(today.completedEvidence && today.workout && today.completedEvidence.isFromActivePlan !== true)
     return (
       <section aria-labelledby="today-title" className="rounded-3xl border border-[hsl(var(--training-complete)/0.35)] bg-[hsl(var(--training-complete)/0.08)] p-5">
         <div className="flex items-center gap-2 text-[hsl(var(--training-complete))]">
@@ -201,6 +252,7 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
               })
             : t('No hay otra sesión programada esta semana.')}
         </p>
+        <CompletedSessionLink today={today} />
       </section>
     )
   }
@@ -226,6 +278,7 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
         <p className="mt-2 text-base leading-relaxed text-muted-foreground">
           {t('La sesión de hoy ya está hecha. Prioriza tu recuperación.')}
         </p>
+        <CompletedSessionLink today={today} />
       </section>
     )
   }
@@ -298,7 +351,11 @@ export function DashboardWeekJourney({ dashboard, companion }: { dashboard: Dash
 
       {(currentItem || companion) && (
         <div className="space-y-4 py-4 lg:col-start-2 lg:row-start-1 lg:py-0">
-          {currentItem && <TodayJourneyCard today={dashboard.today} />}
+          {currentItem?.completionOnAnotherDate && !currentItem.hasTrainingEvidence && (
+            <JourneySegment items={[currentItem]} title={t('Otro día')} />
+          )}
+          {currentItem && (currentItem.hasTrainingEvidence || !currentItem.isScheduledWorkoutCompleted) && <TodayJourneyCard today={dashboard.today} />}
+          {currentItem?.completionOnAnotherDate && currentItem.hasTrainingEvidence && <OtherDateCompletionLink evidence={currentItem.completionOnAnotherDate} />}
           {companion}
         </div>
       )}

@@ -5,6 +5,9 @@ export type AppQueryError = { message: string; code: string }
 export type AppQueryResult<T = AppRow[]> = { data: T | null; error: AppQueryError | null; count: number | null }
 type ReadStore = () => Promise<AppStore>
 type Join = { alias: string; table: string; selection: string; inner: boolean }
+type RowOrder = { column: string; ascending: boolean; nullsFirst: boolean }
+type QueryOrder = RowOrder & { referencedTable?: string }
+type OrderScope = { orders: RowOrder[]; relations: Map<string, OrderScope> }
 type Filter = (row: AppRow) => boolean
 
 const KNOWN_TABLES = new Set([
@@ -90,7 +93,41 @@ function parseJoins(selection: string): Join[] {
   })
 }
 
-function joinedRows(state: AppState, table: string, selection: string, rows = scopedRows(state, table)): AppRow[] {
+function orderScope(selection: string, orders: QueryOrder[]): OrderScope {
+  const root: OrderScope = { orders: [], relations: new Map() }
+  for (const order of orders) {
+    let scope = root; let nestedSelection = selection
+    for (const key of order.referencedTable === undefined ? [] : order.referencedTable.split('.')) {
+      const joins = parseJoins(nestedSelection)
+      const exact = joins.find(join => join.alias === key)
+      const canonical = joins.filter(join => join.table === key)
+      if (!exact && canonical.length > 1) unsupported(`ambiguous relationship ordering ${key}`)
+      const relation = exact ?? canonical[0]
+      if (!relation) unsupported(`relationship ordering ${key}`)
+      if (!scope.relations.has(relation.alias)) scope.relations.set(relation.alias, { orders: [], relations: new Map() })
+      scope = scope.relations.get(relation.alias)!
+      nestedSelection = relation.selection
+    }
+    scope.orders.push(order)
+  }
+  return root
+}
+
+function sortRows(rows: AppRow[], selection: string, orders: RowOrder[]): void {
+  rows.sort((a, b) => {
+    for (const order of orders) {
+      const av = valueAt(a, order.column, selection); const bv = valueAt(b, order.column, selection)
+      if (av == null && bv == null) continue
+      if (av == null) return order.nullsFirst ? -1 : 1
+      if (bv == null) return order.nullsFirst ? 1 : -1
+      const compared = compare(av, bv) * (order.ascending ? 1 : -1)
+      if (compared) return compared
+    }
+    return 0
+  })
+}
+
+function joinedRows(state: AppState, table: string, selection: string, rows = scopedRows(state, table), scope?: OrderScope): AppRow[] {
   const joins = parseJoins(selection)
   return rows.flatMap(original => {
     const row = { ...original }
@@ -105,7 +142,10 @@ function joinedRows(state: AppState, table: string, selection: string, rows = sc
         many = true
         related = scopedRows(state, join.table).filter(candidate => candidate[reverseKey] === original.id)
       }
-      const nested = joinedRows(state, join.table, join.selection, related)
+      const nestedScope = scope?.relations.get(join.alias)
+      const nested = joinedRows(state, join.table, join.selection, related, nestedScope)
+      // PostgREST embedded ordering shapes the relation, not its parent rows.
+      if (nestedScope) sortRows(nested, join.selection, nestedScope.orders)
       if (join.inner && nested.length === 0) return []
       row[join.alias] = many ? nested : nested[0] ?? null
     }
@@ -116,7 +156,7 @@ function joinedRows(state: AppState, table: string, selection: string, rows = sc
 export class AppQuery implements PromiseLike<AppQueryResult> {
   private selection = '*'
   private filters: Filter[] = []
-  private orders: Array<{ column: string; ascending: boolean; nullsFirst: boolean }> = []
+  private orders: QueryOrder[] = []
   private offset = 0
   private maximum = Infinity
   private countRequested = false
@@ -157,9 +197,9 @@ export class AppQuery implements PromiseLike<AppQueryResult> {
   gt(column: string, value: unknown): this { return this.comparison(column, value, order => order > 0) }
   lt(column: string, value: unknown): this { return this.comparison(column, value, order => order < 0) }
   order(column: string, options?: { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string; foreignTable?: string }): this {
-    if (options?.referencedTable || options?.foreignTable) unsupported('nested ordering')
     const ascending = options?.ascending !== false
-    this.orders.push({ column, ascending, nullsFirst: options?.nullsFirst ?? !ascending }); return this
+    this.orders.push({ column, ascending, nullsFirst: options?.nullsFirst ?? !ascending,
+      referencedTable: options?.referencedTable ?? options?.foreignTable }); return this
   }
   limit(maximum: number): this {
     if (!Number.isSafeInteger(maximum) || maximum < 0) unsupported('invalid limit')
@@ -179,19 +219,10 @@ export class AppQuery implements PromiseLike<AppQueryResult> {
     const state = await (await this.getStore()).read()
     if (!state) return { data: null, error: { message: 'No active local account', code: '28000' }, count: null }
     if (state.accountId !== accountId) return { data: null, error: { message: 'Local account changed; reload this screen', code: '28000' }, count: null }
-    let rows = joinedRows(state, this.table, this.selection).filter(row => this.filters.every(filter => filter(row)))
+    const scope = orderScope(this.selection, this.orders)
+    let rows = joinedRows(state, this.table, this.selection, undefined, scope).filter(row => this.filters.every(filter => filter(row)))
     const count = this.countRequested ? rows.length : null
-    rows.sort((a, b) => {
-      for (const order of this.orders) {
-        const av = valueAt(a, order.column, this.selection); const bv = valueAt(b, order.column, this.selection)
-        if (av == null && bv == null) continue
-        if (av == null) return order.nullsFirst ? -1 : 1
-        if (bv == null) return order.nullsFirst ? 1 : -1
-        const compared = compare(av, bv) * (order.ascending ? 1 : -1)
-        if (compared) return compared
-      }
-      return 0
-    })
+    sortRows(rows, this.selection, scope.orders)
     rows = rows.slice(this.offset, Number.isFinite(this.maximum) ? this.offset + this.maximum : undefined)
     return { data: this.head ? null : rows, error: null, count }
   }

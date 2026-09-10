@@ -11,7 +11,7 @@ const planId = id(20), workoutId = id(21), assignmentId = id(22), versionId = id
 const passed = []
 await mkdir(artifacts, { recursive: true })
 
-async function fixture({ history = true } = {}) {
+async function fixture({ history = true, recovered = false } = {}) {
   const state = await newTestAccount()
   Object.assign(state.tables.profiles[0], {
     full_name: 'Prueba de entrenamiento', onboarding_done: true, timezone: 'America/Havana', language: 'es', readiness_status: 'cleared',
@@ -60,6 +60,32 @@ async function fixture({ history = true } = {}) {
     { id: id(51), progress_log_id: id(40), exercise_id: state.tables.exercises[1].id, sets_completed: 2, weights_kg: [], reps_completed: [], duration_seconds: 60 },
     { id: id(52), progress_log_id: id(41), exercise_id: state.tables.exercises[0].id, sets_completed: 4, weights_kg: [10, 10, 10, 10], reps_completed: [8, 8, 8, 8], duration_seconds: null },
   ] : []
+  if (recovered) {
+    state.tables.workouts[0].day_of_week = 3
+    state.tables.workouts[0].name = 'Rutina con nombre libre'
+    const context = snapshot([['pecho'], ['abdominales']])
+    context.workout.dayOfWeek = 3
+    context.workout.name = 'Mi sesión del miércoles'
+    state.tables.progress_logs = [{ id: id(40), user_id: state.accountId, workout_id: workoutId,
+      completed_at: '2026-09-10T15:00:00Z', duration_minutes: 20, session_context_snapshot: context,
+      ...(recovered === 'legacy' ? {} : { occurrence_source_date: '2026-09-09', occurrence_scheduled_date: '2026-09-09' }),
+    }]
+    state.tables.exercise_logs = [{ id: id(50), progress_log_id: id(40), exercise_id: state.tables.exercises[0].id,
+      sets_completed: 3, weights_kg: [0, 0, 0], reps_completed: [8, 8, 8], duration_seconds: null }]
+    if (recovered === 'earlier' || recovered === 'earlier-with-training') {
+      state.tables.progress_logs[0].completed_at = '2026-09-08T15:00:00Z'
+      state.tables.progress_logs[0].occurrence_scheduled_date = '2026-09-08'
+      state.tables.workout_schedule_overrides = [{ id: id(70), user_id: state.accountId, plan_id: planId, workout_id: workoutId,
+        source_date: '2026-09-09', target_date: '2026-09-08', policy_timezone: 'America/Havana',
+        created_at: '2026-09-08T12:00:00Z', updated_at: '2026-09-08T12:00:00Z' }]
+      if (recovered === 'earlier-with-training') state.tables.progress_logs.push({ id: id(42), user_id: state.accountId,
+        workout_id: null, completed_at: '2026-09-09T15:00:00Z', duration_minutes: 10, session_context_snapshot: null })
+    }
+    if (recovered === 'prior-plan') {
+      state.tables.workouts[0].id = id(90)
+      state.tables.workout_exercises.forEach(row => { row.workout_id = id(90) })
+    }
+  }
   return state
 }
 
@@ -97,6 +123,60 @@ async function runCase(name, width, options, run) {
 }
 
 try {
+  await runCase('original-day-today', 390, { recovered: 'earlier' }, async page => {
+    await page.clock.setFixedTime(new Date('2026-09-09T16:00:00Z'))
+    await page.goto(`${origin}/dashboard`)
+    const source = page.locator('[data-timeline-tone="recovered"]')
+    await expect(source).toContainText('miércoles · 9')
+    await expect(source).toContainText('Completada el martes, 8 sept')
+    await expect(page.getByText('Completado hoy', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('1 de 1 sesiones', { exact: true })).toBeVisible()
+    await source.getByRole('link').click()
+    await expect(page).toHaveURL(`${origin}/history/${id(40)}`)
+  })
+  await runCase('recovered-prior-plan', 390, { recovered: 'prior-plan' }, async page => {
+    await page.goto(`${origin}/dashboard`)
+    const source = page.locator('[data-timeline-tone="recovered"]')
+    await expect(source).toContainText('Realizado con el plan anterior')
+    await expect(source).toContainText('Programado en tu plan actual: Rutina con nombre libre')
+    await expect(page.getByText('1 de 1 sesiones', { exact: true })).toBeVisible()
+    await captureElement(page, source, `${artifacts}/recovered-prior-plan-390.png`)
+  })
+  await runCase('today-with-two-references', 390, { recovered: 'earlier-with-training' }, async page => {
+    await page.clock.setFixedTime(new Date('2026-09-09T16:00:00Z'))
+    await page.goto(`${origin}/dashboard`)
+    await expect(page.getByText('Completado hoy', { exact: true })).toBeVisible()
+    const reference = page.getByRole('link').filter({ hasText: 'Completada el martes, 8 sept' })
+    await expect(reference).toBeVisible()
+    await reference.click()
+    await expect(page).toHaveURL(`${origin}/history/${id(40)}`)
+  })
+  for (const width of [320, 390, 1440]) {
+    await runCase('recovered-history', width, { recovered: width === 320 ? 'legacy' : 'stamped' }, async (page, state) => {
+      await page.goto(`${origin}/dashboard`)
+      const recovered = page.locator('[data-timeline-tone="recovered"]')
+      await expect(recovered).toHaveCount(1)
+      await expect(recovered).toContainText('miércoles · 9')
+      await expect(recovered).toContainText('Completada el jueves, 10 sept')
+      await expect(page.getByText('1 de 1 sesiones', { exact: true })).toBeVisible()
+      const today = page.locator('section[aria-labelledby="today-title"]')
+      await expect(today).toContainText('Sesión del miércoles, 9 sept')
+      await captureElement(page, recovered, `${artifacts}/recovered-wednesday-${width}.png`)
+      await recovered.getByRole('link').click()
+      await expect(page).toHaveURL(`${origin}/history/${id(40)}`)
+      await expect(page.getByText('No se pudo abrir esta pantalla', { exact: true })).toHaveCount(0)
+      await expect(page.getByRole('heading', { name: 'Mi sesión del miércoles', level: 2, exact: true })).toBeVisible()
+      await expect(page.getByText('Flexión de brazos', { exact: true }).first()).toBeVisible()
+      await page.screenshot({ path: `${artifacts}/completed-history-${width}.png`, fullPage: true })
+      await page.reload()
+      await expect(page.getByRole('heading', { name: 'Mi sesión del miércoles', level: 2, exact: true })).toBeVisible()
+      await page.goto(`${origin}/dashboard`)
+      await page.locator('section[aria-labelledby="today-title"]').getByRole('link', { name: 'Ver sesión completada', exact: true }).click()
+      await expect(page).toHaveURL(`${origin}/history/${id(40)}`)
+      const saved = (await storedAccountSnapshot(page)).accounts[0]
+      for (const table of ['workout_plans', 'workouts', 'workout_exercises', 'progress_logs', 'exercise_logs']) assert.deepEqual(saved.tables[table], state.tables[table])
+    })
+  }
   for (const width of [360, 390, 1440]) {
     await runCase('muscle-map', width, {}, async (page, state) => {
       await page.goto(`${origin}/plan`)
@@ -140,13 +220,34 @@ try {
       await page.goto(`${origin}/plan`)
       const panel = page.getByRole('region', { name: 'Reprogramar una sesión', exact: true })
       await expect(panel).toBeVisible()
-      await panel.getByLabel('Nueva fecha', { exact: true }).selectOption('2026-09-11')
+      const source = panel.getByRole('combobox', { name: 'Sesión y fecha original', exact: true })
+      const target = panel.getByRole('combobox', { name: 'Nueva fecha', exact: true })
+      await source.focus()
+      await page.keyboard.press('Enter')
+      await expect(page.getByRole('listbox')).toBeVisible()
+      await page.screenshot({ path: `${artifacts}/session-selector-${width}.png`, fullPage: true })
+      await page.keyboard.press('Escape')
+      await expect(source).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(page.getByRole('option').filter({ hasText: '2026-09-10' })).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await expect(page.getByRole('option').filter({ hasText: '2026-09-17' })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(source).toContainText('2026-09-17')
+      await source.click()
+      await page.getByRole('option').filter({ hasText: '2026-09-10' }).click()
+      await expect(source).toContainText('2026-09-10')
+      await target.click()
+      await expect(page.getByRole('listbox')).toBeVisible()
+      await expect(page.getByRole('option').filter({ hasText: '2026-09-15' })).toHaveAttribute('aria-disabled', 'true')
+      await page.screenshot({ path: `${artifacts}/date-selector-${width}.png`, fullPage: true })
+      await page.getByRole('option').filter({ hasText: '2026-09-11' }).click()
       await panel.getByRole('button', { name: 'Guardar fecha', exact: true }).click()
       await expect(panel.getByRole('status')).toContainText('Sesión reprogramada: 2026-09-11')
       await page.reload()
-      await expect(panel.getByLabel('Sesión y fecha original', { exact: true })).toHaveValue(`${workoutId}:2026-09-10`)
+      await expect(source).toContainText('2026-09-10')
       await expect(panel).toContainText('Fecha programada: 2026-09-11')
-      await expect(panel.getByLabel('Nueva fecha', { exact: true })).toHaveValue('2026-09-11')
+      await expect(target).toContainText('2026-09-11')
       await expect(panel.getByRole('button', { name: 'Guardar fecha', exact: true })).toBeDisabled()
       let saved = (await storedAccountSnapshot(page)).accounts[0]
       assert.equal(saved.tables.workout_schedule_overrides.length, 1)
@@ -158,7 +259,8 @@ try {
       await panel.getByRole('button', { name: 'Restaurar fecha original', exact: true }).click()
       await expect(panel.getByRole('status')).toContainText('Fecha original restaurada: 2026-09-10')
       assert.equal((await storedAccountSnapshot(page)).accounts[0].tables.workout_schedule_overrides.length, 0)
-      await panel.getByLabel('Nueva fecha', { exact: true }).selectOption('2026-09-11')
+      await target.click()
+      await page.getByRole('option').filter({ hasText: '2026-09-11' }).click()
       await panel.getByRole('button', { name: 'Guardar fecha', exact: true }).click()
       await expect(panel.getByRole('status')).toContainText('Sesión reprogramada: 2026-09-11')
       await page.goto(`${origin}/entrenar`)
@@ -190,6 +292,14 @@ try {
       assert.equal(saved.tables.progress_logs[0].occurrence_scheduled_date, '2026-09-11')
       assert.equal(saved.tables.progress_logs[0].session_context_snapshot.workout.dayOfWeek, 4)
       for (const table of ['workout_plans', 'workouts', 'workout_exercises']) assert.deepEqual(saved.tables[table], state.tables[table])
+      await page.goto(`${origin}/dashboard`)
+      const originalDay = page.locator('[data-timeline-tone="recovered"]')
+      await expect(originalDay).toContainText('jueves · 10')
+      await expect(originalDay).toContainText('Completada el viernes, 11 sept')
+      await expect(page.getByText('1 de 1 sesiones', { exact: true })).toBeVisible()
+      await originalDay.getByRole('link').click()
+      await expect(page).toHaveURL(`${origin}/history/${saved.tables.progress_logs[0].id}`)
+      await expect(page.getByText('No se pudo abrir esta pantalla', { exact: true })).toHaveCount(0)
       await page.goto(`${origin}/progress`)
       await expect(page.locator('[data-muscle-map="completed"]').getByRole('button', { name: 'Pecho: 3 series completadas', exact: true })).toBeVisible()
       await expect(page.locator('[data-muscle-map="completed"]').getByRole('button', { name: 'Abdomen: 1 serie completada', exact: true })).toBeVisible()

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
-export type TimelineTone = 'completed' | 'active' | 'rest' | 'upcoming' | 'missed'
+export type TimelineTone = 'completed' | 'recovered' | 'active' | 'rest' | 'upcoming' | 'missed'
 
 export function TimelineRail({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -35,6 +35,7 @@ export function TimelineNode({
         className={cn(
           'absolute left-0 top-4 z-10 h-3.5 w-3.5 rounded-full border-2 border-background transition-[box-shadow,transform] duration-[var(--motion-expand)] motion-reduce:transition-none',
           tone === 'completed' && 'bg-[hsl(var(--training-complete))]',
+          tone === 'recovered' && 'bg-blue-400',
           tone === 'active' &&
             'scale-110 bg-[hsl(var(--training-active))] shadow-[0_0_0_5px_hsl(var(--training-active)/0.14)]',
           tone === 'rest' && 'bg-muted-foreground',

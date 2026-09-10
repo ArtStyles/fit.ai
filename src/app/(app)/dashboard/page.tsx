@@ -509,7 +509,7 @@ export default async function DashboardPage() {
   const continuityDays = buildWeekContinuity({
     activeWorkouts: workouts,
     localSchedule,
-    weekLogs: weekLogs.map(log => ({
+    weekLogs: allRecentLogs.map(log => ({
       ...log,
       session_context_snapshot: log.session_context_snapshot ?? null,
       workout: log.workout ?? null,

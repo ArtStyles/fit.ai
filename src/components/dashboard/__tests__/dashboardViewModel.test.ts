@@ -103,6 +103,14 @@ describe('dashboard notice priority', () => {
 })
 
 describe('dashboard view model', () => {
+  it('shows a blue recovered source and counts only the real training day', () => {
+    const completed = { ...weekDay(4, null, true), isToday: true }
+    const source = { ...weekDay(3, workout), isToday: false, completionOnAnotherDate: completed.completedEvidence, isScheduledWorkoutCompleted: true, canStartScheduledWorkout: false }
+    const viewModel = buildDashboardViewModel(input({ weekDays: [source, completed] }))
+    expect(viewModel.weekly.timeline.map(day => day.tone)).toEqual(['recovered', 'completed'])
+    expect(viewModel.weekly.completed).toBe(1)
+    expect(viewModel.weekly.scheduled).toBe(1)
+  })
   it('builds a chronological week without inventing readiness data', () => {
     const viewModel = buildDashboardViewModel(input({
       weekDays: [

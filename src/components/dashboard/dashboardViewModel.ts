@@ -1,3 +1,5 @@
+import type { CompletedTrainingEvidence } from '@/lib/dashboard/weekContinuity'
+
 export type DashboardWorkout = {
   id: string
   name: string
@@ -14,6 +16,7 @@ export type DashboardWeekDay = {
   dateStr: string
   scheduledWorkout: DashboardWorkout | null
   completedEvidence: DashboardCompletedEvidence | null
+  completionOnAnotherDate?: DashboardCompletedEvidence | null
   isScheduledWorkoutCompleted: boolean
   hasTrainingEvidence: boolean
   canStartScheduledWorkout: boolean
@@ -21,15 +24,7 @@ export type DashboardWeekDay = {
   isRecoverable: boolean
 }
 
-export type DashboardCompletedEvidence = {
-  logId: string
-  workoutId: string | null
-  workoutName: string
-  focus: string | null
-  durationMinutes: number
-  completedAt: string
-  source: 'snapshot' | 'workout' | 'fallback'
-}
+export type DashboardCompletedEvidence = CompletedTrainingEvidence
 
 export type DashboardLatestSession = {
   id: string
@@ -109,7 +104,7 @@ export type DashboardToday = {
   nextWorkoutIsoDay: number | null
 }
 
-export type DashboardTimelineTone = 'completed' | 'active' | 'rest' | 'upcoming' | 'missed'
+export type DashboardTimelineTone = 'completed' | 'recovered' | 'active' | 'rest' | 'upcoming' | 'missed'
 
 export type DashboardTimelineItem = DashboardWeekDay & {
   tone: DashboardTimelineTone
@@ -177,6 +172,8 @@ function buildDashboardTimeline(days: DashboardWeekDay[]): DashboardTimelineItem
           : 'future'
     const tone: DashboardTimelineTone = day.hasTrainingEvidence
       ? 'completed'
+      : day.completionOnAnotherDate
+        ? 'recovered'
       : position === 'today' && day.scheduledWorkout
         ? 'active'
         : !day.scheduledWorkout

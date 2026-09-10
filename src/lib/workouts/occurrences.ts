@@ -3,9 +3,12 @@ import { getLocalDateString, WORKOUT_ACCESS_POLICY, type WorkoutStartWindow } fr
 export type ScheduledWorkout = { id: string; day_of_week: number | null }
 export type ScheduleOverride = { workout_id: string; source_date: string; target_date: string }
 export type WorkoutOccurrence = { workoutId: string; sourceDate: string; scheduledDate: string }
-export type OccurrenceLog = { workout_id: string | null; completed_at: string; occurrence_source_date?: string | null }
+export type OccurrenceLog = {
+  id?: string; client_session_id?: string; workout_id: string | null; completed_at: string
+  occurrence_source_date?: string | null; occurrence_scheduled_date?: string | null
+}
 export type OccurrenceAuthorization = {
-  workout_id: string; occurrence_source_date?: string | null; policy_date: string; policy_timezone?: string
+  workout_id: string; client_session_id?: string; occurrence_source_date?: string | null; occurrence_scheduled_date?: string | null; policy_date: string; policy_timezone?: string
   workout_window_start: string; expires_at: string; consumed_at?: string | null; released_at?: string | null
 }
 export type LocalWorkoutSchedule = {
