@@ -9,6 +9,7 @@ const assets = [
   ['public/icon.svg', 'icon.svg'],
   ['public/fonts/vekira', 'fonts/vekira'],
   ['public/exercises/catalog/v1', 'exercises/catalog/v1'],
+  ['public/third-party/MuscleMap-LICENSE.txt', 'third-party/MuscleMap-LICENSE.txt'],
   ['node_modules/sql.js/dist/sql-wasm.wasm', 'sql-wasm.wasm'],
 ]
 for (const [source, destination] of assets) {

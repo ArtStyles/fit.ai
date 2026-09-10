@@ -1,3 +1,4 @@
+import { isCivilDate } from '@/lib/workouts/occurrences'
 import { Capacitor } from '@capacitor/core'
 import { openBrowserSqliteDriver } from '../data/browser-driver'
 import { openNativeSqliteDriver } from '../data/native-driver'
@@ -8,7 +9,7 @@ export type { AppState, AppStore, AppRow } from './types'
 
 const FORMAT = 'vekira-original-app-backup'
 const MAX_BACKUP_BYTES = 100 * 1024 * 1024
-const OWNER_TABLES = new Set(['workout_plans', 'workouts', 'progress_logs', 'measurements', 'session_authorizations', 'session_drafts', 'session_results', 'plan_generation_requests', 'notifications', 'user_preferences'])
+const OWNER_TABLES = new Set(['workout_schedule_overrides', 'workout_plans', 'workouts', 'progress_logs', 'measurements', 'session_authorizations', 'session_drafts', 'session_results', 'plan_generation_requests', 'notifications', 'user_preferences'])
 const PARENTS: Record<string, [string, string]> = {
   workout_exercises: ['workout_id', 'workouts'],
   exercise_logs: ['progress_log_id', 'progress_logs'],
@@ -52,6 +53,25 @@ export function validateAppState(input: unknown): AppState {
         const [key, parent] = PARENTS[table]
         if (!(state.tables[parent] ?? []).some(item => item.id === row[key])) throw new Error(`${table} parent is unavailable`)
       }
+    }
+  }
+  const occurrenceKeys = new Set<string>()
+  const destinationKeys = new Set<string>()
+  for (const row of state.tables.workout_schedule_overrides ?? []) {
+    if (typeof row.id !== 'string' || !row.id || !isCivilDate(row.source_date) || !isCivilDate(row.target_date)
+      || row.source_date === row.target_date || typeof row.policy_timezone !== 'string'
+      || !Number.isFinite(Date.parse(row.created_at)) || !Number.isFinite(Date.parse(row.updated_at))) throw new Error('Invalid workout schedule override')
+    try { new Intl.DateTimeFormat('en', { timeZone: row.policy_timezone }) } catch { throw new Error('Invalid workout schedule timezone') }
+    const workout = (state.tables.workouts ?? []).find(item => item.id === row.workout_id && item.user_id === state.accountId && item.plan_id === row.plan_id)
+    if (!workout || !(state.tables.workout_plans ?? []).some(item => item.id === row.plan_id && item.user_id === state.accountId)) throw new Error('Workout schedule parent is unavailable')
+    const key = `${row.workout_id}:${row.source_date}`
+    const destinationKey = `${row.plan_id}:${row.target_date}`
+    if (occurrenceKeys.has(key) || destinationKeys.has(destinationKey)) throw new Error('Duplicate workout schedule occurrence or destination')
+    occurrenceKeys.add(key); destinationKeys.add(destinationKey)
+  }
+  for (const table of ['session_authorizations', 'progress_logs']) for (const row of state.tables[table] ?? []) {
+    if (row.occurrence_source_date !== undefined || row.occurrence_scheduled_date !== undefined) {
+      if (!isCivilDate(row.occurrence_source_date) || !isCivilDate(row.occurrence_scheduled_date)) throw new Error('Invalid session occurrence identity')
     }
   }
   return state

@@ -7,6 +7,8 @@ import { EvidenceInsight } from '@/components/evidence/EvidenceInsight'
 import { MetricStrip } from '@/components/evidence/MetricStrip'
 import { PeriodSelector } from '@/components/evidence/PeriodSelector'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { MuscleActivityMap } from '@/components/muscles/MuscleActivityMap'
+import type { MuscleActivityInput } from '@/lib/muscles/activity'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { computeCalendarStats, type DayAggregate } from '@/lib/calendar/aggregate'
 import { MetricTextSummary } from './MetricTextSummary'
@@ -27,6 +29,7 @@ type ProgressHubProps = {
   records: ProgressRecord[]
   measurements: ProgressMeasurement[]
   exercisePoints: ProgressExercisePoint[]
+  muscleActivity?: MuscleActivityInput[]
   todayStr: string
   locale: ProgressLocale
 }
@@ -112,6 +115,7 @@ export function ProgressHub({
   records,
   measurements,
   exercisePoints,
+  muscleActivity = [],
   todayStr,
   locale,
 }: ProgressHubProps) {
@@ -211,6 +215,12 @@ export function ProgressHub({
         >
           {volumeSummary}
         </EvidenceInsight>
+      </section>
+
+      <section className="rounded-3xl border border-border/60 bg-muted/[0.04] p-5 sm:p-6" aria-labelledby="muscle-activity-title">
+        <SectionHeading id="muscle-activity-title" eyebrow={copy(resolvedLocale, 'Trabajo registrado', 'Recorded work')} title={copy(resolvedLocale, 'Tu actividad muscular', 'Your muscle activity')} />
+        <p className="mt-2 text-sm text-muted-foreground">{copy(resolvedLocale, 'Series completadas por grupo en el periodo seleccionado.', 'Completed sets per muscle group in the selected period.')}</p>
+        <MuscleActivityMap rows={muscleActivity} mode="completed" language={resolvedLocale} range={{ from: snapshot.startDate, to: todayStr }} />
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(19rem,.8fr)] lg:items-start">

@@ -1,3 +1,5 @@
+import { getLocalDateString } from '@/lib/workouts/schedule'
+import { occurrenceCompleted } from '@/lib/workouts/occurrences'
 import { buildProgressionSuggestions, type ProgressionSuggestion } from '@/lib/progression'
 import { detectPersonalRecord, type PRRecord } from '@/lib/progression/records'
 import { createSessionResultSnapshot, parseSessionResultSnapshot } from '@/lib/session/resultSnapshot'
@@ -36,9 +38,16 @@ export async function saveInState(state: State, payload: SaveSessionPayload, now
   const context = parseSessionContextSnapshot(authorization.session_context_snapshot)
   if (!context) return fail('No se pudo recuperar el contexto original de la sesión.')
   const start = Date.parse(authorization.policy_day_start); const end = Date.parse(authorization.policy_day_end)
+  const originalWindowStart = new Date(authorization.workout_window_start)
+  if (!Number.isFinite(originalWindowStart.getTime())) return fail('No se pudo validar la fecha original de la sesión.')
+  // Existing pre-feature leases have no exception and retain their original window.
+  const occurrenceSourceDate = authorization.occurrence_source_date ?? getLocalDateString(originalWindowStart, authorization.policy_timezone)
+  const occurrenceScheduledDate = authorization.occurrence_scheduled_date ?? occurrenceSourceDate
   if (!Number.isFinite(start) || !Number.isFinite(end)) return fail('No se pudo validar el día de la sesión.')
   if (rows(state, 'progress_logs').some(row => row.user_id === owner(state) && Date.parse(row.completed_at) >= start && Date.parse(row.completed_at) < end) || rows(state, 'session_authorizations').some(row => row.user_id === owner(state) && row.client_session_id !== payload.clientSessionId && row.policy_date === authorization.policy_date && row.consumed_at)) return fail('Ya registraste una sesión hoy. Máximo una sesión por día.')
-  if (rows(state, 'progress_logs').some(row => row.user_id === owner(state) && row.workout_id === payload.workoutId && Date.parse(row.completed_at) >= Date.parse(authorization.workout_window_start) && Date.parse(row.completed_at) < end)) return fail('Esta rutina ya fue completada.')
+  if (authorization.occurrence_source_date
+    ? occurrenceCompleted({ workoutId: payload.workoutId, sourceDate: authorization.occurrence_source_date, scheduledDate: authorization.occurrence_scheduled_date }, rows(state, 'progress_logs') as any, authorization.policy_timezone)
+    : rows(state, 'progress_logs').some(row => row.user_id === owner(state) && row.workout_id === payload.workoutId && Date.parse(row.completed_at) >= Date.parse(authorization.workout_window_start) && Date.parse(row.completed_at) < end)) return fail('Esta rutina ya fue completada.')
   const canonical = (authorization.prescription_snapshot ?? []) as Row[]
   const locked = context.plan?.prescriptionLocked === true
   const used = new Set<string>()
@@ -76,7 +85,7 @@ export async function saveInState(state: State, payload: SaveSessionPayload, now
     if (record) prs.push(record)
     return { id: crypto.randomUUID(), progress_log_id: id, exercise_id: exercise.exerciseId, sets_completed: completed.length, reps_completed: completed.map(set => numeric(set.reps)), weights_kg: completed.map(set => numeric(set.weightKg)), rpe_values: completed.map(set => set.rpe), duration_seconds: completed.reduce((sum, set) => sum + (set.durationSeconds ?? 0), 0) || null, skip_reason: exercise.status === 'skipped' ? exercise.skipReason?.trim() || null : null, notes: exercise.status === 'skipped' && exercise.skipReason ? `Saltado: ${exercise.skipReason}.` : exercise.source === 'ad_hoc' ? 'Agregado solo por hoy.' : exercise.source === 'replacement' && exercise.originalName ? `Cambio solo por hoy: reemplaza ${exercise.originalName}.` : null }
   })
-  rows(state, 'progress_logs').push({ id, user_id: owner(state), client_session_id: payload.clientSessionId, workout_id: payload.workoutId, completed_at: new Date(payload.finishedAt).toISOString(), duration_minutes: Math.max(1, Math.round((payload.finishedAt - payload.startedAt) / 60_000)), mood_rating: payload.moodRating, session_context_snapshot: context, session_result_snapshot: createSessionResultSnapshot(prs, progressions), session_detail_backup: details.map(({ id: _id, progress_log_id: _parent, ...detail }) => detail), mobile_session_payload: structuredClone(payload) })
+  rows(state, 'progress_logs').push({ occurrence_source_date: occurrenceSourceDate, occurrence_scheduled_date: occurrenceScheduledDate, id, user_id: owner(state), client_session_id: payload.clientSessionId, workout_id: payload.workoutId, completed_at: new Date(payload.finishedAt).toISOString(), duration_minutes: Math.max(1, Math.round((payload.finishedAt - payload.startedAt) / 60_000)), mood_rating: payload.moodRating, session_context_snapshot: context, session_result_snapshot: createSessionResultSnapshot(prs, progressions), session_detail_backup: details.map(({ id: _id, progress_log_id: _parent, ...detail }) => detail), mobile_session_payload: structuredClone(payload) })
   rows(state, 'exercise_logs').push(...details)
   authorization.consumed_at = now.toISOString()
   const active = rows(state, 'workout_plans').find(row => row.id === context.plan?.id && row.user_id === owner(state) && row.is_active && !row.prescription_locked)

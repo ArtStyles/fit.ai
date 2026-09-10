@@ -19,6 +19,9 @@ import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localiz
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
+import { buildHistoricalMuscleActivity } from '@/lib/muscles/history'
+import type { MuscleActivityInput } from '@/lib/muscles/activity'
+import { loadCompleteProgressHistory } from '@/lib/progress/historyPagination'
 
 export const metadata = { title: 'Progreso · Vekira' }
 
@@ -38,6 +41,8 @@ type ProgressLogRow = RawProgressLog & {
 }
 
 type ExerciseLogRow = RawExerciseLog & {
+  id: string
+  sets_completed: number | null
   exercise_id: string | null
   exercise: ExerciseSummary | ExerciseSummary[] | null
 }
@@ -176,17 +181,36 @@ async function loadProgressData(
   records: ProgressRecord[]
   measurements: ProgressMeasurement[]
   exercisePoints: ProgressExercisePoint[]
+  muscleActivity: MuscleActivityInput[]
 }> {
   const from = addDays(new Date(), -365).toISOString()
 
-  const [logsResult, measurementsResult] = await Promise.all([
-    supabase
-      .from('progress_logs')
-      .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot')
-      .eq('user_id', userId)
-      .gte('completed_at', from)
-      .order('completed_at', { ascending: false })
-      .limit(300) as unknown as Promise<{ data: ProgressLogRow[] | null; error: { message?: string } | null }>,
+  const [history, measurementsResult] = await Promise.all([
+    loadCompleteProgressHistory<ProgressLogRow, ExerciseLogRow>({
+      loadLogPage: (pageFrom, pageTo) => supabase
+        .from('progress_logs')
+        .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot')
+        .eq('user_id', userId)
+        .gte('completed_at', from)
+        .order('completed_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(pageFrom, pageTo) as unknown as Promise<{ data: ProgressLogRow[] | null; error: { message?: string } | null }>,
+      loadExercisePage: (logIds, pageFrom, pageTo) => supabase
+        .from('exercise_logs')
+        .select(`
+          id,
+          progress_log_id,
+          exercise_id,
+          weights_kg,
+          reps_completed,
+          sets_completed,
+          exercise:exercises(name, name_es, muscle_groups, muscle_groups_es, is_compound)
+        `)
+        .in('progress_log_id', logIds)
+        .order('progress_log_id', { ascending: true })
+        .order('id', { ascending: true })
+        .range(pageFrom, pageTo) as unknown as Promise<{ data: ExerciseLogRow[] | null; error: { message?: string } | null }>,
+    }),
     supabase
       .from('measurements')
       .select('id, recorded_at, weight_kg, body_fat_percentage, waist_cm')
@@ -195,34 +219,13 @@ async function loadProgressData(
       .limit(100) as unknown as Promise<{ data: MeasurementRow[] | null; error: { message?: string } | null }>,
   ])
 
-  if (logsResult.error) throw new Error(logsResult.error.message ?? 'Could not load progress sessions')
   if (measurementsResult.error) throw new Error(measurementsResult.error.message ?? 'Could not load measurements')
 
-  const sessionLogs = logsResult.data ?? []
-  const logIds = sessionLogs.map(log => log.id)
-  let exerciseLogs: ExerciseLogRow[] = []
-
-  if (logIds.length > 0) {
-    const { data, error } = await supabase
-      .from('exercise_logs')
-      .select(`
-        progress_log_id,
-        exercise_id,
-        weights_kg,
-        reps_completed,
-        exercise:exercises(name, name_es, muscle_groups, muscle_groups_es, is_compound)
-      `)
-      .in('progress_log_id', logIds) as unknown as {
-        data: ExerciseLogRow[] | null
-        error: { message?: string } | null
-      }
-
-    if (error) throw new Error(error.message ?? 'Could not load exercise progress')
-
-    exerciseLogs = data ?? []
-  }
+  const sessionLogs = history.logs
+  const exerciseLogs = history.exerciseLogs
 
   return {
+    muscleActivity: buildHistoricalMuscleActivity(exerciseLogs, sessionLogs, timeZone, language),
     sessions: sessionLogs.map(log => ({
       id: log.id,
       completedAt: log.completed_at,

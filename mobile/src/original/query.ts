@@ -8,10 +8,11 @@ type Join = { alias: string; table: string; selection: string; inner: boolean }
 type Filter = (row: AppRow) => boolean
 
 const KNOWN_TABLES = new Set([
+  'workout_schedule_overrides',
   'profiles', 'public_profiles', 'workout_plans', 'workouts', 'workout_exercises', 'exercises',
   'progress_logs', 'exercise_logs', 'measurements', 'dashboard_banners', 'notifications',
   'product_notifications', 'product_notification_preferences', 'notification_preferences', 'social_notification_preferences',
-  'coaching_relationships', 'coaching_consents', 'trainer_plan_assignments', 'trainer_plan_assignment_versions',
+  'coaching_relationships', 'coaching_consents', 'trainer_plan_assignments', 'trainer_plan_assignment_versions', 'trainer_assignment_versions',
   'trainer_plan_versions', 'trainer_profiles', 'trainer_services', 'active_trainer_directory',
   'session_authorizations', 'session_drafts', 'session_results', 'plan_generation_requests',
 ])
@@ -19,7 +20,7 @@ const FOREIGN_KEYS: Record<string, string> = {
   exercises: 'exercise_id', workouts: 'workout_id', workout_plans: 'plan_id', progress_logs: 'progress_log_id',
   coaching_relationships: 'relationship_id', trainer_plan_assignments: 'assignment_id',
 }
-const OWNED = new Set(['workout_plans', 'workouts', 'progress_logs', 'measurements', 'notifications', 'product_notifications', 'product_notification_preferences', 'notification_preferences', 'social_notification_preferences', 'session_authorizations', 'session_drafts', 'session_results', 'plan_generation_requests'])
+const OWNED = new Set(['workout_schedule_overrides', 'workout_plans', 'workouts', 'progress_logs', 'measurements', 'notifications', 'product_notifications', 'product_notification_preferences', 'notification_preferences', 'social_notification_preferences', 'session_authorizations', 'session_drafts', 'session_results', 'plan_generation_requests'])
 
 function unsupported(operation: string): never { throw new Error(`Unsupported local database operation: ${operation}`) }
 function valueAt(row: AppRow, path: string, selection: string): unknown {

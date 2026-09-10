@@ -28,6 +28,21 @@ const planASnapshot = {
 const dates = [{ isoDay: 1, dateStr: '2026-07-06' }]
 
 describe('buildWeekContinuity', () => {
+  it('projects effective dates while retaining completion evidence on the actual training date', () => {
+    const occurrence = { workout_id: planBWorkout.id, source_date: '2026-07-06', target_date: '2026-07-07' }
+    const log = { id: 'moved-log', workout_id: planBWorkout.id, completed_at: '2026-07-08T12:00:00Z', duration_minutes: 35, session_context_snapshot: null, occurrence_source_date: '2026-07-06' }
+    const days = buildWeekContinuity({
+      activeWorkouts: [planBWorkout], weekLogs: [log],
+      dates: [{ isoDay: 1, dateStr: '2026-07-06' }, { isoDay: 2, dateStr: '2026-07-07' }, { isoDay: 3, dateStr: '2026-07-08' }],
+      today: '2026-07-08', timeZone: 'UTC',
+      localSchedule: { overrides: [occurrence], logs: [log], authorizations: [] },
+    })
+    expect(days[0].scheduledWorkout).toBeNull()
+    expect(days[1].scheduledWorkout?.id).toBe(planBWorkout.id)
+    expect(days[1].canStartScheduledWorkout).toBe(false)
+    expect(days[1].completedEvidence).toBeNull()
+    expect(days[2].completedEvidence?.logId).toBe('moved-log')
+  })
   it('keeps prior-plan evidence on its real date without completing the active workout', () => {
     const [day] = buildWeekContinuity({
       activeWorkouts: [planBWorkout],

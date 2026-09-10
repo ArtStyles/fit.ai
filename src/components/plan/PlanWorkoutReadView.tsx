@@ -26,12 +26,14 @@ export function PlanWorkoutReadView({
   summary,
   exercises,
   isToday,
+  canStart,
   onEdit,
   prescriptionLocked = false,
 }: {
   summary: PlanDaySummary
   exercises: PlanWorkoutExerciseRow[]
   isToday: boolean
+  canStart?: boolean
   onEdit?: () => void
   prescriptionLocked?: boolean
 }) {
@@ -49,7 +51,7 @@ export function PlanWorkoutReadView({
         </div>
       </header>
 
-      {isToday && (
+      {(canStart ?? isToday) && (
         <PendingLink href={`/session/${summary.id}`} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[hsl(var(--training-action))] px-5 text-base font-extrabold text-slate-950 transition-[filter,transform] duration-[var(--motion-press)] hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--training-action))] motion-reduce:transition-none">
           <Play className="h-5 w-5 fill-current" aria-hidden="true" />
           {t('Empezar entrenamiento')}

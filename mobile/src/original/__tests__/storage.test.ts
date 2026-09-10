@@ -237,6 +237,11 @@ describe('original application SQLite state', () => {
 })
 
 describe('original application query adapter', () => {
+  it('reads absent canonical trainer assignment versions as empty metadata', async () => {
+    const app = await store(); await app.create(state())
+    const result = await createAppClient(app).from('trainer_assignment_versions').select('version_number,change_summary,assignment_id').eq('id', 'missing').maybeSingle()
+    expect(result).toMatchObject({ data: null, error: null })
+  })
   it('reads original aliases, nested joins, filters and counts', async () => {
     const app = await store(); await app.create(state())
     const client = createAppClient(app)

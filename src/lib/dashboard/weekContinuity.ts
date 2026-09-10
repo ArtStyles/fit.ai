@@ -1,3 +1,4 @@
+import { resolveOccurrences, occurrenceCompleted, type LocalWorkoutSchedule } from '@/lib/workouts/occurrences'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { getLocalDateString } from '@/lib/workouts/schedule'
 
@@ -71,6 +72,7 @@ export function buildWeekContinuity<TWorkout extends WeekContinuityWorkout>({
   today,
   timeZone = 'America/Havana',
   fallbackWorkoutName = 'Workout',
+  localSchedule,
 }: {
   activeWorkouts: TWorkout[]
   weekLogs: WeekContinuityLog[]
@@ -78,6 +80,7 @@ export function buildWeekContinuity<TWorkout extends WeekContinuityWorkout>({
   today: string
   timeZone?: string
   fallbackWorkoutName?: string
+  localSchedule?: LocalWorkoutSchedule
 }): Array<WeekContinuityDay<TWorkout>> {
   const logsByDate = new Map<string, WeekContinuityLog[]>()
   for (const log of weekLogs) {
@@ -89,7 +92,9 @@ export function buildWeekContinuity<TWorkout extends WeekContinuityWorkout>({
   Array.from(logsByDate.values()).forEach(logs => logs.sort(compareLogsNewestFirst))
 
   return dates.map(date => {
-    const scheduledWorkout = activeWorkouts.find(workout => workout.day_of_week === date.isoDay) ?? null
+    const occurrence = localSchedule ? resolveOccurrences(activeWorkouts, localSchedule.overrides, date.dateStr, date.dateStr)[0] : undefined
+    const scheduledWorkout = activeWorkouts.find(workout => localSchedule ? workout.id === occurrence?.workoutId : workout.day_of_week === date.isoDay) ?? null
+    const alreadyCompleted = Boolean(occurrence && localSchedule && occurrenceCompleted(occurrence, localSchedule.logs, timeZone))
     const dayLogs = logsByDate.get(date.dateStr) ?? []
     const scheduledLog = scheduledWorkout
       ? dayLogs.find(log => log.workout_id === scheduledWorkout.id)
@@ -100,9 +105,9 @@ export function buildWeekContinuity<TWorkout extends WeekContinuityWorkout>({
       ...date,
       scheduledWorkout,
       completedEvidence: evidenceLog ? toEvidence(evidenceLog, fallbackWorkoutName) : null,
-      isScheduledWorkoutCompleted: Boolean(scheduledLog),
+      isScheduledWorkoutCompleted: Boolean(scheduledLog) || alreadyCompleted,
       hasTrainingEvidence: dayLogs.length > 0,
-      canStartScheduledWorkout: Boolean(scheduledWorkout) && dayLogs.length === 0,
+      canStartScheduledWorkout: Boolean(scheduledWorkout) && dayLogs.length === 0 && !alreadyCompleted,
       isToday: date.dateStr === today,
     }
   })

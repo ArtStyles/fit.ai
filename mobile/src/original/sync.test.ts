@@ -44,6 +44,21 @@ function fixture(app: AppStore, catalog: AppRow[] = []) {
 }
 
 describe('original app cloud boundaries', () => {
+  it('preserves local dated overrides when canonical web data refreshes', async () => {
+    const app = await store(); const setup = fixture(app)
+    setup.web.workout_plans.push({ id: 'plan', user_id: owner, is_active: true })
+    setup.web.workouts.push({ id: 'workout', user_id: owner, plan_id: 'plan', name: 'A', day_of_week: 1 })
+    const previous = state(); previous.tables = copy(setup.web)
+    previous.tables.mobile_web_base = [{ id: 'canonical', tables: copy(setup.web) }]
+    const override = { id: 'override', user_id: owner, plan_id: 'plan', workout_id: 'workout', source_date: '2026-09-14', target_date: '2026-09-15', policy_timezone: 'UTC', created_at: '2026-09-14T12:00:00Z', updated_at: '2026-09-14T12:00:00Z' }
+    previous.tables.workout_schedule_overrides = [override]
+    await app.create(previous)
+    setup.web.workouts[0].name = 'Updated canonical name'
+    await setup.sync.synchronize()
+    const refreshed = (await app.read())!
+    expect(refreshed.tables.workout_schedule_overrides).toEqual([override])
+    expect(refreshed.tables.workouts[0]).toMatchObject({ name: 'Updated canonical name', day_of_week: 1 })
+  })
   it('uses bundled media for exact catalog matches without changing downloaded exercise identities', async () => {
     const source = 'vekira-catalog-v1'
     const catalog = [

@@ -1,3 +1,4 @@
+import { loadLocalWorkoutSchedule, resolveOccurrences, addCivilDays, civilWeekday, civilDaysBetween, occurrenceCompleted } from '@/lib/workouts/occurrences'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { CoachingSummaryCard } from '@/components/dashboard/CoachingSummaryCard'
 import { CompanionCard } from '@/components/companions/CompanionCard'
@@ -494,7 +495,9 @@ export default async function DashboardPage() {
   }
 
   // ── Workout de hoy + si ya está completado ─────────────────────────────────
-  const todayWorkout = workouts.find(w => w.day_of_week === todayIso) ?? null
+  const localSchedule = await loadLocalWorkoutSchedule(supabase, user.id)
+  const localOccurrences = localSchedule ? resolveOccurrences(workouts, localSchedule.overrides, addCivilDays(todayStr, -2), addCivilDays(todayStr, 7)) : undefined
+  const todayWorkout = workouts.find(w => localOccurrences ? w.id === localOccurrences.find(row => row.scheduledDate === todayStr)?.workoutId : w.day_of_week === todayIso) ?? null
 
   const weekDates = Array.from({ length: 7 }, (_, index) => {
     const date = addCalendarDays(weekStart, index, tz)
@@ -505,6 +508,7 @@ export default async function DashboardPage() {
   })
   const continuityDays = buildWeekContinuity({
     activeWorkouts: workouts,
+    localSchedule,
     weekLogs: weekLogs.map(log => ({
       ...log,
       session_context_snapshot: log.session_context_snapshot ?? null,
@@ -518,16 +522,21 @@ export default async function DashboardPage() {
   const todayContinuity = continuityDays.find(day => day.isToday) ?? null
 
   // ── Siguiente workout (para día de descanso) ───────────────────────────────
-  const nextWorkoutDay = Array.from({ length: 7 }, (_, i) => {
+  const recurringNextWorkoutDay = Array.from({ length: 7 }, (_, i) => {
     const iso = ((todayIso - 1 + i + 1) % 7) + 1
     return { iso, workout: workouts.find(w => w.day_of_week === iso) ?? null }
   }).find(d => d.iso !== todayIso && d.workout)
 
+  const nextOccurrence = localOccurrences?.find(row => row.scheduledDate > todayStr)
+  const nextWorkoutDay = localOccurrences
+    ? (nextOccurrence ? { iso: civilWeekday(nextOccurrence.scheduledDate), workout: workouts.find(w => w.id === nextOccurrence.workoutId) ?? null } : undefined)
+    : recurringNextWorkoutDay
+
   // ── Datos del calendario semanal ──────────────────────────────────────────
-  const hasSessionToday = Boolean(todayContinuity?.hasTrainingEvidence)
+  const hasSessionToday = Boolean(todayContinuity?.hasTrainingEvidence) || Boolean(localSchedule?.authorizations.some(row => row.policy_date === todayStr && row.consumed_at))
 
   const weekDays = continuityDays.map(day => {
-    const daysLate = todayIso - day.isoDay
+    const daysLate = civilDaysBetween(day.dateStr, todayStr)
     return {
       ...day,
       isRecoverable: Boolean(day.scheduledWorkout) && day.canStartScheduledWorkout && !hasSessionToday &&
@@ -535,11 +544,14 @@ export default async function DashboardPage() {
     }
   })
 
-  const recoverableDay = weekDays.find(day => day.isRecoverable) ?? null
+  const recoverableOccurrence = localSchedule ? localOccurrences?.find(row => row.scheduledDate < todayStr && !occurrenceCompleted(row, localSchedule.logs, tz)) : undefined
+  const recoverableDay = localSchedule
+    ? (!hasSessionToday && recoverableOccurrence ? { isoDay: civilWeekday(recoverableOccurrence.scheduledDate), scheduledWorkout: workouts.find(w => w.id === recoverableOccurrence.workoutId) ?? null } : null)
+    : weekDays.find(day => day.isRecoverable) ?? null
 
   // ── Quick stats ────────────────────────────────────────────────────────────
   const sessionsThisWeek   = weekLogs.length
-  const scheduledThisWeek  = workouts.length
+  const scheduledThisWeek  = localSchedule ? resolveOccurrences(workouts, localSchedule.overrides, weekDates[0].dateStr, weekDates[6].dateStr).length : workouts.length
 
   const bannerContext = getBannerContext(planRaw, hasCompletedSessions)
 

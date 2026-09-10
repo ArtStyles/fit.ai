@@ -3,6 +3,8 @@ import { resolveUserTimeZone, getLocalDayBounds, getLocalDateString, addDays } f
 import { parseSessionContextSnapshot, type SessionContextSnapshotV1 } from '@/lib/session/contextSnapshot'
 import type { SessionReadinessBlock } from '@/lib/session/authorization'
 import { mutate, read, rows, owner, profile, stateClient, uuid, type State } from './state'
+import { scheduleInState } from './rescheduleWorkout'
+import { occurrenceStarted } from '@/lib/workouts/occurrences'
 
 export type AuthorizeSessionStartResult = { success: true; contextSnapshot: SessionContextSnapshotV1 } | { success: false; error: string; readinessStatus?: SessionReadinessBlock; authorizationAbsent?: true }
 export type ReleaseSessionAuthorizationResult = { success: true } | { success: false; error: string }
@@ -42,11 +44,12 @@ export async function authorizeInState(state: State, clientSessionId: string, wo
   }
   const timeZone = resolveUserTimeZone(userProfile.timezone)
   const policyDate = getLocalDateString(now, timeZone)
-  const access = await getWorkoutStartAccess({ supabase: stateClient(state), userId: owner(state), workoutId, date: now, timeZone })
+  const access = await getWorkoutStartAccess({ supabase: stateClient(state), userId: owner(state), workoutId, date: now, timeZone, localSchedule: scheduleInState(state) })
   if (!access.allowed) return neverStarted(access.reason === 'another_session_today' ? 'Ya registraste una sesión hoy. Máximo una sesión por día.' : ['already_completed', 'completed_today'].includes(access.reason) ? 'Esta rutina ya fue completada.' : 'Solo puedes registrar la rutina de hoy o recuperar una sesión perdida reciente.')
   const workout = rows(state, 'workouts').find(row => row.id === workoutId)!
   const plan = rows(state, 'workout_plans').find(row => row.id === workout.plan_id)!
   if (plan.retired_at || plan.superseded_at) return neverStarted('Esta rutina ya no está disponible en tu plan activo.')
+  if (access.occurrence && occurrenceStarted(access.occurrence, scheduleInState(state).authorizations, timeZone, now)) return neverStarted('Esta sesión ya está iniciada. Continúa el entrenamiento en curso.')
   for (const authorization of rows(state, 'session_authorizations')) {
     if (authorization.user_id !== owner(state) || authorization.policy_date !== policyDate) continue
     if (!authorization.consumed_at && !authorization.released_at && Date.parse(authorization.expires_at) <= now.getTime()) authorization.released_at = now.toISOString()
@@ -59,7 +62,7 @@ export async function authorizeInState(state: State, clientSessionId: string, wo
   if (!snapshot) return neverStarted('No se pudo preparar la sesión. Revisa los ejercicios del plan.')
   const { start, end } = getLocalDayBounds(now, timeZone)
   const windowStart = access.window.status === 'recoverable' ? getLocalDayBounds(addDays(now, -access.window.daysLate, timeZone), timeZone).start : start
-  rows(state, 'session_authorizations').push({ id: crypto.randomUUID(), user_id: owner(state), client_session_id: clientSessionId, workout_id: workoutId, plan_id: plan.id, authorized_at: now.toISOString(), created_at: now.toISOString(), expires_at: new Date(now.getTime() + 12 * 60 * 60_000).toISOString(), consumed_at: null, released_at: null, policy_timezone: timeZone, policy_date: policyDate, policy_day_start: start.toISOString(), policy_day_end: end.toISOString(), workout_window_start: windowStart.toISOString(), session_context_snapshot: snapshot, prescription_snapshot: structuredClone(rows(state, 'workout_exercises').filter(row => row.workout_id === workoutId)) })
+  rows(state, 'session_authorizations').push({ id: crypto.randomUUID(), user_id: owner(state), client_session_id: clientSessionId, workout_id: workoutId, plan_id: plan.id, authorized_at: now.toISOString(), created_at: now.toISOString(), expires_at: new Date(now.getTime() + 12 * 60 * 60_000).toISOString(), consumed_at: null, released_at: null, occurrence_source_date: access.occurrence!.sourceDate, occurrence_scheduled_date: access.occurrence!.scheduledDate, policy_timezone: timeZone, policy_date: policyDate, policy_day_start: start.toISOString(), policy_day_end: end.toISOString(), workout_window_start: windowStart.toISOString(), session_context_snapshot: snapshot, prescription_snapshot: structuredClone(rows(state, 'workout_exercises').filter(row => row.workout_id === workoutId)) })
   return { success: true, contextSnapshot: snapshot }
 }
 export async function authorizeSessionStart(clientSessionId: string, workoutId: string): Promise<AuthorizeSessionStartResult> {

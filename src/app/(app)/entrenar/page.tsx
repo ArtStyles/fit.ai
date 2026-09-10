@@ -1,3 +1,5 @@
+import { loadLocalWorkoutSchedule, resolveOccurrences } from '@/lib/workouts/occurrences'
+import { getLocalDateString } from '@/lib/workouts/schedule'
 import { redirect } from 'next/navigation'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
@@ -26,6 +28,14 @@ export default async function TrainPage() {
 
   if (!activePlan) {
     redirect('/dashboard?notice=no-workout-today')
+  }
+
+  const localSchedule = await loadLocalWorkoutSchedule(supabase, user.id)
+  if (localSchedule) {
+    const { data: workouts } = await supabase.from('workouts').select('id, day_of_week').eq('user_id', user.id).eq('plan_id', activePlan.id).order('order_in_plan')
+    const today = getLocalDateString(new Date(), timeZone)
+    const occurrence = resolveOccurrences(workouts ?? [], localSchedule.overrides, today, today)[0]
+    redirect(occurrence ? `/session/${occurrence.workoutId}` : '/dashboard?notice=no-workout-today')
   }
 
   const { data: todayWorkout } = await supabase

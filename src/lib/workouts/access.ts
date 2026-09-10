@@ -1,5 +1,7 @@
 import { addDays, getAppTimeZone, getLocalDayBounds, getWorkoutStartWindow } from './schedule'
 import type { WorkoutStartWindow } from './schedule'
+import { getLocalDateString } from './schedule'
+import { addCivilDays, resolveOccurrences, getOccurrenceWindow, occurrenceCompleted, type LocalWorkoutSchedule, type WorkoutOccurrence } from './occurrences'
 
 export type WorkoutStartAccessReason =
   | 'not_found'
@@ -23,6 +25,7 @@ export type WorkoutStartAccessResult =
       allowed: true
       workout: WorkoutStartAccessWorkout
       window: WorkoutStartWindow
+      occurrence?: WorkoutOccurrence
     }
   | {
       allowed: false
@@ -40,12 +43,14 @@ export async function getWorkoutStartAccess({
   workoutId,
   date = new Date(),
   timeZone = getAppTimeZone(),
+  localSchedule,
 }: {
   supabase: SupabaseLike
   userId: string
   workoutId: string
   date?: Date
   timeZone?: string
+  localSchedule?: LocalWorkoutSchedule
 }): Promise<WorkoutStartAccessResult> {
   const { data: workout } = await (supabase
     .from('workouts') as any)
@@ -58,7 +63,10 @@ export async function getWorkoutStartAccess({
     return { allowed: false, reason: 'not_found' }
   }
 
-  const window = getWorkoutStartWindow(workout.day_of_week, date, timeZone)
+  const today = getLocalDateString(date, timeZone)
+  const occurrence = localSchedule ? resolveOccurrences([workout], localSchedule.overrides, addCivilDays(today, -2), today)
+    .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate))[0] : undefined
+  const window = localSchedule ? (occurrence ? getOccurrenceWindow(occurrence, today) : { status: 'unavailable' as const }) : getWorkoutStartWindow(workout.day_of_week, date, timeZone)
 
   if (!workout.plan_id || window.status === 'unavailable') {
     return { allowed: false, reason: 'not_today', workout }
@@ -74,6 +82,13 @@ export async function getWorkoutStartAccess({
 
   if (!activePlan) {
     return { allowed: false, reason: 'inactive_plan', workout }
+  }
+
+  if (localSchedule && occurrence) {
+    if (occurrenceCompleted(occurrence, localSchedule.logs, timeZone)) return { allowed: false, reason: window.status === 'today' ? 'completed_today' : 'already_completed', workout }
+    if (localSchedule.logs.some(log => getLocalDateString(new Date(log.completed_at), timeZone) === today)
+      || localSchedule.authorizations.some(row => row.policy_date === today && row.consumed_at)) return { allowed: false, reason: 'another_session_today', workout }
+    return { allowed: true, workout, window, occurrence }
   }
 
   const { start: todayStart, end: todayEnd } = getLocalDayBounds(date, timeZone)

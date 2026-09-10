@@ -1,3 +1,4 @@
+import { loadLocalWorkoutSchedule } from '@/lib/workouts/occurrences'
 import { notFound, redirect } from 'next/navigation'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { SessionClient }      from './SessionClient'
@@ -66,6 +67,7 @@ export default async function SessionPage({ params: paramsPromise }: PageProps) 
     supabase,
     userId: user.id,
     workoutId,
+    localSchedule: await loadLocalWorkoutSchedule(supabase, user.id),
     timeZone: resolveUserTimeZone(profile.timezone),
   })
 

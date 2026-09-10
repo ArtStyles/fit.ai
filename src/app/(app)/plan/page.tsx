@@ -1,3 +1,5 @@
+import { WorkoutReschedulePanel } from '@/components/plan/WorkoutReschedulePanel'
+import { loadLocalWorkoutSchedule, buildSchedulePresentation, resolveOccurrences, addCivilDays, civilWeekday } from '@/lib/workouts/occurrences'
 import { Button } from '@/components/ui/button'
 import { SubmitButton } from '@/components/feedback/SubmitButton'
 import { PendingLink } from '@/components/navigation/PendingLink'
@@ -32,7 +34,7 @@ import {
   MoreHorizontal,
   Sparkles,
 } from 'lucide-react'
-import { getIsoWeekday, resolveUserTimeZone } from '@/lib/workouts/schedule'
+import { getIsoWeekday, getLocalDateString, getWeekMonday, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
 import type { PlanAdjustmentOptions } from '@/lib/plans/adjustmentIntent'
@@ -361,14 +363,23 @@ export default async function PlanPage() {
     exercises: Array.from(uniqueAdjustmentExercises.values()),
   }
 
-  const weekEntries = buildPlanWeekEntries(planDaySummaries, todayIso)
-  const distribution = buildPlanDistribution(exerciseRows.map(row => {
+  const scheduleNow = new Date()
+  const scheduleTimeZone = resolveUserTimeZone(profile.timezone)
+  const localSchedule = await loadLocalWorkoutSchedule(supabase, user.id)
+  const schedulePresentation = localSchedule ? buildSchedulePresentation(workouts, localSchedule, scheduleNow, scheduleTimeZone) : undefined
+  const weekMonday = getLocalDateString(getWeekMonday(scheduleNow, scheduleTimeZone), scheduleTimeZone)
+  const effectivePlanDays = localSchedule ? resolveOccurrences(workouts, localSchedule.overrides, weekMonday, addCivilDays(weekMonday, 6)).map(occurrence => ({
+    ...planDaySummaries.find(day => day.id === occurrence.workoutId)!, dayOfWeek: civilWeekday(occurrence.scheduledDate) as number | null,
+  })).concat(planDaySummaries.filter(day => day.dayOfWeek === null)) : planDaySummaries
+  const weekEntries = buildPlanWeekEntries(effectivePlanDays, todayIso)
+  const muscleActivity = exerciseRows.map(row => {
     const exercise = Array.isArray(row.exercise) ? row.exercise[0] : row.exercise
     return {
-      sets: row.sets,
-      muscleGroups: exercise?.muscle_groups ?? null,
+      sets: row.sets ?? 0,
+      muscleGroups: exercise?.muscle_groups ?? [],
     }
-  }))
+  })
+  const distribution = buildPlanDistribution(muscleActivity)
   const workspaceWorkouts = planDaySummaries.map(summary => ({
     summary,
     exercises: exercisesByWorkout[summary.id] ?? [],
@@ -469,16 +480,19 @@ export default async function PlanPage() {
           </section>
         )}
 
+        {schedulePresentation && <WorkoutReschedulePanel accountId={user.id} planId={planRaw.id} schedule={schedulePresentation} />}
+
         <PlanWorkoutWorkspace
           planId={planRaw.id}
           entries={weekEntries}
+          localStartableWorkoutIds={schedulePresentation?.startableWorkoutIds}
           workouts={workspaceWorkouts}
           exerciseOptions={exerciseOptions}
           todayIso={todayIso}
           prescriptionLocked={prescriptionLocked}
         />
 
-        <PlanDistribution items={distribution} />
+        <PlanDistribution items={distribution} muscleActivity={muscleActivity} />
       </main>
     </div>
   )
