@@ -70,13 +70,22 @@ try {
     await loadingContext.route('**/sql-wasm.wasm', async route => { await databaseGate; await route.continue() })
     const loadingPage = await loadingContext.newPage()
     await loadingPage.goto(origin, { waitUntil: 'domcontentloaded' })
-    const status = loadingPage.getByRole('status').filter({ hasText: 'Preparando tu espacio' })
+    const status = loadingPage.getByRole('status').filter({ hasText: 'Un momento…' })
     await expect(status).toBeVisible()
-    await expect(status).toContainText('Vekira')
+    await expect.poll(() => status.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
+    await expect(status.locator('[data-contour-trail]')).toHaveCount(1)
+    await expect(loadingPage.locator('main[aria-busy="true"]')).toHaveCount(1)
+    await expect(status.locator('svg')).toHaveAttribute('aria-hidden', 'true')
+    await expect(status).not.toContainText('Tu entrenamiento y tu progreso')
     if (reducedMotion === 'reduce') {
-      assert.equal(await status.locator('svg').last().evaluate(el => getComputedStyle(el).animationName), 'none')
+      assert.equal(await status.evaluate(el => getComputedStyle(el).animationName), 'none')
+      const trail = await status.locator('[data-contour-trail]').evaluate(el => ({ animation: getComputedStyle(el).animationName, dash: getComputedStyle(el).strokeDasharray }))
+      assert.equal(trail.animation, 'none')
+      assert.equal(trail.dash, 'none')
+    } else {
+      assert.equal(await status.locator('[data-contour-trail]').evaluate(el => getComputedStyle(el).animationName), 'vekira-contour-travel')
     }
-    for (const width of [390, 1440]) {
+    for (const width of [320, 390, 1440]) {
       await loadingPage.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
       await capture(loadingPage, `loading-${reducedMotion}-${width}`)
     }
@@ -85,7 +94,7 @@ try {
     await expect(status).toHaveCount(0)
     await loadingContext.close()
   }
-  console.log('PASS branded loading, reduced motion and transition to interactive login')
+  console.log('PASS contour loading, reduced motion and transition to interactive login')
   assert.deepEqual(errors, [])
 } finally {
   await browser.close()

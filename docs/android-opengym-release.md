@@ -1,16 +1,24 @@
-# Vekira Android 1.1.17-offline
+# Vekira Android 1.1.18-offline
 
 Actualización del 10 de septiembre de 2026 en `codex/android-offline`. El alcance de publicación es Android y APK; no se despliega la web de producción.
 
 ## Aplicación
 
-- Archivo local: `.artifacts/Vekira-1.1.17-offline.apk`.
-- Paquete: `com.fitai.app`; versión `1.1.17-offline`; código `19`.
-- Tamaño: 18 003 985 bytes (18,0 MB).
-- SHA-256: `f4d0627afc303f92cd0d0fd933829b9521fa2753a49d6041069d709b4bb6b67c`.
+- Archivo local: `.artifacts/Vekira-1.1.18-offline.apk`.
+- Paquete: `com.fitai.app`; versión `1.1.18-offline`; código `20`.
+- Tamaño: 18 004 229 bytes (18,0 MB).
+- SHA-256: `acdc68510331d0b08c8dd81a038c9e0330b7c426608a43521ee7adbdf7c064b0`.
 - Certificado SHA-256: `745fafc84e47312960f942cd3118bd1e57036d3993163fa3d6943bfd468c4784`.
 
 Firma APK v2 válida, con el certificado original. Instalar sobre la versión anterior, sin desinstalar, para conservar los datos. El primer acceso a una cuenta y la sincronización siguen necesitando conexión.
+
+## Carga entre vistas: Contorno
+
+La opción 03 elegida sustituye la presentación anterior de carga de Android por una mancuerna inmóvil de trazo fino. Un segmento violeta recorre su contorno en ciclos de 2,8 segundos, acompañado únicamente por «Un momento…» o «Just a moment…», según el idioma de la cuenta.
+
+El contenido visual aparece después de 180 ms, con una entrada de 140 ms. Esto no retrasa la carga ni exige una duración mínima: la vista lista reemplaza inmediatamente el indicador. La navegación y la carga de rutas conservan su funcionamiento. Con movimiento reducido, el contorno se muestra completo y estático, sin animación de entrada. Hay un único mensaje de estado accesible; el dibujo es decorativo.
+
+La ilustración y su animación están incluidas en la APK y funcionan sin descargar imágenes. Esta actualización no requiere migraciones ni modifica cuentas, registros o catálogo.
 
 ## Corrección de la atribución muscular
 
@@ -48,21 +56,20 @@ La atribución usa grupos y nombres guardados en los snapshots, incluye ejercici
 
 El historial de un ejercicio ausente del catálogo público puede abrirse con registros propios y un snapshot válido de ese mismo ID. Conserva su información histórica sin inventar técnica o medios; las consultas se paginan y mantienen el filtro de cuenta. El enlace abre directamente la sección de historial, también en Android.
 
-Mantiene las correcciones de 1.1.13: historial desde Inicio, fecha original azul al recuperar una sesión otro día y selectores de reprogramación del tema. El mapa y la ficha no requieren cambios de esquema remoto; esta versión añade los permisos de avatar descritos arriba.
+Mantiene las correcciones de 1.1.13: historial desde Inicio, fecha original azul al recuperar una sesión otro día y selectores de reprogramación del tema. El mapa y la ficha no requieren cambios de esquema remoto; los permisos de avatar descritos arriba se incorporaron en 1.1.16.
 
-## Verificación
+## Verificación de 1.1.18
 
-- `pnpm exec vitest run src/lib/muscles src/components/muscles src/components/plan/__tests__/muscleDistribution.test.tsx --maxWorkers=2`: 52 pruebas aprobadas. Incluyen reproducción exacta del fallo, cobertura de los 50 ejercicios empaquetados, nombres anatómicos y generales, sesiones congeladas en ambos idiomas, grupos separados y geometría sin atribuciones inventadas.
-- Auditoría de solo lectura del catálogo remoto: 122 ejercicios y 66 etiquetas distintas entre español y campos canónicos; cero etiquetas sin reconocer. No se accedió al almacenamiento del teléfono ni se modificaron cuentas, sesiones o catálogo.
-- `node mobile/tests/muscle-catalog-regression.mjs`: 5 recorridos con SQLite real y red externa bloqueada. Sesión reportada en 320/390/1440 px, otra sesión con piernas/espalda y versión inglesa. Verifica colores, toque del trapecio, teclado, desglose correcto, historial, recarga, mapa de Plan y conservación de las tablas. Capturas revisadas en `.artifacts/muscle-catalog-regression/`.
-- `node mobile/tests/muscle-details-regression.mjs`: los 7 recorridos previos de comparación de periodos, navegación, teclado, ejercicios sin catálogo y localización continúan aprobados.
-- `pnpm mobile:test`: 233 pruebas aprobadas en 30 archivos, incluidas 17 de avatar con SQLite real: persistencia al reabrir, confirmación remota, errores de subida/perfil, cambios de cuenta, validación y eliminación.
-- `pnpm type-check`, `pnpm mobile:type-check`, ESLint de los archivos modificados y `git diff --check`: aprobados.
+- `node mobile/tests/login-loading-regression.mjs`: arranque con carga retenida en 320/390/1440 px, animación normal y movimiento reducido, errores de acceso sin conexión y almacenamiento no disponible. Capturas revisadas en `.artifacts/login-loading-fixes/`.
+- `node mobile/tests/contour-loading-regression.mjs`: 5 recorridos aprobados con SQLite real y red externa bloqueada. Plan y Progreso en 320/390/1440 px; cinco pestañas disponibles durante la carga; animación y retirada del indicador; cancelación hacia Inicio sin reemplazo tardío; inglés, tema claro y movimiento reducido. Datos de la cuenta intactos y cero errores de página. Evidencia en `.artifacts/contour-loading-regression/`.
+- `node mobile/tests/original-journey.mjs`: alta local, configuración, generación, cinco pestañas, sesión con recuperación tras recargar, historial, medidas, calendario, catálogo, ficha de ejercicio, ajustes y copia de seguridad aprobados. Comprobaciones de diseño en 360/390/768 px, sin errores de página ni peticiones externas.
+- `pnpm mobile:type-check`, ESLint de los archivos modificados y `git diff --check`: aprobados.
 - `pnpm android:offline:release`: build correcto; 37 pruebas JVM, cero errores y fallos.
-- La versión anterior 1.1.16 verificó además 5 recorridos de avatar, sus políticas con rollback y una prueba real de la API de Storage con limpieza de su cuenta temporal. Esta versión conserva ese flujo y no incorpora migraciones.
 - `scripts/verify-android-offline.ps1`: bundle probado idéntico al APK; SQLite, 50 imágenes, 16 fuentes y licencia MuscleMap incluidos; sin cargador remoto ni service worker.
 - `apksigner` y `aapt2`: firma y metadatos verificados; min SDK 24, target SDK 36.
 - Revisión independiente realizada. Instalación/actualización y renderizado en un teléfono físico pendientes de prueba; los recorridos se verificaron en el navegador con el bundle que contiene la APK.
+
+Las verificaciones de versiones anteriores se conservan como antecedentes, no como pruebas repetidas en 1.1.18: 1.1.17 aprobó 52 pruebas de atribución muscular, la cobertura de 122 ejercicios y 66 etiquetas del catálogo remoto, 5 recorridos de catálogo muscular, 7 de desglose y 233 pruebas móviles. En 1.1.16 se verificaron además 5 recorridos de avatar, sus políticas con rollback y una prueba real de Storage. Esta entrega solo modifica la presentación de carga y no incorpora migraciones.
 
 ## Integración
 
