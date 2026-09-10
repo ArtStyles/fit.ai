@@ -1,3 +1,5 @@
+import { isCivilDate } from '@/lib/workouts/occurrences'
+
 export const MUSCLE_GROUPS = [
   { id: 'chest', es: 'Pecho', en: 'Chest', aliases: ['chest', 'pecho', 'pectorales', 'pectoral', 'pectorals'] },
   { id: 'back', es: 'Espalda', en: 'Back', aliases: ['back', 'espalda', 'lats', 'dorsales', 'dorsal', 'middle back', 'upper back', 'lower back', 'espalda baja', 'espalda alta', 'lumbar', 'lumbares', 'traps', 'trapezius', 'trapecio', 'trapecios', 'latissimus dorsi', 'erector spinae', 'rhomboids', 'romboides'] },
@@ -14,36 +16,59 @@ export const MUSCLE_GROUPS = [
 ] as const
 
 export type MuscleGroupId = (typeof MUSCLE_GROUPS)[number]['id']
-export type MuscleActivityInput = { muscleGroups: string[]; sets: number; date?: string }
+export type MuscleActivityInput = {
+  muscleGroups: string[]; sets: number; date?: string
+  exerciseLogId?: string; exerciseId?: string | null; exerciseName?: string
+  sessionId?: string; sessionName?: string; completedAt?: string
+}
 export type MuscleDateRange = { from: string; to: string }
 export type MuscleActivityGroup = { id: MuscleGroupId; es: string; en: string; sets: number; level: number }
+export type MuscleBreakdownSession = { sessionId: string; sessionName: string; date: string; sets: number }
+export type MuscleBreakdownExercise = { key: string; exerciseId: string | null; exerciseName: string; sets: number; sessions: MuscleBreakdownSession[] }
+export type MuscleBreakdown = { sets: number; exercises: MuscleBreakdownExercise[] }
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')
 const aliases = new Map<string, MuscleGroupId>(MUSCLE_GROUPS.flatMap(group => group.aliases.map(alias => [normalize(alias), group.id] as const)))
+
+type NormalizedActivityRow = {
+  row: MuscleActivityInput; index: number; sets: number
+  recognized: Set<MuscleGroupId>; unknown: Map<string, string>
+}
+
+function activityRows(rows: MuscleActivityInput[], range?: MuscleDateRange): NormalizedActivityRow[] {
+  const result: NormalizedActivityRow[] = []
+  if (range && (!isCivilDate(range.from) || !isCivilDate(range.to) || range.from > range.to)) return result
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index]
+    if (row.date !== undefined && !isCivilDate(row.date)) continue
+    if (range && (!row.date || row.date < range.from || row.date > range.to)) continue
+    if (!Number.isFinite(row.sets) || row.sets <= 0) continue
+    const sets = Math.trunc(row.sets)
+    if (!sets) continue
+    const recognized = new Set<MuscleGroupId>()
+    const unknown = new Map<string, string>()
+    for (const label of row.muscleGroups) {
+      const key = normalize(label)
+      if (!key) continue
+      const id = aliases.get(key)
+      if (id) recognized.add(id)
+      else if (!unknown.has(key)) unknown.set(key, label.trim())
+    }
+    result.push({ row, index, sets, recognized, unknown })
+  }
+  return result
+}
 
 export function buildMuscleActivity(rows: MuscleActivityInput[], range?: MuscleDateRange) {
   const totals = new Map<MuscleGroupId, number>()
   const unmapped = new Map<string, { label: string; sets: number }>()
   let totalSets = 0
   let withoutMuscleSets = 0
-  for (const row of rows) {
-    if (range && (!row.date || row.date < range.from || row.date > range.to)) continue
-    if (!Number.isFinite(row.sets) || row.sets <= 0) continue
-    const sets = Math.trunc(row.sets)
-    if (!sets) continue
+  for (const { sets, recognized, unknown } of activityRows(rows, range)) {
     totalSets += sets
-    const recognized = new Set<MuscleGroupId>()
-    const unknown = new Set<string>()
-    for (const label of row.muscleGroups) {
-      const key = normalize(label)
-      if (!key) continue
-      const id = aliases.get(key)
-      if (id) recognized.add(id)
-      else if (!unknown.has(key)) {
-        unknown.add(key)
-        const prior = unmapped.get(key)
-        unmapped.set(key, { label: prior?.label ?? label.trim(), sets: (prior?.sets ?? 0) + sets })
-      }
+    for (const [key, label] of Array.from(unknown)) {
+      const prior = unmapped.get(key)
+      unmapped.set(key, { label: prior?.label ?? label, sets: (prior?.sets ?? 0) + sets })
     }
     if (!recognized.size && !unknown.size) withoutMuscleSets += sets
     recognized.forEach(id => totals.set(id, (totals.get(id) ?? 0) + sets))
@@ -54,4 +79,46 @@ export function buildMuscleActivity(rows: MuscleActivityInput[], range?: MuscleD
     return { id, es, en, sets, level: maximum && sets ? Math.max(1, Math.ceil(sets / maximum * 4)) : 0 }
   })
   return { groups, totalSets, withoutMuscleSets, unmapped: Array.from(unmapped.values()) }
+}
+
+function newestRow(left: MuscleActivityInput, right: MuscleActivityInput): MuscleActivityInput {
+  const instant = (row: MuscleActivityInput) => {
+    const time = Date.parse(row.completedAt ?? '')
+    return Number.isFinite(time) ? time : row.date ? Date.parse(`${row.date}T12:00:00Z`) : 0
+  }
+  const tie = (row: MuscleActivityInput) => [row.exerciseName, row.sessionName, row.exerciseLogId, row.sessionId].join('\u0000')
+  return (instant(left) - instant(right) || tie(left).localeCompare(tie(right))) >= 0 ? left : right
+}
+
+/** Each contributing series counts once for this muscle, including compound work.
+ * Missing exercise identities remain separate; missing session metadata creates no history target. */
+export function buildMuscleBreakdown(rows: MuscleActivityInput[], groupId: MuscleGroupId, range?: MuscleDateRange): MuscleBreakdown {
+  const grouped = new Map<string, {
+    exerciseId: string | null; sets: number; latest: MuscleActivityInput
+    sessions: Map<string, { sets: number; latest: MuscleActivityInput }>
+  }>()
+  let totalSets = 0
+  for (const { row, index, sets, recognized } of activityRows(rows, range)) {
+    if (!recognized.has(groupId)) continue
+    const exerciseId = row.exerciseId?.trim() || null
+    const key = exerciseId ? `exercise:${exerciseId}` : row.exerciseLogId?.trim()
+      ? `log:${row.exerciseLogId.trim()}` : `unknown:${row.sessionId ?? 'row'}:${index}`
+    const entry = grouped.get(key) ?? { exerciseId, sets: 0, latest: row, sessions: new Map() }
+    entry.sets += sets
+    entry.latest = newestRow(entry.latest, row)
+    const sessionId = row.sessionId?.trim()
+    if (sessionId && row.date) {
+      const session = entry.sessions.get(sessionId)
+      entry.sessions.set(sessionId, { sets: (session?.sets ?? 0) + sets, latest: session ? newestRow(session.latest, row) : row })
+    }
+    grouped.set(key, entry)
+    totalSets += sets
+  }
+  const exercises = Array.from(grouped, ([key, entry]): MuscleBreakdownExercise => ({
+    key, exerciseId: entry.exerciseId, exerciseName: entry.latest.exerciseName?.trim() || 'Ejercicio', sets: entry.sets,
+    sessions: Array.from(entry.sessions, ([sessionId, session]) => ({
+      sessionId, sessionName: session.latest.sessionName?.trim() || 'Entrenamiento', date: session.latest.date!, sets: session.sets,
+    })).sort((a, b) => b.date.localeCompare(a.date) || a.sessionId.localeCompare(b.sessionId)),
+  })).sort((a, b) => b.sets - a.sets || a.exerciseName.localeCompare(b.exerciseName) || a.key.localeCompare(b.key))
+  return { sets: totalSets, exercises }
 }

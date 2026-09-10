@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { buildProgressSnapshot } from '../progressViewModel'
 
 describe('progress snapshot', () => {
+  it('compares two consecutive seven-day periods without sharing the boundary day', () => {
+    const sessions = ['2026-08-27', '2026-08-28', '2026-09-03', '2026-09-04', '2026-09-10', '2026-09-11'].map((date, index) => ({ id: String(index), completedAt: `${date}T16:00:00Z`, date, durationMinutes: 20, volumeKg: 10 }))
+    const snapshot = buildProgressSnapshot({ todayStr: '2026-09-10', weeks: 1, sessions, days: [], records: [], exercisePoints: [] })
+    expect(snapshot).toMatchObject({ startDate: '2026-09-04', priorStart: '2026-08-28', priorEnd: '2026-09-03', volumeKg: 20, priorVolumeKg: 20 })
+    expect(snapshot.selected.map(row => row.date)).toEqual(['2026-09-04', '2026-09-10'])
+    expect(snapshot.weeklyBuckets).toHaveLength(1)
+  })
   it('keeps comparison absent when the prior period has zero volume', () => {
     const snapshot = buildProgressSnapshot({
       todayStr: '2026-08-28',

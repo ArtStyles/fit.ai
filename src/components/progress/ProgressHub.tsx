@@ -35,6 +35,7 @@ type ProgressHubProps = {
 }
 
 const RANGE_OPTIONS: { value: ProgressRangeWeeks; es: string; en: string }[] = [
+  { value: 1, es: '1 semana', en: '1 week' },
   { value: 4, es: '4 semanas', en: '4 weeks' },
   { value: 12, es: '12 semanas', en: '12 weeks' },
   { value: 24, es: '24 semanas', en: '24 weeks' },
@@ -178,7 +179,7 @@ export function ProgressHub({
             options={RANGE_OPTIONS.map(option => ({ value: option.value, label: resolvedLocale === 'en' ? option.en : option.es }))}
             onChange={setRangeWeeks}
             label={copy(resolvedLocale, 'Seleccionar periodo', 'Select period')}
-            className="w-full sm:w-[19rem]"
+            className="w-full grid-cols-2 sm:w-[26rem] sm:grid-cols-4"
           />
         )}
       >
@@ -220,7 +221,7 @@ export function ProgressHub({
       <section className="rounded-3xl border border-border/60 bg-muted/[0.04] p-5 sm:p-6" aria-labelledby="muscle-activity-title">
         <SectionHeading id="muscle-activity-title" eyebrow={copy(resolvedLocale, 'Trabajo registrado', 'Recorded work')} title={copy(resolvedLocale, 'Tu actividad muscular', 'Your muscle activity')} />
         <p className="mt-2 text-sm text-muted-foreground">{copy(resolvedLocale, 'Series completadas por grupo en el periodo seleccionado.', 'Completed sets per muscle group in the selected period.')}</p>
-        <MuscleActivityMap rows={muscleActivity} mode="completed" language={resolvedLocale} range={{ from: snapshot.startDate, to: todayStr }} />
+        <MuscleActivityMap rows={muscleActivity} mode="completed" language={resolvedLocale} range={{ from: snapshot.startDate, to: todayStr }} comparison={{ range: { from: snapshot.priorStart, to: snapshot.priorEnd }, hasRecords: sessions.some(session => session.date >= snapshot.priorStart && session.date <= snapshot.priorEnd) }} />
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(19rem,.8fr)] lg:items-start">

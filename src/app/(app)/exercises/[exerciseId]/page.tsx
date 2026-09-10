@@ -12,10 +12,12 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { exerciseLanguage, localizeExercise } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
 import { toExerciseHistoryPresentation } from '@/lib/exercises/historyPresentation'
+import { parseSessionContextSnapshot } from '@/lib/session/contextSnapshot'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import type { Database } from '@/types/database'
+import { ExerciseHistoryAnchor } from './ExerciseHistoryAnchor'
 
 export const metadata = { title: 'Ejercicio · Vekira' }
 
@@ -41,6 +43,7 @@ type ExerciseRow = {
 
 type EmbeddedProgressLog = {
   id: string
+  user_id?: string
   workout_id: string | null
   completed_at: string
   duration_minutes: number | null
@@ -81,6 +84,7 @@ type ExerciseDetailPayloadResult = {
   exercise: ExerciseRow | null
   logs: ExerciseLogRow[]
   workoutsById: Record<string, WorkoutRow>
+  historical: boolean
 }
 
 function getProgressLog(row: ExerciseLogRow): EmbeddedProgressLog | null {
@@ -100,12 +104,37 @@ function indexWorkouts(rows: WorkoutRow[]): Record<string, WorkoutRow> {
   }, {})
 }
 
+function preservedExercise(exerciseId: string, logs: ExerciseLogRow[]): ExerciseRow | null {
+  for (const row of logs) {
+    const snapshot = parseSessionContextSnapshot(getProgressLog(row)?.session_context_snapshot)
+    const exercise = snapshot?.exercises.find(item => item.exerciseId === exerciseId)
+    if (!exercise) continue
+    return {
+      id: exerciseId,
+      name: exercise.name,
+      name_es: exercise.nameEs,
+      muscle_groups: exercise.muscleGroups,
+      muscle_groups_es: exercise.muscleGroupsEs,
+      is_compound: exercise.isCompound,
+      description: null,
+      equipment: null,
+      difficulty: null,
+      exercise_type: null,
+      instructions: null,
+      video_url: null,
+      image_url: null,
+      motion_preview_url: null,
+    }
+  }
+  return null
+}
+
 async function loadExerciseDetailPayloadFallback(
   supabase: AppSupabaseClient,
   userId: string,
   exerciseId: string,
 ): Promise<ExerciseDetailPayloadResult> {
-  const { data: exercise, error: exerciseError } = await supabase
+  const { data: catalogExercise, error: exerciseError } = await supabase
     .from('exercises')
     .select('id, name, name_es, description, description_es, muscle_groups, muscle_groups_es, equipment, equipment_es, difficulty, exercise_type, is_compound, instructions, instructions_es, video_url, image_url, motion_preview_url')
     .eq('id', exerciseId)
@@ -113,29 +142,37 @@ async function loadExerciseDetailPayloadFallback(
     .maybeSingle() as unknown as { data: ExerciseRow | null; error: { message?: string } | null }
 
   if (exerciseError) throw new Error(exerciseError.message ?? 'Could not load exercise')
-  if (!exercise) return { exercise: null, logs: [], workoutsById: {} }
+  const rawLogs: ExerciseLogRow[] = []
+  const pageSize = 300
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('exercise_logs')
+      .select(`
+        id,
+        progress_log_id,
+        sets_completed,
+        reps_completed,
+        weights_kg,
+        rpe_values,
+        notes,
+        progress_log:progress_logs!inner(id, workout_id, completed_at, duration_minutes, mood_rating, session_context_snapshot, user_id)
+      `)
+      .eq('exercise_id', exerciseId)
+      .eq('progress_log.user_id', userId)
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1) as unknown as {
+        data: ExerciseLogRow[] | null
+        error: { message?: string } | null
+      }
+    if (error) throw new Error(error.message ?? 'Could not load exercise appearances')
+    const page = data ?? []
+    rawLogs.push(...page.filter(row => getProgressLog(row)?.user_id === userId))
+    if (page.length < pageSize) break
+  }
 
-  const { data: rawLogs, error: logsError } = await supabase
-    .from('exercise_logs')
-    .select(`
-      id,
-      progress_log_id,
-      sets_completed,
-      reps_completed,
-      weights_kg,
-      rpe_values,
-      notes,
-      progress_log:progress_logs!inner(id, workout_id, completed_at, duration_minutes, mood_rating, session_context_snapshot, user_id)
-    `)
-    .eq('exercise_id', exercise.id)
-    .eq('progress_logs.user_id', userId) as unknown as {
-      data: ExerciseLogRow[] | null
-      error: { message?: string } | null
-    }
-
-  if (logsError) throw new Error(logsError.message ?? 'Could not load exercise appearances')
-
-  const logs = sortExerciseLogs(rawLogs ?? [])
+  const logs = sortExerciseLogs(rawLogs)
+  const exercise = catalogExercise ?? preservedExercise(exerciseId, logs)
+  if (!exercise) return { exercise: null, logs: [], workoutsById: {}, historical: false }
   const workoutIds = Array.from(new Set(logs.flatMap(row => getProgressLog(row)?.workout_id ?? [])))
   let workoutsById: Record<string, WorkoutRow> = {}
 
@@ -153,7 +190,7 @@ async function loadExerciseDetailPayloadFallback(
     workoutsById = indexWorkouts(workouts ?? [])
   }
 
-  return { exercise, logs, workoutsById }
+  return { exercise, logs, workoutsById, historical: !catalogExercise }
 }
 
 async function loadExerciseDetailPayload(
@@ -164,11 +201,12 @@ async function loadExerciseDetailPayload(
   try {
     const { data, error } = await (supabase as unknown as ExerciseDetailRpcClient)
       .rpc('get_exercise_detail_payload', { p_exercise_id: exerciseId })
-    if (!error && data) {
+    if (!error && data?.exercise) {
       return {
         exercise: data.exercise ?? null,
         logs: sortExerciseLogs(data.logs ?? []),
         workoutsById: indexWorkouts(data.workouts ?? []),
+        historical: false,
       }
     }
   } catch {
@@ -231,6 +269,7 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
 
   return (
     <div className="min-h-screen bg-background pb-20">
+      <ExerciseHistoryAnchor />
       <PageTopBar
         title={exercise.name}
         subtitle={t('Ficha de ejercicio')}
@@ -240,10 +279,11 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
       />
 
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
-        <section className="grid overflow-hidden rounded-3xl border border-violet-500/20 bg-violet-500/[0.06] md:grid-cols-[minmax(0,1fr)_22rem]">
+        <section className={`overflow-hidden rounded-3xl border border-violet-500/20 bg-violet-500/[0.06]${payload.historical ? '' : ' grid md:grid-cols-[minmax(0,1fr)_22rem]'}`}>
           <div className="p-5 sm:p-7">
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-violet-300">{t('Pasaporte del movimiento')}</p>
             <h2 className="mt-2 font-display text-4xl font-bold leading-tight text-foreground">{exercise.name}</h2>
+            {payload.historical ? <p className="mt-3 text-sm text-muted-foreground">{language === 'en' ? 'Information preserved in your history' : 'Información conservada en tu historial'}</p> : null}
             {context ? <p className="mt-2 text-sm capitalize text-muted-foreground">{context}</p> : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -251,18 +291,18 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
                 <span key={`${item}-${index}`} className="rounded-full border border-border/60 bg-background/40 px-3 py-1 text-xs capitalize text-muted-foreground">{item}</span>
               ))}
             </div>
-            <a href="#tecnica" className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/25 bg-violet-500/10 px-4 text-sm font-semibold text-violet-100 hover:bg-violet-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+            {!payload.historical ? <a href="#tecnica" className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/25 bg-violet-500/10 px-4 text-sm font-semibold text-violet-100 hover:bg-violet-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
               {language === 'en' ? 'Review technique' : 'Revisar técnica'}
               <ArrowDown className="h-4 w-4" aria-hidden="true" />
-            </a>
+            </a> : null}
           </div>
-          <ExerciseMotionPreview
+          {!payload.historical ? <ExerciseMotionPreview
             posterSrc={exercise.image_url}
             motionSrc={exercise.motion_preview_url}
             alt={exercise.name}
             language={language}
             className="h-full min-h-56 w-full border-t border-border/50 md:border-l md:border-t-0"
-          />
+          /> : null}
         </section>
 
         <MetricStrip
@@ -300,7 +340,7 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
           </aside>
         </div>
 
-        <section id="tecnica" className="scroll-mt-24 rounded-3xl border border-border/60 bg-muted/[0.035] p-5 sm:p-7" aria-labelledby="technique-title">
+        {!payload.historical ? <section id="tecnica" className="scroll-mt-24 rounded-3xl border border-border/60 bg-muted/[0.035] p-5 sm:p-7" aria-labelledby="technique-title">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{language === 'en' ? 'Movement context' : 'Contexto del movimiento'}</p>
@@ -326,11 +366,11 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
               ) : null}
             </DisclosureSection>
           ) : null}
-        </section>
+        </section> : null}
 
         <section aria-labelledby="exercise-history-title">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-violet-300">{language === 'en' ? 'Chronology' : 'Cronología'}</p>
-          <h2 id="exercise-history-title" className="mt-1 font-display text-2xl font-bold text-foreground">{t('Historial del ejercicio')}</h2>
+          <h2 id="exercise-history-title" className="mt-1 scroll-mt-24 font-display text-2xl font-bold text-foreground">{t('Historial del ejercicio')}</h2>
 
           {payload.logs.length === 0 ? (
             <div className="mt-5 rounded-3xl border border-dashed border-border bg-muted/20 p-7 text-center">

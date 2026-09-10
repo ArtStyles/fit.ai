@@ -2,7 +2,8 @@
 
 import { useId, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { buildMuscleActivity, type MuscleActivityInput, type MuscleDateRange, type MuscleGroupId } from '@/lib/muscles/activity'
+import { buildMuscleActivity, buildMuscleBreakdown, type MuscleActivityInput, type MuscleDateRange, type MuscleGroupId } from '@/lib/muscles/activity'
+import { MuscleActivityDetails } from './MuscleActivityDetails'
 import geometry from '@/lib/muscles/geometry.json'
 
 const REGION_GROUP: Record<string, MuscleGroupId> = {
@@ -23,15 +24,22 @@ type Props = {
   mode: 'planned' | 'completed'
   language: 'es' | 'en'
   range?: MuscleDateRange
+  comparison?: { range: MuscleDateRange; hasRecords: boolean }
 }
 
-export function MuscleActivityMap({ rows, mode, language, range }: Props) {
+export function MuscleActivityMap({ rows, mode, language, range, comparison }: Props) {
   const id = useId()
   const [selectedId, setSelectedId] = useState<MuscleGroupId | null>(null)
   const from = range?.from
   const to = range?.to
   const activity = useMemo(() => buildMuscleActivity(rows, from && to ? { from, to } : undefined), [rows, from, to])
   const selected = activity.groups.find(group => group.id === selectedId)
+  const previousFrom = comparison?.range.from
+  const previousTo = comparison?.range.to
+  const breakdown = useMemo(() => selectedId && from && to && previousFrom && previousTo ? {
+    current: buildMuscleBreakdown(rows, selectedId, { from, to }),
+    previous: buildMuscleBreakdown(rows, selectedId, { from: previousFrom, to: previousTo }),
+  } : null, [rows, selectedId, from, to, previousFrom, previousTo])
   const es = language === 'es'
   const seriesLabel = (count: number) => mode === 'planned'
     ? (es ? (count === 1 ? 'serie prescrita' : 'series prescritas') : (count === 1 ? 'planned set' : 'planned sets'))
@@ -58,6 +66,7 @@ export function MuscleActivityMap({ rows, mode, language, range }: Props) {
                 return (
                   <g
                     key={part.slug}
+                    data-muscle-group={groupId}
                     className={cn(group ? FILL_LEVEL[group.level] : 'fill-muted-foreground/10', group && 'cursor-pointer', isSelected && 'stroke-foreground')}
                     strokeWidth={isSelected ? 5 : 0}
                     opacity={selectedId && groupId && !isSelected ? 0.5 : 1}
@@ -91,10 +100,16 @@ export function MuscleActivityMap({ rows, mode, language, range }: Props) {
               ? mode === 'completed'
                 ? (es ? 'Aún no hay series completadas en este periodo.' : 'No completed sets in this period yet.')
                 : (es ? 'Añade ejercicios a tu plan para ver su distribución.' : 'Add exercises to your plan to see their distribution.')
-              : (es ? 'Selecciona un grupo para ver sus series.' : 'Select a muscle group to see its sets.')}
+              : mode === 'completed'
+                ? (es ? 'Toca un músculo para comparar sus series y ver qué ejercicios las aportaron.' : 'Tap a muscle to compare its sets and see which exercises contributed them.')
+                : (es ? 'Selecciona un grupo para ver sus series.' : 'Select a muscle group to see its sets.')}
           </p>
         )}
       </div>
+
+      {mode === 'completed' && selected && breakdown && range && comparison && (
+        <MuscleActivityDetails key={selectedId} current={breakdown.current} previous={breakdown.previous} range={range} previousRange={comparison.range} hasPreviousRecords={comparison.hasRecords} muscleName={label(selected)} language={language} />
+      )}
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label={es ? 'Grupos musculares' : 'Muscle groups'}>
         {activity.groups.map(group => (

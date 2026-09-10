@@ -1,8 +1,10 @@
 import { resolveHistoricalExercisePresentation, type HistoricalExerciseRelation } from '@/lib/exercises/historyPresentation'
 import { getLocalDateString } from '@/lib/workouts/schedule'
+import { parseSessionContextSnapshot } from '@/lib/session/contextSnapshot'
 import type { MuscleActivityInput } from './activity'
 
 type MuscleExerciseLog = {
+  id?: string
   progress_log_id: string
   exercise_id: string | null
   sets_completed: number | null
@@ -28,6 +30,13 @@ export function buildHistoricalMuscleActivity(
       language,
       fallbackExerciseName: language === 'es' ? 'Ejercicio' : 'Exercise',
     })
-    return [{ muscleGroups: exercise.muscleGroups, sets, date: getLocalDateString(completedAt, timeZone) }]
+    return [{
+      muscleGroups: exercise.muscleGroups, sets, date: getLocalDateString(completedAt, timeZone),
+      ...(row.id ? { exerciseLogId: row.id } : {}),
+      exerciseId: row.exercise_id, exerciseName: exercise.name,
+      sessionId: log.id,
+      sessionName: parseSessionContextSnapshot(log.session_context_snapshot)?.workout.name ?? (language === 'es' ? 'Entrenamiento' : 'Workout'),
+      completedAt: log.completed_at,
+    }]
   })
 }

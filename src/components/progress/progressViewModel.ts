@@ -1,7 +1,7 @@
 import { shiftDateStr, type DayAggregate } from '@/lib/calendar/aggregate'
 import { percentChange } from '@/lib/training-evidence/performance'
 
-export type ProgressRangeWeeks = 4 | 12 | 24
+export type ProgressRangeWeeks = 1 | 4 | 12 | 24
 
 export type ProgressSession = {
   id: string
