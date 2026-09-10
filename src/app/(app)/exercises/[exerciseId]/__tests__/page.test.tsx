@@ -32,7 +32,7 @@ function exercise() {
   return {
     id: EXERCISE_ID, name: 'Public press', name_es: 'Press público', is_public: true,
     description: 'Public description', description_es: 'Descripción publicada', muscle_groups: ['chest'], muscle_groups_es: ['pecho'],
-    equipment: [], equipment_es: [], difficulty: 'beginner', exercise_type: 'strength', is_compound: true,
+    equipment: [], equipment_es: [], difficulty: 'beginner', exercise_type: 'strength' as string | null, is_compound: true,
     instructions: null, instructions_es: null, video_url: null, image_url: null, motion_preview_url: null,
   }
 }
@@ -156,6 +156,16 @@ describe('exercise detail preserved history', () => {
     expect(html).toContain('Press público')
     expect(html).toContain('href="/history/session-0"')
     expect(html).not.toContain('Información conservada en tu historial')
+  })
+
+  it.each(['cardio', 'flexibility', null])('does not label %s as an isolation movement', async exerciseType => {
+    useDatabase({ rpcExercise: { ...exercise(), exercise_type: exerciseType, is_compound: false } })
+    expect(await renderPage()).not.toContain('Movimiento de aislamiento')
+  })
+
+  it('shows isolation only for an explicitly isolated strength exercise', async () => {
+    useDatabase({ rpcExercise: { ...exercise(), is_compound: false } })
+    expect(await renderPage()).toContain('Movimiento de aislamiento')
   })
 
   it('loads beyond the first history page before resolving the frozen exercise', async () => {

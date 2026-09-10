@@ -300,7 +300,7 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
               {context ? <p className="text-xs capitalize leading-relaxed text-muted-foreground">{context}</p> : null}
               <h2 id="exercise-name" className="mt-1 break-words font-display text-2xl font-bold leading-tight text-foreground sm:text-3xl">{exercise.name}</h2>
               {payload.historical ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{language === 'en' ? 'Information preserved in your history' : 'Información conservada en tu historial'}</p> : null}
-              {exercise.is_compound !== null ? <p className="mt-2 text-xs text-violet-300">{exercise.is_compound ? (language === 'en' ? 'Compound movement' : 'Movimiento compuesto') : (language === 'en' ? 'Isolation movement' : 'Movimiento de aislamiento')}</p> : null}
+              {exercise.is_compound === true || (exercise.exercise_type === 'strength' && exercise.is_compound === false) ? <p className="mt-2 text-xs text-violet-300">{exercise.is_compound ? (language === 'en' ? 'Compound movement' : 'Movimiento compuesto') : (language === 'en' ? 'Isolation movement' : 'Movimiento de aislamiento')}</p> : null}
             </div>
           </div>
           {muscleGroups.length > 0 || equipment ? (

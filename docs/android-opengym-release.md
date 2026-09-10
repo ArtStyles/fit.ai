@@ -6,8 +6,8 @@ Actualización del 10 de septiembre de 2026 en `codex/android-offline`. El alcan
 
 - Archivo local: `.artifacts/Vekira-1.1.15-offline.apk`.
 - Paquete: `com.fitai.app`; versión `1.1.15-offline`; código `17`.
-- Tamaño: 18 002 901 bytes (18,0 MB).
-- SHA-256: `d59708bc8d9a3bede87e8a3fa8ae636334dcdcc929d5145d46e90ff015942f6c`.
+- Tamaño: 18 003 081 bytes (18,0 MB).
+- SHA-256: `bd6a71e348d2418d71430d016fbed2567bba8293e091d087371b32e916e6df3e`.
 - Certificado SHA-256: `745fafc84e47312960f942cd3118bd1e57036d3993163fa3d6943bfd468c4784`.
 
 Firma APK v2 válida, con el certificado original. Instalar sobre la versión anterior, sin desinstalar, para conservar los datos. El primer acceso a una cuenta y la sincronización siguen necesitando conexión.
@@ -34,7 +34,7 @@ Mantiene las correcciones de 1.1.13: historial desde Inicio, fecha original azul
 
 ## Verificación
 
-- Acceso público e histórico a la ficha: las 12 pruebas de la ruta pasan, incluidos aislamiento por cuenta, paginación y errores de lectura.
+- Acceso público e histórico a la ficha: las 16 pruebas de la ruta pasan, incluidos aislamiento por cuenta, paginación, errores de lectura y clasificación técnica. Cardio, flexibilidad y ejercicios sin tipo no se etiquetan como movimientos de aislamiento.
 - `pnpm mobile:test`: 216 pruebas aprobadas en 29 archivos.
 - `pnpm type-check`, `pnpm mobile:type-check`, ESLint de los archivos modificados y `git diff --check`: aprobados.
 - `pnpm android:offline:release`: build correcto; 37 pruebas JVM, cero errores y fallos.
