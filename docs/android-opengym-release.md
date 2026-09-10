@@ -1,16 +1,26 @@
-# Vekira Android 1.1.16-offline
+# Vekira Android 1.1.17-offline
 
 Actualización del 10 de septiembre de 2026 en `codex/android-offline`. El alcance de publicación es Android y APK; no se despliega la web de producción.
 
 ## Aplicación
 
-- Archivo local: `.artifacts/Vekira-1.1.16-offline.apk`.
-- Paquete: `com.fitai.app`; versión `1.1.16-offline`; código `18`.
-- Tamaño: 18 003 361 bytes (18,0 MB).
-- SHA-256: `ea8f1c864f03d3a1e0f4001ad34c9661ac8be1d1a1ec829fee4a2b62d89af86e`.
+- Archivo local: `.artifacts/Vekira-1.1.17-offline.apk`.
+- Paquete: `com.fitai.app`; versión `1.1.17-offline`; código `19`.
+- Tamaño: 18 003 985 bytes (18,0 MB).
+- SHA-256: `f4d0627afc303f92cd0d0fd933829b9521fa2753a49d6041069d709b4bb6b67c`.
 - Certificado SHA-256: `745fafc84e47312960f942cd3118bd1e57036d3993163fa3d6943bfd468c4784`.
 
 Firma APK v2 válida, con el certificado original. Instalar sobre la versión anterior, sin desinstalar, para conservar los datos. El primer acceso a una cuenta y la sincronización siguen necesitando conexión.
+
+## Corrección de la atribución muscular
+
+El mapa reconocía etiquetas generales como «tríceps», pero omitía nombres anatómicos del catálogo como «pectoral mayor», «deltoides anterior» y «glúteo mayor». Una prueba con los cinco movimientos reportados reprodujo exactamente el resultado incorrecto: únicamente 15 series de tríceps. La normalización compartida por Plan, Progreso y el desglose ahora reconoce todas las etiquetas del catálogo, deduplica por grupo dentro de un mismo ejercicio y conserva visibles las etiquetas futuras desconocidas.
+
+Con tres series de Arnold press, banca con barra, press francés EZ, inclinado con mancuernas y militar de pie, el resultado es pecho 6, hombros 12, tríceps 15, trapecio 3 y ancóneo 3. Son series con participación registrada; los grupos no se suman para calcular el total de series de la sesión ni distinguen trabajo principal de secundario.
+
+El trapecio y la zona lumbar usan sus trazados independientes; también se activan las zonas existentes de cuello y tibial anterior. Los colores oscuros de pocas series son más visibles. Manguito rotador y ancóneo conservan sus conteos y enlaces al desglose en la lista, con una nota porque la ilustración no incluye una zona individual para ellos. Los elementos decorativos no son interactivos.
+
+La corrección interpreta los nombres originales guardados en cada sesión. No reescribe el historial, no sustituye ejercicios antiguos por el catálogo actual y no requiere migraciones ni cambios de datos. Se aplica al volver a abrir las pantallas después de instalar la actualización.
 
 ## Foto de perfil
 
@@ -42,16 +52,17 @@ Mantiene las correcciones de 1.1.13: historial desde Inicio, fecha original azul
 
 ## Verificación
 
+- `pnpm exec vitest run src/lib/muscles src/components/muscles src/components/plan/__tests__/muscleDistribution.test.tsx --maxWorkers=2`: 52 pruebas aprobadas. Incluyen reproducción exacta del fallo, cobertura de los 50 ejercicios empaquetados, nombres anatómicos y generales, sesiones congeladas en ambos idiomas, grupos separados y geometría sin atribuciones inventadas.
+- Auditoría de solo lectura del catálogo remoto: 122 ejercicios y 66 etiquetas distintas entre español y campos canónicos; cero etiquetas sin reconocer. No se accedió al almacenamiento del teléfono ni se modificaron cuentas, sesiones o catálogo.
+- `node mobile/tests/muscle-catalog-regression.mjs`: 5 recorridos con SQLite real y red externa bloqueada. Sesión reportada en 320/390/1440 px, otra sesión con piernas/espalda y versión inglesa. Verifica colores, toque del trapecio, teclado, desglose correcto, historial, recarga, mapa de Plan y conservación de las tablas. Capturas revisadas en `.artifacts/muscle-catalog-regression/`.
+- `node mobile/tests/muscle-details-regression.mjs`: los 7 recorridos previos de comparación de periodos, navegación, teclado, ejercicios sin catálogo y localización continúan aprobados.
 - `pnpm mobile:test`: 233 pruebas aprobadas en 30 archivos, incluidas 17 de avatar con SQLite real: persistencia al reabrir, confirmación remota, errores de subida/perfil, cambios de cuenta, validación y eliminación.
 - `pnpm type-check`, `pnpm mobile:type-check`, ESLint de los archivos modificados y `git diff --check`: aprobados.
 - `pnpm android:offline:release`: build correcto; 37 pruebas JVM, cero errores y fallos.
-- `node mobile/tests/avatar-regression.mjs`: 5 recorridos de navegador con SQLite real; perfiles locales en 390/1440 px y cuentas conectadas con respuestas remotas simuladas, incluidos fallo de Storage, fallo de perfil y reintento. Verifican guardar, recargar, eliminar y conservar el catálogo. Capturas en `.artifacts/avatar-regression/`.
-- `supabase/tests/avatar_owner_storage_test.sql`: políticas verificadas en la base vinculada dentro de una transacción con rollback. Cubre propietario, otras cuentas, rutas ajenas, suspendidos, anónimos y objetos legados; los objetos existentes permanecen idénticos.
-- Prueba real de la API de Storage con una cuenta temporal: subida y reemplazo autenticados, URL persistida en perfil, rechazo de formato/tamaño/ruta ajena, bytes públicos correctos y eliminación autenticada. La cuenta temporal y su imagen fueron eliminadas al finalizar. Verificación posterior: la cuenta existente permanece, cero cuentas de prueba, 122 ejercicios y 934 objetos del catálogo conservados.
-- `pnpm check:supabase-migrations`: 12 migraciones activas válidas; la nueva migración consta en el registro remoto.
+- La versión anterior 1.1.16 verificó además 5 recorridos de avatar, sus políticas con rollback y una prueba real de la API de Storage con limpieza de su cuenta temporal. Esta versión conserva ese flujo y no incorpora migraciones.
 - `scripts/verify-android-offline.ps1`: bundle probado idéntico al APK; SQLite, 50 imágenes, 16 fuentes y licencia MuscleMap incluidos; sin cargador remoto ni service worker.
 - `apksigner` y `aapt2`: firma y metadatos verificados; min SDK 24, target SDK 36.
-- Revisión independiente realizada; la limitación de las operaciones separadas de Storage y perfil se documenta arriba. Instalación/actualización y selección de imagen en un teléfono físico pendientes de prueba; la API remota sí se verificó con una cuenta autenticada real.
+- Revisión independiente realizada. Instalación/actualización y renderizado en un teléfono físico pendientes de prueba; los recorridos se verificaron en el navegador con el bundle que contiene la APK.
 
 ## Integración
 

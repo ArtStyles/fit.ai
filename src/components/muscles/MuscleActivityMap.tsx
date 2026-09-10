@@ -9,14 +9,16 @@ import geometry from '@/lib/muscles/geometry.json'
 const REGION_GROUP: Record<string, MuscleGroupId> = {
   chest: 'chest', abs: 'core', obliques: 'core', serratus: 'core', biceps: 'biceps', triceps: 'triceps',
   deltoids: 'shoulders', quadriceps: 'quads', calves: 'calves', adductors: 'hips', hipFlexors: 'hips',
-  trapezius: 'back', upperBack: 'back', lowerBack: 'back', forearm: 'forearms', gluteal: 'glutes', hamstring: 'hamstrings',
+  trapezius: 'traps', upperBack: 'back', lowerBack: 'lower_back', neck: 'neck', tibialis: 'tibialis',
+  forearm: 'forearms', gluteal: 'glutes', hamstring: 'hamstrings',
 }
+const DRAWN_GROUPS = new Set(Object.values(REGION_GROUP))
 const FILL_LEVEL = [
   'fill-muted-foreground/35',
-  'fill-violet-200 dark:fill-violet-950',
-  'fill-violet-300 dark:fill-violet-800',
-  'fill-violet-400 dark:fill-violet-600',
-  'fill-violet-600 dark:fill-violet-400',
+  'fill-violet-200 dark:fill-violet-600',
+  'fill-violet-300 dark:fill-violet-500',
+  'fill-violet-400 dark:fill-violet-400',
+  'fill-violet-600 dark:fill-violet-200',
 ]
 
 type Props = {
@@ -33,6 +35,7 @@ export function MuscleActivityMap({ rows, mode, language, range, comparison }: P
   const from = range?.from
   const to = range?.to
   const activity = useMemo(() => buildMuscleActivity(rows, from && to ? { from, to } : undefined), [rows, from, to])
+  const withoutDrawing = activity.groups.filter(group => group.sets > 0 && !DRAWN_GROUPS.has(group.id))
   const selected = activity.groups.find(group => group.id === selectedId)
   const previousFrom = comparison?.range.from
   const previousTo = comparison?.range.to
@@ -66,6 +69,7 @@ export function MuscleActivityMap({ rows, mode, language, range, comparison }: P
                 return (
                   <g
                     key={part.slug}
+                    data-muscle-region={part.slug}
                     data-muscle-group={groupId}
                     className={cn(group ? FILL_LEVEL[group.level] : 'fill-muted-foreground/10', group && 'cursor-pointer', isSelected && 'stroke-foreground')}
                     strokeWidth={isSelected ? 5 : 0}
@@ -129,6 +133,13 @@ export function MuscleActivityMap({ rows, mode, language, range, comparison }: P
           </button>
         ))}
       </div>
+
+      {withoutDrawing.length > 0 && (
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          {es ? 'Sin zona propia en el dibujo: ' : 'No dedicated drawing region: '}
+          {withoutDrawing.map(group => `${label(group)} (${group.sets})`).join(' · ')}
+        </p>
+      )}
 
       {(activity.unmapped.length > 0 || activity.withoutMuscleSets > 0) && (
         <p className="mt-4 text-xs leading-relaxed text-muted-foreground">

@@ -1,18 +1,45 @@
 import { isCivilDate } from '@/lib/workouts/occurrences'
 
 export const MUSCLE_GROUPS = [
-  { id: 'chest', es: 'Pecho', en: 'Chest', aliases: ['chest', 'pecho', 'pectorales', 'pectoral', 'pectorals'] },
-  { id: 'back', es: 'Espalda', en: 'Back', aliases: ['back', 'espalda', 'lats', 'dorsales', 'dorsal', 'middle back', 'upper back', 'lower back', 'espalda baja', 'espalda alta', 'lumbar', 'lumbares', 'traps', 'trapezius', 'trapecio', 'trapecios', 'latissimus dorsi', 'erector spinae', 'rhomboids', 'romboides'] },
-  { id: 'shoulders', es: 'Hombros', en: 'Shoulders', aliases: ['shoulders', 'shoulder', 'hombros', 'hombro', 'deltoids', 'deltoid', 'deltoides'] },
-  { id: 'biceps', es: 'Bíceps', en: 'Biceps', aliases: ['biceps', 'biceps brachii', 'biceps braquial'] },
-  { id: 'triceps', es: 'Tríceps', en: 'Triceps', aliases: ['triceps', 'triceps brachii', 'triceps braquial'] },
-  { id: 'forearms', es: 'Antebrazos', en: 'Forearms', aliases: ['forearms', 'forearm', 'antebrazos', 'antebrazo'] },
-  { id: 'core', es: 'Abdomen', en: 'Core', aliases: ['core', 'abdominals', 'abdominales', 'abdominal', 'abdomen', 'abs', 'obliques', 'oblicuos', 'serratus', 'serrato', 'serrato anterior'] },
-  { id: 'glutes', es: 'Glúteos', en: 'Glutes', aliases: ['glutes', 'gluteal', 'gluteos', 'gluteo', 'gluteus maximus'] },
+  { id: 'chest', es: 'Pecho', en: 'Chest', aliases: [
+    'chest', 'pecho', 'pectorales', 'pectoral', 'pectorals', 'pectoral mayor',
+    'pectoral mayor porcion clavicular', 'pectoral mayor porcion esternal', 'pectoralis major',
+  ] },
+  { id: 'back', es: 'Espalda', en: 'Back', aliases: [
+    'back', 'espalda', 'lats', 'dorsales', 'dorsal', 'dorsal ancho', 'middle back', 'upper back',
+    'espalda media', 'espalda alta', 'latissimus dorsi', 'rhomboids', 'romboides', 'redondo mayor', 'teres major',
+  ] },
+  { id: 'traps', es: 'Trapecio', en: 'Trapezius', aliases: [
+    'traps', 'trapezius', 'trapecio', 'trapecios', 'trapecio superior', 'trapecio medio', 'trapecio inferior',
+    'upper trapezius', 'middle trapezius', 'lower trapezius',
+  ] },
+  { id: 'lower_back', es: 'Zona lumbar', en: 'Lower back', aliases: [
+    'lower back', 'espalda baja', 'lumbar', 'lumbares', 'zona lumbar', 'erector spinae', 'erectores espinales',
+    'cuadrado lumbar', 'quadratus lumborum',
+  ] },
+  { id: 'shoulders', es: 'Hombros', en: 'Shoulders', aliases: [
+    'shoulders', 'shoulder', 'hombros', 'hombro', 'deltoids', 'deltoid', 'deltoides',
+    'deltoides anterior', 'deltoides lateral', 'deltoides posterior', 'anterior deltoid', 'lateral deltoid', 'posterior deltoid',
+  ] },
+  { id: 'biceps', es: 'Bíceps', en: 'Biceps', aliases: ['biceps', 'biceps brachii', 'biceps braquial', 'braquial', 'brachialis'] },
+  { id: 'triceps', es: 'Tríceps', en: 'Triceps', aliases: [
+    'triceps', 'triceps brachii', 'triceps braquial', 'triceps braquial cabeza larga', 'triceps cabeza larga', 'triceps long head',
+  ] },
+  { id: 'forearms', es: 'Antebrazos', en: 'Forearms', aliases: ['forearms', 'forearm', 'antebrazos', 'antebrazo', 'braquiorradial', 'brachioradialis'] },
+  { id: 'core', es: 'Abdomen', en: 'Core', aliases: [
+    'core', 'abdominals', 'abdominales', 'abdominal', 'abdomen', 'abs', 'obliques', 'oblicuos', 'serratus', 'serrato',
+    'serrato anterior', 'recto abdominal', 'pared abdominal profunda', 'transverso abdominal', 'rectus abdominis', 'transversus abdominis',
+  ] },
+  { id: 'glutes', es: 'Glúteos', en: 'Glutes', aliases: ['glutes', 'gluteal', 'gluteos', 'gluteo', 'gluteo mayor', 'gluteo medio', 'gluteus maximus', 'gluteus medius'] },
   { id: 'quads', es: 'Cuádriceps', en: 'Quadriceps', aliases: ['quadriceps', 'cuadriceps', 'quads'] },
   { id: 'hamstrings', es: 'Isquiotibiales', en: 'Hamstrings', aliases: ['hamstrings', 'hamstring', 'isquiotibiales', 'isquios', 'femorales', 'femoral'] },
-  { id: 'calves', es: 'Gemelos', en: 'Calves', aliases: ['calves', 'calf', 'gemelos', 'pantorrillas', 'pantorrilla', 'gastrocnemius', 'soleus', 'soleo'] },
+  { id: 'calves', es: 'Gemelos', en: 'Calves', aliases: ['calves', 'calf', 'gemelos', 'pantorrillas', 'pantorrilla', 'gastrocnemius', 'gastrocnemio', 'soleus', 'soleo'] },
   { id: 'hips', es: 'Caderas', en: 'Hips', aliases: ['adductors', 'abductors', 'aductores', 'abductores', 'hip flexors', 'flexores de cadera', 'flexores de la cadera', 'hip', 'hips', 'caderas', 'cadera'] },
+  { id: 'neck', es: 'Cuello', en: 'Neck', aliases: ['neck', 'cuello'] },
+  { id: 'tibialis', es: 'Tibial anterior', en: 'Tibialis anterior', aliases: ['tibialis', 'tibialis anterior', 'tibial anterior'] },
+  // These muscles have no individual paths in the illustration but retain their own counts and drill-down.
+  { id: 'rotator_cuff', es: 'Manguito rotador', en: 'Rotator cuff', aliases: ['manguito rotador', 'rotator cuff', 'supraespinoso', 'supraspinatus'] },
+  { id: 'anconeus', es: 'Ancóneo', en: 'Anconeus', aliases: ['anconeo', 'anconeus'] },
 ] as const
 
 export type MuscleGroupId = (typeof MUSCLE_GROUPS)[number]['id']
