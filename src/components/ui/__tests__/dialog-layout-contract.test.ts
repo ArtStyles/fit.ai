@@ -54,7 +54,8 @@ describe('shared dialog layout contract', () => {
   it('uses a safe mobile bottom sheet with a 44px close control', () => {
     expect(dialog).toContain('fitai-dialog-content')
     expect(dialog).toContain('h-12 w-12')
-    expect(dialog).toContain('<span className="sr-only">Cerrar</span>')
+    expect(dialog).toContain('closeLabel = "Cerrar"')
+    expect(dialog).toContain('<span className="sr-only">{closeLabel}</span>')
 
     const mobile = readRule(css, '.fitai-dialog-content')
     expect(mobile).toContain('inset-inline: 1rem;')

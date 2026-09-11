@@ -7,9 +7,30 @@ import {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Android back overlay priority', () => {
-  it.each(['dialog', 'alertdialog', 'menu'])('recognizes an open %s', role => {
+  it.each(['dialog', 'alertdialog', 'menu', 'listbox'])('recognizes an open %s', role => {
     expect(OPEN_RADIX_OVERLAY_SELECTOR)
       .toContain(`[role="${role}"][data-state="open"]`)
+  })
+
+  it.each(['open', 'closed', undefined])('handles a Select listbox with state %s before navigation', state => {
+    class FakeKeyboardEvent {
+      constructor(public type: string, public init: KeyboardEventInit) {}
+    }
+    vi.stubGlobal('KeyboardEvent', FakeKeyboardEvent)
+    const dispatchEvent = vi.fn()
+    const root = {
+      querySelector: vi.fn((selector: string) => state === 'open' && selector.includes('[role="listbox"][data-state="open"]') ? {} : null),
+      dispatchEvent,
+    } as unknown as Document
+
+    expect(dismissOpenRadixOverlay(root)).toBe(state === 'open')
+    expect(dispatchEvent).toHaveBeenCalledTimes(state === 'open' ? 1 : 0)
+    if (state === 'open') {
+      expect(dispatchEvent.mock.calls[0][0]).toMatchObject({
+        type: 'keydown',
+        init: { key: 'Escape', bubbles: true, cancelable: true },
+      })
+    }
   })
 
   it('returns false without dispatching when no overlay is open', () => {

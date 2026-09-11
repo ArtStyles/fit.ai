@@ -61,3 +61,19 @@ La verificación es local sobre el bundle móvil y SQLite de navegador. No se co
 El build conserva avisos existentes de tamaño de chunks, imports dinámicos sin separación, Browserslist y utilidades Tailwind ambiguas. No impidieron compilar ni ejecutar los recorridos.
 
 Esta entrega cubre registro libre y progreso asociado. Metas personales por ejercicio y ampliación del historial del compañero quedan para las siguientes entregas del producto.
+
+## Ajuste de estilo y selectores
+
+Después de `07b7ace`, el usuario pidió reforzar el estilo auténtico y usar componentes propios en los desplegables.
+
+- Cabecera reutilizada de `EvidenceHero`, superficies y campos alineados con Ajustes, controles de 48 px y CTA violeta. Se conservan navegación, guardado y contratos de borradores.
+- `TrainingGoalSelect` utiliza las primitivas Radix existentes en Vekira: menú opaco, ancho del control limitado al viewport, altura disponible, opciones táctiles, selección marcada, teclado, cierre exterior y restauración del foco.
+- `TrainingDatePicker` utiliza el diálogo compartido y un calendario civil con semana desde lunes. Incluye navegación por mes y teclado, fechas futuras deshabilitadas, retorno a hoy, foco contenido y fecha seleccionada accesible. El calendario cabe en 320 × 568; conserva scroll interno si el espacio disponible se reduce.
+- `DialogContent` admite una etiqueta de cierre opcional para el calendario en inglés; el valor predeterminado sigue siendo «Cerrar».
+- Corregida la prioridad de Atrás en Android: reconoce también los `listbox` abiertos de Radix y cierra la lista antes de navegar.
+
+Validación de este ajuste: 292 pruebas móviles en 34 archivos; 16 pruebas de diálogos y prioridad de Atrás; TypeScript móvil, ESLint dirigido y build aprobados. El arnés de registro ahora incluye seis escenarios: cuatro recorridos funcionales y dos dedicados a selectores en 320 × 568 (español) y 1440 × 900 (inglés). Los seis pasan, con selección por teclado, Escape, clic exterior, opciones fuera de la vista inicial, navegación del calendario, límite de fecha, foco, recarga y guardado de meta.
+
+El arnés ejecuta además el helper real de Atrás sobre el DOM del bundle y verifica cierre, foco y URL conservada para ambos controles. Esto verifica la integración del manejador; la entrega sigue sin prueba física de Android. El recorrido original volvió a pasar sobre el bundle final.
+
+Evidencia adicional: `selectors-mobile-tests.log`, `selectors-journey.log`, `selectors-original-journey.log`, `selectors-build.log`, `11-date-picker-320.png`, `11-date-picker-1440.png`, `12-goal-select-320.png` y `12-goal-select-1440.png`, dentro de `.artifacts/free-training/`.

@@ -2,6 +2,7 @@ export const OPEN_RADIX_OVERLAY_SELECTOR = [
   '[role="dialog"][data-state="open"]',
   '[role="alertdialog"][data-state="open"]',
   '[role="menu"][data-state="open"]',
+  '[role="listbox"][data-state="open"]',
 ].join(', ')
 
 export function dismissOpenRadixOverlay(root: Document = document): boolean {
