@@ -3,13 +3,14 @@ import { Capacitor } from '@capacitor/core'
 import { openBrowserSqliteDriver } from '../data/browser-driver'
 import { openNativeSqliteDriver } from '../data/native-driver'
 import type { MobileSqliteDriver, SqliteRow } from '../data/driver'
+import { validateExerciseGoalsTable } from './goals/validation'
 import { ORIGINAL_STATE_CHANGED, type AppState, type AppStore } from './types'
 
 export type { AppState, AppStore, AppRow } from './types'
 
 const FORMAT = 'vekira-original-app-backup'
 const MAX_BACKUP_BYTES = 100 * 1024 * 1024
-const OWNER_TABLES = new Set(['workout_schedule_overrides', 'workout_plans', 'workouts', 'progress_logs', 'measurements', 'session_authorizations', 'session_drafts', 'session_results', 'plan_generation_requests', 'notifications', 'user_preferences'])
+const OWNER_TABLES = new Set(['workout_schedule_overrides', 'workout_plans', 'workouts', 'progress_logs', 'measurements', 'session_authorizations', 'session_drafts', 'session_results', 'plan_generation_requests', 'notifications', 'user_preferences', 'mobile_exercise_goals'])
 const PARENTS: Record<string, [string, string]> = {
   workout_exercises: ['workout_id', 'workouts'],
   exercise_logs: ['progress_log_id', 'progress_logs'],
@@ -74,6 +75,7 @@ export function validateAppState(input: unknown): AppState {
       if (!isCivilDate(row.occurrence_source_date) || !isCivilDate(row.occurrence_scheduled_date)) throw new Error('Invalid session occurrence identity')
     }
   }
+  validateExerciseGoalsTable(state.tables.mobile_exercise_goals ?? [], state.accountId)
   return state
 }
 

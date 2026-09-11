@@ -1,6 +1,7 @@
 import { shiftDateStr, type DayAggregate } from '@/lib/calendar/aggregate'
 import { percentChange } from '@/lib/training-evidence/performance'
 import type { FreeTrainingDetail } from '@/lib/session/freeTrainingEvidence'
+import { MAX_SESSION_REPS, MAX_SESSION_SETS, MAX_SESSION_WEIGHT_KG } from '@/lib/session/limits'
 
 export type ProgressRangeWeeks = 1 | 4 | 12 | 24
 
@@ -39,9 +40,55 @@ export type ProgressExercisePoint = {
   exerciseId: string
   exerciseName: string
   date: string
+  completedAt?: string
+  sessionId?: string
   maxWeightKg: number
   repsAtMaxWeight: number
   volumeKg: number
+}
+
+export type ProgressSetEvidenceSummary = {
+  bestSet: { weightKg: number; reps: number }
+  maxReps: number
+  volumeKg: number
+}
+
+export function summarizeProgressSetEvidence({
+  setsCompleted,
+  weightsKg,
+  repsCompleted,
+}: {
+  setsCompleted: unknown
+  weightsKg: unknown
+  repsCompleted: unknown
+}): ProgressSetEvidenceSummary | null {
+  if (typeof setsCompleted !== 'number' || !Number.isInteger(setsCompleted) || setsCompleted < 1 || setsCompleted > MAX_SESSION_SETS || !Array.isArray(weightsKg) || !Array.isArray(repsCompleted)) return null
+
+  const sets: Array<{ weightKg: number; reps: number }> = []
+  const limit = Math.min(setsCompleted, weightsKg.length, repsCompleted.length)
+  for (let index = 0; index < limit; index += 1) {
+    const weightKg = weightsKg[index]
+    const reps = repsCompleted[index]
+    if (typeof weightKg !== 'number' || !Number.isFinite(weightKg) || weightKg < 0 || weightKg > MAX_SESSION_WEIGHT_KG) continue
+    if (typeof reps !== 'number' || !Number.isInteger(reps) || reps < 1 || reps > MAX_SESSION_REPS) continue
+    sets.push({ weightKg, reps })
+  }
+  if (sets.length === 0) return null
+
+  const bestSet = sets.reduce((best, set) => (
+    set.weightKg > best.weightKg || (set.weightKg === best.weightKg && set.reps > best.reps) ? set : best
+  ))
+  return {
+    bestSet,
+    maxReps: Math.max(...sets.map(set => set.reps)),
+    volumeKg: sets.reduce((sum, set) => sum + set.weightKg * set.reps, 0),
+  }
+}
+
+export function normalizeProgressDayVolumes(days: DayAggregate[], sessions: ProgressSession[]): DayAggregate[] {
+  const volumeByDate = new Map<string, number>()
+  for (const session of sessions) volumeByDate.set(session.date, (volumeByDate.get(session.date) ?? 0) + session.volumeKg)
+  return days.map(day => ({ ...day, volumeKg: Math.round(volumeByDate.get(day.date) ?? 0) }))
 }
 
 export type ProgressWeekBucket = {

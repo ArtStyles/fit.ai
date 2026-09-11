@@ -63,7 +63,9 @@ function progressFingerprint(state: AppState) {
     .map(row => [row.id, row.client_session_id, row.completed_at, row.updated_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   const plans = (state.tables.workout_plans ?? []).filter(row => row.user_id === state.accountId && row.is_active === true)
     .map(row => [row.id, row.days_per_week, row.updated_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-  return JSON.stringify([state.accountId, sessions, plans, profile?.days_per_week, profile?.timezone, profile?.full_name, profile?.avatar_url])
+  const goals = (state.tables.mobile_exercise_goals ?? []).filter(row => row.user_id === state.accountId)
+    .map(row => [row.id, row.exercise_id, row.version, row.target, row.updated_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  return JSON.stringify([state.accountId, sessions, plans, goals, profile?.days_per_week, profile?.timezone, profile?.full_name, profile?.avatar_url])
 }
 
 export function createCompanionBackupCoordinator(dependencies: Dependencies) {

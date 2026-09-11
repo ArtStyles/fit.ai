@@ -2,11 +2,14 @@ import { BarChart3 } from 'lucide-react'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { ProgressHub } from '@/components/progress/ProgressHub'
 import { readFreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
-import type {
-  ProgressExercisePoint,
-  ProgressMeasurement,
-  ProgressRecord,
-  ProgressSession,
+import {
+  summarizeProgressSetEvidence,
+  normalizeProgressDayVolumes,
+  type ProgressExercisePoint,
+  type ProgressMeasurement,
+  type ProgressRecord,
+  type ProgressSession,
+  type ProgressSetEvidenceSummary,
 } from '@/components/progress/progressViewModel'
 import { requireAppUserContext } from '@/lib/auth/server'
 import {
@@ -19,7 +22,6 @@ import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPr
 import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator, normalizeLanguage } from '@/lib/i18n'
 import { addDays, getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
-import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { buildHistoricalMuscleActivity } from '@/lib/muscles/history'
 import type { MuscleActivityInput } from '@/lib/muscles/activity'
 import { loadCompleteProgressHistory } from '@/lib/progress/historyPagination'
@@ -64,13 +66,74 @@ function getExercise(row: ExerciseLogRow): ExerciseSummary | null {
 function volumeForRows(logId: string, rows: ExerciseLogRow[]): number {
   return rows
     .filter(row => row.progress_log_id === logId)
-    .reduce((total, row) => {
-      const weights = row.weights_kg ?? []
-      const reps = row.reps_completed ?? []
-      return total + weights.reduce((sum, weight, index) => {
-        return sum + (Number(weight) || 0) * (Number(reps[index]) || 0)
-      }, 0)
-    }, 0)
+    .reduce((total, row) => total + (summarizeProgressSetEvidence({
+      setsCompleted: row.sets_completed,
+      weightsKg: row.weights_kg,
+      repsCompleted: row.reps_completed,
+    })?.volumeKg ?? 0), 0)
+}
+
+type SessionExercisePerformance = ProgressSetEvidenceSummary & {
+  exerciseId: string
+  exerciseName: string
+  muscleGroups: string[]
+  sessionId: string
+  completedAt: string
+  date: string
+}
+
+function buildSessionExercisePerformances(
+  rows: ExerciseLogRow[],
+  logs: ProgressLogRow[],
+  timeZone: string,
+  language: ExerciseLanguage,
+  fallbackExerciseName: string,
+): SessionExercisePerformance[] {
+  const logById = new Map(logs.map(log => [log.id, log]))
+  const grouped = new Map<string, SessionExercisePerformance>()
+
+  for (const row of rows) {
+    if (!row.exercise_id) continue
+    const log = logById.get(row.progress_log_id)
+    const evidence = summarizeProgressSetEvidence({
+      setsCompleted: row.sets_completed,
+      weightsKg: row.weights_kg,
+      repsCompleted: row.reps_completed,
+    })
+    if (!log || !evidence) continue
+    const exercise = resolveHistoricalExercisePresentation({
+      exerciseId: row.exercise_id,
+      sessionContextSnapshot: log.session_context_snapshot,
+      liveExercise: getExercise(row),
+      language,
+      fallbackExerciseName,
+    })
+    const key = `${row.exercise_id}:${log.id}`
+    const current = grouped.get(key)
+    if (!current) {
+      grouped.set(key, {
+        ...evidence,
+        exerciseId: row.exercise_id,
+        exerciseName: exercise.name,
+        muscleGroups: exercise.muscleGroups,
+        sessionId: log.id,
+        completedAt: log.completed_at,
+        date: getLocalDateString(new Date(log.completed_at), timeZone),
+      })
+      continue
+    }
+    const bestSet = evidence.bestSet.weightKg > current.bestSet.weightKg || (
+      evidence.bestSet.weightKg === current.bestSet.weightKg && evidence.bestSet.reps > current.bestSet.reps
+    ) ? evidence.bestSet : current.bestSet
+    grouped.set(key, {
+      ...current,
+      bestSet,
+      maxReps: Math.max(current.maxReps, evidence.maxReps),
+      volumeKg: current.volumeKg + evidence.volumeKg,
+    })
+  }
+
+  return Array.from(grouped.values())
 }
 
 function buildProgressRecords(
@@ -80,27 +143,12 @@ function buildProgressRecords(
   language: ExerciseLanguage,
   fallbackExerciseName: string,
 ): ProgressRecord[] {
-  const logById = new Map(logs.map(log => [log.id, log]))
   const records = new Map<string, ProgressRecord>()
 
-  for (const row of rows) {
-    if (!row.exercise_id) continue
-    const log = logById.get(row.progress_log_id)
-    if (!log) continue
-    const exercise = resolveHistoricalExercisePresentation({
-      exerciseId: row.exercise_id,
-      sessionContextSnapshot: log.session_context_snapshot,
-      liveExercise: getExercise(row),
-      language,
-      fallbackExerciseName,
-    })
-
-    const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed)
-    const maxWeightKg = performance.bestSet?.weightKg ?? 0
-    const repsAtMaxWeight = performance.bestSet?.reps ?? 0
-    const maxReps = performance.sets.reduce((max, set) => Math.max(max, set.reps), 0)
-    const totalVolumeKg = performance.volumeKg
-    const current = records.get(row.exercise_id)
+  for (const performance of buildSessionExercisePerformances(rows, logs, timeZone, language, fallbackExerciseName)) {
+    const maxWeightKg = performance.bestSet.weightKg
+    const repsAtMaxWeight = performance.bestSet.reps
+    const current = records.get(performance.exerciseId)
     const isBetter =
       !current ||
       maxWeightKg > current.maxWeightKg ||
@@ -108,21 +156,19 @@ function buildProgressRecords(
       (
         maxWeightKg === current.maxWeightKg &&
         repsAtMaxWeight === current.repsAtMaxWeight &&
-        new Date(log.completed_at).getTime() > new Date(current.bestCompletedAt).getTime()
+        new Date(performance.completedAt).getTime() > new Date(current.bestCompletedAt).getTime()
       )
 
-    records.set(row.exercise_id, {
-      exerciseId: row.exercise_id,
-      exerciseName: isBetter ? exercise.name : current!.exerciseName,
-      muscleGroups: isBetter ? exercise.muscleGroups : current!.muscleGroups,
-      bestCompletedAt: isBetter ? log.completed_at : current!.bestCompletedAt,
-      bestDate: isBetter
-        ? getLocalDateString(new Date(log.completed_at), timeZone)
-        : current!.bestDate,
+    records.set(performance.exerciseId, {
+      exerciseId: performance.exerciseId,
+      exerciseName: isBetter ? performance.exerciseName : current!.exerciseName,
+      muscleGroups: isBetter ? performance.muscleGroups : current!.muscleGroups,
+      bestCompletedAt: isBetter ? performance.completedAt : current!.bestCompletedAt,
+      bestDate: isBetter ? performance.date : current!.bestDate,
       maxWeightKg: isBetter ? maxWeightKg : current!.maxWeightKg,
       repsAtMaxWeight: isBetter ? repsAtMaxWeight : current!.repsAtMaxWeight,
-      maxReps: Math.max(current?.maxReps ?? 0, maxReps),
-      totalVolumeKg: Math.round((current?.totalVolumeKg ?? 0) + totalVolumeKg),
+      maxReps: Math.max(current?.maxReps ?? 0, performance.maxReps),
+      totalVolumeKg: Math.round((current?.totalVolumeKg ?? 0) + performance.volumeKg),
       sessionCount: (current?.sessionCount ?? 0) + 1,
     })
   }
@@ -144,30 +190,16 @@ function buildProgressExercisePoints(
   language: ExerciseLanguage,
   fallbackExerciseName: string,
 ): ProgressExercisePoint[] {
-  const logById = new Map(logs.map(log => [log.id, log]))
-
-  return rows.flatMap(row => {
-    const log = logById.get(row.progress_log_id)
-    if (!row.exercise_id || !log) return []
-    const exercise = resolveHistoricalExercisePresentation({
-      exerciseId: row.exercise_id,
-      sessionContextSnapshot: log.session_context_snapshot,
-      liveExercise: getExercise(row),
-      language,
-      fallbackExerciseName,
-    })
-    const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed)
-    if (!performance.bestSet) return []
-
-    return [{
-      exerciseId: row.exercise_id,
-      exerciseName: exercise.name,
-      date: getLocalDateString(new Date(log.completed_at), timeZone),
-      maxWeightKg: performance.bestSet.weightKg,
-      repsAtMaxWeight: performance.bestSet.reps,
-      volumeKg: performance.volumeKg,
-    }]
-  })
+  return buildSessionExercisePerformances(rows, logs, timeZone, language, fallbackExerciseName).map(performance => ({
+    exerciseId: performance.exerciseId,
+    exerciseName: performance.exerciseName,
+    date: performance.date,
+    completedAt: performance.completedAt,
+    sessionId: performance.sessionId,
+    maxWeightKg: performance.bestSet.weightKg,
+    repsAtMaxWeight: performance.bestSet.reps,
+    volumeKg: performance.volumeKg,
+  }))
 }
 
 async function loadProgressData(
@@ -225,17 +257,19 @@ async function loadProgressData(
   const sessionLogs = history.logs
   const exerciseLogs = history.exerciseLogs
 
+  const sessions = sessionLogs.map(log => ({
+    id: log.id,
+    completedAt: log.completed_at,
+    date: getLocalDateString(new Date(log.completed_at), timeZone),
+    durationMinutes: Number(log.duration_minutes) || 0,
+    volumeKg: Math.round(volumeForRows(log.id, exerciseLogs)),
+    detailLevel: readFreeTrainingDetail(log),
+  }))
+
   return {
     muscleActivity: buildHistoricalMuscleActivity(exerciseLogs, sessionLogs, timeZone, language),
-    sessions: sessionLogs.map(log => ({
-      id: log.id,
-      completedAt: log.completed_at,
-      date: getLocalDateString(new Date(log.completed_at), timeZone),
-      durationMinutes: Number(log.duration_minutes) || 0,
-      volumeKg: Math.round(volumeForRows(log.id, exerciseLogs)),
-      detailLevel: readFreeTrainingDetail(log),
-    })),
-    days: aggregateLogsToDays(sessionLogs, exerciseLogs, timeZone),
+    sessions,
+    days: normalizeProgressDayVolumes(aggregateLogsToDays(sessionLogs, exerciseLogs, timeZone), sessions),
     records: buildProgressRecords(
       exerciseLogs,
       sessionLogs,
@@ -279,7 +313,6 @@ export default async function ProgressPage() {
     <div className="min-h-screen bg-background pb-24">
       <PageTopBar
         title={t('Progreso')}
-        subtitle={t('Constancia, volumen, marcas y medidas en un solo lugar')}
         backHref="/dashboard"
         backLabel="Dashboard"
         icon={<BarChart3 className="h-5 w-5" />}

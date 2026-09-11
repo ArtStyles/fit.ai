@@ -60,6 +60,22 @@ describe('original application SQLite state', () => {
     expect((await restored.read())?.tables).toEqual(initial.tables)
   })
 
+  it('rejects tampered goal rows before importing a private backup', async () => {
+    const source = await store(); const initial = state()
+    initial.tables.mobile_exercise_goals = [{
+      id: 'aaaaaaaa-1111-4111-8111-111111111111', user_id: initial.accountId,
+      exercise_id: '11111111-1111-4111-8111-111111111111', exercise_name: 'Squat', exercise_name_es: 'Sentadilla',
+      muscle_groups: ['quadriceps'], muscle_groups_es: ['cuadriceps'], kind: 'strength', target: { kind: 'strength', weightKg: 60, reps: 10 },
+      version: 1, created_at: '2026-09-11T12:00:00.000Z', updated_at: '2026-09-11T12:00:00.000Z',
+    }]
+    await source.create(initial)
+    const backup = JSON.parse(await source.exportBackup())
+    backup.state.tables.mobile_exercise_goals[0].user_id = 'foreign-account'
+    const destination = await store(); await destination.create(state())
+    await expect(destination.importBackup(JSON.stringify(backup))).rejects.toThrow(/owner/i)
+    expect((await destination.read())?.tables.mobile_exercise_goals).toBeUndefined()
+  })
+
   it('isolates accounts, cloned reads and serialized mutations', async () => {
     const app = await store()
     await app.create(state())

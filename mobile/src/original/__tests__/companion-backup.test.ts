@@ -33,6 +33,17 @@ describe('automatic companion backup policy', () => {
     await f.coordinator.check()
     expect(f.synchronize).toHaveBeenCalledTimes(1)
   })
+  it('backs up goal additions, edits, and removals', async () => {
+    const f = fixture(); await f.coordinator.check()
+    const goal = { id: 'goal-1', user_id: owner, exercise_id: 'exercise-1', kind: 'strength', target: null, version: 1 }
+    f.current!.revision++; f.current!.tables.mobile_exercise_goals = [goal]
+    await f.coordinator.check()
+    f.current!.revision++; goal.target = { kind: 'strength', weightKg: 60, reps: 10 } as never; goal.version++
+    await f.coordinator.check()
+    f.current!.revision++; f.current!.tables.mobile_exercise_goals = []
+    await f.coordinator.check()
+    expect(f.synchronize).toHaveBeenCalledTimes(4)
+  })
   it('backs up an edited free session without counting it as a new completion', async () => {
     const f = fixture()
     const log = f.current!.tables.progress_logs[0]

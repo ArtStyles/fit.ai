@@ -108,7 +108,7 @@ export function aggregateLogsToDays(
     }
   }
 
-  for (const [date, evidence] of evidenceByDate) {
+  for (const [date, evidence] of Array.from(evidenceByDate)) {
     if (!evidence.hasFree) continue
     Object.assign(byDate.get(date)!, { volumeRecorded: evidence.volume, durationRecorded: evidence.duration })
   }

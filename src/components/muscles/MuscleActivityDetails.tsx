@@ -13,6 +13,7 @@ type Props = {
   hasPreviousRecords: boolean
   muscleName: string
   language: 'es' | 'en'
+  onExerciseSelect?: (exerciseId: string) => void
 }
 
 function dateLabel(value: string, language: 'es' | 'en') {
@@ -25,7 +26,7 @@ function rangeLabel(range: MuscleDateRange, language: 'es' | 'en') {
 }
 function setsLabel(sets: number, es: boolean) { return es ? (sets === 1 ? 'serie' : 'series') : (sets === 1 ? 'set' : 'sets') }
 
-function Contributions({ breakdown, language }: { breakdown: Breakdown; language: 'es' | 'en' }) {
+function Contributions({ breakdown, language, onExerciseSelect }: { breakdown: Breakdown; language: 'es' | 'en'; onExerciseSelect?: (exerciseId: string) => void }) {
   const es = language === 'es'
   return (
     <ul className="mt-3 space-y-3">
@@ -43,6 +44,12 @@ function Contributions({ breakdown, language }: { breakdown: Breakdown; language
             <p className="shrink-0 pt-3 text-sm font-bold tabular-nums text-foreground">{exercise.sets} <span className="text-xs font-normal text-muted-foreground">{setsLabel(exercise.sets, es)}</span></p>
           </div>
           <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div className="h-full rounded-full bg-violet-400" style={{ width: `${breakdown.sets ? exercise.sets / breakdown.sets * 100 : 0}%` }} /></div>
+          {exercise.exerciseId && onExerciseSelect && (
+            <button type="button" onClick={() => onExerciseSelect(exercise.exerciseId!)} aria-label={`${es ? 'Seguir mi progreso en' : 'Track my progress in'} ${exercise.exerciseName}`} className="mt-2 inline-flex min-h-12 items-center gap-2 rounded-xl px-2 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 dark:text-violet-300">
+              {es ? 'Seguir mi progreso' : 'Track my progress'}
+              <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
           {exercise.sessions.length > 0 && (
             <details className="group mt-2">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg text-xs font-semibold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
@@ -67,7 +74,7 @@ function Contributions({ breakdown, language }: { breakdown: Breakdown; language
   )
 }
 
-export function MuscleActivityDetails({ current, previous, range, previousRange, hasPreviousRecords, muscleName, language }: Props) {
+export function MuscleActivityDetails({ current, previous, range, previousRange, hasPreviousRecords, muscleName, language, onExerciseSelect }: Props) {
   const es = language === 'es'
   const delta = current.sets - previous.sets
   return (
@@ -95,11 +102,11 @@ export function MuscleActivityDetails({ current, previous, range, previousRange,
       <h4 className="mt-5 text-sm font-semibold text-foreground">{es ? 'Ejercicios que aportaron series' : 'Exercises contributing sets'}</h4>
       {current.exercises.length === 0
         ? <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{es ? 'No hay series de este músculo en el periodo elegido.' : 'No sets for this muscle in the selected period.'}</p>
-        : <Contributions breakdown={current} language={language} />}
+        : <Contributions breakdown={current} language={language} onExerciseSelect={onExerciseSelect} />}
       {hasPreviousRecords && previous.exercises.length > 0 && (
         <details className="mt-4 border-t border-border/60 pt-1">
           <summary className="flex min-h-11 cursor-pointer items-center rounded-lg text-sm font-semibold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">{es ? 'Ver aportes del periodo anterior' : 'View contributions from the previous period'}</summary>
-          <Contributions breakdown={previous} language={language} />
+          <Contributions breakdown={previous} language={language} onExerciseSelect={onExerciseSelect} />
         </details>
       )}
     </section>

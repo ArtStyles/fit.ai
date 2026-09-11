@@ -82,6 +82,17 @@ describe('original app cloud boundaries', () => {
     expect(refreshed.tables.workout_schedule_overrides).toEqual([override])
     expect(refreshed.tables.workouts[0]).toMatchObject({ name: 'Updated canonical name', day_of_week: 1 })
   })
+  it('preserves private exercise goals when canonical web data refreshes', async () => {
+    const app = await store(); const setup = fixture(app); setup.setAvailable(false)
+    const previous = state(); previous.tables = copy(setup.web)
+    previous.tables.mobile_web_base = [{ id: 'canonical', tables: copy(setup.web) }]
+    const goal = { id: 'aaaaaaaa-1111-4111-8111-111111111111', user_id: owner, exercise_id: '11111111-1111-4111-8111-111111111111', exercise_name: 'Squat', exercise_name_es: 'Sentadilla', muscle_groups: [], muscle_groups_es: [], kind: 'strength', target: null, version: 1, created_at: '2026-09-11T12:00:00.000Z', updated_at: '2026-09-11T12:00:00.000Z' }
+    previous.tables.mobile_exercise_goals = [goal]
+    await app.create(previous)
+    setup.web.profiles[0].language = 'en'
+    await setup.sync.synchronize()
+    expect((await app.read())?.tables.mobile_exercise_goals).toEqual([goal])
+  })
   it('uses bundled media for exact catalog matches without changing downloaded exercise identities', async () => {
     const source = 'vekira-catalog-v1'
     const catalog = [

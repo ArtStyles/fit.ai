@@ -1,6 +1,7 @@
 'use client'
 
 import { useId, useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { buildMuscleActivity, buildMuscleBreakdown, type MuscleActivityInput, type MuscleDateRange, type MuscleGroupId } from '@/lib/muscles/activity'
 import { MuscleActivityDetails } from './MuscleActivityDetails'
@@ -25,11 +26,13 @@ type Props = {
   rows: MuscleActivityInput[]
   mode: 'planned' | 'completed'
   language: 'es' | 'en'
+  compact?: boolean
+  onExerciseSelect?: (exerciseId: string) => void
   range?: MuscleDateRange
   comparison?: { range: MuscleDateRange; hasRecords: boolean }
 }
 
-export function MuscleActivityMap({ rows, mode, language, range, comparison }: Props) {
+export function MuscleActivityMap({ rows, mode, language, range, comparison, compact = false, onExerciseSelect }: Props) {
   const id = useId()
   const [selectedId, setSelectedId] = useState<MuscleGroupId | null>(null)
   const from = range?.from
@@ -50,6 +53,50 @@ export function MuscleActivityMap({ rows, mode, language, range, comparison }: P
   const label = (group: typeof activity.groups[number]) => es ? group.es : group.en
   const select = (groupId: MuscleGroupId) => setSelectedId(current => current === groupId ? null : groupId)
 
+  const explorer = <>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label={es ? 'Grupos musculares' : 'Muscle groups'}>
+        {activity.groups.map(group => (
+          <button
+            key={group.id}
+            type="button"
+            aria-pressed={selectedId === group.id}
+            aria-label={`${label(group)}: ${group.sets} ${seriesLabel(group.sets)}`}
+            onClick={() => select(group.id)}
+            className={cn(
+              'flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+              selectedId === group.id ? 'border-violet-500 bg-violet-500/10 text-foreground' : 'border-border/60 text-muted-foreground hover:bg-muted/40',
+            )}
+          >
+            <span className="min-w-0 break-words">{label(group)}</span>
+            <span className="shrink-0 tabular-nums text-foreground">{group.sets}</span>
+          </button>
+        ))}
+      </div>
+
+      {withoutDrawing.length > 0 && (
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          {es ? 'Sin zona propia en el dibujo: ' : 'No dedicated drawing region: '}
+          {withoutDrawing.map(group => `${label(group)} (${group.sets})`).join(' · ')}
+        </p>
+      )}
+
+      {(activity.unmapped.length > 0 || activity.withoutMuscleSets > 0) && (
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          {es ? 'Sin zona específica en el mapa: ' : 'Without a specific map region: '}
+          {[
+            ...activity.unmapped.map(item => `${item.label} (${item.sets})`),
+            ...(activity.withoutMuscleSets ? [`${es ? 'grupo no registrado' : 'unrecorded muscle group'} (${activity.withoutMuscleSets})`] : []),
+          ].join(' · ')}
+        </p>
+      )}
+      <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+        {es ? 'Una serie puede involucrar varios grupos. El color compara sus series, no mide recuperación.' : 'A set can involve several groups. Color compares their sets; it does not measure recovery.'}
+      </p>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        <a href="/third-party/MuscleMap-LICENSE.txt" target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline decoration-border underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">MuscleMap · © Melih Colpan · MIT</a>
+      </p>
+  </>
+
   return (
     <div data-muscle-map={mode} className="min-w-0">
       <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-border/50 bg-background/40 px-2 py-3 sm:gap-6 sm:px-5">
@@ -59,7 +106,7 @@ export function MuscleActivityMap({ rows, mode, language, range, comparison }: P
               viewBox={model.viewBox}
               role="img"
               aria-labelledby={`${id}-${model.side}`}
-              className="mx-auto h-60 w-full max-w-44 sm:h-72"
+              className={cn("mx-auto w-full max-w-44", compact ? "h-52 sm:h-60" : "h-60 sm:h-72")}
             >
               <title id={`${id}-${model.side}`}>{model.side === 'front' ? (es ? 'Vista anterior' : 'Front view') : (es ? 'Vista posterior' : 'Back view')}</title>
               {model.parts.map(part => {
@@ -112,50 +159,18 @@ export function MuscleActivityMap({ rows, mode, language, range, comparison }: P
       </div>
 
       {mode === 'completed' && selected && breakdown && range && comparison && (
-        <MuscleActivityDetails key={selectedId} current={breakdown.current} previous={breakdown.previous} range={range} previousRange={comparison.range} hasPreviousRecords={comparison.hasRecords} muscleName={label(selected)} language={language} />
+        <MuscleActivityDetails key={selectedId} current={breakdown.current} previous={breakdown.previous} range={range} previousRange={comparison.range} hasPreviousRecords={comparison.hasRecords} muscleName={label(selected)} language={language} onExerciseSelect={onExerciseSelect} />
       )}
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label={es ? 'Grupos musculares' : 'Muscle groups'}>
-        {activity.groups.map(group => (
-          <button
-            key={group.id}
-            type="button"
-            aria-pressed={selectedId === group.id}
-            aria-label={`${label(group)}: ${group.sets} ${seriesLabel(group.sets)}`}
-            onClick={() => select(group.id)}
-            className={cn(
-              'flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              selectedId === group.id ? 'border-violet-500 bg-violet-500/10 text-foreground' : 'border-border/60 text-muted-foreground hover:bg-muted/40',
-            )}
-          >
-            <span className="min-w-0 break-words">{label(group)}</span>
-            <span className="shrink-0 tabular-nums text-foreground">{group.sets}</span>
-          </button>
-        ))}
-      </div>
-
-      {withoutDrawing.length > 0 && (
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          {es ? 'Sin zona propia en el dibujo: ' : 'No dedicated drawing region: '}
-          {withoutDrawing.map(group => `${label(group)} (${group.sets})`).join(' · ')}
-        </p>
-      )}
-
-      {(activity.unmapped.length > 0 || activity.withoutMuscleSets > 0) && (
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          {es ? 'Sin zona específica en el mapa: ' : 'Without a specific map region: '}
-          {[
-            ...activity.unmapped.map(item => `${item.label} (${item.sets})`),
-            ...(activity.withoutMuscleSets ? [`${es ? 'grupo no registrado' : 'unrecorded muscle group'} (${activity.withoutMuscleSets})`] : []),
-          ].join(' · ')}
-        </p>
-      )}
-      <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-        {es ? 'Una serie puede involucrar varios grupos. El color compara sus series, no mide recuperación.' : 'A set can involve several groups. Color compares their sets; it does not measure recovery.'}
-      </p>
-      <p className="mt-2 text-[10px] text-muted-foreground">
-        <a href="/third-party/MuscleMap-LICENSE.txt" target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline decoration-border underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">MuscleMap · © Melih Colpan · MIT</a>
-      </p>
+      {compact ? (
+        <details data-muscle-explorer="true" className="group/explorer mt-3 border-t border-border/60">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 rounded-xl text-sm font-semibold text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+            {es ? 'Explorar músculos' : 'Explore muscles'}
+            <ChevronDown className="h-4 w-4 transition-transform group-open/explorer:rotate-180" aria-hidden="true" />
+          </summary>
+          {explorer}
+        </details>
+      ) : explorer}
     </div>
   )
 }

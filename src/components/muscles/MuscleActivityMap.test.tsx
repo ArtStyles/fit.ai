@@ -14,6 +14,17 @@ function regions(html: string, slug: string) {
 }
 
 describe('muscle activity map anatomy and catalogue labels', () => {
+  it('keeps keyboard exploration inside a closed disclosure only in compact mode', () => {
+    const html = renderToStaticMarkup(<MuscleActivityMap rows={[{ muscleGroups: ['pecho'], sets: 3 }]} language="es" mode="completed" compact />)
+    expect(html).toMatch(/<details[^>]*data-muscle-explorer="true"[^>]*>/)
+    expect(html).not.toMatch(/<details[^>]*\sopen[= >]/)
+    const explorer = html.slice(html.indexOf('<details'))
+    expect(explorer).toContain('Explorar músculos')
+    expect(explorer).toContain('aria-label="Pecho: 3 series completadas"')
+    expect(explorer).toContain('MuscleMap · © Melih Colpan · MIT')
+    expect(render([])).not.toContain('data-muscle-explorer')
+  })
+
   it('shows the real five-exercise session across all contributing groups', () => {
     const slugs = new Set(['arnold-press-mancuernas', 'press-banca-barra', 'press-frances-tumbado-barra-ez', 'press-inclinado-mancuernas', 'press-militar-pie-barra'])
     const exercises = manifest.exercises.filter(exercise => slugs.has(exercise.slug))
