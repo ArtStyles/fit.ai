@@ -39,11 +39,34 @@ function fixture(app: AppStore, catalog: AppRow[] = []) {
   }
   return { sync: createOriginalSynchronizer(app, gateway, async () => catalog), web,
     setBackup(value: CloudSnapshot) { backup = value }, setAvailable(value: boolean) { available = value },
-    onPush(fn: () => Promise<void>) { afterPush = fn }, loseNextResponse() { loseResponse = true }, get pushes() { return pushes },
+    onPush(fn: () => Promise<void>) { afterPush = fn }, loseNextResponse() { loseResponse = true }, get pushes() { return pushes }, get backup() { return copy(backup) },
   }
 }
 
 describe('original app cloud boundaries', () => {
+  it('retains an edited free log and its details through cloud backup restore and web refresh', async () => {
+    const app = await store(); await app.create(state())
+    const setup = fixture(app)
+    const log = { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', user_id: owner, client_session_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', workout_id: null,
+      completed_at: '2026-09-10T12:00:00Z', updated_at: '2026-09-10T12:15:00Z', notes: 'Added the missing sets.', mobile_free_training: { version: 2, detailLevel: 'partial' },
+      session_context_snapshot: { version: 1, workout: { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Entrenamiento libre', focus: null, dayOfWeek: null }, plan: null, exercises: [] } }
+    const detail = { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', progress_log_id: log.id, exercise_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', sets_completed: 1, reps_completed: [8], weights_kg: [20] }
+    await app.mutate(draft => { draft.tables.progress_logs.push(log); draft.tables.exercise_logs.push(detail) })
+    await setup.sync.synchronize()
+    expect(setup.backup!.state.tables.progress_logs).toEqual([log])
+    expect(setup.web.progress_logs).toEqual([])
+    expect(setup.web.exercise_logs).toEqual([])
+
+    const restored = await store(); await restored.create(state())
+    const second = fixture(restored); second.setBackup(setup.backup!)
+    await second.sync.synchronize()
+    await second.sync.synchronize()
+    const recovered = (await restored.read())!
+    expect(recovered.tables.progress_logs).toEqual([log])
+    expect(recovered.tables.exercise_logs).toEqual([detail])
+    expect(recovered.tables.workouts).toEqual([])
+    expect(recovered.tables.workout_plans).toEqual([])
+  })
   it('preserves local dated overrides when canonical web data refreshes', async () => {
     const app = await store(); const setup = fixture(app)
     setup.web.workout_plans.push({ id: 'plan', user_id: owner, is_active: true })

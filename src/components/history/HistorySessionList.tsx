@@ -5,6 +5,7 @@ import { Search, SlidersHorizontal, X } from 'lucide-react'
 import { SessionSummaryRow, type SessionSummarySignal } from '@/components/evidence/SessionSummaryRow'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { dateLocale } from '@/lib/i18n'
+import { freeTrainingDetailLabel } from '@/lib/session/freeTrainingEvidence'
 import { shiftDateStr } from '@/lib/calendar/aggregate'
 import { groupEvidenceSessions } from '@/lib/training-evidence/timeline'
 import { cn } from '@/lib/utils'
@@ -161,12 +162,14 @@ export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRo
                     href={`/history/${row.id}`}
                     dateLabel={formatDate(row.completedAt, language, timeZone)}
                     title={row.workoutName}
-                    context={row.focus}
+                    context={[row.focus, row.detailLevel ? freeTrainingDetailLabel(row.detailLevel, language) : null].filter(Boolean).join(' · ')}
                     signal={signalPresentation(row.signal, language)}
                     metrics={[
-                      { label: t('Duración'), value: `${row.durationMinutes} min` },
-                      { label: t('Series'), value: String(row.sets) },
-                      { label: t('Volumen'), value: `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 0 }).format(row.volumeKg)} kg` },
+                      ...(row.detailLevel && row.durationRecorded === false ? [] : [{ label: t('Duración'), value: `${row.durationMinutes} min` }]),
+                      ...(row.detailLevel === 'attendance' ? [] : [
+                        { label: t('Series'), value: String(row.sets) },
+                        { label: t('Volumen'), value: `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 0 }).format(row.volumeKg)} kg` },
+                      ]),
                     ]}
                   />
                 ))}

@@ -1,6 +1,7 @@
 import { BarChart3 } from 'lucide-react'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { ProgressHub } from '@/components/progress/ProgressHub'
+import { readFreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
 import type {
   ProgressExercisePoint,
   ProgressMeasurement,
@@ -35,7 +36,7 @@ type ExerciseSummary = {
   is_compound: boolean | null
 }
 
-type ProgressLogRow = RawProgressLog & {
+type ProgressLogRow = RawProgressLog & FreeTrainingEvidenceSource & {
   workout_id: string | null
   session_context_snapshot: unknown
 }
@@ -189,7 +190,7 @@ async function loadProgressData(
     loadCompleteProgressHistory<ProgressLogRow, ExerciseLogRow>({
       loadLogPage: (pageFrom, pageTo) => supabase
         .from('progress_logs')
-        .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot')
+        .select(`id, workout_id, completed_at, duration_minutes, session_context_snapshot${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? ', mobile_session_kind, mobile_free_training' : ''}`)
         .eq('user_id', userId)
         .gte('completed_at', from)
         .order('completed_at', { ascending: false })
@@ -232,6 +233,7 @@ async function loadProgressData(
       date: getLocalDateString(new Date(log.completed_at), timeZone),
       durationMinutes: Number(log.duration_minutes) || 0,
       volumeKg: Math.round(volumeForRows(log.id, exerciseLogs)),
+      detailLevel: readFreeTrainingDetail(log),
     })),
     days: aggregateLogsToDays(sessionLogs, exerciseLogs, timeZone),
     records: buildProgressRecords(

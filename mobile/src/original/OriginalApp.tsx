@@ -69,7 +69,7 @@ export default function OriginalApp() {
       const loadKey = `${next?.accountId ?? ''}:${locationKey}`
       // The existing SessionClient owns its live draft. A SQLite commit updates
       // the surrounding account state without reinitializing its exercise props.
-      if (pathname.startsWith('/session/') && loadedRoute.current === loadKey) return
+      if ((pathname.startsWith('/session/') || pathname === '/registrar') && loadedRoute.current === loadKey) return
       const rendered = pathname === '/settings/almacenamiento' ? <StorageSettings />
           : await loadOriginalRoute(pathname, new URLSearchParams(location.search))
       const current = await (await getAppStore()).read()

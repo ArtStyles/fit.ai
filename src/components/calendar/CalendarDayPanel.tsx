@@ -3,6 +3,7 @@
 import { CalendarDays } from 'lucide-react'
 import { SessionSummaryRow } from '@/components/evidence/SessionSummaryRow'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { freeTrainingDetailLabel } from '@/lib/session/freeTrainingEvidence'
 import type { CalendarSessionSummary } from './calendarViewModel'
 
 function formatDate(dateStr: string, language: 'es' | 'en'): string {
@@ -46,11 +47,13 @@ export function CalendarDayPanel({ date, sessions }: { date: string; sessions: C
                 timeZone,
               }).format(new Date(session.completedAt))}
               title={session.workoutName}
-              context={session.focus}
+              context={[session.focus, session.detailLevel ? freeTrainingDetailLabel(session.detailLevel, language) : null].filter(Boolean).join(' · ')}
               metrics={[
-                { label: t('Duración'), value: `${session.durationMin} min` },
-                { label: t('Series'), value: String(session.sets) },
-                { label: t('Volumen'), value: formatVolume(session.volumeKg, language) },
+                ...(session.detailLevel && session.durationRecorded === false ? [] : [{ label: t('Duración'), value: `${session.durationMin} min` }]),
+                ...(session.detailLevel === 'attendance' ? [] : [
+                  { label: t('Series'), value: String(session.sets) },
+                  { label: t('Volumen'), value: formatVolume(session.volumeKg, language) },
+                ]),
               ]}
             />
           ))}

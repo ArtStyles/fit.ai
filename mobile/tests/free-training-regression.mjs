@@ -1,0 +1,218 @@
+import { chromium, expect } from '@playwright/test'
+import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { installAccountFixture, newTestAccount, storedAccountSnapshot } from './account-fixture.mjs'
+
+const origin = process.env.MOBILE_PREVIEW_URL || 'http://127.0.0.1:4192'
+const artifacts = '.artifacts/free-training'
+const now = new Date('2026-09-11T16:00:00Z')
+const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+await mkdir(artifacts, { recursive: true })
+const results = []
+const browser = await chromium.launch({ headless: true })
+
+async function fixture(language = 'es', previous = false) {
+  const state = await newTestAccount({ linked: false })
+  Object.assign(state.tables.profiles[0], { full_name: 'Marina', onboarding_done: true, language, timezone: 'America/Havana', days_per_week: 3 })
+  for (const key of ['workout_plans', 'workouts', 'workout_exercises', 'progress_logs', 'exercise_logs', 'session_authorizations']) state.tables[key] = []
+  state.tables.exercises = [
+    { id: id(10), name: 'Bench press', name_es: 'Press de banca', muscle_groups: ['chest'], muscle_groups_es: ['pectoral mayor'], is_public: true, exercise_type: 'strength', difficulty: 'intermediate', is_compound: true, equipment: ['barbell'] },
+    { id: id(11), name: 'Stretch', name_es: 'Estiramiento', muscle_groups: ['chest'], muscle_groups_es: ['pectoral mayor'], is_public: true, exercise_type: 'flexibility', difficulty: 'beginner', is_compound: false, equipment: ['bodyweight'] },
+  ]
+  if (previous) {
+    state.tables.progress_logs.push({ id: id(50), user_id: state.accountId, workout_id: null, completed_at: '2026-09-09T16:00:00Z', duration_minutes: 30,
+      session_context_snapshot: { version: 1, workout: { id: id(50), name: 'Torso anterior', focus: null, dayOfWeek: null }, plan: null,
+        exercises: [{ exerciseId: id(10), name: 'Bench press', nameEs: 'Press de banca', muscleGroups: ['chest'], muscleGroupsEs: ['pectoral mayor'], isCompound: true }] } })
+    state.tables.exercise_logs.push({ id: id(51), progress_log_id: id(50), exercise_id: id(10), sets_completed: 1, weights_kg: [60], reps_completed: [8], rpe_values: [null], duration_seconds: null, notes: null })
+  }
+  return state
+}
+async function snapshot(page) { return (await storedAccountSnapshot(page)).accounts[0] }
+async function shot(page, name) {
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `overflow ${name}`)
+  await page.screenshot({ path: `${artifacts}/${name}.png`, fullPage: true })
+}
+async function run(name, width, options, action) {
+  const state = await fixture(options.language, options.previous)
+  const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce', isMobile: width < 600, hasTouch: width < 600 })
+  await context.addInitScript(() => Object.defineProperty(navigator, 'onLine', { get: () => false }))
+  await context.route('**/*', route => route.request().url().startsWith(`${origin}/`) ? route.continue() : route.abort())
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.clock.setFixedTime(now)
+  try {
+    await page.goto(`${origin}/login`)
+    await expect(page.getByLabel('Correo electrónico', { exact: true })).toBeVisible()
+    await installAccountFixture(page, state)
+    await action(page, state)
+    assert.deepEqual(errors, [])
+    const saved = await snapshot(page)
+    assert.deepEqual(saved.tables.workout_plans, [])
+    assert.deepEqual(saved.tables.workouts, [])
+    assert.deepEqual(saved.tables.session_authorizations, [])
+    results.push({ name, width, passed: true })
+    console.log(`PASS ${name} ${width}px`)
+  } catch (error) {
+    await page.screenshot({ path: `${artifacts}/failure-${name}-${width}.png`, fullPage: true }).catch(() => {})
+    console.log((await page.locator('body').innerText()).slice(-4000))
+    throw error
+  } finally { await context.close() }
+}
+try {
+  await run('attendance-edit-progress', 390, {}, async page => {
+    await page.goto(`${origin}/dashboard`)
+    await page.getByRole('link', { name: /A tu manera Registrar entrenamiento/ }).click()
+    await expect(page.getByLabel('Fecha', { exact: true })).toHaveValue('2026-09-11')
+    await page.getByLabel('Nombre (opcional)', { exact: true }).fill('Torso libre')
+    await page.getByLabel('Meta de entrenamientos por semana').selectOption('4')
+    await expect(page.getByText('Borrador guardado en este dispositivo', { exact: true })).toBeVisible()
+    const pendingUrl = page.url()
+    await page.goto(`${origin}/dashboard`)
+    await page.getByRole('link', { name: /A tu manera Registrar entrenamiento/ }).click()
+    await expect(page).toHaveURL(pendingUrl)
+    await expect(page.getByLabel('Nombre (opcional)', { exact: true })).toHaveValue('Torso libre')
+    await expect(page.getByLabel('Meta de entrenamientos por semana')).toHaveValue('4')
+    assert.equal((await snapshot(page)).tables.progress_logs.length, 0)
+    await shot(page, '01-register-390')
+    await page.getByRole('button', { name: 'Guardar constancia', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Entrenamiento guardado' })).toBeVisible()
+    let saved = await snapshot(page)
+    assert.equal(saved.tables.progress_logs.length, 1)
+    assert.equal(saved.tables.exercise_logs.length, 0)
+    assert.equal(saved.tables.profiles[0].days_per_week, 4)
+    const log = saved.tables.progress_logs[0]
+    assert.equal(log.workout_id, null)
+    assert.equal(log.duration_minutes, null)
+    await shot(page, '02-attendance-result-390')
+    await page.reload()
+    await expect(page.getByLabel('Nombre (opcional)', { exact: true })).toHaveValue('Torso libre')
+    await page.goto(`${origin}/history/${log.id}`)
+    await expect(page.getByText('Solo constancia', { exact: true })).toBeVisible()
+    await expect(page.getByText('0 min', { exact: true })).toHaveCount(0)
+    await page.getByRole('link', { name: 'Añadir detalles', exact: true }).click()
+    await page.getByRole('button', { name: 'Añadir ejercicios', exact: true }).click()
+    await page.getByLabel('Buscar ejercicio').fill('banca')
+    await page.getByRole('button', { name: 'Press de banca', exact: true }).click()
+    await page.getByLabel('Press de banca, serie 1, kg', { exact: true }).fill('60')
+    await page.getByLabel('Press de banca, serie 1, reps', { exact: true }).fill('10')
+    await expect(page.getByText('Borrador guardado en este dispositivo', { exact: true })).toBeVisible()
+    await page.reload()
+    await expect(page.getByLabel('Press de banca, serie 1, reps', { exact: true })).toHaveValue('10')
+    await page.goto(`${origin}/dashboard`)
+    await page.getByRole('link', { name: /A tu manera Registrar entrenamiento/ }).click()
+    await expect(page.getByLabel('Press de banca, serie 1, reps', { exact: true })).toHaveValue('10')
+    await shot(page, '03-partial-form-390')
+    await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Entrenamiento guardado' })).toBeVisible()
+    saved = await snapshot(page)
+    assert.equal(saved.tables.progress_logs.length, 1)
+    assert.equal(saved.tables.progress_logs[0].id, log.id)
+    assert.equal(saved.tables.progress_logs[0].completed_at, log.completed_at)
+    assert.equal(saved.tables.progress_logs[0].mobile_free_training.detailLevel, 'partial')
+    assert.deepEqual(saved.tables.exercise_logs[0].weights_kg, [60])
+    assert.deepEqual(saved.tables.exercise_logs[0].reps_completed, [10])
+    await page.getByRole('link', { name: 'Ver mi progreso', exact: true }).click()
+    await expect(page.getByText('Tu registro, en contexto', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '1 semana', exact: true }).click()
+    const chest = page.locator('[data-muscle-map="completed"]').getByRole('button', { name: 'Pecho: 1 serie completada', exact: true })
+    await chest.click()
+    await expect(page.getByRole('region', { name: 'Detalle de Pecho', exact: true })).toBeVisible()
+    await shot(page, '04-muscle-progress-390')
+    await page.goto(`${origin}/history`)
+    await expect(page.getByText('Registro parcial', { exact: true })).toBeVisible()
+    await page.goto(`${origin}/calendario`)
+    await expect(page.getByRole('button', { name: /^2026-09-11: 1 sesiones/ })).toBeVisible()
+  })
+
+  await run('previous-and-complete', 1440, { previous: true }, async page => {
+    await page.goto(`${origin}/registrar`)
+    await page.getByRole('button', { name: 'Añadir ejercicios', exact: true }).click()
+    await page.getByRole('button', { name: 'Press de banca', exact: true }).click()
+    const reps = page.getByLabel('Press de banca, serie 1, reps', { exact: true })
+    await expect(reps).toHaveValue('')
+    await page.getByRole('button', { name: 'Confirmar que hice estas series', exact: true }).click()
+    await expect(reps).toHaveValue('8')
+    await reps.fill('10')
+    await page.getByLabel('Registré todo el entrenamiento').check()
+    await shot(page, '05-full-form-1440')
+    await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Entrenamiento guardado' })).toBeVisible()
+    await expect(page.getByText('60 kg × 8 → 60 kg × 10', { exact: true })).toBeVisible()
+    const saved = await snapshot(page)
+    assert.equal(saved.tables.progress_logs.length, 2)
+    assert.equal(saved.tables.progress_logs.find(row => row.mobile_session_kind === 'free').mobile_free_training.detailLevel, 'complete')
+    await shot(page, '06-full-result-1440')
+    await page.getByRole('button', { name: 'Registrar otra sesión', exact: true }).click()
+    await expect(page.getByLabel('Nombre (opcional)', { exact: true })).toHaveValue('')
+    await expect(page.getByRole('button', { name: 'Guardar constancia', exact: true })).toBeVisible()
+    assert.equal((await snapshot(page)).tables.progress_logs.length, 2)
+  })
+
+  await run('english-small-screen-timed', 320, { language: 'en' }, async page => {
+    await page.goto(`${origin}/entrenar`)
+    await expect(page.getByRole('heading', { name: 'Log workout', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Add exercises', exact: true }).click()
+    await page.getByRole('button', { name: 'Stretch', exact: true }).click()
+    const seconds = page.getByLabel('Stretch, set 1, seconds', { exact: true })
+    await seconds.fill('bad')
+    await page.getByRole('button', { name: 'Save workout', exact: true }).click()
+    await expect(page.getByRole('alert')).toContainText('Sets: enter a whole number')
+    assert.equal((await snapshot(page)).tables.progress_logs.length, 0)
+    await seconds.fill('45')
+    await expect(page.getByText('Draft saved on this device', { exact: true })).toBeVisible()
+    await page.reload()
+    await expect(seconds).toHaveValue('45')
+    await page.getByRole('region', { name: 'Stretch', exact: true }).getByRole('button', { name: 'Add set', exact: true }).click()
+    await page.getByLabel('Stretch, set 2, seconds', { exact: true }).fill('30')
+    await shot(page, '07-timed-form-320')
+    await page.getByRole('button', { name: 'Save workout', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Workout saved', exact: true })).toBeVisible()
+    const saved = await snapshot(page)
+    assert.equal(saved.tables.exercise_logs[0].duration_seconds, 75)
+    assert.deepEqual(saved.tables.exercise_logs[0].weights_kg, [0, 0])
+    await expect(page.getByText('Logged time', { exact: true })).toBeVisible()
+    await expect(page.locator('main')).toContainText('75 s')
+    await expect(page.locator('main')).not.toContainText('0 kg')
+    await shot(page, '08-timed-result-320')
+    await page.getByRole('link', { name: 'View entry', exact: true }).click()
+    const exercise = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Stretch', exact: true }) })
+    await exercise.getByText('Show sets', { exact: true }).click()
+    await expect(exercise.getByText('45 s', { exact: true })).toBeVisible()
+    await expect(exercise.getByText('30 s', { exact: true })).toBeVisible()
+    await expect(exercise).not.toContainText('0 kg × 0')
+    await expect(exercise).not.toContainText('Same as previous appearance')
+    const lastDuration = exercise.getByText('30 s', { exact: true })
+    await lastDuration.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }))
+    await expect.poll(async () => { const box = await lastDuration.boundingBox(); return box && box.y > 70 && box.y + box.height < 830 }).toBe(true)
+    await shot(page, '09-timed-history-320')
+  })
+
+  await run('keyboard-attendance', 390, {}, async page => {
+    await page.goto(`${origin}/registrar`)
+    await expect(page.getByLabel('Fecha', { exact: true })).toBeVisible()
+    await page.getByLabel('Nombre (opcional)', { exact: true }).fill('Sesión de prueba')
+    const save = page.getByRole('button', { name: 'Guardar constancia', exact: true })
+    await save.focus()
+    await expect(save).toBeFocused()
+    await shot(page, '10-keyboard-390')
+    await page.keyboard.press('Enter')
+    const heading = page.getByRole('heading', { name: 'Entrenamiento guardado', exact: true })
+    await expect(heading).toBeFocused()
+    assert.equal((await snapshot(page)).tables.progress_logs.length, 1)
+    await page.getByRole('button', { name: 'Añadir o editar detalles', exact: true }).click()
+    await page.getByLabel('Nombre (opcional)', { exact: true }).fill('Nombre corregido')
+    await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+    await expect(heading).toBeVisible()
+    assert.equal((await snapshot(page)).tables.progress_logs.length, 1)
+    await page.goto(`${origin}/dashboard`)
+    await expect(page.getByText('0 min', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('1 de 0 sesiones', { exact: true })).toHaveCount(0)
+    await page.goto(`${origin}/calendario`)
+    const day = page.getByRole('button', { name: /^2026-09-11: 1 sesiones/ })
+    await expect(day).toBeVisible()
+    await expect(day).not.toHaveAttribute('aria-label', /0 kg|0 min/)
+  })
+  await writeFile(`${artifacts}/results.json`, JSON.stringify({ results, externalNetwork: 'blocked', physicalDevice: false }, null, 2))
+} finally { await browser.close() }

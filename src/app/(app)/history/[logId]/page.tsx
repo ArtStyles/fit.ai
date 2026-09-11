@@ -6,11 +6,14 @@ import { MetricStrip } from '@/components/evidence/MetricStrip'
 import { SessionExerciseDisclosure } from '@/components/history/SessionExerciseDisclosure'
 import {
   buildSessionDebrief,
+  readFreeTrainingDurations,
   type PreviousExercisePerformance,
   type PriorBest,
   type SessionExerciseInput,
 } from '@/components/history/sessionDebrief'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
+import { PendingLink } from '@/components/navigation/PendingLink'
+import { freeTrainingDetailLabel, readFreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { isCommunityEnabled } from '@/lib/features/community'
@@ -26,7 +29,7 @@ export const metadata = { title: 'Detalle de sesión · Vekira' }
 
 type WorkoutSummary = CompletedSessionWorkoutRelation
 
-type ProgressLogRow = {
+type ProgressLogRow = FreeTrainingEvidenceSource & {
   id: string
   workout_id: string | null
   completed_at: string
@@ -121,6 +124,7 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
       mood_rating,
       energy_rating,
       session_context_snapshot,
+      ${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'mobile_session_kind, mobile_free_training,' : ''}
       workout:workouts(name, focus)
     `)
     .eq('id', params.logId)
@@ -201,6 +205,7 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
       weightsKg: row.weights_kg,
       repsCompleted: row.reps_completed,
       rpeValues: row.rpe_values,
+      durationSeconds: readFreeTrainingDurations(log, row.exercise_id, row.sets_completed),
       notes: row.notes,
     }
   })
@@ -212,6 +217,7 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
   })
   const presentation = toCompletedSessionPresentation(log, t('Entrenamiento'))
   const workoutName = getWorkoutDisplayName(presentation.workoutName, presentation.focus)
+  const freeDetail = readFreeTrainingDetail(log)
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -225,18 +231,29 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
 
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
         <EvidenceHero
-          eyebrow={t('Debrief de entrenamiento')}
+          eyebrow={freeDetail ? freeTrainingDetailLabel(freeDetail, language) : t('Debrief de entrenamiento')}
           title={workoutName}
           description={[formatDateTime(log.completed_at, language, timeZone), presentation.focus].filter(Boolean).join(' · ')}
         >
           <MetricStrip
             items={[
-              { label: t('Duración'), value: formatDuration(debrief.durationMinutes) },
-              { label: t('Series completadas'), value: debrief.totalSets },
-              { label: t('Volumen'), value: formatVolume(debrief.totalVolumeKg, language) },
+              ...(freeDetail && log.duration_minutes == null ? [] : [{ label: t('Duración'), value: formatDuration(debrief.durationMinutes) }]),
+              ...(freeDetail === 'attendance' ? [] : [
+                { label: t('Series completadas'), value: debrief.totalSets },
+                ...(!freeDetail || debrief.exercises.some(exercise => !exercise.timed)
+                  ? [{ label: t('Volumen'), value: formatVolume(debrief.totalVolumeKg, language) }]
+                  : []),
+              ]),
             ]}
           />
         </EvidenceHero>
+
+        {freeDetail && <section className="rounded-2xl border border-violet-400/25 bg-violet-500/[0.05] p-5">
+          <p className="text-sm leading-relaxed text-muted-foreground">{language === 'en'
+            ? freeDetail === 'attendance' ? 'This workout counts toward your attendance. Add exercises when you want to track your performance.' : freeDetail === 'partial' ? 'This is part of your workout. Muscle activity and workload include only the sets you recorded.' : 'Your workout records are saved. You can correct the details here.'
+            : freeDetail === 'attendance' ? 'Este entrenamiento cuenta para tu constancia. Añade ejercicios cuando quieras seguir tu rendimiento.' : freeDetail === 'partial' ? 'Has registrado parte del entrenamiento. La actividad muscular y el volumen incluyen solo las series que anotaste.' : 'El registro de tu entrenamiento está guardado. Puedes corregir sus detalles aquí.'}</p>
+          <PendingLink href={`/registrar?log=${log.id}`} className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">{language === 'en' ? freeDetail === 'attendance' ? 'Add details' : 'Edit workout' : freeDetail === 'attendance' ? 'Añadir detalles' : 'Editar entrenamiento'}</PendingLink>
+        </section>}
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
           <section aria-labelledby="session-sequence-title">
@@ -247,7 +264,7 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
               <div className="mt-5 rounded-3xl border border-dashed border-border bg-muted/20 p-7 text-center">
                 <Info className="mx-auto h-7 w-7 text-muted-foreground" aria-hidden="true" />
                 <p className="mt-3 text-sm font-semibold text-foreground">{t('Sin detalle de ejercicios')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{t('Esta sesión no tiene logs por ejercicio.')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{freeDetail ? language === 'en' ? 'You recorded attendance only.' : 'Guardaste únicamente tu constancia.' : t('Esta sesión no tiene logs por ejercicio.')}</p>
               </div>
             ) : (
               <div className="mt-4">

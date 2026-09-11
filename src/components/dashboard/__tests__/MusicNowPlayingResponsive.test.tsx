@@ -17,7 +17,7 @@ describe('MusicNowPlaying responsive composition', () => {
 
   beforeAll(async () => {
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
-    const viteEntry = path.join(repoRoot, 'node_modules/.pnpm/node_modules/vite/dist/node/index.js')
+    const viteEntry = path.join(repoRoot, 'node_modules/vite/dist/node/index.js')
     const { createServer } = await import(pathToFileURL(viteEntry).href)
     viteServer = await createServer({
       configFile: false,

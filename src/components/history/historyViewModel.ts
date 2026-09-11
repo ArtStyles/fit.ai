@@ -1,5 +1,6 @@
 import { percentChange, summarizeExercisePerformance, type EvidenceSet } from '@/lib/training-evidence/performance'
 import { findPreviousComparableSession, groupEvidenceSessions } from '@/lib/training-evidence/timeline'
+import type { FreeTrainingDetail } from '@/lib/session/freeTrainingEvidence'
 
 export type HistorySessionInput = {
   id: string
@@ -9,6 +10,8 @@ export type HistorySessionInput = {
   workoutName: string
   focus: string | null
   durationMinutes: number
+  durationRecorded?: boolean
+  detailLevel?: FreeTrainingDetail | null
 }
 
 export type HistoryExerciseInput = {
@@ -36,6 +39,8 @@ export type HistoryEvidenceRow = {
   workoutName: string
   focus: string | null
   durationMinutes: number
+  durationRecorded?: boolean
+  detailLevel?: FreeTrainingDetail | null
   sets: number
   volumeKg: number
   signal: HistorySignal
@@ -130,7 +135,9 @@ export function buildHistoryEvidence({
     }
 
     const previous = findPreviousComparableSession(baseRows, row)
-    const volumeDelta = previous ? percentChange(row.volumeKg, previous.volumeKg) : null
+    // Free workouts have no prescribed identity proving comparable session volume.
+    const volumeDelta = previous && !row.detailLevel && !previous.detailLevel
+      ? percentChange(row.volumeKg, previous.volumeKg) : null
     if (volumeDelta !== null) {
       return { ...row, signal: { kind: 'volume' as const, changePercent: volumeDelta } }
     }

@@ -6,6 +6,10 @@ export type TranslationValues = Record<string, string | number>
 // one map makes missing translations fall back safely instead of rendering a
 // key or an empty label.
 const ENGLISH: Record<string, string> = {
+  '{completed} sesiones registradas': '{completed} recorded sessions',
+  'A tu manera': 'Your way',
+  'Registrar entrenamiento': 'Log a workout',
+  '¿Ya entrenaste? Guarda tu constancia y los detalles que quieras.': 'Finished training? Save your attendance and any details you want.',
   'Compañero de constancia': 'Consistency companion',
   'Tu compañero de constancia': 'Your consistency companion',
   'La constancia se comparte': 'Consistency is better shared',

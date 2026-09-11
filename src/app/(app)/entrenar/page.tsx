@@ -27,6 +27,7 @@ export default async function TrainPage() {
     .maybeSingle() as unknown as { data: ActivePlanRow | null }
 
   if (!activePlan) {
+    if (process.env.NEXT_PUBLIC_LOCAL_APP === 'true') redirect('/registrar')
     redirect('/dashboard?notice=no-workout-today')
   }
 

@@ -1,5 +1,6 @@
 import { shiftDateStr, type DayAggregate } from '@/lib/calendar/aggregate'
 import { percentChange } from '@/lib/training-evidence/performance'
+import type { FreeTrainingDetail } from '@/lib/session/freeTrainingEvidence'
 
 export type ProgressRangeWeeks = 1 | 4 | 12 | 24
 
@@ -9,6 +10,7 @@ export type ProgressSession = {
   date: string
   durationMinutes: number
   volumeKg: number
+  detailLevel?: FreeTrainingDetail | null
 }
 
 export type ProgressRecord = {
@@ -136,6 +138,7 @@ export function buildProgressSnapshot(input: ProgressSnapshotInput) {
   const priorEnd = shiftDateStr(startDate, -1)
   const selected = input.sessions.filter(item => item.date >= startDate && item.date <= input.todayStr)
   const prior = input.sessions.filter(item => item.date >= priorStart && item.date <= priorEnd)
+  const incomplete = (item: ProgressSession) => item.detailLevel === 'attendance' || item.detailLevel === 'partial'
   const volumeKg = selected.reduce((sum, item) => sum + item.volumeKg, 0)
   const priorVolumeKg = prior.reduce((sum, item) => sum + item.volumeKg, 0)
   const selectedRecords = input.records.filter(record => record.bestDate >= startDate && record.bestDate <= input.todayStr)
@@ -146,6 +149,8 @@ export function buildProgressSnapshot(input: ProgressSnapshotInput) {
     priorEnd,
     selected,
     selectedRecords,
+    incompleteSessionCount: selected.filter(incomplete).length,
+    comparisonHasIncompleteEvidence: selected.some(incomplete) || prior.some(incomplete),
     weeklyBuckets: buildWeekBuckets(input.days, startDate, input.todayStr, input.weeks),
     volumeKg: Math.round(volumeKg),
     priorVolumeKg: Math.round(priorVolumeKg),

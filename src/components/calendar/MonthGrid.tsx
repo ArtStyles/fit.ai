@@ -98,7 +98,7 @@ export function MonthGrid({
           const level = cell.isFuture ? 0 : levelFor(aggregate ? aggregate.volumeKg : null, thresholds)
           const isSelected = cell.date === selectedDate
           const label = aggregate
-            ? `${cell.date}: ${aggregate.sessions} ${t('Sesiones').toLowerCase()}, ${Math.round(aggregate.volumeKg)} kg, ${aggregate.durationMin} min${cell.isToday ? `, ${t('Hoy').toLowerCase()}` : ''}`
+            ? [`${cell.date}: ${aggregate.sessions} ${t('Sesiones').toLowerCase()}`, ...(aggregate.volumeRecorded === false ? [] : [`${Math.round(aggregate.volumeKg)} kg`]), ...(aggregate.durationRecorded === false ? [] : [`${aggregate.durationMin} min`]), ...(cell.isToday ? [t('Hoy').toLowerCase()] : [])].join(', ')
             : `${cell.date}: ${t('Sin sesiones todavía').toLowerCase()}${cell.isToday ? `, ${t('Hoy').toLowerCase()}` : ''}`
           const classes = cn(
             'relative flex aspect-square min-h-11 w-full items-center justify-center rounded-xl text-sm font-semibold transition-[background-color,color,box-shadow,transform] duration-200 motion-reduce:transition-none',

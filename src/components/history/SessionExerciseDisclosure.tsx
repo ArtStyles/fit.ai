@@ -58,8 +58,10 @@ export function SessionExerciseDisclosure({
           {!exercise.skipped ? (
             <>
               <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs">
-                <div><dt className="text-muted-foreground">{language === 'en' ? 'Best set' : 'Mejor serie'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{exercise.bestSet ? `${formatNumber(exercise.bestSet.weightKg, language)} kg × ${exercise.bestSet.reps}` : '—'}</dd></div>
-                <div><dt className="text-muted-foreground">{t('Volumen')}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.volumeKg, language)} kg</dd></div>
+                {exercise.timed ? <div><dt className="text-muted-foreground">{language === 'en' ? 'Recorded time' : 'Tiempo registrado'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.totalDurationSeconds!, language)} s</dd></div> : <>
+                  <div><dt className="text-muted-foreground">{language === 'en' ? 'Best set' : 'Mejor serie'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{exercise.bestSet ? `${formatNumber(exercise.bestSet.weightKg, language)} kg × ${exercise.bestSet.reps}` : '—'}</dd></div>
+                  <div><dt className="text-muted-foreground">{t('Volumen')}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.volumeKg, language)} kg</dd></div>
+                </>}
                 <div><dt className="text-muted-foreground">RPE</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{exercise.averageRpe ?? '—'}</dd></div>
               </dl>
               {comparison ? <p className="mt-3 text-xs font-medium text-violet-200">{comparison}</p> : null}
@@ -71,8 +73,10 @@ export function SessionExerciseDisclosure({
                       <thead>
                         <tr className="text-left text-xs text-muted-foreground">
                           <th scope="col" className="pb-2 font-medium">Set</th>
-                          <th scope="col" className="pb-2 text-right font-medium">{t('Peso')}</th>
-                          <th scope="col" className="pb-2 text-right font-medium">{t('Reps')}</th>
+                          {exercise.timed ? <th scope="col" className="pb-2 text-right font-medium">{t('Duración')}</th> : <>
+                            <th scope="col" className="pb-2 text-right font-medium">{t('Peso')}</th>
+                            <th scope="col" className="pb-2 text-right font-medium">{t('Reps')}</th>
+                          </>}
                           <th scope="col" className="pb-2 text-right font-medium">RPE</th>
                         </tr>
                       </thead>
@@ -80,8 +84,10 @@ export function SessionExerciseDisclosure({
                         {exercise.sets.map((set, setIndex) => (
                           <tr key={setIndex} className="border-t border-border/50 tabular-nums text-foreground">
                             <th scope="row" className="py-2 text-left font-medium">{setIndex + 1}</th>
-                            <td className="py-2 text-right">{formatNumber(set.weightKg, language)} kg</td>
-                            <td className="py-2 text-right">{set.reps}</td>
+                            {exercise.timed ? <td className="py-2 text-right">{formatNumber(set.durationSeconds!, language)} s</td> : <>
+                              <td className="py-2 text-right">{formatNumber(set.weightKg, language)} kg</td>
+                              <td className="py-2 text-right">{set.reps}</td>
+                            </>}
                             <td className="py-2 text-right">{set.rpe ?? '—'}</td>
                           </tr>
                         ))}

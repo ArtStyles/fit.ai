@@ -1,4 +1,5 @@
 import { summarizeExercisePerformance, type EvidenceSet } from '@/lib/training-evidence/performance'
+import { MAX_SESSION_DURATION_SECONDS, MAX_SESSION_SETS } from '@/lib/session/limits'
 
 export type SessionExerciseInput = {
   id: string
@@ -9,6 +10,7 @@ export type SessionExerciseInput = {
   weightsKg: number[] | null
   repsCompleted: number[] | null
   rpeValues: (number | null)[] | null
+  durationSeconds?: number[] | null
   notes: string | null
 }
 
@@ -30,13 +32,30 @@ export type SessionExerciseEvidence = {
   muscleGroups: string[]
   skipped: boolean
   notes: string | null
-  sets: EvidenceSet[]
+  sets: Array<EvidenceSet & { durationSeconds?: number }>
+  timed: boolean
+  totalDurationSeconds: number | null
   completedSets: number
   volumeKg: number
   bestSet: EvidenceSet | null
   averageRpe: number | null
   comparison: { weightDeltaKg: number; repsDelta: number } | null
   isRecord: boolean
+}
+
+/** Read exact recorded series only; an aggregate duration cannot establish each set. */
+export function readFreeTrainingDurations(source: unknown, exerciseId: string, setsCompleted: number | null): number[] | null {
+  if (!source || typeof source !== 'object' || !('mobile_session_kind' in source) || source.mobile_session_kind !== 'free' || !('mobile_free_training' in source)) return null
+  const metadata = source.mobile_free_training
+  if (!metadata || typeof metadata !== 'object' || !('exercises' in metadata) || !Array.isArray(metadata.exercises)) return null
+  const exercise = metadata.exercises.find((row: unknown) => row && typeof row === 'object' && 'exerciseId' in row && row.exerciseId === exerciseId)
+  if (!exercise || !Array.isArray(exercise.sets) || exercise.sets.length !== setsCompleted || exercise.sets.length < 1 || exercise.sets.length > MAX_SESSION_SETS) return null
+  const durations: number[] = []
+  for (const set of exercise.sets) {
+    if (!set || typeof set !== 'object' || set.weightKg !== 0 || set.reps !== 0 || !Number.isInteger(set.durationSeconds) || set.durationSeconds < 1 || set.durationSeconds > MAX_SESSION_DURATION_SECONDS) return null
+    durations.push(set.durationSeconds)
+  }
+  return durations
 }
 
 function skippedExercise(exercise: SessionExerciseInput): boolean {
@@ -61,11 +80,13 @@ export function buildSessionDebrief({
 }) {
   const exerciseEvidence: SessionExerciseEvidence[] = exercises.map(exercise => {
     const performance = summarizeExercisePerformance(exercise.weightsKg, exercise.repsCompleted, exercise.rpeValues)
+    const durations = exercise.durationSeconds
+    const timed = Boolean(durations?.length && durations.length === performance.sets.length && durations.every(value => Number.isInteger(value) && value > 0 && value <= MAX_SESSION_DURATION_SECONDS))
     const previous = previousByExercise.get(exercise.exerciseId)
     const previousPerformance = previous
       ? summarizeExercisePerformance(previous.weightsKg, previous.repsCompleted, previous.rpeValues)
       : null
-    const comparison = performance.bestSet && previousPerformance?.bestSet
+    const comparison = !timed && performance.bestSet && previousPerformance?.bestSet
       ? {
           weightDeltaKg: Number((performance.bestSet.weightKg - previousPerformance.bestSet.weightKg).toFixed(1)),
           repsDelta: performance.bestSet.reps - previousPerformance.bestSet.reps,
@@ -80,13 +101,15 @@ export function buildSessionDebrief({
       muscleGroups: exercise.muscleGroups,
       skipped: skippedExercise(exercise),
       notes: exercise.notes,
-      sets: performance.sets,
+      sets: timed ? performance.sets.map((set, index) => ({ ...set, durationSeconds: durations![index] })) : performance.sets,
+      timed,
+      totalDurationSeconds: timed ? durations!.reduce((sum, value) => sum + value, 0) : null,
       completedSets: exercise.setsCompleted ?? performance.completedSets,
       volumeKg: performance.volumeKg,
-      bestSet: performance.bestSet,
+      bestSet: timed ? null : performance.bestSet,
       averageRpe: performance.averageRpe,
       comparison,
-      isRecord: Boolean(performance.bestSet && priorBest && betterThan(performance.bestSet, priorBest)),
+      isRecord: Boolean(!timed && performance.bestSet && priorBest && betterThan(performance.bestSet, priorBest)),
     }
   })
   const completed = exerciseEvidence.filter(exercise => !exercise.skipped)

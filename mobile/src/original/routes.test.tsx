@@ -14,6 +14,12 @@ vi.mock('@/app/(app)/session/[workoutId]/page', () => ({
 import { loadOriginalRoute, matchOriginalRoute } from './routes'
 
 describe('original application routes in the local bundle', () => {
+  it('opens free registration as a local mobile route without a workout id', () => {
+    const match = matchOriginalRoute('/registrar')
+    expect(match?.route.connectivity).toBe('local')
+    expect(match?.route.source).toBe('mobile/src/original/free-training/page.tsx')
+    expect(match?.params).toEqual({})
+  })
   it('opens the companion page offline so cached summaries and message drafts remain available', () => {
     const match = matchOriginalRoute('/companion')
     expect(match?.route.source).toBe('src/app/(app)/companion/page.tsx')

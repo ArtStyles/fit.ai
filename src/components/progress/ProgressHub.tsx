@@ -158,7 +158,9 @@ export function ProgressHub({
     volumeBefore: snapshot.priorVolumeKg,
     records: snapshot.recordCount,
   }, resolvedLocale)
-  const volumeSummary = snapshot.volumeKg <= 0
+  const volumeSummary = snapshot.comparisonHasIncompleteEvidence
+    ? copy(resolvedLocale, `Volumen registrado: ${formatKg(snapshot.volumeKg, resolvedLocale)}. Las diferencias entre periodos pueden deberse a detalles que todavía no has anotado.`, `Recorded volume: ${formatKg(snapshot.volumeKg, resolvedLocale)}. Differences between periods may reflect details you have not logged yet.`)
+    : snapshot.volumeKg <= 0
     ? copy(resolvedLocale, 'Todavía no hay volumen medido en este rango. Guarda cargas y repeticiones para activar esta lectura.', 'There is no measured volume in this range yet. Log weight and reps to activate this insight.')
     : snapshot.volumeDelta === null
       ? copy(resolvedLocale, `Volumen medido: ${formatKg(snapshot.volumeKg, resolvedLocale)}. Falta un periodo anterior comparable.`, `Measured volume: ${formatKg(snapshot.volumeKg, resolvedLocale)}. A comparable prior period is still needed.`)
@@ -172,7 +174,7 @@ export function ProgressHub({
       <EvidenceHero
         eyebrow={t('Evidencia acumulada')}
         title={t('Tu progreso tiene dirección')}
-        description={heroSummary}
+        description={snapshot.comparisonHasIncompleteEvidence ? copy(resolvedLocale, 'Tu constancia incluye todos tus entrenamientos. El volumen y el mapa reflejan las series que has registrado.', 'Attendance includes all your workouts. Volume and the muscle map reflect the sets you recorded.') : heroSummary}
         action={(
           <PeriodSelector
             value={rangeWeeks}
@@ -186,7 +188,7 @@ export function ProgressHub({
         <MetricStrip
           items={[
             {
-              label: copy(resolvedLocale, 'Cambio de volumen', 'Volume change'),
+              label: snapshot.comparisonHasIncompleteEvidence ? copy(resolvedLocale, 'Cambio de volumen registrado', 'Recorded volume change') : copy(resolvedLocale, 'Cambio de volumen', 'Volume change'),
               value: snapshot.volumeDelta === null ? t('Sin comparación') : `${snapshot.volumeDelta > 0 ? '+' : ''}${snapshot.volumeDelta}%`,
               detail: formatKg(snapshot.volumeKg, resolvedLocale),
             },
@@ -204,6 +206,10 @@ export function ProgressHub({
         />
       </EvidenceHero>
 
+      {snapshot.comparisonHasIncompleteEvidence && <EvidenceInsight title={copy(resolvedLocale, 'Tu registro, en contexto', 'Your records in context')} tone="neutral">
+        {copy(resolvedLocale, `${snapshot.incompleteSessionCount} entrenamientos del periodo tienen información parcial o solo constancia. Las diferencias de volumen reflejan los datos anotados; también puede haber registros parciales en el periodo anterior.`, `${snapshot.incompleteSessionCount} workouts in this period have partial details or attendance only. Volume changes reflect recorded data; the previous period may also contain partial records.`)}
+      </EvidenceInsight>}
+
       <section className="rounded-3xl border border-border/60 bg-muted/[0.05] p-4 sm:p-6" aria-labelledby="training-load-title">
         <SectionHeading id="training-load-title" eyebrow={copy(resolvedLocale, 'Tendencia principal', 'Primary trend')} title={copy(resolvedLocale, 'Carga de entrenamiento', 'Training load')} />
         <div className="mt-5">
@@ -211,7 +217,7 @@ export function ProgressHub({
         </div>
         <EvidenceInsight
           title={copy(resolvedLocale, 'Lectura del periodo', 'Period insight')}
-          tone={snapshot.volumeDelta === null ? 'neutral' : snapshot.volumeDelta >= 0 ? 'success' : 'warning'}
+          tone={snapshot.volumeDelta === null || snapshot.comparisonHasIncompleteEvidence ? 'neutral' : snapshot.volumeDelta >= 0 ? 'success' : 'warning'}
           className="mt-5"
         >
           {volumeSummary}

@@ -33,6 +33,21 @@ describe('automatic companion backup policy', () => {
     await f.coordinator.check()
     expect(f.synchronize).toHaveBeenCalledTimes(1)
   })
+  it('backs up an edited free session without counting it as a new completion', async () => {
+    const f = fixture()
+    const log = f.current!.tables.progress_logs[0]
+    Object.assign(log, { client_session_id: 'client-session-1', workout_id: null, updated_at: '2026-09-10T12:00:00Z', mobile_free_training: { version: 1 } })
+    const completion = [log.id, log.client_session_id, log.completed_at]
+    await f.coordinator.check()
+    f.current!.revision++
+    log.notes = 'Added the missing sets.'
+    log.updated_at = '2026-09-10T12:15:00Z'
+    await f.coordinator.check()
+    expect(f.synchronize).toHaveBeenCalledTimes(2)
+    expect(f.current!.lastSyncedRevision).toBe(f.current!.revision)
+    expect(f.current!.tables.progress_logs).toHaveLength(1)
+    expect([log.id, log.client_session_id, log.completed_at]).toEqual(completion)
+  })
   it('retries after reconnect and keeps local changes after an error', async () => {
     const f = fixture(); f.synchronize.mockRejectedValueOnce(new Error('network failure'))
     await f.coordinator.check(); await f.coordinator.check()

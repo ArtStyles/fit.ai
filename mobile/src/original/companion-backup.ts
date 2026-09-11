@@ -60,7 +60,7 @@ export function createCompanionBackupStore(store: AppStore, owner: string, versi
 function progressFingerprint(state: AppState) {
   const profile = state.tables.profiles?.find(row => row.id === state.accountId)
   const sessions = (state.tables.progress_logs ?? []).filter(row => row.user_id === state.accountId)
-    .map(row => [row.id, row.client_session_id, row.completed_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+    .map(row => [row.id, row.client_session_id, row.completed_at, row.updated_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   const plans = (state.tables.workout_plans ?? []).filter(row => row.user_id === state.accountId && row.is_active === true)
     .map(row => [row.id, row.days_per_week, row.updated_at]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   return JSON.stringify([state.accountId, sessions, plans, profile?.days_per_week, profile?.timezone, profile?.full_name, profile?.avatar_url])

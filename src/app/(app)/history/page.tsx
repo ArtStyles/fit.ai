@@ -15,6 +15,7 @@ import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPr
 import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator } from '@/lib/i18n'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
+import { readFreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
 import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
@@ -23,7 +24,7 @@ export const metadata = { title: 'Historial · Vekira' }
 
 type WorkoutSummary = CompletedSessionWorkoutRelation
 
-type ProgressLogRow = {
+type ProgressLogRow = FreeTrainingEvidenceSource & {
   id: string
   workout_id: string | null
   completed_at: string
@@ -71,6 +72,7 @@ async function loadHistoryPayload(
       duration_minutes,
       mood_rating,
       session_context_snapshot,
+      ${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'mobile_session_kind, mobile_free_training,' : ''}
       workout:workouts(name, focus)
     `)
     .eq('user_id', userId)
@@ -185,6 +187,8 @@ export default async function HistoryPage() {
       workoutName: getWorkoutDisplayName(presentation.workoutName, presentation.focus),
       focus: presentation.focus,
       durationMinutes: presentation.durationMinutes,
+      durationRecorded: log.duration_minutes !== null,
+      detailLevel: readFreeTrainingDetail(log),
     }
   })
   const exercises: HistoryExerciseInput[] = exerciseLogs.map(row => {
@@ -251,9 +255,9 @@ export default async function HistoryPage() {
         {evidence.rows.length === 0 ? (
           <section className="rounded-3xl border border-dashed border-border bg-muted/20 p-8 text-center">
             <Trophy className="mx-auto h-7 w-7 text-violet-300" aria-hidden="true" />
-            <p className="mt-4 text-sm text-muted-foreground">{t('Completa una sesión desde tu plan para iniciar el registro.')}</p>
-            <PendingLink href="/dashboard" className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-600">
-              {t('Ir al dashboard')}
+            <p className="mt-4 text-sm text-muted-foreground">{process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? t('¿Ya entrenaste? Guarda tu constancia y los detalles que quieras.') : t('Completa una sesión desde tu plan para iniciar el registro.')}</p>
+            <PendingLink href={process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? '/registrar' : '/dashboard'} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-600">
+              {t(process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'Registrar entrenamiento' : 'Ir al dashboard')}
             </PendingLink>
           </section>
         ) : (

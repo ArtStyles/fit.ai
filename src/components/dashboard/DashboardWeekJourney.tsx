@@ -96,7 +96,7 @@ function JourneySegment({
                   <p className="mt-1 truncate text-base font-semibold text-foreground">
                     {evidence?.workoutName ?? item.scheduledWorkout?.name ?? t('Día de descanso')}
                   </p>
-                  {evidence && (
+                  {evidence && evidence.durationMinutes > 0 && (
                     <p className="mt-1 text-sm text-muted-foreground">
                       {t('{minutes} min', { minutes: evidence.durationMinutes })}
                     </p>
@@ -229,7 +229,7 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
         <h2 id="today-title" className="mt-4 font-display text-2xl font-bold text-foreground">
           {today.completedEvidence?.workoutName ?? t('Ya completaste una sesión hoy.')}
         </h2>
-        {today.completedEvidence && (
+        {today.completedEvidence && today.completedEvidence.durationMinutes > 0 && (
           <p className="mt-2 text-base leading-relaxed text-muted-foreground">
             {t('{minutes} min', { minutes: today.completedEvidence.durationMinutes })}
           </p>
@@ -270,7 +270,7 @@ function TodayJourneyCard({ today }: { today: DashboardToday }) {
         <h2 id="today-title" className="mt-4 font-display text-2xl font-bold text-foreground">
           {today.completedEvidence?.workoutName ?? workout.name}
         </h2>
-        {today.completedEvidence && (
+        {today.completedEvidence && today.completedEvidence.durationMinutes > 0 && (
           <p className="mt-2 text-base leading-relaxed text-muted-foreground">
             {t('{minutes} min', { minutes: today.completedEvidence.durationMinutes })}
           </p>
@@ -336,7 +336,7 @@ export function DashboardWeekJourney({ dashboard, companion }: { dashboard: Dash
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-300">{t('Esta semana')}</p>
             <h2 id="week-journey-title" className="mt-1 font-display text-2xl font-bold text-foreground">{t('Semana en curso')}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t('{completed} de {scheduled} sesiones', {
+              {t(dashboard.weekly.scheduled === 0 ? '{completed} sesiones registradas' : '{completed} de {scheduled} sesiones', {
                 completed: dashboard.weekly.completed,
                 scheduled: dashboard.weekly.scheduled,
               })}
@@ -349,8 +349,13 @@ export function DashboardWeekJourney({ dashboard, companion }: { dashboard: Dash
         {currentItem && <JourneySegment items={beforeToday} title={t('Pasado')} />}
       </div>
 
-      {(currentItem || companion) && (
+      {(currentItem || companion || process.env.NEXT_PUBLIC_LOCAL_APP === 'true') && (
         <div className="space-y-4 py-4 lg:col-start-2 lg:row-start-1 lg:py-0">
+          {process.env.NEXT_PUBLIC_LOCAL_APP === 'true' && <PendingLink href="/registrar" className="group block rounded-2xl border border-violet-400/30 bg-violet-500/[0.07] p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-violet-300">{t('A tu manera')}</p>
+            <p className="mt-2 font-display text-xl font-semibold text-foreground">{t('Registrar entrenamiento')}</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{t('¿Ya entrenaste? Guarda tu constancia y los detalles que quieras.')}</p>
+          </PendingLink>}
           {currentItem?.completionOnAnotherDate && !currentItem.hasTrainingEvidence && (
             <JourneySegment items={[currentItem]} title={t('Otro día')} />
           )}

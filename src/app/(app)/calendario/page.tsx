@@ -41,7 +41,7 @@ async function loadCalendarSessionPayload(
 
   const { data: logs, error: logsError } = await supabase
     .from('progress_logs')
-    .select('id, workout_id, completed_at, duration_minutes, session_context_snapshot, workout:workouts(name, focus)')
+    .select(`id, workout_id, completed_at, duration_minutes, session_context_snapshot, ${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'mobile_session_kind, mobile_free_training,' : ''} workout:workouts(name, focus)`)
     .eq('user_id', userId)
     .gte('completed_at', from)
     .order('completed_at', { ascending: false }) as unknown as {

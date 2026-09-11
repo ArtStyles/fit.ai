@@ -1,8 +1,9 @@
 import { getLocalDateString } from '@/lib/workouts/schedule'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
+import { readFreeTrainingDetail, type FreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
-export interface RawProgressLog {
+export interface RawProgressLog extends FreeTrainingEvidenceSource {
   id: string
   completed_at: string
   duration_minutes: number | null
@@ -16,7 +17,7 @@ export interface RawExerciseLog {
 
 export type CalendarWorkoutSummary = CompletedSessionWorkoutRelation
 
-export interface RawCalendarProgressLog extends RawProgressLog {
+export interface RawCalendarProgressLog extends RawProgressLog, FreeTrainingEvidenceSource {
   workout_id: string | null
   session_context_snapshot: unknown
   workout: CalendarWorkoutSummary | CalendarWorkoutSummary[] | null
@@ -33,6 +34,8 @@ export interface CalendarSessionSummary {
   workoutName: string
   focus: string | null
   durationMin: number
+  durationRecorded?: boolean
+  detailLevel?: FreeTrainingDetail | null
   sets: number
   volumeKg: number
 }
@@ -43,6 +46,8 @@ export interface DayAggregate {
   volumeKg:    number
   durationMin: number
   logIds:      string[] // recientes primero
+  volumeRecorded?: boolean
+  durationRecorded?: boolean
 }
 
 // ─── Helpers de fecha (basados en UTC, independientes de zona) ────────────────
@@ -80,11 +85,18 @@ export function aggregateLogsToDays(
   }
 
   const byDate = new Map<string, DayAggregate>()
+  const evidenceByDate = new Map<string, { hasFree: boolean; volume: boolean; duration: boolean }>()
   const sorted = [...logs].sort((a, b) => b.completed_at.localeCompare(a.completed_at))
   for (const log of sorted) {
     const date = getLocalDateString(new Date(log.completed_at), timeZone)
     const vol = volumeByLog.get(log.id) ?? 0
     const dur = Number(log.duration_minutes) || 0
+    const detail = readFreeTrainingDetail(log)
+    const evidence = evidenceByDate.get(date) ?? { hasFree: false, volume: false, duration: false }
+    evidence.hasFree ||= detail !== null
+    evidence.volume ||= detail !== 'attendance'
+    evidence.duration ||= detail === null || log.duration_minutes != null
+    evidenceByDate.set(date, evidence)
     const existing = byDate.get(date)
     if (existing) {
       existing.sessions += 1
@@ -94,6 +106,11 @@ export function aggregateLogsToDays(
     } else {
       byDate.set(date, { date, sessions: 1, volumeKg: vol, durationMin: dur, logIds: [log.id] })
     }
+  }
+
+  for (const [date, evidence] of evidenceByDate) {
+    if (!evidence.hasFree) continue
+    Object.assign(byDate.get(date)!, { volumeRecorded: evidence.volume, durationRecorded: evidence.duration })
   }
 
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date))
@@ -137,6 +154,7 @@ export function buildCalendarSessionPayload(
         workoutName: presentation.workoutName,
         focus: presentation.focus,
         durationMin: presentation.durationMinutes,
+        ...(readFreeTrainingDetail(log) ? { detailLevel: readFreeTrainingDetail(log), durationRecorded: log.duration_minutes != null } : {}),
         sets,
         volumeKg,
       }
