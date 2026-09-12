@@ -4,7 +4,7 @@ Implemented on `codex/fitness-card`, based on `codex/android-offline` at `d5b321
 
 ## Delivered behavior
 
-The card has three visual treatments, avatar/name/existing @username, an optional artistic name, lifetime best recorded sets, an 84-day map counting unique sessions per muscle, and up to three deliberately selected photos. Mi tarjeta, Colección and Accesos keep the hub compact; Marcas, Mapa and Fotos organize the opened card. The existing profile username editor is available independently of Community.
+The card has three accent colors, avatar/name/existing @username, an optional artistic name, lifetime best recorded sets, an 84-day map counting unique sessions per muscle, and up to three deliberately selected photos. Mi tarjeta, Colección and Accesos keep the hub compact; Marcas, Mapa and Fotos organize the opened card. The existing profile username editor is available independently of Community.
 
 Sharing by @ grants directed access; requests require owner approval. Accept, reject, cancel, leave and revoke act on exact relationship IDs. Private photos are re-encoded to WebP without source metadata, capped at 2 MiB, downloaded with account authorization and displayed through temporary blob URLs. Received cards are never written into SQLite or account backups. Realtime own-row revision signals invalidate displayed data; a five-second refresh and a fifteen-second authority lease recover missed events. Offline, hidden-document and account-change paths clear received content.
 
@@ -29,6 +29,12 @@ Editor style changes use the revision captured when editing begins. A background
 The Fitness Card browser suite uses an explicit fake backend and seeded test accounts. It tests actual UI interactions and image processing, including keyboard Select, long-name wrapping, three uploads plus replacement/deletion, busy-dialog Escape, concurrent remote-style edits, sharing, approval, revocation, viewer updates, offline clearing and absence of received identity in persisted SQLite. SQL tests separately exercise real PostgreSQL policies and concurrency. Neither proves a live Supabase HTTP/Realtime deployment.
 
 Screenshots and the browser report are local ignored artifacts under `.artifacts/fitness-card/`. Reproduce that suite with `VITE_SUPABASE_URL=https://fitness-fixture.supabase.co` and `VITE_SUPABASE_ANON_KEY=fakepublictesttoken` when building the test bundle, then `MOBILE_PREVIEW_URL=http://127.0.0.1:4193 node mobile/tests/fitness-card-regression.mjs`. Restore the actual public Android settings for any distributable build.
+
+## Reference-led cover refinement, 2026-09-12
+
+The supplied black membership-card reference now guides the cover: charcoal material, restrained texture, diagonal accent, the existing Vekira mark, circular profile portrait and a horizontal identity row. The lower strip names the actual Records, Map and Photos sections. The reference's gym-entry QR and member number are not part of this product. Violet, Ember and Ice retain their persisted keys and now change the accent on the same black design. The Radix color selector includes swatches, readable names, keyboard navigation and a live preview.
+
+The cover responds to its own container width, including collection tiles and the editor. Long names remain fully visible; narrow cards grow vertically when needed. Fresh mobile/web TypeScript and scoped ESLint checks passed. The compiled browser regression passed at 320/390/1440 px and in English offline, exercising all three colors by keyboard, normal and long names, three photos, concurrent edits and access revocation. Separate cover screenshots, including the no-avatar fallback, are under `.artifacts/fitness-card/`. These are seeded local previews. This refinement changes no backend schema or consent behavior.
 
 ## Activation and remaining external verification
 
