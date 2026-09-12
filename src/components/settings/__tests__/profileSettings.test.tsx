@@ -42,12 +42,12 @@ describe('ProfilePage', () => {
     expect(html).toContain('aria-label="Foto de perfil"')
   })
 
-  it('hides every social control while Community is disabled', async () => {
+  it('keeps the Fitness Card username while hiding Community controls', async () => {
     const html = await renderProfileSettings(false)
 
     expect(html).toContain('Ana Pérez')
     expect(html).toContain('ana@example.com')
-    expect(html).not.toContain('Nombre de usuario')
+    expect(html).toContain('Nombre de usuario')
     expect(html).not.toContain('Cuenta privada')
     expect(html).not.toContain('Ver mi perfil')
   })

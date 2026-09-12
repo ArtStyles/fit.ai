@@ -60,10 +60,11 @@ export default async function ProfilePage() {
           <ProfileNameForm initialName={profile?.full_name ?? ''} />
         </section>
 
+        <SettingsSection title={t('Nombre de usuario')}><UsernameField initialUsername={profile?.username ?? ''} /></SettingsSection>
+
         {communityEnabled ? (
           <SettingsSection title={t('Perfil en Comunidad')}>
             <div className="space-y-4">
-              <UsernameField initialUsername={profile?.username ?? ''} />
               <PrivacyToggle initialPrivate={profile?.is_private ?? false} />
               {profile?.username ? (
                 <Link

@@ -149,6 +149,9 @@ export function AccountWorkspaceMenuBody({
               </PendingLink>
             </DropdownMenuItem>
             <DropdownMenuItem disabled={interactionLocked} asChild>
+              <PendingLink {...guardedLinkProps} href="/fitness-card" showSpinner={false} className="flex min-h-11 items-center rounded-xl px-3 text-sm font-medium">Fitness Card</PendingLink>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={interactionLocked} asChild>
               <PendingLink {...guardedLinkProps} href="/coaching" showSpinner={false} className="flex min-h-11 items-center rounded-xl px-3 text-sm font-medium aria-[disabled=true]:pointer-events-none aria-[disabled=true]:opacity-60">
                 {t('Mi acompañamiento')}
               </PendingLink>
@@ -246,6 +249,7 @@ export function AccountWorkspaceMenuBody({
             <PendingLink {...guardedLinkProps} href="/settings/perfil" showSpinner={false} className="flex min-h-11 items-center rounded-xl px-3 text-sm font-medium aria-[disabled=true]:pointer-events-none aria-[disabled=true]:opacity-60">
               {t('Perfil personal')}
             </PendingLink>
+            <PendingLink {...guardedLinkProps} href="/fitness-card" showSpinner={false} className="flex min-h-11 items-center rounded-xl px-3 text-sm font-medium">Fitness Card</PendingLink>
             <PendingLink {...guardedLinkProps} href="/coaching" showSpinner={false} className="flex min-h-11 items-center rounded-xl px-3 text-sm font-medium aria-[disabled=true]:pointer-events-none aria-[disabled=true]:opacity-60">
               {t('Mi acompañamiento')}
             </PendingLink>

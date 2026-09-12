@@ -21,6 +21,7 @@ import {
 } from './sessionViewModel'
 import { createSessionRequestGate } from './sessionRequestGate'
 import type { PersistenceResult } from '@/lib/session/persistSession'
+import { notifyFitnessDataChanged } from '@/lib/fitness-card/events'
 
 const containerMotion = {
   hidden: { opacity: 0 },
@@ -178,6 +179,7 @@ export function CompletionScreen({
         setPrs(result.prs)
         setProgressions(result.progressions)
         setProgressLogId(savedProgressLogId)
+        notifyFitnessDataChanged()
 
         const cleanupResult = onClearBackup()
         const cleanupEvent = syncEventForStorageResult('delete', cleanupResult)

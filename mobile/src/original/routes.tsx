@@ -34,6 +34,7 @@ export const originalRoutes: readonly OriginalRouteDefinition[] = [
   route('/dashboard', () => import('@/app/(app)/dashboard/page')),
   route('/registrar', () => import('./free-training/page'), 'local', 'mobile/src/original/free-training/page.tsx'),
   route('/companion', () => import('@/app/(app)/companion/page')),
+  route('/fitness-card', () => import('@/app/(app)/fitness-card/page')),
   route('/plan', () => import('@/app/(app)/plan/page')),
   route('/entrenar', () => import('@/app/(app)/entrenar/page')),
   route('/session/:workoutId', () => import('@/app/(app)/session/[workoutId]/page')),

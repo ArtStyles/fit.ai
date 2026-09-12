@@ -13,6 +13,7 @@ import { cookies } from 'next/headers'
 import { getTrainerAccess } from '@/lib/coaching/access'
 import { normalizeWorkspace, WORKSPACE_COOKIE } from '@/lib/coaching/workspace'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
+import { FitnessCardAutoSync } from '@/components/fitness-card/FitnessCardAutoSync'
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
@@ -49,6 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <ProductPushNotificationsInit />
       {communityEnabled ? <SocialPushNotificationsInit /> : null}
       <TimezoneSync current={profile.timezone} />
+      <FitnessCardAutoSync />
       <AppShell accountWorkspace={accountWorkspace}>{children}</AppShell>
     </I18nProvider>
   )

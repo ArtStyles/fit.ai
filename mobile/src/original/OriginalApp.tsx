@@ -16,6 +16,7 @@ import { StorageSettings } from './StorageSettings'
 import { LocalActionNotices } from './LocalActionNotices'
 import { AppLoadingScreen } from './AppLoadingScreen'
 import { installCompanionBackupSync } from './companion-backup'
+import { useFitnessCardAutoSync } from '@/components/fitness-card/FitnessCardAutoSync'
 
 class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -34,6 +35,7 @@ export default function OriginalApp() {
   }, [])
   const locationKey = useLocationKey()
   const [state, setState] = useState<AppState | null>(null)
+  useFitnessCardAutoSync(state?.accountId ?? null)
   const [page, setPage] = useState<ReactNode>(null)
   const [pageRoute, setPageRoute] = useState('')
   const [loading, setLoading] = useState(true)

@@ -103,6 +103,7 @@ export function ProgressHub({ sessions, days, records, measurements, exercisePoi
         : copy(resolvedLocale, `El volumen ${snapshot.volumeDelta >= 0 ? 'subió' : 'bajó'} ${Math.abs(snapshot.volumeDelta)}% frente al periodo anterior equivalente.`, `Volume is ${snapshot.volumeDelta >= 0 ? 'up' : 'down'} ${Math.abs(snapshot.volumeDelta)}% versus the equivalent prior period.`)
 
   return <main data-marketing-capture="progress" className="mx-auto max-w-6xl px-4 py-5 sm:px-6">
+    <PendingLink href="/fitness-card" className="mb-4 flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-violet-500/25 bg-violet-500/5 px-4 py-3"><span className="min-w-0"><span className="block font-display text-sm font-bold">Fitness Card</span><span className="block text-xs text-muted-foreground">{copy(resolvedLocale, 'Tu identidad, tus marcas, tu círculo.', 'Your identity, your records, your circle.')}</span></span><ArrowUpRight className="h-5 w-5 shrink-0 text-violet-500" aria-hidden="true" /></PendingLink>
     <Tabs value={view} onValueChange={setView}>
       <TabsList aria-label={copy(resolvedLocale, 'Vistas de progreso', 'Progress views')} className="grid h-auto w-full grid-cols-3 rounded-2xl border border-border/50 bg-muted/20 p-1">
         {[

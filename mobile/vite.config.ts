@@ -31,6 +31,7 @@ export default defineConfig({
     },
   }],
   resolve: { alias: [
+    { find: '@/lib/fitness-card/platform', replacement: original('fitness-card/platform.ts') },
     { find: '@/components/progress/PersonalGoalsSlot', replacement: original('goals/PersonalGoalsSlot.tsx') },
     ...personalActions.map(name => ({ find: `@/app/actions/${name}`, replacement: original(`actions/${name}.ts`) })),
     ...['@/app/(auth)/actions', '@/app/actions/workspace', '@/app/actions/username', '@/app/actions/account'].map(find => ({ find, replacement: original('auxiliary-actions.ts') })),
