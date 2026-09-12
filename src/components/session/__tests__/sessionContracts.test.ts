@@ -94,6 +94,11 @@ describe('active session wiring contracts', () => {
     expect(completion).not.toMatch(/completionAnalyticsForSavedSession|recordSessionCompletionMilestone|trackEvent/)
   })
 
+  it('signals fitness evidence exactly once only inside the successful save commit', () => {
+    expect(completion.match(/notifyFitnessDataChanged\(\)/g)).toHaveLength(1)
+    expect(completion).toMatch(/if \(!result\.success[\s\S]+return[\s\S]+requestGateRef\.current\.commit\(requestToken, \(\) => \{[\s\S]+notifyFitnessDataChanged\(\)/)
+  })
+
   it('renders previous performance immediately before set controls', () => {
     const previous = exerciseHeader.indexOf('<PreviousPerformance')
     const header = exerciseCard.indexOf('<ActiveSetFocus')
