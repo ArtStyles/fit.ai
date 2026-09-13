@@ -71,6 +71,7 @@ try {
   sql(`CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT coalesce(nullif(current_setting('request.jwt.claim.role',true),''),current_user::text) $$;`)
   for (const name of readdirSync(join(root, 'infra/supabase/migrations')).filter(name => name.endsWith('.sql')).sort()) {
     if (process.argv.includes('--red') && name === '20260912040000_fitness_card.sql') continue
+    if (process.argv.includes('--red-social') && name === '20260913010000_fitness_card_social_qr.sql') continue
     sql(readFileSync(join(root, 'infra/supabase/migrations', name), 'utf8'))
   }
   sql(readFileSync(join(root, 'mobile/src/original/fitness-card-postgres-contract.sql'), 'utf8'))
@@ -91,6 +92,8 @@ try {
   const count = sql(`${auth(B)} SELECT count(*) FROM storage.objects WHERE bucket_id='fitness-card-photos';`).trim().split('\n').at(-1)
   if(count !== '0') throw new Error('Concurrent revoke retained photo access')
   console.log('PASS: real concurrent CAS, photo/revoke serialization and revoked Storage access.')
+  sql(readFileSync(join(root, 'mobile/src/original/fitness-card-social-postgres-contract.sql'), 'utf8'))
+  console.log('PASS: social links, backward-compatible CAS and QR request consent.')
 } finally {
   if (nativeRoot) {
     if (existsSync(join(nativeRoot, 'data', 'postmaster.pid'))) {

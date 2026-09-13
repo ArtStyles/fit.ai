@@ -1,6 +1,8 @@
 import { MUSCLE_GROUPS, type MuscleGroupId } from '@/lib/muscles/activity'
 import { MAX_SESSION_DURATION_SECONDS, MAX_SESSION_REPS, MAX_SESSION_WEIGHT_KG } from '@/lib/session/limits'
 import { isCivilDate } from '@/lib/workouts/occurrences'
+import { normalizeFitnessSocialLinks } from './socials'
+import type { FitnessInvite } from './types'
 import type { FitnessAccess, FitnessCard, FitnessCover, FitnessEvidence, FitnessHubState, FitnessIdentity, FitnessPhoto, FitnessRecord, FitnessTheme } from './types'
 
 const invalid = (): never => { throw new Error('FITNESS_CARD_INVALID_RESPONSE') }
@@ -17,7 +19,12 @@ function identity(value: unknown): FitnessIdentity { const item=row(value); retu
 function cover(value: unknown): FitnessCover {
   const item=row(value)
   if (item.theme !== 'violet' && item.theme !== 'ember' && item.theme !== 'ice') invalid()
-  return {owner:identity(item.owner),artisticName:text(item.artisticName,60),theme:item.theme as FitnessTheme,updatedAt:timestamp(item.updatedAt)}
+  return {owner:identity(item.owner),artisticName:text(item.artisticName,60),theme:item.theme as FitnessTheme,updatedAt:timestamp(item.updatedAt),socialLinks:normalizeFitnessSocialLinks(item.socialLinks)}
+}
+export function parseFitnessInvite(value: unknown, ownerId: string): FitnessInvite {
+  const item = row(value), owner = identity(item.owner)
+  if (owner.userId !== uuid(ownerId) || !['self','accepted','pending','available'].includes(item.status as string)) return invalid()
+  return { owner, status: item.status as FitnessInvite['status'] }
 }
 function evidence(value: unknown): FitnessEvidence {
   const item=row(value)

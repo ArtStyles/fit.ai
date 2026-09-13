@@ -1,7 +1,9 @@
 import type { MuscleGroupId } from '@/lib/muscles/activity'
 
 export type FitnessTheme = 'violet' | 'ember' | 'ice'
+export type FitnessSocialLinks = Partial<Record<'instagram' | 'x' | 'facebook', string>>
 export type FitnessIdentity = { userId: string; name: string; username: string | null; avatarUrl: string | null }
+export type FitnessInvite = { owner: FitnessIdentity; status: 'self' | 'accepted' | 'pending' | 'available' }
 export type FitnessRecord = {
   exerciseId: string; name: string; kind: 'strength' | 'duration';
   weightKg: number | null; reps: number | null; seconds: number | null; date: string
@@ -13,9 +15,9 @@ export type FitnessEvidence = {
 export type FitnessPhoto = { slot: 1 | 2 | 3; path: string }
 export type FitnessCard = {
   owner: FitnessIdentity; artisticName: string; theme: FitnessTheme; revision: number;
-  photos: FitnessPhoto[]; evidence: FitnessEvidence; updatedAt: string
+  photos: FitnessPhoto[]; evidence: FitnessEvidence; updatedAt: string; socialLinks?: FitnessSocialLinks
 }
-export type FitnessCover = Pick<FitnessCard, 'owner' | 'artisticName' | 'theme' | 'updatedAt'>
+export type FitnessCover = Pick<FitnessCard, 'owner' | 'artisticName' | 'theme' | 'updatedAt' | 'socialLinks'>
 export type FitnessAccessStatus = 'pending' | 'accepted' | 'rejected' | 'revoked'
 export type FitnessAccess = {
   id: string; owner: FitnessIdentity; viewer: FitnessIdentity; status: FitnessAccessStatus; updatedAt: string

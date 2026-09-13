@@ -10,13 +10,13 @@ import { FitnessCardCover } from './FitnessCardCover'
 import { FitnessCardMuscles } from './FitnessCardMuscles'
 import styles from './fitness-card.module.css'
 
-export function FitnessCardDetail({ card, photoUrls }: { card: FitnessCard; photoUrls: FitnessPhotoUrls }) {
+export function FitnessCardDetail({ card, photoUrls, shareEnabled = true }: { card: FitnessCard; photoUrls: FitnessPhotoUrls; shareEnabled?: boolean }) {
   const { language } = useI18n()
   const es = language === 'es'
   const [photo, setPhoto] = useState<1 | 2 | 3 | null>(null)
   const date = (value: string) => { const d = new Date(value.slice(0, 10) + 'T12:00:00'); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(es ? 'es' : 'en', {day:'numeric', month:'short', year:'numeric'}) }
   return <div className={styles.detail}>
-    <FitnessCardCover card={card} />
+    <FitnessCardCover card={card} shareEnabled={shareEnabled} />
     <Tabs defaultValue="records"><TabsList className={styles.tabs} aria-label={es ? 'Contenido de la tarjeta' : 'Card content'}>
       <TabsTrigger value="records" className={styles.tab}><Dumbbell size={15} />{es ? 'Marcas' : 'Records'}</TabsTrigger>
       <TabsTrigger value="muscles" className={styles.tab}><ScanLine size={15} />{es ? 'Mapa' : 'Map'}</TabsTrigger>

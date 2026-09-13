@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFitnessCard, parseFitnessHub } from './validation'
+import { parseFitnessCard, parseFitnessHub, parseFitnessInvite } from './validation'
 import type { FitnessCard } from './types'
 
 const owner = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -8,7 +8,13 @@ const instant = '2026-09-12T10:00:00Z'
 const fixture = (): FitnessCard => ({ owner: { userId: owner, name:'Ana', username:'ana', avatarUrl:null }, artisticName:'Astra', theme:'violet', revision:1, photos:[{slot:1,path:`${owner}/1.webp`}], updatedAt:instant, evidence:{ records:[{exerciseId:'local-squat',name:'Squat',kind:'strength',weightKg:80,reps:8,seconds:null,date:'2026-01-12'}], muscles:[{id:'quads',sessions:2}],totalSessions:2,partialSessions:1,rangeFrom:'2026-06-21',rangeTo:'2026-09-12',updatedAt:instant} })
 
 describe('Fitness Card authority response parsing', () => {
-  it('accepts real complete evidence, lifetime marks, null avatars and exact private paths', () => { expect(parseFitnessCard(fixture())).toEqual(fixture()) })
+  it('accepts real complete evidence and defaults absent legacy social links', () => { expect(parseFitnessCard(fixture())).toEqual({ ...fixture(), socialLinks: {} }) })
+  it('normalizes links and pins the minimal QR invite to its requested owner', () => {
+    expect(parseFitnessCard({ ...fixture(), socialLinks: { x: '@ana' } }).socialLinks).toEqual({ x: 'https://x.com/ana' })
+    expect(() => parseFitnessCard({ ...fixture(), socialLinks: { x: 'https://evil.test/a' } })).toThrow()
+    expect(parseFitnessInvite({ owner: fixture().owner, status: 'available', evidence: 'private' }, owner)).toEqual({ owner: fixture().owner, status: 'available' })
+    expect(() => parseFitnessInvite({ owner: fixture().owner, status: 'accepted' }, viewer)).toThrow()
+  })
   it.each([
     ['null muscle', (card: any) => { card.evidence.muscles = [null] }],
     ['unknown muscle', (card: any) => { card.evidence.muscles[0].id = 'invented' }],
@@ -27,9 +33,9 @@ describe('Fitness Card authority response parsing', () => {
     ['unsafe revision', (card: any) => { card.revision = Number.MAX_SAFE_INTEGER + 1 }],
     ['invalid identity', (card: any) => { card.owner.userId = 'not-a-uuid' }],
   ])('rejects %s', (_, mutate) => { const card = fixture(); mutate(card); expect(() => parseFitnessCard(card)).toThrow() })
-  it('accepts bounded duration and rejects conflicting strength fields', () => { const card=fixture(); card.evidence.records[0] = {...card.evidence.records[0],kind:'duration',weightKg:null,reps:null,seconds:60}; expect(parseFitnessCard(card)).toEqual(card); card.evidence.records[0].weightKg=2; expect(() => parseFitnessCard(card)).toThrow() })
+  it('accepts bounded duration and rejects conflicting strength fields', () => { const card=fixture(); card.evidence.records[0] = {...card.evidence.records[0],kind:'duration',weightKg:null,reps:null,seconds:60}; expect(parseFitnessCard(card)).toEqual({...card,socialLinks:{}}); card.evidence.records[0].weightKg=2; expect(() => parseFitnessCard(card)).toThrow() })
   it('validates actor ownership and relationships in the hub', () => {
-    const card=fixture(); const state={viewerId:owner,own:card,received:[],access:[]}; expect(parseFitnessHub(state,owner)).toEqual(state)
+    const card=fixture(); const state={viewerId:owner,own:card,received:[],access:[]}; expect(parseFitnessHub(state,owner)).toEqual({...state,own:{...card,socialLinks:{}}})
     expect(() => parseFitnessHub(state,viewer)).toThrow()
     expect(() => parseFitnessHub({...state,viewerId:viewer},viewer)).toThrow()
     expect(() => parseFitnessHub({...state,access:[{id:viewer,owner:{...card.owner,userId:viewer},viewer:{...card.owner,userId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'},status:'accepted',updatedAt:instant}]},owner)).toThrow()

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowUpRight, IdCard, Loader2, RefreshCw, ShieldCheck, WifiOff } from 'lucide-react'
 import { useI18n } from '@/components/i18n/I18nProvider'
 import { PageTopBar } from '@/components/navigation/PageTopBar'
@@ -18,6 +19,9 @@ import { FitnessCardDetail } from './FitnessCardDetail'
 import { FitnessCardEditor } from './FitnessCardEditor'
 import { FitnessCardCollection } from './FitnessCardCollection'
 import { FitnessCardAccess } from './FitnessCardAccess'
+import { FitnessCardScanner } from './FitnessCardScanner'
+import { FitnessCardInvite } from './FitnessCardInvite'
+import { parseFitnessCardLink } from '@/lib/fitness-card/sharing'
 
 type Client = ReturnType<typeof createFitnessClient>
 
@@ -45,6 +49,12 @@ function useOwnPhotos(client: Client, card: FitnessCard | null, enabled: boolean
 function FitnessWorkspace({ platform }: { platform: FitnessPlatform }) {
   const { language } = useI18n()
   const es = language === 'es'
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const inviteParam = searchParams?.get('invite') ?? ''
+  const [inviteOwner, setInviteOwner] = useState<string | null>(null)
+  useEffect(() => { if (inviteParam) setInviteOwner(parseFitnessCardLink(`vekira://fitness-card/${inviteParam}`)) }, [inviteParam])
+  const closeInvite = () => { setInviteOwner(null); if (inviteParam) router.replace('/fitness-card') }
   const client = useMemo(() => createFitnessClient(platform), [platform])
   const [hub, setHub] = useState<FitnessHubState | null>(null)
   const [local, setLocal] = useState<FitnessEvidence | null>(null)
@@ -162,19 +172,21 @@ function FitnessWorkspace({ platform }: { platform: FitnessPlatform }) {
     <PageTopBar title="Fitness Card" backHref="/progress" backLabel={es ? 'Volver a Progreso' : 'Back to Progress'} icon={<IdCard className="h-5 w-5" />} />
     <main className="mx-auto max-w-4xl space-y-5 px-4 py-5 sm:px-6" data-fitness-card-hub>
       <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.22em] text-violet-600 dark:text-violet-300">Vekira · Fitness Card</p><h2 className="mt-2 font-display text-2xl font-bold tracking-tight sm:text-3xl">{es ? 'Tu esfuerzo tiene identidad.' : 'Give your effort an identity.'}</h2></div><Button variant="ghost" size="icon" disabled={busy || loading || !online} aria-label={es ? 'Actualizar tarjetas' : 'Refresh cards'} onClick={() => { void manualRefresh().catch(() => {}) }}><RefreshCw className="h-4 w-4" /></Button></div>
+      <div className="flex justify-end"><FitnessCardScanner disabled={busy} onScan={setInviteOwner} /></div>
       <Tabs value={tab} onValueChange={setTab}><TabsList className="grid h-auto w-full grid-cols-3 rounded-2xl p-1" aria-label={es ? 'Vistas de Fitness Card' : 'Fitness Card views'}>{['mine', 'collection', 'access'].map((value, index) => <TabsTrigger key={value} value={value} className="min-h-11 min-w-0 rounded-xl px-1 text-xs sm:text-sm">{(es ? ['Mi tarjeta', 'Colección', 'Accesos'] : ['My card', 'Collection', 'Access'])[index]}</TabsTrigger>)}</TabsList>
       {!online && <p role="status" className="mt-4 flex items-center gap-2 rounded-xl bg-muted p-3 text-sm"><WifiOff size={16} />{es ? 'Sin conexión. Las tarjetas compartidas se abrirán al reconectar.' : 'Offline. Shared cards will reopen when you reconnect.'}</p>}
       {error && <p role="alert" className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">{es ? error : 'We could not verify or save this card. Check your connection and refresh. If the server update is pending, it must be activated first.'}</p>}
       <TabsContent value="mine" className="mt-5 space-y-4">{own ? <>
-        <div className="flex flex-wrap items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck size={15} />{es ? 'Tú decides quién puede verla.' : 'You decide who can see it.'}</p>{hub?.own && online && <FitnessCardEditor card={hub.own} photoUrls={ownPhotos} busy={busy} onSave={(name, theme, revision) => run(async () => { await client.save(name, theme, revision) })} onUpload={(slot, file) => run(async () => { const blob = await prepareFitnessPhoto(file); await client.upload(slot, blob); return client.read(platform.identity.userId) })} onRemove={slot => run(async () => { await client.remove(slot); return client.read(platform.identity.userId) })} />}</div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck size={15} />{es ? 'Tú decides quién puede verla.' : 'You decide who can see it.'}</p>{hub?.own && online && <FitnessCardEditor card={hub.own} photoUrls={ownPhotos} busy={busy} onSave={(name, theme, revision, socials) => run(async () => { await client.save(name, theme, revision, socials) })} onUpload={(slot, file) => run(async () => { const blob = await prepareFitnessPhoto(file); await client.upload(slot, blob); return client.read(platform.identity.userId) })} onRemove={slot => run(async () => { await client.remove(slot); return client.read(platform.identity.userId) })} />}</div>
         {!hub?.own && <div className="rounded-2xl border border-violet-500/25 bg-violet-500/5 p-4"><p className="mb-3 text-sm text-muted-foreground">{es ? 'Esta es tu vista previa. Crea tu tarjeta para elegir el estilo, añadir fotos y compartirla con tu círculo.' : 'This is your preview. Create your card to choose a style, add photos and share with your circle.'}</p>{!platform.linked ? <PendingLink href="/settings/almacenamiento" className="inline-flex min-h-11 items-center gap-2 font-semibold">{es ? 'Conectar mi cuenta' : 'Connect my account'}<ArrowUpRight size={16} /></PendingLink> : !platform.identity.username ? <PendingLink href="/settings/perfil" className="inline-flex min-h-11 items-center gap-2 font-semibold">{es ? 'Elegir mi @usuario' : 'Choose my @username'}<ArrowUpRight size={16} /></PendingLink> : <Button disabled={busy || !online || loading || !!error} onClick={() => { void create().catch(() => {}) }}>{busy ? (es ? 'Creando…' : 'Creating…') : (es ? 'Crear mi Fitness Card' : 'Create my Fitness Card')}</Button>}</div>}
         {photoFailed && <p role="status" className="text-sm text-muted-foreground">{es ? 'No se pudieron abrir tus fotos. Actualiza cuando tengas conexión.' : 'Your photos could not load. Refresh when connected.'}</p>}
-        <FitnessCardDetail card={own} photoUrls={ownPhotos} />
+        <FitnessCardDetail card={own} photoUrls={ownPhotos} shareEnabled={!!hub?.own} />
       </> : <div role="status" className="flex justify-center gap-2 py-16"><Loader2 className="h-5 w-5 animate-spin motion-reduce:animate-none" />{es ? 'Preparando tu tarjeta…' : 'Preparing your card…'}</div>}</TabsContent>
       <TabsContent value="collection" className="mt-5"><p className="mb-4 text-sm text-muted-foreground">{es ? 'Las tarjetas que comparten contigo se actualizan cuando sus dueños hacen cambios.' : 'Cards shared with you update when their owners make changes.'}</p>{online ? <FitnessCardCollection cards={hub?.received ?? []} onOpen={openCard} /> : null}</TabsContent>
       <TabsContent value="access" className="mt-5">{platform.linked ? <FitnessCardAccess viewerId={platform.identity.userId} items={online ? hub?.access ?? [] : []} busy={busy || !online || !hub} onAction={access} /> : <p className="py-8 text-sm text-muted-foreground">{es ? 'Conecta tu cuenta para compartir y solicitar tarjetas mediante el @usuario.' : 'Connect your account to share and request cards by @username.'}</p>}</TabsContent></Tabs>
       <p className="pb-4 text-xs leading-relaxed text-muted-foreground">{es ? 'Solo se comparte lo que aparece en tu tarjeta. Tus rutinas completas y medidas personales siguen siendo privadas.' : 'Only your card content is shared. Your complete routines and personal measurements stay private.'}</p>
     </main>
+    <FitnessCardInvite ownerId={inviteOwner} client={client} online={online} linked={platform.linked} busy={busy} accessVersion={hub?.access.filter(item => item.owner.userId === inviteOwner).map(item => `${item.id}:${item.status}`).join('|') ?? ''} onClose={closeInvite} onRequest={ownerId => run(async () => { const next = await client.requestById(ownerId); if (alive.current) replaceHub(next) })} onOpen={(ownerId, self) => { closeInvite(); if (self) setTab('mine'); else openCard(ownerId) }} />
     <Dialog open={selected !== null} onOpenChange={open => { if (!open) closeCard() }}><DialogContent className="max-w-3xl" closeLabel={es ? 'Cerrar tarjeta' : 'Close card'}><DialogTitle>Fitness Card</DialogTitle><DialogDescription>{es ? 'Acceso personal. Los cambios se actualizan mientras tengas permiso.' : 'Personal access. Changes update while you have permission.'}</DialogDescription>{viewer ? <FitnessCardDetail card={viewer.card} photoUrls={viewer.photos} /> : <p role="status" className="py-12 text-center text-sm text-muted-foreground">{error || (es ? 'Comprobando acceso…' : 'Checking access…')}</p>}</DialogContent></Dialog>
   </>
 }

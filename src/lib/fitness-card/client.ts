@@ -1,6 +1,7 @@
 import type { FitnessPlatform } from './platform-types'
-import type { FitnessAccessAction, FitnessEvidence, FitnessTheme } from './types'
-import { parseFitnessCard as card, parseFitnessHub } from './validation'
+import type { FitnessAccessAction, FitnessEvidence, FitnessTheme, FitnessSocialLinks } from './types'
+import { parseFitnessCard as card, parseFitnessHub, parseFitnessInvite } from './validation'
+import { normalizeFitnessSocialLinks } from './socials'
 
 const BUCKET = 'fitness-card-photos'
 const invalid = () => new Error('No se pudo verificar esta Fitness Card. Vuelve a intentarlo.')
@@ -58,7 +59,9 @@ export function createFitnessClient(platform: FitnessPlatform) {
   return {
     hub: async () => hub(await request('get_fitness_card_state')),
     read: async (ownerId: string) => { const result = card(await request('get_fitness_card', { p_owner_id: ownerId })); if (result.owner.userId !== ownerId) throw invalid(); return result },
-    save: async (artisticName: string, theme: FitnessTheme, revision: number) => own(await request('save_fitness_card', { p_artistic_name: artisticName, p_theme: theme, p_expected_revision: revision })),
+    save: async (artisticName: string, theme: FitnessTheme, revision: number, socialLinks?: FitnessSocialLinks) => own(await request(socialLinks === undefined ? 'save_fitness_card' : 'save_fitness_card_v2', { p_artistic_name: artisticName, p_theme: theme, p_expected_revision: revision, ...(socialLinks === undefined ? {} : { p_social_links: normalizeFitnessSocialLinks(socialLinks) }) })),
+    invite: async (ownerId: string) => parseFitnessInvite(await request('get_fitness_card_invite', { p_owner_id: ownerId }), ownerId),
+    requestById: async (ownerId: string) => hub(await request('request_fitness_card_by_id', { p_owner_id: ownerId })),
     publish: async (evidence: FitnessEvidence, revision: number) => own(await request('publish_fitness_card_evidence', { p_evidence: evidence, p_expected_revision: revision })),
     access: async (action: FitnessAccessAction, handle?: string, requestId?: string) => hub(await request('fitness_card_access', { p_action: action, p_handle: handle?.trim().replace(/^@/, '') ?? null, p_request_id: requestId ?? null })),
     upload: async (slot: 1 | 2 | 3, file: Blob) => storage(async bucket => {

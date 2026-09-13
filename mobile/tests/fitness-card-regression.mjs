@@ -2,6 +2,7 @@ import { chromium, expect } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { installAccountFixture, newTestAccount, storedAccountSnapshot } from './account-fixture.mjs'
+import { verifyFitnessCardCamera } from './fitness-card-camera-check.mjs'
 
 // Run against the compiled Android web entry with the fixture backend configured.
 // MOBILE_PREVIEW_URL=http://127.0.0.1:4178 node mobile/tests/fitness-card-regression.mjs
@@ -42,7 +43,7 @@ const browser=await chromium.launch({headless:true})
 async function scenario(name,width,{linked=true,language='es'}={}) {
   const state=await account(linked,language)
   const owner={userId:state.accountId,name:'Alex Rivera',username:'alex_rivera',avatarUrl:null}
-  const model={state,owner,session:authSession(state),own:null,other:makeCard(companion),access:[],allowOther:false,uploads:[],blobs:new Map(),requests:[],saveDelay:0}
+  const model={state,owner,session:authSession(state),own:null,other:makeCard(companion),access:[],allowOther:false,uploads:[],blobs:new Map(),requests:[],socialVisits:[],saveDelay:0}
   const hub=() => ({viewerId:owner.userId,own:model.own,received:model.allowOther ? [model.other] : [],access:model.access})
   const context=await browser.newContext({viewport:{width,height:width===1440?1000:900},reducedMotion:'reduce',isMobile:width<600,hasTouch:width<600})
   await context.addInitScript(linked => {
@@ -53,6 +54,7 @@ async function scenario(name,width,{linked=true,language='es'}={}) {
     const request=route.request(),url=new URL(request.url())
     if (url.origin===origin && url.pathname==='/__fitness-fixture-seed') return route.fulfill({contentType:'text/html',body:'<!doctype html><title>Fitness fixture setup</title>'})
     if (url.origin===origin) return route.continue()
+    if (['https://instagram.com/alex_fit','https://x.com/alex_fit','https://facebook.com/alex.fit'].includes(url.href.replace(/\/$/,''))) { model.socialVisits.push(url.href); return route.fulfill({contentType:'text/html',body:'<!doctype html><title>Mock social profile</title><link rel="icon" href="data:,">'}) }
     if (url.origin!==backend) { unexpected.push({name,url:request.url(),reason:'External request blocked'}); return route.abort() }
     const headers={'access-control-allow-origin':origin,'access-control-allow-headers':'*','access-control-expose-headers':'content-range'}
     const reply=(body,status=200,extra={}) => route.fulfill({status,contentType:'application/json',headers:{...headers,...extra},body:JSON.stringify(body)})
@@ -90,10 +92,21 @@ async function scenario(name,width,{linked=true,language='es'}={}) {
     if(rpc) {
       if(rpc==='get_fitness_card_state') return reply(hub())
       if(rpc==='get_fitness_card') return args.p_owner_id===owner.userId ? reply(model.own) : model.allowOther ? reply(model.other) : reply({message:'FITNESS_CARD_NOT_ALLOWED'},403)
-      if(rpc==='save_fitness_card') {
+      if(rpc==='get_fitness_card_invite') {
+        assert.ok([owner.userId,companion.userId].includes(args.p_owner_id))
+        const pending=model.access.some(item=>item.owner.userId===companion.userId&&item.viewer.userId===owner.userId&&item.status==='pending')
+        return reply({owner:args.p_owner_id===owner.userId?owner:companion,status:args.p_owner_id===owner.userId?'self':model.allowOther?'accepted':pending?'pending':'available'})
+      }
+      if(rpc==='request_fitness_card_by_id') {
+        assert.equal(args.p_owner_id,companion.userId)
+        model.access=model.access.filter(item=>!(item.owner.userId===companion.userId&&item.viewer.userId===owner.userId))
+        model.access.push({id:id(42),owner:companion,viewer:owner,status:'pending',updatedAt:now.toISOString()})
+        return reply(hub())
+      }
+      if(rpc==='save_fitness_card'||rpc==='save_fitness_card_v2') {
         if(model.saveDelay) await new Promise(resolve=>setTimeout(resolve,model.saveDelay))
         if(model.own && args.p_expected_revision!==model.own.revision) return reply({message:'FITNESS_CARD_CONFLICT'},409)
-        model.own={...(model.own??makeCard(owner)),artisticName:args.p_artistic_name,theme:args.p_theme,revision:(model.own?.revision??0)+1}; return reply(model.own)
+        model.own={...(model.own??makeCard(owner)),artisticName:args.p_artistic_name,theme:args.p_theme,...(rpc==='save_fitness_card_v2'?{socialLinks:args.p_social_links}:{}),revision:(model.own?.revision??0)+1}; return reply(model.own)
       }
       if(rpc==='publish_fitness_card_evidence') {
         if(args.p_expected_revision!==model.own?.revision) return reply({message:'FITNESS_CARD_CONFLICT'},409)
@@ -145,6 +158,19 @@ async function captureCover(scope,name) {
   await expect(cover).toHaveCount(1)
   await expect(cover).toBeVisible()
   await cover.screenshot({path:`${artifacts}/${name}.png`,animations:'allow'})
+}
+async function qrImage(page,value) {
+  const [{createElement},{renderToStaticMarkup},{QRCodeSVG}]=await Promise.all([import('react'),import('react-dom/server'),import('qrcode.react')])
+  const svg=renderToStaticMarkup(createElement(QRCodeSVG,{value,size:256,marginSize:4,level:'M',xmlns:'http://www.w3.org/2000/svg'}))
+  const base64=await page.evaluate(async svg=>{
+    const image=new Image()
+    image.src=`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    await image.decode()
+    const canvas=document.createElement('canvas');canvas.width=256;canvas.height=256
+    canvas.getContext('2d').drawImage(image,0,0)
+    return canvas.toDataURL('image/png').split(',')[1]
+  },svg)
+  return Buffer.from(base64,'base64')
 }
 async function verifyCoverMotion(page) {
   const cover=page.locator('[data-fitness-card-hub] [data-fitness-card-cover]')
@@ -217,13 +243,14 @@ const refresh=page=>page.getByRole('button',{name:'Actualizar tarjetas',exact:tr
 const online=(page,value)=>page.evaluate(value=>{window.fixtureOnline=value;window.dispatchEvent(new Event(value?'online':'offline'))},value)
 
 try {
-  for(const width of [320,390,1440]) {
+  for(const width of process.env.FITNESS_TEST_WIDTH ? [Number(process.env.FITNESS_TEST_WIDTH)] : [320,390,1440]) {
     const {page,context,model}=await scenario(`owner-${width}`,width)
     try {
       await expect(page.getByRole('tab',{name:'Mi tarjeta',exact:true})).toBeVisible()
       await page.getByRole('button',{name:'Crear mi Fitness Card',exact:true}).click()
       await expect(page.getByRole('button',{name:'Editar tarjeta',exact:true})).toBeVisible()
       assert.equal(model.own.owner.avatarUrl,null,'Cover fixture exercises the no-avatar fallback')
+      await expect(page.locator('[data-fitness-card-hub] [data-fitness-card-cover] a')).toHaveCount(0)
       await captureCover(page.locator('[data-fitness-card-hub]'),`cover-normal-no-avatar-${width}`)
       if(width===390) await verifyCoverMotion(page)
       await page.getByRole('tab',{name:'Mapa',exact:true}).click()
@@ -234,6 +261,17 @@ try {
       await expect(page.getByText('Press de banca',{exact:true})).toBeVisible()
       await page.getByRole('button',{name:'Editar tarjeta',exact:true}).click()
       const editor=page.getByRole('dialog',{name:'Hazla tuya.',exact:true})
+      await editor.locator('summary').filter({hasText:'Redes sociales'}).click()
+      if(width===390) {
+        const beforeUnsafeSave=model.own.revision
+        await editor.getByLabel('Instagram',{exact:true}).fill('javascript:alert(1)')
+        await editor.getByRole('button',{name:'Guardar estilo',exact:true}).click()
+        await expect(editor.getByRole('alert')).toBeVisible()
+        assert.equal(model.own.revision,beforeUnsafeSave,'Unsafe social URL does not reach persistence')
+      }
+      await editor.getByLabel('Instagram',{exact:true}).fill('@Alex_Fit')
+      await editor.getByLabel('X',{exact:true}).fill('https://twitter.com/Alex_Fit')
+      await editor.getByLabel('Facebook',{exact:true}).fill('https://www.facebook.com/Alex.Fit')
       await captureCover(editor,`editor-violet-normal-no-avatar-${width}`)
       await editor.getByLabel('Nombre artístico (opcional)',{exact:true}).fill(longName)
       await captureCover(editor,`editor-violet-long-${width}`)
@@ -250,10 +288,72 @@ try {
       await editor.getByRole('button',{name:'Guardar estilo',exact:true}).click()
       await expect(editor).not.toBeVisible(); assert.equal(model.own.artisticName,longName); assert.equal(model.own.theme,'ember')
       await expect(page.getByText(longName,{exact:true})).toBeVisible()
+      const ownCover=page.locator('[data-fitness-card-hub] [data-fitness-card-cover]')
+      for(const [network,href] of [['Instagram','https://instagram.com/alex_fit'],['X','https://x.com/alex_fit'],['Facebook','https://facebook.com/alex.fit']]) {
+        const link=ownCover.getByRole('link',{name:new RegExp(`^${network} de Alex Rivera`)})
+        await expect(link).toHaveAttribute('href',href)
+        await expect(link).toHaveAttribute('target','_blank')
+        await expect(link).toHaveAttribute('rel',/noopener/)
+        await expect(link).toHaveAttribute('rel',/noreferrer/)
+        const rect=await link.boundingBox();assert.ok(rect.width>=44&&rect.height>=44,'Social link is touch accessible')
+      }
+      const opened=page.waitForEvent('popup')
+      await ownCover.getByRole('link',{name:/^Instagram de Alex Rivera/}).click()
+      const socialPage=await opened;await socialPage.waitForLoadState();await socialPage.close()
+      await expect(ownCover).toHaveAttribute('data-flipped','false')
+      assert.ok(model.socialVisits.length>0,'Social link follows its destination through mocked HTTP')
       await captureCover(page.locator('[data-fitness-card-hub]'),`cover-long-${width}`)
       await capture(page,`owner-cover-${width}`)
+      await ownCover.getByRole('button',{name:'Ver reverso de la tarjeta de Alex Rivera',exact:true}).click()
+      await expect(ownCover).toHaveAttribute('data-flipped','true')
+      await expect(ownCover.locator('[data-fitness-card-face=front]')).toHaveAttribute('inert','')
+      const returnFront=ownCover.getByRole('button',{name:'Volver al frente',exact:true})
+      await expect(returnFront).toBeFocused()
+      const qr=ownCover.getByRole('img',{name:'QR para solicitar acceso a la tarjeta de Alex Rivera',exact:true})
+      await expect(qr).toBeVisible()
+      const ownQrImage=await qr.screenshot()
+      await captureCover(page.locator('[data-fitness-card-hub]'),`cover-qr-${width}`)
+      await page.keyboard.press('Enter')
+      await expect(ownCover).toHaveAttribute('data-flipped','false')
+      await expect(ownCover.getByRole('button',{name:'Girar · Ver QR',exact:true})).toBeFocused()
       if(width===390) {
+        await verifyFitnessCardCamera(page)
+        const scanner=page.getByRole('dialog',{name:'Escanear Fitness Card',exact:true})
+        const invite=page.getByRole('dialog',{name:'Conecta con su progreso.',exact:true})
+        await page.getByRole('button',{name:'Escanear QR',exact:true}).click()
+        await scanner.locator('input[type=file]').setInputFiles({name:'actual-own-qr.png',mimeType:'image/png',buffer:ownQrImage})
+        await expect(invite.getByRole('button',{name:'Ver mi tarjeta',exact:true})).toBeVisible()
+        await invite.getByRole('button',{name:'Ver mi tarjeta',exact:true}).click()
+        const companionQr=await qrImage(page,`vekira://fitness-card/${companion.userId}`)
+        await page.getByRole('button',{name:'Escanear QR',exact:true}).click()
+        await scanner.locator('input[type=file]').setInputFiles({name:'companion-qr.png',mimeType:'image/png',buffer:companionQr})
+        await expect(invite.getByText('Marina Pérez',{exact:true})).toBeVisible()
+        assert.equal(model.requests.filter(request=>request.path.endsWith('/request_fitness_card_by_id')).length,0,'Scanning alone does not send an access request')
+        await invite.getByRole('button',{name:'Solicitar acceso',exact:true}).click()
+        await expect(invite.getByRole('status')).toContainText('Solicitud enviada')
+        assert.equal(model.allowOther,false,'Pending QR request does not grant card access')
+        assert.equal(model.access.find(item=>item.owner.userId===companion.userId).status,'pending')
+        await capture(page,'qr-request-pending')
+        model.allowOther=true
+        model.access.find(item=>item.owner.userId===companion.userId).status='accepted'
+        await expect(invite.getByRole('button',{name:'Abrir tarjeta',exact:true})).toBeVisible({timeout:20000})
+        await invite.getByRole('button',{name:'Abrir tarjeta',exact:true}).click()
+        await expect(page.getByRole('dialog',{name:'Fitness Card',exact:true}).getByText('Marina Pérez',{exact:true})).toBeVisible()
+        await page.keyboard.press('Escape')
+        model.allowOther=false
+        model.access.find(item=>item.owner.userId===companion.userId).status='revoked'
+        await refresh(page)
+        await page.getByRole('tab',{name:'Colección',exact:true}).click()
+        await expect(page.getByRole('button',{name:'Abrir tarjeta de Marina Pérez',exact:true})).toHaveCount(0)
+        await page.getByRole('tab',{name:'Mi tarjeta',exact:true}).click()
+        const foreignQr=await qrImage(page,'https://example.invalid/not-a-card')
+        await page.getByRole('button',{name:'Escanear QR',exact:true}).click()
+        await scanner.locator('input[type=file]').setInputFiles({name:'not-a-card.png',mimeType:'image/png',buffer:foreignQr})
+        await expect(scanner.getByRole('alert')).toContainText('Este código no es una Fitness Card válida')
+        await page.keyboard.press('Escape')
         await page.getByRole('button',{name:'Editar tarjeta',exact:true}).click()
+        await editor.locator('summary').filter({hasText:'Redes sociales'}).click()
+        await editor.getByLabel('X',{exact:true}).fill('')
         const png=Buffer.from(await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const ctx=canvas.getContext('2d');ctx.fillStyle='#8b5cf6';ctx.fillRect(0,0,32,32);ctx.fillStyle='#fbbf24';ctx.fillRect(8,8,16,16);return canvas.toDataURL('image/png').split(',')[1]}),'base64')
         for(const slot of [1,2,3,1]) {
           const before=model.uploads.length
@@ -272,6 +372,8 @@ try {
         await editor.getByRole('button',{name:'Guardar estilo',exact:true}).click()
         await page.keyboard.press('Escape'); await expect(editor).toBeVisible()
         await expect(editor).not.toBeVisible(); model.saveDelay=0
+        assert.equal(model.own.socialLinks.x,undefined,'Removing a social profile persists its absence')
+        await expect(ownCover.getByRole('link',{name:/^X de Alex Rivera/})).toHaveCount(0)
         await page.getByRole('button',{name:'Editar tarjeta',exact:true}).click()
         const editingRevision=model.own.revision
         await editor.getByLabel('Nombre artístico (opcional)',{exact:true}).fill('Mi cambio local pendiente')
@@ -290,7 +392,7 @@ try {
         await expect(editor.getByRole('alert')).toBeVisible()
         await expect(editor).toBeVisible()
         assert.equal(model.own.artisticName,'Cambio remoto conservado','Concurrent remote style was preserved')
-        assert.equal(model.requests.filter(request=>request.path.endsWith('/save_fitness_card')).at(-1).args.p_expected_revision,editingRevision,'Draft saves against its opening revision after a conflicting remote style update')
+        assert.equal(model.requests.filter(request=>request.path.endsWith('/save_fitness_card_v2')).at(-1).args.p_expected_revision,editingRevision,'Draft saves against its opening revision after a conflicting remote style update')
         await capture(page,'editor-concurrent-style-conflict')
         await page.keyboard.press('Escape')
         await page.getByRole('tab',{name:'Fotos',exact:true}).click()
@@ -336,7 +438,7 @@ try {
         assert.ok(!JSON.stringify(saved).includes('Marina Pérez'),'Received card was not persisted into account SQLite')
       }
       passed.push({name:`owner-${width}`,passed:true})
-    } catch(error) { await capture(page,`failure-${width}`).catch(()=>{}); throw error } finally { await context.close() }
+    } catch(error) { console.error(`owner-${width}:`, error); await capture(page,`failure-${width}`).catch(()=>{}); throw error } finally { await context.close() }
   }
   const {page,context}=await scenario('english-offline',390,{linked:false,language:'en'})
   try {

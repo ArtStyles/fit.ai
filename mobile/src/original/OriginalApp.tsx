@@ -1,4 +1,5 @@
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react'
+import { App } from '@capacitor/app'
 import { AppShell } from '@/components/navigation/AppShell'
 import { getPersonalNavItems, getCoachNavItems } from '@/components/navigation/appNavigation'
 import { I18nProvider } from '@/components/i18n/I18nProvider'
@@ -17,6 +18,16 @@ import { LocalActionNotices } from './LocalActionNotices'
 import { AppLoadingScreen } from './AppLoadingScreen'
 import { installCompanionBackupSync } from './companion-backup'
 import { useFitnessCardAutoSync } from '@/components/fitness-card/FitnessCardAutoSync'
+import { consumePendingFitnessInvite } from '@/lib/fitness-card/sharing'
+import { installFitnessCardDeepLinks } from './fitness-card/deep-links'
+
+async function routePendingFitnessInvite() {
+  if (location.pathname.startsWith('/session/') || location.pathname === '/registrar') return
+  const active = await (await getAppStore()).read()
+  if (!active || location.pathname.startsWith('/session/') || ['/registrar', '/login', '/settings/almacenamiento'].includes(location.pathname)) return
+  const ownerId = consumePendingFitnessInvite()
+  if (ownerId) navigate(`/fitness-card?invite=${encodeURIComponent(ownerId)}`)
+}
 
 class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -27,6 +38,12 @@ class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolea
 }
 
 export default function OriginalApp() {
+  useEffect(() => {
+    let disposed = false
+    let cleanup: (() => Promise<void>) | undefined
+    void installFitnessCardDeepLinks(App, { onInvite: () => { void routePendingFitnessInvite() } }).then(stop => { if (disposed) void stop(); else cleanup = stop }).catch(() => {})
+    return () => { disposed = true; if (cleanup) void cleanup() }
+  }, [])
   useEffect(() => {
     let disposed = false
     let cleanup: (() => void) | undefined
@@ -42,6 +59,8 @@ export default function OriginalApp() {
   const [error, setError] = useState('')
   const [change, setChange] = useState(0)
   const loadedRoute = useRef('')
+  const activeAccountId = state?.accountId
+  useEffect(() => { if (activeAccountId) void routePendingFitnessInvite() }, [activeAccountId, locationKey])
   useEffect(() => {
     const update = () => setChange(value => value + 1)
     window.addEventListener('vekira:original-state-changed', update)
