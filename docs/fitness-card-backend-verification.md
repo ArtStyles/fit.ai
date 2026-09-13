@@ -1,6 +1,6 @@
 # Fitness Card backend verification
 
-The canonical migration is `infra/supabase/migrations/20260912040000_fitness_card.sql`. This note records local verification only. No remote migration, deployment, live Supabase Storage HTTP transfer, Realtime delivery, or physical device behavior has been verified by the SQL runner.
+The canonical migration is `infra/supabase/migrations/20260912040000_fitness_card.sql`. The SQL runner described below verifies a disposable local PostgreSQL instance. The migration was subsequently applied remotely at the user's request; live schema/ACL, function-body, ledger and anonymous HTTP checks are recorded in [fitness-card-verification.md](fitness-card-verification.md#activation-and-remaining-external-verification). Authenticated Storage transfers, Realtime delivery and physical-device behavior remain separate checks.
 
 Run `node mobile/src/original/run-fitness-card-postgres.mjs --native` with PostgreSQL 17 available at `C:/Program Files/PostgreSQL/17/bin`, or set `FITNESS_CARD_POSTGRES_BIN`. The default without `--native` uses the existing Supabase PostgreSQL Docker image. The runner creates and cleans up only its disposable database cluster, loads every canonical migration, and exercises authenticated roles against the real PostgreSQL engine.
 
