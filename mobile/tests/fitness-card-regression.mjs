@@ -144,7 +144,64 @@ async function captureCover(scope,name) {
   const cover=scope.locator('[data-fitness-card-cover]')
   await expect(cover).toHaveCount(1)
   await expect(cover).toBeVisible()
-  await cover.screenshot({path:`${artifacts}/${name}.png`})
+  await cover.screenshot({path:`${artifacts}/${name}.png`,animations:'allow'})
+}
+async function verifyCoverMotion(page) {
+  const cover=page.locator('[data-fitness-card-hub] [data-fitness-card-cover]')
+  const pseudoState=() => cover.evaluate(node=>['::before','::after'].map(pseudo=>{
+    const style=getComputedStyle(node,pseudo)
+    return {animation:style.animationName,opacity:Number(style.opacity),pointerEvents:style.pointerEvents}
+  }))
+  assert.ok((await pseudoState()).every(style=>style.animation==='none'),'Reduced motion starts without decorative cover animations')
+  await page.emulateMedia({reducedMotion:'no-preference'})
+  try {
+    await expect.poll(async()=>(await pseudoState()).every(style=>style.animation!=='none')).toBe(true)
+    const samples=await cover.evaluate(async node=>{
+      // Seek actual browser-created CSS animations by their own computed cycle,
+      // never by a copied keyframe name, fixed timeout or implementation duration.
+      // Chromium enumerates pseudo-element effects only with subtree:true,
+      // although their effect.target is still the originating cover element.
+      const animations=node.getAnimations({subtree:true}).filter(animation=>animation.effect?.target===node&&['::before','::after'].includes(animation.effect?.pseudoElement))
+      if(animations.length!==2) throw new Error('Cover needs both an edge pulse and a light sweep')
+      for(const animation of animations) animation.pause()
+      const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
+      const seek=fraction=>{
+        for(const animation of animations) {
+          const timing=animation.effect.getTiming()
+          const duration=Number(timing.duration)
+          if(!Number.isFinite(duration)||duration<=0) throw new Error('Decorative animation must have a finite positive cycle')
+          animation.currentTime=Number(timing.delay)+duration*fraction
+        }
+      }
+      const result=[]
+      for(let phase=0;phase<24;phase++) {
+        seek(phase/24); await frame()
+        result.push({phase:phase/24,pseudo:['::before','::after'].map(pseudo=>{
+          const style=getComputedStyle(node,pseudo)
+          return {opacity:Number(style.opacity),transform:style.transform,pointerEvents:style.pointerEvents}
+        })})
+      }
+      const strongest=result.reduce((best,sample)=>sample.pseudo[1].opacity>best.pseudo[1].opacity?sample:best,result[0])
+      seek(strongest.phase); await frame()
+      return result
+    })
+    for(const index of [0,1]) {
+      const states=samples.map(sample=>sample.pseudo[index])
+      assert.ok(states.every(state=>state.pointerEvents==='none'),'Decorative layers cannot intercept pointer input')
+      assert.ok(states.every(state=>state.opacity>=0&&state.opacity<=0.65),'Decorative light remains a restrained overlay')
+      assert.ok(Math.max(...states.map(state=>state.opacity))-Math.min(...states.map(state=>state.opacity))>0.01,'Each decorative layer visibly varies through the cycle')
+    }
+    assert.ok(new Set(samples.map(sample=>sample.pseudo[1].transform)).size>1,'Light sweep actually travels across the card')
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth<=1),'Animated light causes no horizontal overflow')
+    await captureCover(page.locator('[data-fitness-card-hub]'),'cover-motion-sweep-390')
+    await writeFile(`${artifacts}/cover-motion-evidence.json`,JSON.stringify(samples,null,2))
+  } finally {
+    await cover.evaluate(node=>node.getAnimations({subtree:true}).filter(animation=>animation.effect?.target===node&&['::before','::after'].includes(animation.effect?.pseudoElement)).forEach(animation=>animation.play()))
+    await page.emulateMedia({reducedMotion:'reduce'})
+  }
+  await expect.poll(async()=>(await pseudoState()).every(style=>style.animation==='none')).toBe(true)
+  assert.ok((await pseudoState()).every(style=>style.opacity===0),'Reduced motion fully hides decorative pulse and sweep')
+  await captureCover(page.locator('[data-fitness-card-hub]'),'cover-motion-reduced-390')
 }
 async function accentByKeyboard(page,editor,current,next,key) {
   const accent=editor.getByLabel('Color de acento',{exact:true})
@@ -168,6 +225,7 @@ try {
       await expect(page.getByRole('button',{name:'Editar tarjeta',exact:true})).toBeVisible()
       assert.equal(model.own.owner.avatarUrl,null,'Cover fixture exercises the no-avatar fallback')
       await captureCover(page.locator('[data-fitness-card-hub]'),`cover-normal-no-avatar-${width}`)
+      if(width===390) await verifyCoverMotion(page)
       await page.getByRole('tab',{name:'Mapa',exact:true}).click()
       const chest=page.getByRole('button',{name:'Pecho: 1 sesiones',exact:true})
       await expect(chest).toBeVisible(); await chest.click(); await expect(chest).toHaveAttribute('aria-pressed','true')
