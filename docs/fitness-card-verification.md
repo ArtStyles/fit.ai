@@ -69,3 +69,11 @@ Fresh verification passed: 322 Android tests / 40 files; 73 shared Fitness Card 
 The new canonical migration `20260913010000_fitness_card_social_qr.sql` is active on the existing backend; exact 14-version ledger, no pending migrations, schema/function/ACL checks and trainer security preflight 61 passed. See [backend verification](fitness-card-backend-verification.md#social-links-and-qr-activation--2026-09-13-utc).
 
 Signed update: `.artifacts/Vekira-1.1.22-offline.apk`, `com.fitai.app`, version code 24, 18,080,958 bytes, SHA-256 `047c5427d293e88b7a511accb0cc20f2f6a5e24948e92a248772df718fc4e220`. Release build, original signing certificate continuity, alignment, version, all compiled assets/index, SQLite, posters/fonts/license and absence of fixture settings passed. Install over the existing app to retain its data. Camera tests use real browser streams with controlled permissions; external Android camera handling, physical-device updates and communication between two real accounts remain unverified. No Git push was performed.
+
+## Equal front and reverse dimensions
+
+The front now determines the card's dimensions in both states. The reverse fills that same area, with QR and shorter copy arranged side by side. Collection cards remain in one column below 640px to retain readable QR space. The rotating icon/button has been replaced by the quiet text “Tocar para girar y ver QR”; the full-card buttons retain keyboard focus and activation.
+
+Fresh compiled browser checks passed at 320/390/1440px and English offline. They compare front/reverse dimensions for normal names, long names and collection cards, check that reverse content stays inside the original bounds, and decode the resized QR through the actual scanner. Existing social, camera, consent and private-content checks also passed. Mobile TypeScript, scoped ESLint and the Android release build passed.
+
+Signed update: `.artifacts/Vekira-1.1.23-offline.apk`, version code 25, 18,080,653 bytes, SHA-256 `5f348fe949f29483f9f4105544790d188f8c47566f1facdfae791a948b85cdaf`. Original signing certificate, production assets/index, version and alignment verification passed. Physical-device installation remains unverified.

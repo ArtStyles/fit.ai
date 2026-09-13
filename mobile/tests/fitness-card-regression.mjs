@@ -159,6 +159,22 @@ async function captureCover(scope,name) {
   await expect(cover).toBeVisible()
   await cover.screenshot({path:`${artifacts}/${name}.png`,animations:'allow'})
 }
+async function verifyFixedCoverSize(cover, ownerName) {
+  const front=await cover.boundingBox()
+  await expect(cover.getByText('Tocar para girar y ver QR',{exact:true})).toBeVisible()
+  await cover.getByRole('button',{name:`Ver reverso de la tarjeta de ${ownerName}`,exact:true}).click()
+  const back=await cover.boundingBox()
+  assert.ok(Math.abs(front.height-back.height)<1&&Math.abs(front.width-back.width)<1,'Flipping preserves the front dimensions')
+  const contained=await cover.locator('[data-fitness-card-face=back]').evaluate(node=>{
+    const bounds=node.getBoundingClientRect()
+    return Array.from(node.querySelectorAll('h3,p,svg[role=img],button,span')).every(child=>{
+      const box=child.getBoundingClientRect()
+      return box.top>=bounds.top-1&&box.bottom<=bounds.bottom+1&&box.left>=bounds.left-1&&box.right<=bounds.right+1
+    })
+  })
+  assert.ok(contained,'Reverse QR, copy and actions stay inside the original card')
+  await cover.getByRole('button',{name:`Volver al frente de la tarjeta de ${ownerName}`,exact:true}).click()
+}
 async function qrImage(page,value) {
   const [{createElement},{renderToStaticMarkup},{QRCodeSVG}]=await Promise.all([import('react'),import('react-dom/server'),import('qrcode.react')])
   const svg=renderToStaticMarkup(createElement(QRCodeSVG,{value,size:256,marginSize:4,level:'M',xmlns:'http://www.w3.org/2000/svg'}))
@@ -252,6 +268,7 @@ try {
       assert.equal(model.own.owner.avatarUrl,null,'Cover fixture exercises the no-avatar fallback')
       await expect(page.locator('[data-fitness-card-hub] [data-fitness-card-cover] a')).toHaveCount(0)
       await captureCover(page.locator('[data-fitness-card-hub]'),`cover-normal-no-avatar-${width}`)
+      await verifyFixedCoverSize(page.locator('[data-fitness-card-hub] [data-fitness-card-cover]'),'Alex Rivera')
       if(width===390) await verifyCoverMotion(page)
       await page.getByRole('tab',{name:'Mapa',exact:true}).click()
       const chest=page.getByRole('button',{name:'Pecho: 1 sesiones',exact:true})
@@ -304,10 +321,11 @@ try {
       assert.ok(model.socialVisits.length>0,'Social link follows its destination through mocked HTTP')
       await captureCover(page.locator('[data-fitness-card-hub]'),`cover-long-${width}`)
       await capture(page,`owner-cover-${width}`)
+      await verifyFixedCoverSize(ownCover,'Alex Rivera')
       await ownCover.getByRole('button',{name:'Ver reverso de la tarjeta de Alex Rivera',exact:true}).click()
       await expect(ownCover).toHaveAttribute('data-flipped','true')
       await expect(ownCover.locator('[data-fitness-card-face=front]')).toHaveAttribute('inert','')
-      const returnFront=ownCover.getByRole('button',{name:'Volver al frente',exact:true})
+      const returnFront=ownCover.getByRole('button',{name:'Volver al frente de la tarjeta de Alex Rivera',exact:true})
       await expect(returnFront).toBeFocused()
       const qr=ownCover.getByRole('img',{name:'QR para solicitar acceso a la tarjeta de Alex Rivera',exact:true})
       await expect(qr).toBeVisible()
@@ -315,7 +333,7 @@ try {
       await captureCover(page.locator('[data-fitness-card-hub]'),`cover-qr-${width}`)
       await page.keyboard.press('Enter')
       await expect(ownCover).toHaveAttribute('data-flipped','false')
-      await expect(ownCover.getByRole('button',{name:'Girar · Ver QR',exact:true})).toBeFocused()
+      await expect(ownCover.getByRole('button',{name:'Ver reverso de la tarjeta de Alex Rivera',exact:true})).toBeFocused()
       if(width===390) {
         await verifyFitnessCardCamera(page)
         const scanner=page.getByRole('dialog',{name:'Escanear Fitness Card',exact:true})
@@ -417,6 +435,7 @@ try {
         model.access.find(item=>item.owner.userId===companion.userId).status='accepted'
         await refresh(page)
         await page.getByRole('tab',{name:'Colección',exact:true}).click()
+        await verifyFixedCoverSize(page.locator('[data-fitness-card-hub] [data-fitness-card-cover]'),'Marina Pérez')
         await page.getByRole('button',{name:'Abrir tarjeta de Marina Pérez',exact:true}).click()
         const viewer=page.getByRole('dialog',{name:'Fitness Card',exact:true})
         await expect(viewer.getByText('Marina Pérez',{exact:true})).toBeVisible()
