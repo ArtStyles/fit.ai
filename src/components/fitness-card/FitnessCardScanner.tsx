@@ -38,6 +38,9 @@ export function FitnessCardScanner({ onScan, disabled = false }: { onScan: (owne
   const cameraStarting = useRef(false)
   const cameraWanted = useRef(false)
   const startCameraRef = useRef<(() => Promise<void>) | null>(null)
+  const pendingImage = useRef<File | null>(null)
+  const imageReading = useRef(false)
+  const scanImageRef = useRef<((file: File | undefined) => Promise<void>) | null>(null)
 
   const invalidate = useCallback(() => {
     epoch.current++
@@ -50,6 +53,7 @@ export function FitnessCardScanner({ onScan, disabled = false }: { onScan: (owne
   const changeOpen = (next: boolean) => {
     isOpen.current = next
     cameraWanted.current = false
+    pendingImage.current = null
     invalidate()
     setError('')
     setOpen(next)
@@ -62,12 +66,14 @@ export function FitnessCardScanner({ onScan, disabled = false }: { onScan: (owne
     // outstanding image decoding cannot deliver a second result.
     isOpen.current = false
     cameraWanted.current = false
+    pendingImage.current = null
     invalidate()
     setOpen(false)
     onScan(ownerId)
   }
   const startCamera = async () => {
     if (!isOpen.current || cameraStarting.current || document.hidden) return
+    pendingImage.current = null
     cameraWanted.current = true
     invalidate()
     const token = epoch.current
@@ -75,7 +81,7 @@ export function FitnessCardScanner({ onScan, disabled = false }: { onScan: (owne
     setStarting(true); setError('')
     let session: CameraSession | null = null
     try {
-      const { default: QrScanner } = await import('qr-scanner')
+      const { default: QrScanner } = await import('@/lib/fitness-card/qr-decoder')
       if (!current(token) || !videoHost.current) return
       // qr-scanner's delayed stop reads its video again after 300 ms. Give each
       // session its own element so an old stop cannot switch off a new stream.
@@ -113,32 +119,43 @@ export function FitnessCardScanner({ onScan, disabled = false }: { onScan: (owne
     }
   }
   const scanImage = async (file: File | undefined) => {
-    if (!file || !isOpen.current || document.hidden) return
+    if (!file || !isOpen.current) return
     cameraWanted.current = false
+    // Android can deliver the file before the WebView resumes. Keep it only in
+    // this open reader and process it when visible, rather than losing the pick.
+    pendingImage.current = file
+    if (document.hidden || imageReading.current) return
+    imageReading.current = true
     invalidate()
     const token = epoch.current
     setError(''); setDecoding(true)
     try {
-      const { default: QrScanner } = await import('qr-scanner')
+      const { default: QrScanner } = await import('@/lib/fitness-card/qr-decoder')
       if (!current(token)) return
       const result = await QrScanner.scanImage(file, { returnDetailedScanResult: true })
+      if (current(token)) pendingImage.current = null
       accept(typeof result === 'string' ? result : result.data, token)
     } catch {
-      if (current(token)) setError(es ? 'No se encontró una Fitness Card válida en esa imagen.' : 'No valid Fitness Card was found in that image.')
-    } finally { if (current(token)) setDecoding(false) }
+      if (current(token)) { pendingImage.current = null; setError(es ? 'No se encontró una Fitness Card válida en esa imagen.' : 'No valid Fitness Card was found in that image.') }
+    } finally {
+      imageReading.current = false
+      if (current(token)) setDecoding(false)
+      if (pendingImage.current && mounted.current && isOpen.current && !document.hidden) queueMicrotask(() => { void scanImageRef.current?.(pendingImage.current ?? undefined) })
+    }
   }
 
-  useEffect(() => { startCameraRef.current = startCamera })
+  useEffect(() => { startCameraRef.current = startCamera; scanImageRef.current = scanImage })
   useEffect(() => {
     mounted.current = true
     const hidden = () => {
       if (document.hidden) invalidate()
+      else if (isOpen.current && pendingImage.current) void scanImageRef.current?.(pendingImage.current)
       else if (isOpen.current && cameraWanted.current) void startCameraRef.current?.()
     }
     document.addEventListener('visibilitychange', hidden)
-    return () => { mounted.current = false; isOpen.current = false; cameraWanted.current = false; document.removeEventListener('visibilitychange', hidden); invalidate() }
+    return () => { mounted.current = false; isOpen.current = false; cameraWanted.current = false; pendingImage.current = null; document.removeEventListener('visibilitychange', hidden); invalidate() }
   }, [invalidate])
-  useEffect(() => { if (disabled) { isOpen.current = false; cameraWanted.current = false; invalidate(); setOpen(false) } }, [disabled, invalidate])
+  useEffect(() => { if (disabled) { isOpen.current = false; cameraWanted.current = false; pendingImage.current = null; invalidate(); setOpen(false) } }, [disabled, invalidate])
 
   return <Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger asChild><Button type="button" variant="outline" disabled={disabled} className="min-h-11 gap-2"><ScanLine className="h-4 w-4" aria-hidden="true" />{es ? 'Escanear QR' : 'Scan QR'}</Button></DialogTrigger>
@@ -152,7 +169,7 @@ export function FitnessCardScanner({ onScan, disabled = false }: { onScan: (owne
         <Button type="button" className="min-h-11 w-full gap-2" onClick={() => void startCamera()} disabled={starting || decoding}><Camera className="h-4 w-4" aria-hidden="true" />{starting ? (es ? 'Abriendo cámara…' : 'Opening camera…') : cameraActive ? (es ? 'Reiniciar cámara' : 'Restart camera') : (es ? 'Usar cámara' : 'Use camera')}</Button>
         <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-input px-4 text-sm font-medium hover:bg-accent focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring">
           <ImageUp className="h-4 w-4" aria-hidden="true" />{es ? 'Elegir imagen del QR' : 'Choose QR image'}
-          <input type="file" accept="image/*" className="sr-only" disabled={starting || decoding} onClick={() => { cameraWanted.current = false; invalidate() }} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void scanImage(file) }} />
+          <input type="file" accept="image/*" className="sr-only" disabled={starting || decoding} onClick={() => { cameraWanted.current = false; pendingImage.current = null; invalidate() }} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void scanImage(file) }} />
         </label>
       </div>
     </DialogContent>

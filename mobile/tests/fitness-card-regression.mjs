@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { installAccountFixture, newTestAccount, storedAccountSnapshot } from './account-fixture.mjs'
 import { verifyFitnessCardCamera } from './fitness-card-camera-check.mjs'
 import { verifyFitnessCardLiveCamera } from './fitness-card-live-camera-check.mjs'
+import { verifyFitnessCardHiddenImage } from './fitness-card-hidden-image-check.mjs'
 
 // Run against the compiled Android web entry with the fixture backend configured.
 // MOBILE_PREVIEW_URL=http://127.0.0.1:4178 node mobile/tests/fitness-card-regression.mjs
@@ -337,8 +338,10 @@ try {
       await expect(ownCover.getByRole('button',{name:'Ver reverso de la tarjeta de Alex Rivera',exact:true})).toBeFocused()
       if(width===390) {
         await verifyFitnessCardCamera(page)
-        const liveCameraResults = await verifyFitnessCardLiveCamera(page, model.owner.userId)
+        const liveCameraResults = await verifyFitnessCardLiveCamera(page, model.owner.userId, { qrImage: ownQrImage })
         await writeFile(`${artifacts}/live-camera-results.json`, JSON.stringify(liveCameraResults, null, 2))
+        const hiddenImageResults = await verifyFitnessCardHiddenImage(page, ownQrImage)
+        await writeFile(`${artifacts}/hidden-image-results.json`, JSON.stringify(hiddenImageResults, null, 2))
         const scanner=page.getByRole('dialog',{name:'Escanear Fitness Card',exact:true})
         const invite=page.getByRole('dialog',{name:'Conecta con su progreso.',exact:true})
         await page.getByRole('button',{name:'Escanear QR',exact:true}).click()

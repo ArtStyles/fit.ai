@@ -5,7 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 
 /** Feed genuine QR pixels through a browser MediaStream and the production decoder. */
 export async function verifyFitnessCardLiveCamera(page, ownerId, options = {}) {
-  const cases = options.cases ?? (process.env.FITNESS_LIVE_CAMERA_CASES || 'centered,offcenter,large,restart,visibility,native-empty').split(',')
+  const cases = options.cases ?? (process.env.FITNESS_LIVE_CAMERA_CASES || 'centered,offcenter,large,restart,visibility,native-empty,native-empty-image').split(',')
   const timeout = options.timeout ?? 8000
   const svg = renderToStaticMarkup(createElement(QRCodeSVG, {
     value: `vekira://fitness-card/${ownerId}`, size: 512, level: 'M', marginSize: 4,
@@ -33,8 +33,8 @@ export async function verifyFitnessCardLiveCamera(page, ownerId, options = {}) {
       layout: 'blank', requests: 0, frames: 0, records: [], nativeEmptyCalls: 0,
       installEmptyDetector() {
         state.nativeEmptyCalls = 0
-        // Only this protocol test substitutes the platform's no-detection result.
-        // QR recognition cases always use the genuine production decoder.
+        // Android can advertise QR support while its native model is not operational.
+        // The bundled decoder must still recognize genuine QR pixels in this case.
         class EmptyBarcodeDetector {
           static async getSupportedFormats() { return ['qr_code'] }
           async detect() { state.nativeEmptyCalls++; return [] }
@@ -121,19 +121,22 @@ export async function verifyFitnessCardLiveCamera(page, ownerId, options = {}) {
   const results = []
   try {
     for (const name of cases) {
-      if (name === 'native-empty') {
+      if (name === 'native-empty' || name === 'native-empty-image') {
         await page.evaluate(() => window.__fitnessLiveCameraFixture.installEmptyDetector())
         try {
-          await begin()
-          await expect.poll(() => page.evaluate(() => window.__fitnessLiveCameraFixture.nativeEmptyCalls), {
-            timeout, message: 'The real scanner must exercise BarcodeDetector on multiple blank video frames',
-          }).toBeGreaterThanOrEqual(3)
-          await expect(scanner.getByRole('alert'), 'Normal empty native detector frames must not display a scanner failure').toHaveCount(0)
-          expect(await live(), 'Normal empty native detector frames must keep the camera active').toBe(true)
-          await scanner.getByRole('button', { name: 'Cerrar', exact: true }).click()
-          await expect(scanner).not.toBeVisible()
-          await expect.poll(released, { timeout }).toBe(true)
-          results.push({ case: name, emptyFramesAccepted: true, tracksReleased: true })
+          if (name === 'native-empty') {
+            await begin()
+            await page.waitForTimeout(450)
+            await expect(scanner.getByRole('alert'), 'Blank frames must not display a scanner failure').toHaveCount(0)
+            expect(await live(), 'Blank frames must keep the camera active').toBe(true)
+            await setLayout('centered')
+          } else {
+            if (!options.qrImage) throw new Error('An actual rendered QR screenshot is required for the image test')
+            await page.getByRole('button', { name: 'Escanear QR', exact: true }).click()
+            await scanner.locator('input[type=file]').setInputFiles({ name: 'rendered-card.png', mimeType: 'image/png', buffer: options.qrImage })
+          }
+          await confirm(name)
+          results.push({ case: name, decoded: true, tracksReleased: true })
         } finally {
           if (await scanner.isVisible()) await scanner.getByRole('button', { name: 'Cerrar', exact: true }).click()
           await page.evaluate(() => window.__fitnessLiveCameraFixture.restoreDetector())

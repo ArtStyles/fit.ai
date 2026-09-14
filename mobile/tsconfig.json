@@ -13,6 +13,6 @@
     "types": ["vite/client", "node"],
     "paths": { "@/*": ["../src/*"] }
   },
-  "include": ["src", "vite.config.ts", "vitest.config.ts"],
+  "include": ["src", "../src/**/*.d.ts", "vite.config.ts", "vitest.config.ts"],
   "exclude": ["dist", "node_modules"]
 }
