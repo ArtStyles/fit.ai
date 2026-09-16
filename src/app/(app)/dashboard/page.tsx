@@ -1,4 +1,4 @@
-import { loadLocalWorkoutSchedule, resolveOccurrences, addCivilDays, civilWeekday, civilDaysBetween, occurrenceCompleted } from '@/lib/workouts/occurrences'
+import { loadLocalWorkoutSchedule, resolveOccurrences, addCivilDays, civilWeekday, civilDaysBetween, occurrenceCompleted, hasGuidedSessionOnDate } from '@/lib/workouts/occurrences'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { CoachingSummaryCard } from '@/components/dashboard/CoachingSummaryCard'
 import { CompanionCard } from '@/components/companions/CompanionCard'
@@ -533,7 +533,7 @@ export default async function DashboardPage() {
     : recurringNextWorkoutDay
 
   // ── Datos del calendario semanal ──────────────────────────────────────────
-  const hasSessionToday = Boolean(todayContinuity?.hasTrainingEvidence) || Boolean(localSchedule?.authorizations.some(row => row.policy_date === todayStr && row.consumed_at))
+  const hasSessionToday = localSchedule ? hasGuidedSessionOnDate(localSchedule, todayStr, tz) : Boolean(todayContinuity?.hasTrainingEvidence)
 
   const weekDays = continuityDays.map(day => {
     const daysLate = civilDaysBetween(day.dateStr, todayStr)

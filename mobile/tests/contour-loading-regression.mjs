@@ -121,6 +121,7 @@ async function run(name, width, { language = 'es', reducedMotion = 'no-preferenc
         await expect(map).toBeVisible()
         await expect(status).toHaveCount(0)
         await activeGate.finish(); activeGate = null
+        if (mode === 'completed') await openCompletedMuscles(page)
         const chest = map.getByRole('button', { name: language === 'es' ? /^Pecho: 3 series/ : /^Chest: 3/ })
         await chest.click()
         await expect(chest).toHaveAttribute('aria-pressed', 'true')
@@ -150,4 +151,21 @@ try {
 } finally {
   await writeFile(`${artifacts}/results.json`, JSON.stringify({ passed }, null, 2))
   await browser.close()
+}
+
+// Regression helper: ProgressHub now collapses the textual muscle controls.
+// Open the actual summary with a click; retain every original muscle assertion.
+async function openCompletedMuscles(page) {
+  const map = page.locator('[data-muscle-map="completed"]')
+  await expect(map).toBeVisible()
+  const explorer = map.locator('details[data-muscle-explorer="true"]')
+  await expect(explorer).toHaveCount(1)
+  if (!(await explorer.getAttribute('open') !== null)) await explorer.locator(':scope > summary').click()
+  await expect(explorer).toHaveAttribute('open', '')
+}
+async function selectProgressPeriod(page, weeks, english = false) {
+  await page.getByRole('combobox', { name: english ? 'Select period' : 'Seleccionar periodo', exact: true }).click()
+  const label = english ? weeks + (weeks === 1 ? ' week' : ' weeks') : weeks + (weeks === 1 ? ' semana' : ' semanas')
+  await page.getByRole('option', { name: label, exact: true }).click()
+  await expect(page.getByRole('combobox', { name: english ? 'Select period' : 'Seleccionar periodo', exact: true })).toHaveText(label)
 }

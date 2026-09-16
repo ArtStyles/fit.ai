@@ -5,7 +5,8 @@ import { mutate, owner, ownedPlan, ownedWorkout, profile, uuid, type State } fro
 export type { RescheduleWorkoutInput, RescheduleWorkoutResult } from '@/app/actions/rescheduleWorkout'
 
 export function scheduleInState(state: State): LocalWorkoutSchedule {
-  return { overrides: state.tables.workout_schedule_overrides ?? [], logs: state.tables.progress_logs ?? [], authorizations: state.tables.session_authorizations ?? [] } as LocalWorkoutSchedule
+  const owned = (name: string) => (state.tables[name] ?? []).filter(row => row.user_id === owner(state))
+  return { overrides: owned('workout_schedule_overrides'), logs: owned('progress_logs'), authorizations: owned('session_authorizations') } as LocalWorkoutSchedule
 }
 export function rescheduleInState(state: State, input: RescheduleWorkoutInput, now = new Date()): RescheduleWorkoutResult {
   const fail = (error: string): RescheduleWorkoutResult => ({ success: false, error })

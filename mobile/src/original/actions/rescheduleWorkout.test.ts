@@ -83,14 +83,15 @@ describe('local single occurrence scheduling', () => {
   })
   it('persists idempotent concurrent clicks, reload, backup/import, revert and old backups in real SQLite', async () => {
     vi.useFakeTimers(); vi.setSystemTime(now)
-    const { store, driver } = await setup()
+    const account = fixture(); account.remoteUserId = account.accountId
+    const { store, driver } = await setup(account)
     expect((await Promise.all([rescheduleWorkout(input), rescheduleWorkout(input)])).every(result => result.success)).toBe(true)
     const reopened = await createAppStore(driver)
     expect((await reopened.read())!.tables.workout_schedule_overrides).toHaveLength(1)
     const backup = await store.exportBackup()
-    const different = fixture(); different.accountId = id(20); different.tables = { profiles: [{ id: id(20) }] }
-    const { store: restored } = await setup(different)
-    await restored.importBackup(backup)
+    const { store: restored } = await setup(account)
+    const preview = await restored.previewBackupRestore(backup)
+    await restored.restoreBackup(preview.token, true)
     expect((await restored.read())!.tables.workout_schedule_overrides).toEqual((await store.read())!.tables.workout_schedule_overrides)
     expect((await rescheduleWorkout({ ...input, targetDate: null })).success).toBe(true)
     expect((await restored.read())!.tables.workout_schedule_overrides).toHaveLength(0)

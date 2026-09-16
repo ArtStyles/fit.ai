@@ -1,0 +1,23 @@
+# Only the web application is deployed to Vercel. Keep local credentials,
+# signing material, device builds and audit fixtures on the development host.
+.git
+.vercel
+.env*
+**/.env*
+.artifacts
+artifacts
+.worktrees
+.superpowers
+node_modules
+.next
+out
+coverage
+android
+mobile
+infra
+supabase
+docs
+test-results
+playwright-report
+**/*.log
+**/*.tsbuildinfo

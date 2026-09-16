@@ -25,7 +25,7 @@ const DEFAULT_SOCIAL_PREFERENCES: SocialNotificationPreferencesInput = {
 
 const DEFAULT_PRODUCT_PREFERENCES: ProductNotificationPreferencesInput = {
   professionalEnabled: true,
-  pushEnabled: true,
+  pushEnabled: process.env.NEXT_PUBLIC_LOCAL_APP !== 'true',
 }
 
 type ProductPreferencesRow = {
@@ -65,8 +65,9 @@ export default async function NotificationsSettingsPage() {
       icon="bell-ring"
     >
       <div className="space-y-4">
-        <WorkoutReminders preferredWorkoutDays={profile?.preferred_workout_days ?? []} />
+        <WorkoutReminders key={user.id} accountId={user.id} preferredWorkoutDays={profile?.preferred_workout_days ?? []} />
         <ProductNotificationPreferences
+          key={user.id}
           initialPreferences={productPreferences
             ? {
               professionalEnabled: productPreferences.professional_enabled,

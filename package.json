@@ -59,7 +59,9 @@
     "mobile:test": "vitest run --config mobile/vitest.config.ts",
     "mobile:type-check": "tsc --project mobile/tsconfig.json",
     "android:offline:debug": "node scripts/android-offline.mjs debug",
-    "android:offline:release": "node scripts/android-offline.mjs release"
+    "android:offline:release": "node scripts/android-offline.mjs release",
+    "android:offline:bundle": "node scripts/android-offline.mjs bundle",
+    "mobile:e2e": "node scripts/mobile-e2e.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",

@@ -29,6 +29,7 @@ function route(
 // These are the existing page modules, not a second set of mobile screens.
 // Explicit lazy imports also let Vite bundle every route without a Next server.
 export const originalRoutes: readonly OriginalRouteDefinition[] = [
+  route('/recover-password', () => import('./PasswordRecoveryScreen'), 'local', 'mobile/src/original/PasswordRecoveryScreen.tsx'),
   route('/register', () => import('@/app/(auth)/register/page'), 'local', 'src/app/(auth)/register/page.tsx'),
   route('/suspended', () => import('@/app/suspended/page'), 'local', 'src/app/suspended/page.tsx'),
   route('/dashboard', () => import('@/app/(app)/dashboard/page')),
@@ -59,9 +60,10 @@ export const originalRoutes: readonly OriginalRouteDefinition[] = [
   route('/trainers/:slug', () => import('@/app/(app)/trainers/[slug]/page'), 'connected'),
   route('/coaching', () => import('@/app/(app)/coaching/page'), 'connected'),
   route('/notifications', () => import('@/app/(app)/notifications/page'), 'connected'),
-  route('/chat', () => import('@/app/(app)/chat/page'), 'connected'),
+  route('/chat', () => import('./WebHandoffScreen').then(module => ({ default: module.ChatHandoff })), 'local', 'mobile/src/original/WebHandoffScreen.tsx'),
+  route('/admin', () => import('./WebHandoffScreen').then(module => ({ default: module.AdminHandoff })), 'local', 'mobile/src/original/WebHandoffScreen.tsx'),
   route('/coach', () => import('@/app/(app)/coach/page'), 'connected'),
-  route('/coach/apply', () => import('@/app/(app)/coach/apply/page'), 'connected'),
+  route('/coach/apply', () => import('./WebHandoffScreen').then(module => ({ default: module.TrainerApplicationHandoff })), 'local', 'mobile/src/original/WebHandoffScreen.tsx'),
   route('/coach/clients', () => import('@/app/(app)/coach/clients/page'), 'connected'),
   route('/coach/clients/:clientId', () => import('@/app/(app)/coach/clients/[clientId]/page'), 'connected'),
   route('/coach/programs', () => import('@/app/(app)/coach/programs/page'), 'connected'),
@@ -129,7 +131,7 @@ function searchRecord(searchParams: URLSearchParams): Record<string, string | st
 export async function loadOriginalRoute(pathname: string, searchParams: URLSearchParams): Promise<ReactNode> {
   const match = matchOriginalRoute(pathname)
   if (match?.route.connectivity === 'connected' && typeof navigator !== 'undefined' && !navigator.onLine) {
-    return <div className="min-h-screen bg-background pb-24"><PageTopBar title={pathname.startsWith('/trainers') ? 'Entrenadores' : 'Servicios conectados'} backHref="/dashboard" backLabel="Inicio" /><main className="mx-auto max-w-lg px-4 py-8"><ScreenState kind="offline" title="Esta pantalla necesita conexión" description="Conecta a internet para consultar entrenadores y servicios de tu cuenta. Tus rutinas descargadas, sesiones y progreso siguen disponibles en este dispositivo." action={<PendingLink href="/dashboard" className="inline-flex min-h-11 items-center rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white">Volver a Inicio</PendingLink>} /></main></div>
+    return <div className="min-h-screen bg-background pb-24"><PageTopBar title={pathname.startsWith('/trainers') ? 'Entrenadores' : 'Servicios conectados'} backHref="/dashboard" backLabel="Inicio" /><main className="mx-auto max-w-lg px-4 py-8"><ScreenState kind="offline" title="Esta pantalla necesita conexión" description="Conecta a internet para consultar entrenadores y servicios de tu cuenta. Tus rutinas descargadas, sesiones y progreso siguen disponibles en este dispositivo." action={<PendingLink href="/dashboard" className="inline-flex min-h-11 items-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700">Volver a Inicio</PendingLink>} /></main></div>
   }
   if (!match) {
     return (
@@ -140,7 +142,7 @@ export async function loadOriginalRoute(pathname: string, searchParams: URLSearc
             kind="empty"
             title="No encontramos esta pantalla"
             description="Vuelve al inicio para continuar con tu entrenamiento."
-            action={<PendingLink href="/dashboard" className="inline-flex min-h-11 items-center rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white">Ir al inicio</PendingLink>}
+            action={<PendingLink href="/dashboard" className="inline-flex min-h-11 items-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700">Ir al inicio</PendingLink>}
           />
         </main>
       </div>

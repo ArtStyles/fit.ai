@@ -1,4 +1,4 @@
-import { resolveOccurrences, occurrenceCompleted, addCivilDays, civilWeekday, isCivilDate, type LocalWorkoutSchedule, type OccurrenceLog } from '@/lib/workouts/occurrences'
+import { resolveOccurrences, occurrenceCompleted, hasGuidedSessionOnDate, addCivilDays, civilWeekday, isCivilDate, type LocalWorkoutSchedule, type OccurrenceLog } from '@/lib/workouts/occurrences'
 import { parseSessionContextSnapshot } from '@/lib/session/contextSnapshot'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { getLocalDateString, WORKOUT_ACCESS_POLICY } from '@/lib/workouts/schedule'
@@ -166,7 +166,7 @@ export function buildWeekContinuity<TWorkout extends WeekContinuityWorkout>({
       completionOnAnotherDate: otherDateCompletion ? evidence(otherDateCompletion.log) : null,
       isScheduledWorkoutCompleted: Boolean(scheduledLog) || alreadyCompleted,
       hasTrainingEvidence: dayLogs.length > 0,
-      canStartScheduledWorkout: Boolean(scheduledWorkout) && dayLogs.length === 0 && !alreadyCompleted,
+      canStartScheduledWorkout: Boolean(scheduledWorkout) && !(localSchedule ? hasGuidedSessionOnDate(localSchedule, date.dateStr, timeZone) : dayLogs.length > 0) && !alreadyCompleted,
       isToday: date.dateStr === today,
     }
   })

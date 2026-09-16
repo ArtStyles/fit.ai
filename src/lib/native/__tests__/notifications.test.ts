@@ -96,4 +96,39 @@ describe('native workout reminders', () => {
 
     await expect(cancelWorkoutReminders()).rejects.toBe(cancellationError)
   })
+
+  it('does not prompt for permission during passive preference reconciliation', async () => {
+    nativeMocks.checkPermissions.mockResolvedValue({ display: 'prompt' })
+    nativeMocks.requestPermissions.mockResolvedValue({ display: 'granted' })
+    await expect(scheduleWorkoutReminders([1], { hour: 18, minute: 0 }, 'es', { requestPermission: false })).resolves.toBe(false)
+    expect(nativeMocks.requestPermissions).not.toHaveBeenCalled()
+    expect(nativeMocks.schedule).not.toHaveBeenCalled()
+  })
+
+  it('cancels a schedule still awaiting permission when the account exits', async () => {
+    let resolvePermission!: (permission: { display: string }) => void
+    const permission = new Promise<{ display: string }>(resolve => { resolvePermission = resolve })
+    nativeMocks.checkPermissions.mockReturnValue(permission)
+    const scheduling = scheduleWorkoutReminders([1], { hour: 18, minute: 0 }, 'es')
+    const cancellation = cancelWorkoutReminders()
+    resolvePermission({ display: 'granted' })
+    await Promise.all([scheduling, cancellation])
+    expect(nativeMocks.schedule).not.toHaveBeenCalled()
+  })
+
+  it('does not restore an old account reminder when scheduling fails after cancellation', async () => {
+    const previous = { id: 7101, title: 'Account A', body: 'Account A', schedule: { on: { weekday: 2, hour: 7, minute: 0 } } }
+    nativeMocks.getPending.mockResolvedValue({ notifications: [previous] })
+    let failSchedule!: (error: Error) => void
+    let signalStarted!: () => void
+    const started = new Promise<void>(resolve => { signalStarted = resolve })
+    nativeMocks.schedule.mockImplementationOnce(() => { signalStarted(); return new Promise((_resolve, reject) => { failSchedule = reject }) })
+    const scheduling = scheduleWorkoutReminders([2], { hour: 18, minute: 0 }, 'en').catch(() => false)
+    await started
+    const cancellation = cancelWorkoutReminders()
+    failSchedule(new Error('late native failure'))
+    await Promise.all([scheduling, cancellation])
+    expect(nativeMocks.schedule).toHaveBeenCalledTimes(1)
+    expect(nativeMocks.cancel).toHaveBeenCalled()
+  })
 })

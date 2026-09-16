@@ -166,7 +166,7 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
           </p>
         </div>
         <Button
-          className="w-full h-12 bg-indigo-500 hover:bg-indigo-600 text-white font-bold"
+          className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
           onClick={goToDashboard}
         >
           Ir al dashboard
@@ -220,7 +220,7 @@ export function GeneratePlanClient({ profile, autoStart = false }: Props) {
           'w-full h-14 font-bold text-base gap-2',
           status === 'loading'
             ? 'bg-indigo-500/70 text-white cursor-not-allowed'
-            : 'bg-indigo-500 hover:bg-indigo-600 text-white',
+            : 'bg-indigo-600 hover:bg-indigo-700 text-white',
         )}
         disabled={status === 'loading'}
         onClick={needsReadinessReview ? () => setReadinessOpen(true) : handleGenerate}

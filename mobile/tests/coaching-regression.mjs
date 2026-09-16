@@ -6,7 +6,7 @@ import { installAccountFixture, newTestAccount, storedAccountSnapshot } from './
 
 const origin = process.env.MOBILE_PREVIEW_URL || 'http://127.0.0.1:4178'
 const backend = new URL(loadEnv('production', 'mobile').VITE_SUPABASE_URL).origin
-const artifacts = '.artifacts/coaching-fix'
+const artifacts = '.artifacts/coaching-regression'
 const now = new Date('2026-09-09T16:00:00.000Z')
 const id = number => `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`
 const trainerId = id(20), relationshipId = id(21), serviceId = id(22)
@@ -116,6 +116,20 @@ try {
     if (request.method() === 'OPTIONS') return fulfill(null)
     backendRequests.push({ method: request.method(), path: url.pathname, select: url.searchParams.get('select') })
     if (url.pathname === '/auth/v1/user' && request.method() === 'GET') return fulfill(user)
+    // Background fixture: explicit empty FitnessHubState for the independently added auto-sync coordinator.
+    if (url.pathname === '/rest/v1/rpc/get_fitness_card_state' && request.method() === 'POST') {
+      assert.deepEqual(request.postDataJSON(), {})
+      return fulfill({ viewerId: user.id, own: null, received: [], access: [] })
+    }
+    // Background fixture: no product notifications and no companion relation for this coaching-only account.
+    if (url.pathname === '/rest/v1/product_notifications' && ['GET', 'HEAD'].includes(request.method())) {
+      assert.equal(url.searchParams.get('user_id'), 'eq.' + user.id)
+      return route.fulfill({ status: 200, contentType: 'application/json', body: request.method() === 'HEAD' ? '' : '[]', headers: { 'access-control-allow-origin': origin, 'access-control-expose-headers': 'content-range', 'content-range': '*/0' } })
+    }
+    if (url.pathname === '/rest/v1/rpc/get_companion_state' && request.method() === 'POST') {
+      assert.deepEqual(request.postDataJSON(), {})
+      return fulfill({ viewerId: user.id, status: 'none', relationship: null, self: { completedSessions: 0, goal: 1, weekStart: '2026-09-07', weekEnd: '2026-09-13', timeZone: 'UTC', updatedAt: now.toISOString() }, partner: null, greeting: null, nextGreetingAt: null, fetchedAt: now.toISOString() })
+    }
     if (url.pathname === '/rest/v1/rpc/get_requestable_trainer_services' && request.method() === 'POST') {
       return fulfill([{ service_id: serviceId, name: 'Acompañamiento de fuerza', description: 'Entrenamiento personalizado', modality: 'online', duration_minutes: 45, content: null }])
     }

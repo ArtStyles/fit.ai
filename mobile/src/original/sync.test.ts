@@ -44,6 +44,42 @@ function fixture(app: AppStore, catalog: AppRow[] = []) {
 }
 
 describe('original app cloud boundaries', () => {
+  it.each([true, false])('keeps an explicitly restored file after repeated web refresh (cloud backup available: %s)', async available => {
+    const app = await store(); const setup = fixture(app)
+    setup.setAvailable(available)
+    setup.web.measurements.push({ id: 'newer-web', user_id: owner, weight_kg: 72 })
+    await setup.sync.prepareSignedInAccount()
+    await setup.sync.synchronize()
+    const before = (await app.read())!
+    const desired = state()
+    desired.tables.profiles[0].full_name = 'Restored Ana'
+    desired.tables.measurements = [{ id: 'older-restored', user_id: owner, weight_kg: 82 }]
+    desired.tables.mobile_web_base = [{ id: 'canonical', tables: copy(desired.tables) }]
+    desired.remoteRevision = 'obsolete-cloud'
+    const preview = await app.previewBackupRestore(JSON.stringify({ format: 'vekira-original-app-backup', version: 1, state: desired }))
+    await app.restoreBackup(preview.token, true)
+    expect((await app.read())?.remoteRevision).toBe(before.remoteRevision)
+    await setup.sync.synchronize()
+    await setup.sync.synchronize()
+    expect((await app.read())?.tables.profiles[0].full_name).toBe('Restored Ana')
+    expect((await app.read())?.tables.measurements).toEqual(desired.tables.measurements)
+    if (available) expect(setup.backup?.state.tables.measurements).toEqual(desired.tables.measurements)
+    expect(setup.pushes).toBe(available ? 2 : 0)
+  })
+
+  it('keeps an explicit restore local if another device changes the cloud snapshot before upload', async () => {
+    const app = await store(); const setup = fixture(app)
+    await setup.sync.prepareSignedInAccount(); await setup.sync.synchronize()
+    const desired = state(); desired.tables.profiles[0].full_name = 'Restored Ana'
+    const preview = await app.previewBackupRestore(JSON.stringify({ format: 'vekira-original-app-backup', version: 1, state: desired }))
+    await app.restoreBackup(preview.token, true)
+    setup.setBackup({ revision: 'other-device', state: state() })
+    await expect(setup.sync.synchronize()).rejects.toThrow(/conflicto/i)
+    expect((await app.read())?.tables.profiles[0].full_name).toBe('Restored Ana')
+    expect(setup.backup?.revision).toBe('other-device')
+    expect(setup.pushes).toBe(1)
+  })
+
   it('retains an edited free log and its details through cloud backup restore and web refresh', async () => {
     const app = await store(); await app.create(state())
     const setup = fixture(app)

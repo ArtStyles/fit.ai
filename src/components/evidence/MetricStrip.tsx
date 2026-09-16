@@ -25,7 +25,7 @@ export function MetricStrip({ items, className }: { items: MetricStripItem[]; cl
         <div key={item.label} className="min-w-0 border-t border-border/60 pt-3">
           <dt className="text-xs text-muted-foreground">{item.label}</dt>
           <dd className="mt-1 font-display text-2xl font-bold tabular-nums text-foreground">{item.value}</dd>
-          {item.detail ? <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p> : null}
+          {item.detail ? <dd className="mt-1 text-xs text-muted-foreground">{item.detail}</dd> : null}
         </div>
       ))}
     </dl>

@@ -75,6 +75,11 @@ try {
       if (url.pathname.startsWith('/storage/v1/object/public/avatars/') && request.method() === 'GET') return route.fulfill({ contentType: 'image/png', body: photo.buffer })
       assert.equal(request.headers().authorization, `Bearer ${token}`)
       if (url.pathname === '/auth/v1/user') return fulfill(user)
+    // Background fixture: explicit empty FitnessHubState for the independently added auto-sync coordinator.
+    if (url.pathname === '/rest/v1/rpc/get_fitness_card_state' && request.method() === 'POST') {
+      assert.deepEqual(request.postDataJSON(), {})
+      return fulfill({ viewerId: user.id, own: null, received: [], access: [] })
+    }
       requests.push({ method: request.method(), path: url.pathname })
       if (url.pathname === `/storage/v1/object/avatars/${user.id}/avatar.webp` && request.method() === 'POST') {
         if (denial === 'storage') return fulfill({ statusCode: '403', error: 'Forbidden', message: 'Fixture denial' }, 403)

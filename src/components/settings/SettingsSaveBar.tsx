@@ -26,7 +26,7 @@ export function SettingsSaveBar({
         label={label}
         pendingLabel={pendingLabel ?? t('Guardando')}
         disabled={disabled}
-        className={cn('h-11 w-full bg-violet-500 text-white hover:bg-violet-600', className)}
+        className={cn('h-11 w-full bg-violet-600 text-white hover:bg-violet-700', className)}
       >
         {children}
       </SubmitButton>

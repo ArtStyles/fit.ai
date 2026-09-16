@@ -256,7 +256,7 @@ export default async function HistoryPage() {
           <section className="rounded-3xl border border-dashed border-border bg-muted/20 p-8 text-center">
             <Trophy className="mx-auto h-7 w-7 text-violet-300" aria-hidden="true" />
             <p className="mt-4 text-sm text-muted-foreground">{process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? t('¿Ya entrenaste? Guarda tu constancia y los detalles que quieras.') : t('Completa una sesión desde tu plan para iniciar el registro.')}</p>
-            <PendingLink href={process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? '/registrar' : '/dashboard'} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-600">
+            <PendingLink href={process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? '/registrar' : '/dashboard'} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700">
               {t(process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'Registrar entrenamiento' : 'Ir al dashboard')}
             </PendingLink>
           </section>

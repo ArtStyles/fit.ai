@@ -2,8 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireActiveTrainerContext } from '@/lib/coaching/access'
-import { avatarStoragePath } from '@/lib/images/avatar'
-import { createServiceClient } from '@/lib/supabase/service'
+import { isOwnedTrainerPhoto } from '@/lib/coaching/trainerPhotoOwner'
 import type { Json } from '@/types/database'
 
 type TrainerReviewStatus = 'draft' | 'submitted' | 'under_review' | 'changes_requested' | 'interview_required'
@@ -36,7 +35,6 @@ const REVIEW_STATUSES = new Set<TrainerReviewStatus>([
   'changes_requested',
   'interview_required',
 ])
-const TRAINER_PHOTO_BUCKET = 'avatars'
 
 function formString(formData: FormData, key: string): string {
   const value = formData.get(key)
@@ -133,41 +131,6 @@ function isProfileSaveResult(value: unknown): value is {
     && (result.review_application_id === null || typeof result.review_application_id === 'string')
     && (result.review_status === null
       || (typeof result.review_status === 'string' && REVIEW_STATUSES.has(result.review_status as TrainerReviewStatus)))
-}
-
-function matchesOwnedPublicPhotoUrl(candidate: string, expected: string): boolean {
-  try {
-    const candidateUrl = new URL(candidate)
-    const expectedUrl = new URL(expected)
-    const hasAllowedVersion = candidateUrl.search === '' || /^\?v=[0-9]+$/.test(candidateUrl.search)
-    return candidateUrl.protocol === 'https:'
-      && candidateUrl.username === ''
-      && candidateUrl.password === ''
-      && candidateUrl.hash === ''
-      && candidateUrl.origin === expectedUrl.origin
-      && candidateUrl.pathname === expectedUrl.pathname
-      && hasAllowedVersion
-  } catch {
-    return false
-  }
-}
-
-async function isOwnedTrainerPhoto(userId: string, photoUrl: string): Promise<boolean> {
-  try {
-    const service = createServiceClient()
-    const path = avatarStoragePath(userId)
-    const bucket = service.storage.from(TRAINER_PHOTO_BUCKET)
-    const expectedUrl = bucket.getPublicUrl(path).data.publicUrl
-    if (!matchesOwnedPublicPhotoUrl(photoUrl, expectedUrl)) return false
-
-    const { data, error } = await bucket.list(userId, {
-      limit: 2,
-      search: 'avatar.webp',
-    })
-    return !error && (data ?? []).some(object => object.name === 'avatar.webp')
-  } catch {
-    return false
-  }
 }
 
 export async function updateTrainerProfile(formData: FormData): Promise<TrainerProfileActionResult> {

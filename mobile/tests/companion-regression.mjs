@@ -9,7 +9,7 @@ import { installAccountFixture, newTestAccount, storedAccountSnapshot } from './
 // Every remote response is controlled here; no request reaches a real account.
 const origin = process.env.MOBILE_PREVIEW_URL || 'http://127.0.0.1:4178'
 const backend = new URL(loadEnv('production', 'mobile').VITE_SUPABASE_URL).origin
-const artifacts = '.artifacts/companion-constancy'
+const artifacts = '.artifacts/companion-regression'
 const now = new Date('2026-09-10T16:00:00.000Z')
 const id = number => `10000000-0000-4000-8000-${String(number).padStart(12, '0')}`
 const relationshipId = id(21), partnerId = id(22), planId = id(23), workoutId = id(24)
@@ -157,6 +157,11 @@ async function scenario(name, { status = 'active', width = 390, notificationType
     const call = { scenario: name, method: request.method(), path: url.pathname, args: request.postDataJSON() }
     requests.push(call); model.requests.push(call)
     if (url.pathname === '/auth/v1/user' && request.method() === 'GET') return fulfill(model.session.user)
+    // Background fixture: explicit empty FitnessHubState for the independently added auto-sync coordinator.
+    if (url.pathname === '/rest/v1/rpc/get_fitness_card_state' && request.method() === 'POST') {
+      assert.deepEqual(request.postDataJSON(), {})
+      return fulfill({ viewerId: model.session.user.id, own: null, received: [], access: [] })
+    }
     if (url.pathname === '/rest/v1/coaching_relationships' && request.method() === 'GET') return fulfill([])
     // The constancy coordinator uses the existing guarded backup, including its
     // canonical download. Serve the same account so sync cannot invent changes.

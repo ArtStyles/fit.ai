@@ -204,7 +204,7 @@ export function MeasurementsClient({ initialMeasurements, initialLoadError = nul
               onClick={() => openForm()}
               disabled={mutationPending}
               aria-label={t('Registrar')}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-3 text-sm font-semibold text-white transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">{t('Registrar')}</span>
@@ -242,7 +242,7 @@ export function MeasurementsClient({ initialMeasurements, initialLoadError = nul
               type="button"
               onClick={() => openForm()}
               disabled={mutationPending}
-              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-violet-600 px-5 text-sm font-semibold text-white transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" aria-hidden="true" /> {t('Primera medida')}
             </button>

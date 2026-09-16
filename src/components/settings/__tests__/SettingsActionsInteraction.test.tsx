@@ -41,13 +41,14 @@ describe('Settings with real React form actions', () => {
 
   it('preserves a changed name after a failed save and a successful retry', async () => {
     const page = await browser.newPage()
+    page.setDefaultTimeout(10_000)
     try {
       await page.goto(fixtureUrl)
       await page.getByLabel('Nombre', { exact: true }).fill('Ana María')
-      await page.getByRole('button', { name: 'Guardar', exact: true }).click()
+      await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
       await pwExpect(page.getByText('No se pudo guardar el nombre.', { exact: true })).toBeVisible()
       await pwExpect(page.getByLabel('Nombre', { exact: true })).toHaveValue('Ana María')
-      await page.getByRole('button', { name: 'Guardar', exact: true }).click()
+      await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
       await pwExpect(page.getByText('Nombre guardado.', { exact: true })).toBeVisible()
       await pwExpect(page.getByLabel('Nombre', { exact: true })).toHaveValue('Ana María')
       expect(await page.evaluate(() => window.__SETTINGS_ATTEMPTS__.map(attempt => attempt.values.fullName)))
@@ -57,6 +58,7 @@ describe('Settings with real React form actions', () => {
 
   it('keeps all personal fields after validation fails and submits the corrected retry', async () => {
     const page = await browser.newPage()
+    page.setDefaultTimeout(10_000)
     try {
       await page.goto(fixtureUrl + '?form=personal')
       await page.getByLabel('Altura').fill('182.5')

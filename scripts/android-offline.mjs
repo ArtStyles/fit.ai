@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const mode = process.argv[2] ?? 'debug'
-if (!['debug', 'release'].includes(mode)) throw new Error('Use debug or release.')
+if (!['debug', 'release', 'bundle'].includes(mode)) throw new Error('Use debug, release or bundle.')
 const android = resolve(root, 'android')
 const env = { ...process.env }
 if (process.platform === 'win32') {
@@ -36,9 +36,10 @@ run(process.execPath, [resolve(root, 'node_modules/vite/bin/vite.js'), 'build', 
 run(process.execPath, [resolve(root, 'node_modules/@capacitor/cli/bin/capacitor'), 'sync', 'android'])
 const config = JSON.parse(readFileSync(resolve(android, 'app/src/main/assets/capacitor.config.json'), 'utf8'))
 if (config.server?.url || config.webDir !== 'mobile/dist') throw new Error('Refusing to build an Android package with a remote app loader.')
-if (mode === 'release' && !existsSync(resolve(android, 'keystore.properties'))) {
+if (mode !== 'debug' && !existsSync(resolve(android, 'keystore.properties'))) {
   throw new Error('Release signing configuration is missing. Restore the original signing files; do not create a replacement key.')
 }
-const tasks = ['testDebugUnitTest', mode === 'release' ? 'assembleRelease' : 'assembleDebug', '--console=plain', '--max-workers=2']
+const artifactTask = { debug: 'assembleDebug', release: 'assembleRelease', bundle: 'bundleRelease' }[mode]
+const tasks = ['testDebugUnitTest', ...(mode === 'debug' ? [] : ['lintRelease']), artifactTask, '--console=plain', '--max-workers=2']
 if (process.platform === 'win32') run('cmd.exe', ['/d', '/s', '/c', `""${resolve(android, 'gradlew.bat')}" ${tasks.join(' ')}"`], android)
 else run(resolve(android, 'gradlew'), tasks, android)

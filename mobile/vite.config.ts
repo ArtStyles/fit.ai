@@ -1,10 +1,18 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { hasAndroidPushConfiguration } from './config/push-capability'
+import { findForbiddenMobileModules } from './config/bundle-boundaries'
 
 const original = (name: string) => fileURLToPath(new URL(`./src/original/${name}`, import.meta.url))
 const personalActions = ['authorizeSession', 'saveSession', 'rescheduleWorkout', 'plan', 'generatePlan', 'adjustPlan', 'measurements', 'settings', 'readiness', 'avatar']
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_')
+  let pushConfigured = false
+  try { pushConfigured = hasAndroidPushConfiguration(JSON.parse(readFileSync(new URL('../android/app/google-services.json', import.meta.url), 'utf8'))) } catch { /* Unconfigured builds must not advertise remote push. */ }
+  const pushAvailable = pushConfigured && !!env.VITE_SUPABASE_URL && !!env.VITE_SUPABASE_ANON_KEY
+  return {
   root: fileURLToPath(new URL('.', import.meta.url)),
   envDir: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [{
@@ -20,17 +28,14 @@ export default defineConfig({
     },
     generateBundle(_options, bundle) {
       const modules = Object.values(bundle).flatMap(entry => entry.type === 'chunk' ? entry.moduleIds : []).map(id => id.replaceAll('\\', '/'))
-      const forbidden = modules.filter(id =>
-        id.endsWith('/src/app/onboarding/actions.ts') ||
-        id.endsWith('/src/app/actions/companions.ts') ||
-        personalActions.some(name => id.endsWith(`/src/app/actions/${name}.ts`)) ||
-        /\/src\/lib\/(supabase\/service|anthropic\/client|ai\/real-coachGenerator)\.ts$/.test(id) ||
-        /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:firebase-admin|@anthropic-ai\/sdk)\//.test(id),
-      )
+      const forbidden = findForbiddenMobileModules(modules, personalActions)
       if (forbidden.length) this.error(`Server dependency reached the Android bundle: ${forbidden.join(', ')}`)
     },
   }],
   resolve: { alias: [
+    { find: '@/lib/legal/platformLegalCopy', replacement: original('legal-content.ts') },
+    { find: '@/components/coaching/TrainerProfilePhotoField', replacement: original('TrainerProfilePhotoField.tsx') },
+    { find: '@/lib/coaching/trainerPhotoOwner', replacement: original('trainer-photo-owner.ts') },
     { find: '@/lib/fitness-card/platform', replacement: original('fitness-card/platform.ts') },
     { find: '@/components/progress/PersonalGoalsSlot', replacement: original('goals/PersonalGoalsSlot.tsx') },
     ...personalActions.map(name => ({ find: `@/app/actions/${name}`, replacement: original(`actions/${name}.ts`) })),
@@ -51,9 +56,10 @@ export default defineConfig({
     { find: 'server-only', replacement: original('empty.ts') },
     { find: '@', replacement: fileURLToPath(new URL('../src', import.meta.url)) },
   ] },
-  define: { 'process.env': JSON.stringify({ NODE_ENV: 'production', NEXT_PUBLIC_COMMUNITY_ENABLED: 'false', NEXT_PUBLIC_LOCAL_APP: 'true' }) },
+  define: { 'process.env': JSON.stringify({ NODE_ENV: 'production', NEXT_PUBLIC_COMMUNITY_ENABLED: 'false', NEXT_PUBLIC_LOCAL_APP: 'true', NEXT_PUBLIC_PRODUCT_PUSH_AVAILABLE: String(pushAvailable) }) },
   oxc: { jsx: { runtime: 'automatic' } },
   build: { outDir: 'dist', emptyOutDir: true, target: 'es2022' },
   server: { host: '127.0.0.1', port: 4178, strictPort: true },
   preview: { host: '127.0.0.1', port: 4178, strictPort: true },
+  }
 })

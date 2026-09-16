@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import { updateTrainerProfile } from '@/app/actions/trainerProfile'
+import { TrainerProfilePhotoField } from '@/components/coaching/TrainerProfilePhotoField'
 
 export type TrainerProfileFormValue = {
   professionalName: string
@@ -133,11 +134,7 @@ export function TrainerProfileForm({
           <h2 className="text-lg font-bold text-foreground">Se actualizan al guardar</h2>
           <p className="mt-1 text-sm text-muted-foreground">Estos datos no necesitan una nueva decisión administrativa.</p>
           <div className="mt-5 space-y-5">
-            <label htmlFor="professionalPhotoUrl" className="block text-sm font-semibold text-foreground">
-              Foto profesional
-              <input id="professionalPhotoUrl" name="professionalPhotoUrl" type="url" defaultValue={approvedProfile.professionalPhotoUrl ?? ''} placeholder="https://…" aria-invalid={Boolean(fieldErrors.professionalPhotoUrl)} aria-describedby={describedBy('professionalPhotoUrl', fieldErrors.professionalPhotoUrl)} className="mt-2 h-11 w-full rounded-xl border border-input bg-background px-3 font-normal" />
-              <FieldError name="professionalPhotoUrl" error={fieldErrors.professionalPhotoUrl} />
-            </label>
+            <TrainerProfilePhotoField photoUrl={approvedProfile.professionalPhotoUrl} error={fieldErrors.professionalPhotoUrl} />
             <label htmlFor="bio" className="block text-sm font-semibold text-foreground">
               Biografía
               <textarea id="bio" name="bio" rows={5} maxLength={2000} defaultValue={approvedProfile.bio} aria-invalid={Boolean(fieldErrors.bio)} aria-describedby={describedBy('bio', fieldErrors.bio)} className="mt-2 w-full rounded-xl border border-input bg-background px-3 py-3 font-normal" />

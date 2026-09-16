@@ -6,6 +6,7 @@ export type WorkoutOccurrence = { workoutId: string; sourceDate: string; schedul
 export type OccurrenceLog = {
   id?: string; client_session_id?: string; workout_id: string | null; completed_at: string
   occurrence_source_date?: string | null; occurrence_scheduled_date?: string | null
+  mobile_session_kind?: unknown
 }
 export type OccurrenceAuthorization = {
   workout_id: string; client_session_id?: string; occurrence_source_date?: string | null; occurrence_scheduled_date?: string | null; policy_date: string; policy_timezone?: string
@@ -13,6 +14,17 @@ export type OccurrenceAuthorization = {
 }
 export type LocalWorkoutSchedule = {
   overrides: ScheduleOverride[]; logs: OccurrenceLog[]; authorizations: OccurrenceAuthorization[]
+}
+
+/** Only explicit standalone free records are outside the guided daily quota.
+ * Older history and records linked to a workout retain their existing policy. */
+export function isGuidedSessionLog(log: Pick<OccurrenceLog, 'workout_id' | 'mobile_session_kind'>): boolean {
+  return log.mobile_session_kind !== 'free' || log.workout_id != null
+}
+
+export function hasGuidedSessionOnDate(schedule: LocalWorkoutSchedule, date: string, timeZone: string): boolean {
+  return schedule.logs.some(log => isGuidedSessionLog(log) && getLocalDateString(new Date(log.completed_at), timeZone) === date)
+    || schedule.authorizations.some(row => row.policy_date === date && row.consumed_at)
 }
 
 export function isCivilDate(value: unknown): value is string {
@@ -87,7 +99,7 @@ export function rescheduleReason({ occurrence, targetDate, workouts, schedule, t
     .filter(row => row.workoutId !== occurrence.workoutId || row.sourceDate !== occurrence.sourceDate)
   if (others.some(row => row.scheduledDate === targetDate)) return 'Ya hay una rutina programada en esa fecha.'
   if (others.some(row => row.workoutId === occurrence.workoutId)) return 'Esa fecha se solapa con la recuperación de otra sesión de esta rutina.'
-  if (schedule.logs.some(log => getLocalDateString(new Date(log.completed_at), timeZone) === targetDate)) return 'Ya registraste una sesión en esa fecha.'
+  if (schedule.logs.some(log => isGuidedSessionLog(log) && getLocalDateString(new Date(log.completed_at), timeZone) === targetDate)) return 'Ya registraste una sesión en esa fecha.'
   if (schedule.authorizations.some(row => row.policy_date === targetDate && !row.released_at && (row.consumed_at || Date.parse(row.expires_at) > now.getTime()))) return 'Ya tienes una sesión iniciada o registrada en esa fecha.'
   return null
 }
@@ -102,8 +114,7 @@ export function buildSchedulePresentation(workouts: Array<ScheduledWorkout & { n
   const occurrences = resolveOccurrences(workouts, schedule.overrides, addCivilDays(today, -9), addCivilDays(today, 14))
     .filter(row => (row.sourceDate >= addCivilDays(today, -2) && row.sourceDate <= addCivilDays(today, 7))
       || (row.sourceDate !== row.scheduledDate && row.scheduledDate >= addCivilDays(today, -2) && row.scheduledDate <= addCivilDays(today, 7)))
-  const hasSessionToday = schedule.logs.some(log => getLocalDateString(new Date(log.completed_at), timeZone) === today)
-    || schedule.authorizations.some(row => row.policy_date === today && row.consumed_at)
+  const hasSessionToday = hasGuidedSessionOnDate(schedule, today, timeZone)
   return {
     today,
     startableWorkoutIds: hasSessionToday ? [] : occurrences.filter(row => getOccurrenceWindow(row, today).status !== 'unavailable' && !occurrenceCompleted(row, schedule.logs, timeZone)).map(row => row.workoutId),

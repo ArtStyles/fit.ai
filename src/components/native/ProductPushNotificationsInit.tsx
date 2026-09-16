@@ -2,87 +2,27 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { PushNotifications, type Token } from '@capacitor/push-notifications'
+import { PushNotifications } from '@capacitor/push-notifications'
 import { registerProductPushToken } from '@/app/actions/notifications'
 import { getPlatform, isNativePlatform } from '@/lib/native/platform'
+import { createProductPushLifecycle, getOrCreatePushDeviceId } from '@/lib/native/productPushLifecycle'
+import { productPushAvailable } from '@/lib/native/pushCapability'
 
-const DEVICE_ID_KEY = 'fitai:native-device-id'
-
-function getOrCreateDeviceId(): string {
-  try {
-    const existing = window.localStorage.getItem(DEVICE_ID_KEY)
-    if (existing) return existing
-    const next = window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
-    window.localStorage.setItem(DEVICE_ID_KEY, next)
-    return next
-  } catch {
-    return `${Date.now()}-${Math.random()}`
-  }
-}
-
-function getNotificationUrl(data: unknown): string | null {
-  if (!data || typeof data !== 'object') return null
-  const value = (data as { url?: unknown }).url
-  return typeof value === 'string'
-    && value.startsWith('/')
-    && !value.startsWith('//')
-    && !value.includes('\\')
-    ? value
-    : null
-}
+const lifecycle = createProductPushLifecycle(PushNotifications)
 
 export function ProductPushNotificationsInit() {
   const router = useRouter()
 
   useEffect(() => {
-    if (!isNativePlatform()) return
+    if (!isNativePlatform() || !productPushAvailable()) return
     const platform = getPlatform()
     if (platform !== 'android' && platform !== 'ios') return
 
-    let disposed = false
-    const handles: Array<{ remove: () => Promise<void> }> = []
-
-    async function init() {
-      try {
-        const status = await PushNotifications.checkPermissions()
-        const permission = status.receive === 'granted'
-          ? status
-          : await PushNotifications.requestPermissions()
-
-        if (disposed || permission.receive !== 'granted') return
-
-        const registrationHandle = await PushNotifications.addListener('registration', (token: Token) => {
-          void registerProductPushToken({
-            token: token.value,
-            platform,
-            deviceId: getOrCreateDeviceId(),
-          })
-        })
-        handles.push(registrationHandle)
-
-        const errorHandle = await PushNotifications.addListener('registrationError', () => {
-          // Best-effort: native push failure must not block the app.
-        })
-        handles.push(errorHandle)
-
-        const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', event => {
-          const url = getNotificationUrl(event.notification.data)
-          if (url) router.push(url)
-        })
-        handles.push(actionHandle)
-
-        await PushNotifications.register()
-      } catch {
-        // Best-effort: the in-app notification center remains available.
-      }
-    }
-
-    void init()
-
-    return () => {
-      disposed = true
-      for (const handle of handles) void handle.remove()
-    }
+    void lifecycle.update({ accountId: 'web-session', requestPermission: true,
+      registerToken: (token, isCurrent) => isCurrent() ? registerProductPushToken({ token, platform, deviceId: getOrCreatePushDeviceId() }) : Promise.resolve(),
+      navigate: url => router.push(url),
+    }).catch(() => {})
+    return () => { void lifecycle.update(null).catch(() => {}) }
   }, [router])
 
   return null

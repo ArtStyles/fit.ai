@@ -45,7 +45,12 @@ export function I18nProvider({
 }
 
 export function useI18n(): I18nValue {
-  const context = useContext(I18nContext)
+  const context = useOptionalI18n()
   if (!context) throw new Error('useI18n must be used within I18nProvider')
   return context
+}
+
+/** Optional localization for reusable primitives also rendered outside app chrome. */
+export function useOptionalI18n(): I18nValue | null {
+  return useContext(I18nContext)
 }

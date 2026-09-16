@@ -4,7 +4,7 @@ import { openBrowserSqliteDriver } from '../data/browser-driver'
 import { openNativeSqliteDriver } from '../data/native-driver'
 import type { MobileSqliteDriver, SqliteRow } from '../data/driver'
 import { validateExerciseGoalsTable } from './goals/validation'
-import { ORIGINAL_STATE_CHANGED, type AppState, type AppStore } from './types'
+import { ORIGINAL_STATE_CHANGED, type AppState, type AppStore, type BackupCounts, type BackupRestorePreview } from './types'
 
 export type { AppState, AppStore, AppRow } from './types'
 
@@ -23,6 +23,60 @@ function stable(value: unknown): string {
     return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(',')}}`
   }
   return JSON.stringify(value)
+}
+
+export class BackupRestoreError extends Error {
+  constructor(readonly code: 'session' | 'owner' | 'invalid' | 'large' | 'confirmation' | 'preview' | 'stale' | 'missing-recovery') {
+    super(`Backup restore ${code}`)
+    this.name = 'BackupRestoreError'
+  }
+}
+
+function parseBackup(json: string): { state: AppState; exportedAt: string | null } {
+  if (new TextEncoder().encode(json).byteLength > MAX_BACKUP_BYTES) throw new BackupRestoreError('large')
+  try {
+    const parsed = JSON.parse(json)
+    if (parsed?.format !== FORMAT || parsed?.version !== 1) throw new Error('Unsupported format')
+    return { state: validateBackupState(parsed.state), exportedAt: typeof parsed.exportedAt === 'string' && Number.isFinite(Date.parse(parsed.exportedAt)) ? parsed.exportedAt : null }
+  } catch { throw new BackupRestoreError('invalid') }
+}
+
+/** A restore must contain a usable own profile. Optional tables from later releases may be absent. */
+function validateBackupState(input: unknown): AppState {
+  const state = validateAppState(input)
+  if (state.tables.profiles?.length !== 1) throw new BackupRestoreError('invalid')
+  for (const table of ['profiles', 'workout_plans', 'workouts', 'workout_exercises', 'exercises', 'progress_logs', 'exercise_logs', 'measurements']) {
+    for (const row of state.tables[table] ?? []) {
+      if (typeof row.id !== 'string' || !row.id.trim()) throw new BackupRestoreError('invalid')
+    }
+  }
+  for (const row of state.tables.workouts ?? []) {
+    if (row.plan_id != null && !(state.tables.workout_plans ?? []).some(plan => plan.id === row.plan_id)) throw new BackupRestoreError('invalid')
+  }
+  return state
+}
+
+function restoredTables(incoming: AppState, current: AppState): AppState['tables'] {
+  const tables = clone(incoming.tables)
+  // A file restores user data, not the three-way merge ancestor. Replaying the
+  // old ancestor would label restored rows as unchanged and delete/replace them
+  // on the next web download. Keep this device's last verified download instead.
+  delete tables.mobile_web_base
+  if (current.tables.mobile_web_base) tables.mobile_web_base = clone(current.tables.mobile_web_base)
+  return tables
+}
+
+function backupCounts(state: AppState): BackupCounts {
+  const count = (table: string) => state.tables[table]?.length ?? 0
+  const plans = count('workout_plans'), workouts = count('workouts'), sessions = count('progress_logs'), measurements = count('measurements')
+  // exercise_logs contains one row per exercise; a row can hold several recorded sets.
+  const sets = (state.tables.exercise_logs ?? []).reduce((sum, row) => sum + Math.max(0, ...['reps_completed', 'weights_kg', 'duration_seconds'].map(key => Array.isArray(row[key]) ? row[key].length : 0)), 0)
+  const total = Object.values(state.tables).reduce((sum, rows) => sum + rows.length, 0)
+  return { plans, workouts, sessions, sets, measurements, other: total - plans - workouts - sessions - measurements - count('exercise_logs'), total }
+}
+
+function encodeBackup(state: AppState, exportedAt = new Date().toISOString()): string {
+  return JSON.stringify({ format: FORMAT, version: 1, exportedAt, state })
 }
 
 export function validateAppState(input: unknown): AppState {
@@ -88,6 +142,7 @@ type StoredState = SqliteRow & { account_id: string; remote_user_id: string | nu
 export async function createAppStore(driver: MobileSqliteDriver): Promise<AppStore> {
   let tail: Promise<unknown> = Promise.resolve()
   let sessionVersion = 0
+  let pendingRestore: { preview: BackupRestorePreview; state: AppState; current: string; session: number } | null = null
   function requireCurrentSession(expected: number | undefined) {
     if (expected !== undefined && expected !== sessionVersion) {
       throw new Error('La sesión se cerró durante el acceso. Vuelve a iniciar sesión para continuar.')
@@ -125,6 +180,35 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
   const persist = async (state: AppState) => {
     await driver.execute('INSERT INTO original_app_accounts (account_id, remote_user_id, state_json) VALUES (?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET remote_user_id = excluded.remote_user_id, state_json = excluded.state_json', [state.accountId, state.remoteUserId, JSON.stringify(state)])
   }
+  const recoveryKey = (accountId: string) => `backup-recovery:${accountId}`
+  const recovery = async (accountId: string) => {
+    const rows = await driver.query<{ value: string }>('SELECT value FROM original_app_settings WHERE key = ?', [recoveryKey(accountId)])
+    if (!rows.length) return null
+    const parsed = parseBackup(rows[0].value)
+    if (parsed.state.accountId !== accountId) throw new BackupRestoreError('owner')
+    return { ...parsed, json: rows[0].value }
+  }
+  const requireRestoreAccount = async (expectedAccountId: string | null, expectedSession: number) => {
+    if (sessionVersion !== expectedSession || !expectedAccountId) throw new BackupRestoreError('session')
+    const current = await active()
+    if (sessionVersion !== expectedSession || current?.accountId !== expectedAccountId || current.remoteUserId !== expectedAccountId) throw new BackupRestoreError('session')
+    return current
+  }
+  const prepareRestore = (source: 'file' | 'recovery', json?: string) => {
+    const accountId = selectedAccountId, expectedSession = sessionVersion
+    return serial(async () => {
+      const current = await requireRestoreAccount(accountId, expectedSession)
+      const incoming = source === 'file' ? parseBackup(json!) : await recovery(current.accountId)
+      if (!incoming) throw new BackupRestoreError('missing-recovery')
+      if (incoming.state.accountId !== current.accountId || incoming.state.remoteUserId !== current.remoteUserId) throw new BackupRestoreError('owner')
+      if (!Number.isSafeInteger(Math.max(current.revision, incoming.state.revision) + 1)) throw new BackupRestoreError('invalid')
+      await requireRestoreAccount(accountId, expectedSession)
+      const preview: BackupRestorePreview = { token: crypto.randomUUID(), accountId: current.accountId, email: current.email,
+        source, exportedAt: incoming.exportedAt, current: backupCounts(current), incoming: backupCounts(incoming.state) }
+      pendingRestore = { preview, state: incoming.state, current: stable(current), session: expectedSession }
+      return clone(preview)
+    })
+  }
 
   return {
     sessionVersion: () => sessionVersion,
@@ -160,7 +244,9 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
         if (await readAccount(state.accountId)) throw new Error('Application account already exists')
         await persist(state)
         await select(state.accountId)
+        requireCurrentSession(expectedSessionVersion)
       })
+      if (selectedAccountId !== state.accountId) sessionVersion++
       selectedAccountId = state.accountId
       emit(state.accountId)
     }),
@@ -169,7 +255,9 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
       await driver.transaction(async () => {
         if (!await readAccount(accountId)) throw new Error('Application account not found')
         await select(accountId)
+        requireCurrentSession(expectedSessionVersion)
       })
+      if (selectedAccountId !== accountId) sessionVersion++
       selectedAccountId = accountId
       emit(accountId)
     }),
@@ -181,6 +269,25 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
           await driver.execute('DELETE FROM original_app_settings WHERE key = ?', ['active_account'])
         })
         selectedAccountId = null
+        emit(null)
+      })
+    },
+    removeAccount: (expectedAccountId, expectedSessionVersion) => {
+      const invokedAccountId = selectedAccountId
+      return serial(async () => {
+        requireCurrentSession(expectedSessionVersion)
+        await driver.transaction(async () => {
+          const current = await active()
+          if (!current || invokedAccountId !== expectedAccountId || current.accountId !== expectedAccountId || current.remoteUserId !== expectedAccountId) throw new Error('Account removal owner mismatch')
+          const prefix = `cache:${expectedAccountId}:`
+          await driver.execute('DELETE FROM original_app_settings WHERE substr(key, 1, ?) = ? OR key = ?', [prefix.length, prefix, recoveryKey(expectedAccountId)])
+          await driver.execute('DELETE FROM original_app_accounts WHERE account_id = ?', [expectedAccountId])
+          await driver.execute('DELETE FROM original_app_settings WHERE key = ? AND value = ?', ['active_account', expectedAccountId])
+          requireCurrentSession(expectedSessionVersion)
+        })
+        sessionVersion++
+        selectedAccountId = null
+        pendingRestore = null
         emit(null)
       })
     },
@@ -211,7 +318,7 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
     exportBackup: () => serial(async () => {
       const state = await active()
       if (!state) throw new Error('No active application account')
-      return JSON.stringify({ format: FORMAT, version: 1, exportedAt: new Date().toISOString(), state })
+      return encodeBackup(state)
     }),
     importBackup: json => {
       const invokedAccountId = selectedAccountId
@@ -225,7 +332,8 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
         if (new TextEncoder().encode(json).byteLength > MAX_BACKUP_BYTES) throw new Error('Application backup is too large')
         const parsed = JSON.parse(json) as { format?: string; version?: number; state?: unknown }
         if (parsed.format !== FORMAT || parsed.version !== 1) throw new Error('Unsupported application backup format')
-        const incoming = validateAppState(parsed.state)
+        const incoming = validateBackupState(parsed.state)
+        if (incoming.accountId !== current.accountId || incoming.remoteUserId !== current.remoteUserId) throw new BackupRestoreError('owner')
         await driver.transaction(async () => {
           const existing = await readAccount(incoming.accountId)
           if (existing) {
@@ -233,16 +341,56 @@ export async function createAppStore(driver: MobileSqliteDriver): Promise<AppSto
             if (existing.remoteUserId !== incoming.remoteUserId || stable(existing.tables) !== stable(incoming.tables) || existing.email !== incoming.email) {
               throw new Error('Backup conflict: this account has different local data. Existing data was preserved.')
             }
-          } else {
-            // A copied backup has not been verified against the current remote server.
-            await persist({ ...incoming, lastSyncedRevision: 0, remoteRevision: null })
-          }
+          } else throw new BackupRestoreError('session')
           await select(incoming.accountId)
           // A logout during a SQLite operation must roll back the whole import.
           requireCurrentSession(expectedSessionVersion)
         })
         selectedAccountId = incoming.accountId
         emit(incoming.accountId)
+      })
+    },
+    previewBackupRestore: json => prepareRestore('file', json),
+    previewRecoveryRestore: () => prepareRestore('recovery'),
+    cancelBackupRestore: token => { if (pendingRestore?.preview.token === token) pendingRestore = null },
+    restoreBackup: (token, confirmed) => {
+      const requested = pendingRestore
+      return serial(async () => {
+        if (confirmed !== true) throw new BackupRestoreError('confirmation')
+        if (!requested || requested !== pendingRestore || requested.preview.token !== token) throw new BackupRestoreError('preview')
+        const { preview, state: incoming, session } = requested
+        await driver.transaction(async () => {
+          const current = await requireRestoreAccount(preview.accountId, session)
+          if (stable(current) !== requested.current) throw new BackupRestoreError('stale')
+          // Recovery and replacement share the same durable commit. Failure keeps both prior copies.
+          await driver.execute('INSERT INTO original_app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [recoveryKey(current.accountId), encodeBackup(current)])
+          // Keep the current verified identity and cloud compare-and-swap base. File metadata is untrusted.
+          await persist(validateAppState({ ...current, tables: restoredTables(incoming, current), revision: Math.max(current.revision, incoming.revision) + 1 }))
+          await requireRestoreAccount(preview.accountId, session)
+          if (pendingRestore !== requested) throw new BackupRestoreError('preview')
+        })
+        pendingRestore = null
+        emit(preview.accountId)
+      })
+    },
+    readBackupRecovery: () => {
+      const accountId = selectedAccountId, expectedSession = sessionVersion
+      return serial(async () => {
+        if (!accountId) return null
+        const current = await active()
+        if (current?.accountId !== accountId || sessionVersion !== expectedSession) return null
+        const saved = await recovery(accountId)
+        return saved ? { accountId, savedAt: saved.exportedAt ?? '', counts: backupCounts(saved.state) } : null
+      })
+    },
+    exportRecoveryBackup: () => {
+      const accountId = selectedAccountId, expectedSession = sessionVersion
+      return serial(async () => {
+        await requireRestoreAccount(accountId, expectedSession)
+        const saved = await recovery(accountId!)
+        if (!saved) throw new BackupRestoreError('missing-recovery')
+        await requireRestoreAccount(accountId, expectedSession)
+        return saved.json
       })
     },
     markSynced: (accountId, expectedLocalRevision, remoteRevision) => serial(async () => {

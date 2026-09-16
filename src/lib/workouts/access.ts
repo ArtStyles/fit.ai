@@ -1,7 +1,7 @@
 import { addDays, getAppTimeZone, getLocalDayBounds, getWorkoutStartWindow } from './schedule'
 import type { WorkoutStartWindow } from './schedule'
 import { getLocalDateString } from './schedule'
-import { addCivilDays, resolveOccurrences, getOccurrenceWindow, occurrenceCompleted, type LocalWorkoutSchedule, type WorkoutOccurrence } from './occurrences'
+import { addCivilDays, resolveOccurrences, getOccurrenceWindow, occurrenceCompleted, hasGuidedSessionOnDate, type LocalWorkoutSchedule, type WorkoutOccurrence } from './occurrences'
 
 export type WorkoutStartAccessReason =
   | 'not_found'
@@ -86,8 +86,7 @@ export async function getWorkoutStartAccess({
 
   if (localSchedule && occurrence) {
     if (occurrenceCompleted(occurrence, localSchedule.logs, timeZone)) return { allowed: false, reason: window.status === 'today' ? 'completed_today' : 'already_completed', workout }
-    if (localSchedule.logs.some(log => getLocalDateString(new Date(log.completed_at), timeZone) === today)
-      || localSchedule.authorizations.some(row => row.policy_date === today && row.consumed_at)) return { allowed: false, reason: 'another_session_today', workout }
+    if (hasGuidedSessionOnDate(localSchedule, today, timeZone)) return { allowed: false, reason: 'another_session_today', workout }
     return { allowed: true, workout, window, occurrence }
   }
 

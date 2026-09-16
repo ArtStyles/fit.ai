@@ -3,8 +3,11 @@ import { remote, createConnectedClient, signOutLocally } from './bridge-client'
 import { navigate, refresh } from './router'
 import { WORKSPACE_COOKIE, workspaceDestination } from '@/lib/coaching/workspace'
 import { validateUsername } from '@/lib/social/username'
+import { AccountDeletionError, accountDeletionEndpoint, deleteConnectedAccount, deletionNavigationAllowed } from './account-lifecycle'
+import { stopMobileNotifications } from './notification-lifecycle'
 
 export async function signOut() {
+  await stopMobileNotifications()
   await (await getAppStore()).deactivate()
   await signOutLocally()
   navigate('/login', true)
@@ -54,7 +57,18 @@ export async function updateUsername(raw: string): Promise<{ ok: true } | { ok: 
   refresh(); return { ok: true }
   } catch (reason) { return { ok: false, error: reason instanceof Error ? reason.message : 'No se pudo guardar el nombre.' } }
 }
-export async function deleteAccount() {
-  // Account deletion needs the existing authenticated backend operation.
-  navigate('/settings/cuenta?error=account_delete_online_required')
+export async function deleteAccount(formData: FormData) {
+  const store = await getAppStore(), version = store.sessionVersion(), owner = (await store.read())?.accountId
+  try {
+    const result = await deleteConnectedAccount(String(formData.get('confirmText') ?? ''), {
+      store, client: remote, endpoint: accountDeletionEndpoint(import.meta.env.VITE_ACCOUNT_API_URL),
+      online: () => navigator.onLine, logout: signOutLocally,
+    })
+    if (result.navigateToLogin && await deletionNavigationAllowed(store, remote, result.accountId, result.sessionVersion, true)) navigate('/login?notice=account_deleted', true)
+  } catch (reason) {
+    const code = reason instanceof AccountDeletionError ? reason.code : 'account_delete_unconfirmed'
+    if (!owner) return
+    const removed = code === 'account_delete_local_pending' && !(await store.read())
+    if (await deletionNavigationAllowed(store, remote, owner, version + (removed ? 1 : 0), removed)) navigate(`${removed ? '/login' : '/settings/cuenta'}?error=${encodeURIComponent(code)}`)
+  }
 }

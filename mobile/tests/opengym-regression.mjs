@@ -194,12 +194,12 @@ try {
       const license = await page.request.get(`${origin}/third-party/MuscleMap-LICENSE.txt`)
       assert.equal(license.status(), 200)
       assert.match(await license.text(), /MIT License[\s\S]*Melih Colpan/)
-      await page.goto(`${origin}/progress`)
+      await page.goto(`${origin}/progress`); await openCompletedMuscles(page)
       const completed = page.locator('[data-muscle-map="completed"]')
       await expect(completed.getByRole('button', { name: 'Pecho: 3 series completadas', exact: true })).toBeVisible()
       await expect(completed.getByRole('button', { name: 'Abdomen: 2 series completadas', exact: true })).toBeVisible()
       await expect(completed.getByRole('button', { name: 'Espalda: 4 series completadas', exact: true })).toBeVisible()
-      await page.getByRole('button', { name: '4 semanas', exact: true }).click()
+      await selectProgressPeriod(page, 4)
       await expect(completed.getByRole('button', { name: 'Espalda: 0 series completadas', exact: true })).toBeVisible()
       await expect(completed.getByRole('button', { name: 'Abdomen: 2 series completadas', exact: true })).toBeVisible()
       await completed.getByRole('button', { name: 'Pecho: 3 series completadas', exact: true }).click()
@@ -300,7 +300,7 @@ try {
       await originalDay.getByRole('link').click()
       await expect(page).toHaveURL(`${origin}/history/${saved.tables.progress_logs[0].id}`)
       await expect(page.getByText('No se pudo abrir esta pantalla', { exact: true })).toHaveCount(0)
-      await page.goto(`${origin}/progress`)
+      await page.goto(`${origin}/progress`); await openCompletedMuscles(page)
       await expect(page.locator('[data-muscle-map="completed"]').getByRole('button', { name: 'Pecho: 3 series completadas', exact: true })).toBeVisible()
       await expect(page.locator('[data-muscle-map="completed"]').getByRole('button', { name: 'Abdomen: 1 serie completada', exact: true })).toBeVisible()
       await page.goto(`${origin}/session/${workoutId}`)
@@ -310,7 +310,7 @@ try {
     })
   }
   await runCase('empty-map', 320, { history: false }, async page => {
-    await page.goto(`${origin}/progress`)
+    await page.goto(`${origin}/progress`); await openCompletedMuscles(page)
     const completed = page.locator('[data-muscle-map="completed"]')
     await expect(completed.getByText('Aún no hay series completadas en este periodo.', { exact: true })).toBeVisible()
     await expect(completed.getByRole('button', { name: 'Pecho: 0 series completadas', exact: true })).toBeVisible()
@@ -319,4 +319,21 @@ try {
 } finally {
   await writeFile(`${artifacts}/results.json`, JSON.stringify({ passed }, null, 2))
   await browser.close()
+}
+
+// Regression helper: ProgressHub now collapses the textual muscle controls.
+// Open the actual summary with a click; retain every original muscle assertion.
+async function openCompletedMuscles(page) {
+  const map = page.locator('[data-muscle-map="completed"]')
+  await expect(map).toBeVisible()
+  const explorer = map.locator('details[data-muscle-explorer="true"]')
+  await expect(explorer).toHaveCount(1)
+  if (!(await explorer.getAttribute('open') !== null)) await explorer.locator(':scope > summary').click()
+  await expect(explorer).toHaveAttribute('open', '')
+}
+async function selectProgressPeriod(page, weeks, english = false) {
+  await page.getByRole('combobox', { name: english ? 'Select period' : 'Seleccionar periodo', exact: true }).click()
+  const label = english ? weeks + (weeks === 1 ? ' week' : ' weeks') : weeks + (weeks === 1 ? ' semana' : ' semanas')
+  await page.getByRole('option', { name: label, exact: true }).click()
+  await expect(page.getByRole('combobox', { name: english ? 'Select period' : 'Seleccionar periodo', exact: true })).toHaveText(label)
 }

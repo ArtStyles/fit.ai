@@ -27,11 +27,11 @@ export function remindersSupported(): boolean {
 }
 
 /** Comprueba/solicita el permiso de notificaciones. Devuelve true si concedido. */
-export async function ensureNotificationPermission(): Promise<boolean> {
+export async function ensureNotificationPermission(requestPermission = true): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false
   const status = await LocalNotifications.checkPermissions()
   if (status.display === 'granted') return true
-  if (status.display === 'denied') return false
+  if (status.display === 'denied' || !requestPermission) return false
   const requested = await LocalNotifications.requestPermissions()
   return requested.display === 'granted'
 }
@@ -53,56 +53,77 @@ export async function scheduleWorkoutReminders(
   days: number[],
   time: ReminderTime,
   language: AppLanguage,
+  options: { requestPermission?: boolean; isCurrent?: () => boolean } = {},
 ): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false
-  const granted = await ensureNotificationPermission()
-  if (!granted) return false
+  const version = cancellationVersion
+  const current = () => version === cancellationVersion && (options.isCurrent?.() ?? true)
+  return serialize(async () => {
+    if (!current()) return false
+    const granted = await ensureNotificationPermission(options.requestPermission !== false)
+    if (!granted || !current()) return false
 
-  const pending = await LocalNotifications.getPending()
-  const previousReminders = pending.notifications.filter(notification => (
-    notification.id > REMINDER_ID_BASE
-      && notification.id <= REMINDER_ID_BASE + 7
-  ))
+    const pending = await LocalNotifications.getPending()
+    const previousReminders = pending.notifications.filter(notification => (
+      notification.id > REMINDER_ID_BASE
+        && notification.id <= REMINDER_ID_BASE + 7
+    ))
+    if (!current()) return false
+    await cancelNativeReminders()
+    if (!current()) return false
+    if (days.length === 0) return true
 
-  await cancelWorkoutReminders()
-  if (days.length === 0) return true
-
-  try {
-    await LocalNotifications.schedule({
-      notifications: days.map(appDay => ({
-        id: REMINDER_ID_BASE + appDay,
-        title: translate(language, REMINDER_TITLE),
-        body: translate(language, REMINDER_BODY),
-        schedule: {
-          on: {
-            weekday: appDayToWeekday(appDay),
-            hour: time.hour,
-            minute: time.minute,
-          },
-          allowWhileIdle: true,
-        },
-      })),
-    })
-  } catch (schedulingError) {
     try {
-      await cancelWorkoutReminders()
-      if (previousReminders.length > 0) {
-        await LocalNotifications.schedule({ notifications: previousReminders })
+      await LocalNotifications.schedule({
+        notifications: days.map(appDay => ({
+          id: REMINDER_ID_BASE + appDay,
+          title: translate(language, REMINDER_TITLE),
+          body: translate(language, REMINDER_BODY),
+          schedule: {
+            on: {
+              weekday: appDayToWeekday(appDay),
+              hour: time.hour,
+              minute: time.minute,
+            },
+            allowWhileIdle: true,
+          },
+        })),
+      })
+    } catch (schedulingError) {
+      try {
+        await cancelNativeReminders()
+        if (current() && previousReminders.length > 0) {
+          await LocalNotifications.schedule({ notifications: previousReminders })
+        }
+      } catch (restorationError) {
+        throw new AggregateError(
+          [schedulingError, restorationError],
+          'Workout reminder scheduling and restoration both failed.',
+        )
       }
-    } catch (restorationError) {
-      throw new AggregateError(
-        [schedulingError, restorationError],
-        'Workout reminder scheduling and restoration both failed.',
-      )
+      throw schedulingError
     }
-    throw schedulingError
-  }
-  return true
+    if (!current()) { await cancelNativeReminders(); return false }
+    return true
+  })
 }
 
-/** Cancela todos los recordatorios de entrenamiento previamente programados. */
-export async function cancelWorkoutReminders(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
+let cancellationVersion = 0
+let pendingOperation: Promise<unknown> = Promise.resolve()
+function serialize<T>(operation: () => Promise<T>): Promise<T> {
+  const result = pendingOperation.then(operation)
+  pendingOperation = result.catch(() => undefined)
+  return result
+}
+async function cancelNativeReminders(): Promise<void> {
   const notifications = [1, 2, 3, 4, 5, 6, 7].map(day => ({ id: REMINDER_ID_BASE + day }))
   await LocalNotifications.cancel({ notifications })
+}
+/** Cancela todos los recordatorios de entrenamiento previamente programados. */
+export async function cancelWorkoutReminders(): Promise<void> {
+  // Invalidate before awaiting the native queue so an older schedule/rollback
+  // cannot resurrect the previous account's reminders after logout or switch.
+  cancellationVersion++
+  if (!Capacitor.isNativePlatform()) return
+  await serialize(cancelNativeReminders)
 }

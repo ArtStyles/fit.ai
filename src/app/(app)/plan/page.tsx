@@ -138,7 +138,7 @@ export default async function PlanPage() {
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               {t(plans.length ? 'Pulsa Usar en la rutina que quieras seleccionar como principal. Puedes cambiarla cuando quieras.' : 'Tu perfil ya está guardado. Reintenta la generación para crear tu estructura semanal.')}
             </p>
-            {!plans.length && <Button className="mt-5 h-11 w-full bg-violet-500 text-white hover:bg-violet-600" asChild>
+            {!plans.length && <Button className="mt-5 h-11 w-full bg-violet-600 text-white hover:bg-violet-700" asChild>
               <PendingLink href="/plans/generate?autostart=1">
                 {t('Reintentar generación')}
                 <ChevronRight className="ml-1 h-4 w-4" />
@@ -444,7 +444,7 @@ export default async function PlanPage() {
                     <span className="text-xs font-medium text-muted-foreground">{t('Descripción')}</span>
                     <textarea name="description" defaultValue={planRaw.description ?? ''} rows={3} className="w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-violet-500" />
                   </label>
-                  <SubmitButton label={t('Guardar resumen')} pendingLabel={t('Guardando resumen')} className="h-11 w-full bg-violet-500 text-white hover:bg-violet-600" />
+                  <SubmitButton label={t('Guardar resumen')} pendingLabel={t('Guardando resumen')} className="h-11 w-full bg-violet-600 text-white hover:bg-violet-700" />
                 </form>
               </details>
             </div>

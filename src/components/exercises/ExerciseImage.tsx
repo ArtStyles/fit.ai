@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Dumbbell, ZoomIn } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useOptionalI18n } from '@/components/i18n/I18nProvider'
 import {
   Dialog,
   DialogContent,
@@ -75,7 +76,6 @@ export function ExerciseImage({
   className,
   frameClassName,
   zoomable = false,
-  zoomFocusable = true,
 }: {
   src: string | null | undefined
   alt: string
@@ -87,10 +87,8 @@ export function ExerciseImage({
    *  aunque `className` se mueva al botón contenedor. */
   frameClassName?: string
   zoomable?: boolean
-  /** Si es false, el botón de zoom no entra en el orden de tabulación
-   *  (para cuando la imagen va anidada en un contenedor clickeable). */
-  zoomFocusable?: boolean
 }) {
+  const language = useOptionalI18n()?.language ?? 'es'
   const [errored, setErrored] = useState(false)
 
   // Si cambia el src (instancia reutilizada), olvidar un error previo.
@@ -127,14 +125,13 @@ export function ExerciseImage({
             clickeable (card que navega, fila que selecciona) al tocar la imagen. */}
         <button
           type="button"
-          aria-label={`Ampliar imagen de ${alt}`}
-          tabIndex={zoomFocusable ? undefined : -1}
+          aria-label={`${language === 'en' ? 'Enlarge image of' : 'Ampliar imagen de'} ${alt}`}
           onClick={e => e.stopPropagation()}
           onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
           }}
           className={cn(
-            'group relative block min-h-11 min-w-11 cursor-zoom-in rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60',
+            'group relative block min-h-11 min-w-11 cursor-zoom-in rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400',
             className,
           )}
         >
@@ -146,6 +143,7 @@ export function ExerciseImage({
       </DialogTrigger>
 
       <DialogContent
+        closeLabel={language === 'en' ? 'Close' : 'Cerrar'}
         aria-describedby={undefined}
         className="grid place-items-center border-0 bg-transparent p-0 text-white shadow-none sm:rounded-none"
       >

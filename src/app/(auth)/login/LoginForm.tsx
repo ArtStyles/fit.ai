@@ -9,6 +9,7 @@ import { useToast } from '@/components/feedback/ToastProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { VerifyCodeStep } from '../register/VerifyCodeStep'
 import { getLoginErrorMessage, isEmailNotConfirmedError } from './authError'
+import { useI18n } from '@/components/i18n/I18nProvider'
 
 type LoginFieldErrors = {
   email?: string
@@ -44,6 +45,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 }
 
 export function LoginForm() {
+  const { language } = useI18n()
   const { showToast } = useToast()
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({})
@@ -126,6 +128,7 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} method="post" noValidate className="space-y-5">
+      <PendingLink href="/recover-password" className="flex min-h-11 items-center justify-end rounded-lg text-sm text-violet-300 underline focus-visible:ring-2">{language === 'en' ? 'Forgot your password?' : '¿Olvidaste tu contraseña?'}</PendingLink>
       {error && (
         <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           {error}

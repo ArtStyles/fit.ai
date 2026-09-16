@@ -5,6 +5,7 @@ const baseExclude = [
   '**/node_modules/**',
   '**/.next/**',
   '**/.worktrees/**',
+  '**/.artifacts/**',
   '**/android/**/build/**',
   '**/tests/e2e/**',
   '**/mobile/**',

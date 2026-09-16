@@ -13,6 +13,7 @@ import { loadOriginalRoute } from './routes'
 import { navigate, RouteRedirect, useLocationKey } from './router'
 import type { AppState } from './types'
 import { LoginScreen } from './LoginScreen'
+import PasswordRecoveryScreen from './PasswordRecoveryScreen'
 import { StorageSettings } from './StorageSettings'
 import { LocalActionNotices } from './LocalActionNotices'
 import { AppLoadingScreen } from './AppLoadingScreen'
@@ -20,6 +21,7 @@ import { installCompanionBackupSync } from './companion-backup'
 import { useFitnessCardAutoSync } from '@/components/fitness-card/FitnessCardAutoSync'
 import { consumePendingFitnessInvite } from '@/lib/fitness-card/sharing'
 import { installFitnessCardDeepLinks } from './fitness-card/deep-links'
+import { installMobileNotificationLifecycle } from './notification-lifecycle'
 
 async function routePendingFitnessInvite() {
   if (location.pathname.startsWith('/session/') || location.pathname === '/registrar') return
@@ -38,6 +40,12 @@ class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolea
 }
 
 export default function OriginalApp() {
+  useEffect(() => {
+    let disposed = false
+    let cleanup: (() => void) | undefined
+    void installMobileNotificationLifecycle().then(stop => { if (disposed) stop(); else cleanup = stop }).catch(() => {})
+    return () => { disposed = true; cleanup?.() }
+  }, [])
   useEffect(() => {
     let disposed = false
     let cleanup: (() => Promise<void>) | undefined
@@ -74,10 +82,10 @@ export default function OriginalApp() {
     void (async () => {
       const pathname = location.pathname
       // Signing in must remain available even when local storage cannot open.
-      if (pathname === '/login') {
+      if (pathname === '/login' || pathname === '/recover-password') {
         setState(null)
-        setPage(<LoginScreen />)
-        setPageRoute(':/login')
+        setPage(pathname === '/recover-password' ? <PasswordRecoveryScreen /> : <LoginScreen />)
+        setPageRoute(`:${pathname}`)
         loadedRoute.current = `:${locationKey}`
         return
       }
@@ -106,7 +114,7 @@ export default function OriginalApp() {
   }, [locationKey, change])
   const profile = state?.tables.profiles.find(row => row.id === state.accountId)
   const language = profile?.language === 'en' ? 'en' : 'es'
-  const chrome = state && !/^\/(login|register|onboarding|suspended)(\/|$)/.test(location.pathname)
+  const chrome = state && !/^\/(login|register|recover-password|onboarding|suspended)(\/|$)/.test(location.pathname)
   const body = error ? <main className="mx-auto max-w-lg space-y-4 px-5 py-12"><h1 className="font-display text-2xl font-bold">No se pudo abrir esta pantalla</h1><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button onClick={() => navigate('/dashboard')}>Volver a Inicio</Button><Button variant="outline" onClick={() => navigate('/settings/almacenamiento')}>Cuenta y almacenamiento</Button></main>
     : (loading && !page) || pageRoute !== `${state?.accountId ?? ''}:${location.pathname}` ? <AppLoadingScreen /> : <ScreenBoundary key={pageRoute}>{page}</ScreenBoundary>
   const trainer = state?.tables.trainer_profiles?.find(row => row.user_id === state.accountId && row.status === 'active')

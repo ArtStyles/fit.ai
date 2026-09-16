@@ -1,16 +1,19 @@
+param([ValidateSet('apk', 'aab')][string]$Format = 'apk')
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Path '.artifacts' -Force | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$apkPath = Join-Path (Get-Location) 'android/app/build/outputs/apk/release/app-release.apk'
+$relativePath = if ($Format -eq 'aab') { 'android/app/build/outputs/bundle/release/app-release.aab' } else { 'android/app/build/outputs/apk/release/app-release.apk' }
+$entryPrefix = if ($Format -eq 'aab') { 'base/' } else { '' }
+$apkPath = Join-Path (Get-Location) $relativePath
 $archive = [System.IO.Compression.ZipFile]::OpenRead($apkPath)
 function Read-ZipText([string]$name) {
-  $entry = $archive.GetEntry($name)
+  $entry = $archive.GetEntry($entryPrefix + $name)
   if ($null -eq $entry) { throw "Missing APK entry: $name" }
   $reader = [System.IO.StreamReader]::new($entry.Open())
   try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 function Zip-Hash([string]$name) {
-  $entry = $archive.GetEntry($name)
+  $entry = $archive.GetEntry($entryPrefix + $name)
   if ($null -eq $entry) { throw "Missing APK entry: $name" }
   $stream = $entry.Open()
   $sha = [System.Security.Cryptography.SHA256]::Create()
@@ -39,11 +42,12 @@ try {
       if ((Zip-Hash ('assets/public' + $exercise.motion.preview)) -ne $exercise.motion.previewSha256) { throw 'Reviewed motion mismatch' }
     }
   }
-  if ($archive.GetEntry('assets/public/sw.js')) { throw 'Web service worker must not be packaged' }
+  if ($archive.GetEntry($entryPrefix + 'assets/public/sw.js')) { throw 'Web service worker must not be packaged' }
   if ((Zip-Hash 'assets/public/sql-wasm.wasm') -ne (Get-FileHash mobile/dist/sql-wasm.wasm -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'SQLite runtime mismatch' }
   if ((Zip-Hash 'assets/public/third-party/MuscleMap-LICENSE.txt') -ne (Get-FileHash public/third-party/MuscleMap-LICENSE.txt -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'MuscleMap license mismatch' }
   $result = [ordered]@{
-    apk = $apkPath
+    artifact = $apkPath
+    format = $Format
     sha256 = (Get-FileHash $apkPath -Algorithm SHA256).Hash.ToLowerInvariant()
     bytes = (Get-Item $apkPath).Length
     appId = $config.appId
@@ -57,6 +61,6 @@ try {
     muscleMapLicenseVerified = $true
   }
   $json = $result | ConvertTo-Json
-  $json | Set-Content .artifacts/apk-verification.json
+  $json | Set-Content (Join-Path '.artifacts' "$Format-verification.json")
   $json
 } finally { $archive.Dispose() }

@@ -51,12 +51,14 @@ describe('original application SQLite state', () => {
   it('preserves complete original metric and session rows through SQLite and backup', async () => {
     const app = await store()
     const initial = state()
+    initial.remoteUserId = initial.accountId
     await app.create(initial)
     expect(await app.read()).toEqual(initial)
     const backup = await app.exportBackup()
     const restored = await store()
-    await restored.create(state('signed-in-account'))
-    await restored.importBackup(backup)
+    await restored.create({ ...initial, tables: { profiles: [{ id: initial.accountId }] } })
+    const preview = await restored.previewBackupRestore(backup)
+    await restored.restoreBackup(preview.token, true)
     expect((await restored.read())?.tables).toEqual(initial.tables)
   })
 
@@ -130,7 +132,7 @@ describe('original application SQLite state', () => {
     expect((await app.read())?.tables.measurements[0].weight_kg).toBeNull()
   })
 
-  it('imports a separate account, merges identical backups idempotently and rejects conflicts', async () => {
+  it('accepts identical same-account backups idempotently and rejects conflicts or another owner', async () => {
     const app = await store()
     await app.create(state())
     const originalBackup = await app.exportBackup()
@@ -142,10 +144,9 @@ describe('original application SQLite state', () => {
     expect((await app.read())?.tables.measurements).toEqual([])
     const other = await store()
     await other.create(state('account-b'))
-    await app.importBackup(await other.exportBackup())
-    expect(await app.list()).toHaveLength(2)
-    expect((await app.read())?.accountId).toBe('account-b')
-    await app.activate('account-a')
+    await expect(app.importBackup(await other.exportBackup())).rejects.toThrow(/owner/i)
+    expect(await app.list()).toHaveLength(1)
+    expect((await app.read())?.accountId).toBe('account-a')
     expect((await app.read())?.tables.measurements).toEqual([])
   })
 
@@ -184,7 +185,7 @@ describe('original application SQLite state', () => {
   it('rolls back an in-progress backup import when logout starts before activation', async () => {
     const driver = new NodeSqliteDriver(':memory:'); drivers.push(driver)
     const app = await createAppStore(driver); const initial = state(); await app.create(initial)
-    const source = await store(); await source.create(state('account-b'))
+    const source = await store(); await source.create(state())
     const backup = await source.exportBackup()
     let release!: () => void; let started!: () => void
     const paused = new Promise<void>(resolve => { release = resolve })
@@ -192,7 +193,7 @@ describe('original application SQLite state', () => {
     const execute = driver.execute.bind(driver)
     vi.spyOn(driver, 'execute').mockImplementation(async (sql, parameters) => {
       const result = await execute(sql, parameters)
-      if (sql.startsWith('INSERT INTO original_app_accounts') && parameters?.[0] === 'account-b') {
+      if (sql.startsWith('INSERT INTO original_app_settings') && parameters?.[0] === 'active_account') {
         started(); await paused
       }
       return result

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { TYPE_CFG, DIFF_CFG } from './config'
 import { ExerciseImage } from '@/components/exercises/ExerciseImage'
 import type { Exercise } from '@/types/exercise'
@@ -21,30 +22,32 @@ function clean(text: string | null): string {
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
-function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
+function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: (trigger: HTMLButtonElement) => void }) {
   const { t } = useI18n()
   const cfg  = ex.exercise_type ? TYPE_CFG[ex.exercise_type] : null
   const diff = ex.difficulty    ? DIFF_CFG[ex.difficulty]    : null
 
   return (
     <article
-      role="button"
-      tabIndex={0}
       aria-label={ex.name}
-      onClick={onClick}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       className="
-        group flex flex-col gap-3 rounded-2xl bg-zinc-900 p-4
+        group relative flex flex-col gap-3 rounded-2xl bg-zinc-900 p-4
         border border-zinc-800 cursor-pointer
         hover:bg-zinc-800/80 hover:border-zinc-700
         hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/60
         transition-all duration-200 select-none
       "
     >
+      <button
+        type="button"
+        aria-label={ex.name}
+        aria-haspopup="dialog"
+        onClick={event => onClick(event.currentTarget)}
+        className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+      />
       {/* Thumbnail + compound */}
-      <div className="relative">
-        <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" zoomable zoomFocusable={false} />
+      <div className="pointer-events-none relative z-20 [&_button]:pointer-events-auto">
+        <ExerciseImage src={ex.image_url} alt={ex.name} variant="thumb" className="w-full" zoomable />
         {ex.is_compound && (
           <span className="absolute top-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-200">
             {t('Compuesto')}
@@ -71,10 +74,10 @@ function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
         </div>
 
         {ex.muscle_groups.length > 0 && (
-          <p className="text-[11px] text-zinc-500 leading-relaxed capitalize">
+          <p className="text-[11px] text-zinc-400 leading-relaxed capitalize">
             {ex.muscle_groups.slice(0, 3).join(' · ')}
             {ex.muscle_groups.length > 3 && (
-              <span className="text-zinc-700"> +{ex.muscle_groups.length - 3}</span>
+              <span className="text-zinc-400"> +{ex.muscle_groups.length - 3}</span>
             )}
           </p>
         )}
@@ -88,7 +91,7 @@ function ExerciseCard({ ex, onClick }: { ex: Exercise; onClick: () => void }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h4 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2.5">
+      <h4 className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-2.5">
         {title}
       </h4>
       {children}
@@ -104,54 +107,42 @@ function Chip({ label }: { label: string }) {
   )
 }
 
-function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
+function ExerciseModal({ ex, onClose, returnFocus }: { ex: Exercise; onClose: () => void; returnFocus: HTMLElement | null }) {
   const { t } = useI18n()
   const cfg  = ex.exercise_type ? TYPE_CFG[ex.exercise_type] : null
   const diff = ex.difficulty    ? DIFF_CFG[ex.difficulty]    : null
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  /* focus close button on mount */
-  useEffect(() => { closeRef.current?.focus() }, [])
-
-  /* lock body scroll */
-  useEffect(() => {
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = prev }
-  }, [])
-
   const description  = clean(ex.description)
   const instructions = clean(ex.instructions)
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
-    >
+    <DialogPrimitive.Root open onOpenChange={open => { if (!open) onClose() }}>
+    <DialogPrimitive.Portal>
       {/* Backdrop */}
+      <DialogPrimitive.Overlay asChild>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/75 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
+        className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm"
       />
+      </DialogPrimitive.Overlay>
 
       {/* Panel */}
+      <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+      <DialogPrimitive.Content
+        asChild
+        aria-describedby={undefined}
+        onOpenAutoFocus={event => { event.preventDefault(); closeRef.current?.focus() }}
+        onCloseAutoFocus={event => { event.preventDefault(); if (returnFocus?.isConnected) returnFocus.focus() }}
+      >
       <motion.div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modal-title"
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1,    y: 0  }}
         exit={{   opacity: 0, scale: 0.96, y: 12  }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/70 flex flex-col max-h-[88vh] overflow-hidden"
-        onClick={e => e.stopPropagation()}
+        className="pointer-events-auto relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/70 flex flex-col max-h-[88vh] overflow-hidden"
       >
         {/* ── Hero image ────────────────────────────────────────────────── */}
         <ExerciseImage src={ex.image_url} alt={ex.name} variant="hero" zoomable className="w-full" frameClassName="rounded-none border-0" />
@@ -162,7 +153,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
           <button
             ref={closeRef}
             onClick={onClose}
-            className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-xl text-zinc-500 hover:text-white hover:bg-zinc-700/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/60"
+            className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-700/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
             aria-label={t('Cerrar')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,9 +167,9 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
               {cfg?.emoji ?? '💪'}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 id="modal-title" className="font-bold text-white text-lg leading-snug">
+              <DialogPrimitive.Title asChild><h2 className="font-bold text-white text-lg leading-snug">
                 {ex.name}
-              </h2>
+              </h2></DialogPrimitive.Title>
 
               {/* Meta row */}
               <div className="flex flex-wrap items-center gap-2 mt-1.5">
@@ -194,8 +185,8 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
                 )}
                 {ex.is_compound && (
                   <>
-                    <span className="text-zinc-700">·</span>
-                    <span className="text-[11px] text-zinc-500 font-medium">{t('Compuesto')}</span>
+                    <span className="text-zinc-400" aria-hidden="true">·</span>
+                    <span className="text-[11px] text-zinc-400 font-medium">{t('Compuesto')}</span>
                   </>
                 )}
               </div>
@@ -261,7 +252,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
 
           {/* Empty state */}
           {!description && !instructions && ex.muscle_groups.length === 0 && ex.equipment.length === 0 && (
-            <p className="text-sm text-zinc-600 text-center py-4">
+            <p className="text-sm text-zinc-400 text-center py-4">
               {t('No hay más detalles disponibles para este ejercicio.')}
             </p>
           )}
@@ -269,7 +260,7 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <div className="px-5 py-3.5 border-t border-zinc-800 shrink-0 flex items-center justify-between">
-          <span className="text-[10px] text-zinc-700 font-mono">
+          <span className="text-[10px] text-zinc-400 font-mono">
             {ex.external_id ?? ex.id.slice(0, 8)}
           </span>
           <button
@@ -280,7 +271,10 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
           </button>
         </div>
       </motion.div>
-    </motion.div>
+      </DialogPrimitive.Content>
+      </div>
+    </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
 
@@ -288,27 +282,20 @@ function ExerciseModal({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
 
 export default function ExerciseGrid({ exercises }: { exercises: Exercise[] }) {
   const [selected, setSelected] = useState<Exercise | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
 
   const close = useCallback(() => setSelected(null), [])
-
-  /* Keyboard: Esc to close */
-  useEffect(() => {
-    if (!selected) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [selected, close])
 
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {exercises.map(ex => (
-          <ExerciseCard key={ex.id} ex={ex} onClick={() => setSelected(ex)} />
+          <ExerciseCard key={ex.id} ex={ex} onClick={trigger => { triggerRef.current = trigger; setSelected(ex) }} />
         ))}
       </div>
 
       <AnimatePresence>
-        {selected && <ExerciseModal ex={selected} onClose={close} />}
+        {selected && <ExerciseModal ex={selected} onClose={close} returnFocus={triggerRef.current} />}
       </AnimatePresence>
     </>
   )

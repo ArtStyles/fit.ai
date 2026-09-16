@@ -33,14 +33,14 @@ function StatStrip({ total, page, totalPages, t }: { total: number; page: number
     <div className="flex items-center gap-5">
       <div className="text-center">
         <div className="text-2xl font-bold text-white tabular-nums">{total.toLocaleString()}</div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">{t('Ejercicios')}</div>
+        <div className="text-[10px] text-zinc-400 uppercase tracking-wider">{t('Ejercicios')}</div>
       </div>
       <div className="w-px h-8 bg-zinc-800" />
       <div className="text-center">
         <div className="text-2xl font-bold text-white tabular-nums">
-          {page}<span className="text-zinc-600 text-base">/{totalPages}</span>
+          {page}<span className="text-zinc-400 text-base">/{totalPages}</span>
         </div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider">{t('Página')}</div>
+        <div className="text-[10px] text-zinc-400 uppercase tracking-wider">{t('Página')}</div>
       </div>
       <div className="w-px h-8 bg-zinc-800 hidden lg:block" />
       <div className="hidden lg:flex items-center gap-3.5">
@@ -69,7 +69,7 @@ function Pagination({ page, totalPages, sp, t }: { page: number; totalPages: num
   }
 
   const navCls = 'h-9 px-3.5 flex items-center text-sm font-medium text-zinc-400 hover:text-white bg-zinc-800/60 hover:bg-zinc-700 rounded-xl border border-zinc-700 hover:border-zinc-600 transition-colors'
-  const deadCls = 'h-9 px-3.5 flex items-center text-sm text-zinc-700 bg-zinc-800/20 rounded-xl border border-zinc-800 cursor-not-allowed'
+  const deadCls = 'h-9 px-3.5 flex items-center text-sm text-zinc-400 bg-zinc-800/20 rounded-xl border border-zinc-800 cursor-not-allowed'
 
   return (
     <div className="flex items-center justify-center gap-1.5 mt-12">
@@ -80,14 +80,14 @@ function Pagination({ page, totalPages, sp, t }: { page: number; totalPages: num
       <div className="flex items-center gap-1 mx-1">
         {pages.map((p, i) =>
           p === '…' ? (
-            <span key={`el-${i}`} className="w-9 text-center text-zinc-600">…</span>
+            <span key={`el-${i}`} className="w-9 text-center text-zinc-400">…</span>
           ) : (
             <Link
               key={p}
               href={href(p)}
               className={`w-9 h-9 flex items-center justify-center text-sm rounded-xl border font-medium transition-colors ${
                 p === page
-                  ? 'bg-orange-500 text-white border-orange-500'
+                  ? 'bg-orange-700 text-white border-orange-700'
                   : 'text-zinc-400 hover:text-white bg-zinc-800/60 hover:bg-zinc-700 border-zinc-700 hover:border-zinc-600'
               }`}
             >
@@ -178,7 +178,7 @@ export default async function ExercisesPage({
             </div>
             <div>
               <p className="text-base font-semibold text-white">{t('No se encontraron ejercicios')}</p>
-              <p className="text-sm text-zinc-500 mt-1">{t('Prueba a cambiar o limpiar los filtros')}</p>
+              <p className="text-sm text-zinc-400 mt-1">{t('Prueba a cambiar o limpiar los filtros')}</p>
             </div>
             <Link href="/exercises" className="text-sm text-orange-400 hover:text-orange-300 underline underline-offset-2">
               {t('Limpiar todos los filtros')}

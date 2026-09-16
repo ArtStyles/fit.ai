@@ -130,7 +130,9 @@ try {
   await page.getByRole('button', { name: 'Exportar respaldo', exact: true }).click()
   const download = await pendingDownload
   await page.getByLabel('Importar respaldo').setInputFiles(await download.path())
-  await page.getByRole('status').filter({ hasText: 'Respaldo importado.' }).waitFor()
+  // This fixture has no authenticated remote account. Import requires its owner
+  // to sign in; the separate backup restore journey exercises confirmation/undo.
+  await page.getByRole('status').filter({ hasText: 'Conecta a internet e inicia sesión con la cuenta del respaldo.' }).waitFor()
   const afterBackup = await readStoredState()
   assert.equal(afterBackup.tables.progress_logs.length, 1)
   assert.equal(afterBackup.tables.measurements[0].legs_cm, 52)

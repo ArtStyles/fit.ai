@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { installAccountFixture, newTestAccount, storedAccountSnapshot } from './account-fixture.mjs'
 
 const origin = process.env.MOBILE_PREVIEW_URL || 'http://127.0.0.1:4178'
-const artifacts = '.artifacts/profile-fix'
+const artifacts = '.artifacts/profile-regression'
 await mkdir(artifacts, { recursive: true })
 const state = await newTestAccount({ linked: false })
 state.email = 'ana.perez@example.invalid'
@@ -57,20 +57,23 @@ try {
   }
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Quitar foto', exact: true }).click()
-  await expect(page.getByText('No se pudo eliminar la foto', { exact: true })).toBeVisible()
+  await expect(page.getByText('Foto eliminada', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Cambiar foto', exact: true })).toBeEnabled()
-  await expect(page.getByRole('button', { name: 'Cambiar foto', exact: true }).locator('img')).toHaveAttribute('src', state.tables.profiles[0].avatar_url)
+  await expect(page.getByRole('button', { name: 'Cambiar foto', exact: true }).locator('img')).toHaveCount(0)
+  assert.equal((await storedAccountSnapshot(page)).accounts[0].tables.profiles[0].avatar_url, null)
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Quitar foto', exact: true })).toHaveCount(0)
   await page.getByLabel('Nombre', { exact: true }).fill('Ana María Pérez')
   await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
   await expect(page.getByText('Nombre actualizado.', { exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Ana María Pérez', exact: true })).toBeVisible()
   const saved = (await storedAccountSnapshot(page)).accounts[0]
-  assert.equal(saved.tables.profiles[0].avatar_url, state.tables.profiles[0].avatar_url)
+  assert.equal(saved.tables.profiles[0].avatar_url, null)
   assert.deepEqual(saved.tables.exercises, state.tables.exercises)
   assert.deepEqual(errors, [])
-  console.log('PASS dashboard photo preview and text account action at 320/390/1440; profile name persists and original photo/data remain intact')
-  await writeFile(`${artifacts}/report.json`, JSON.stringify({ passed: true, widths: [320, 390, 1440], cases: ['photo opens viewer instead of account menu', 'whole image fits without crop', 'Escape restores photo focus', 'texts open mobile account dialog and desktop menu', 'account button accessible name includes visible text', 'profile layout has no horizontal overflow', 'unavailable mobile photo deletion recovers with original photo', 'name edit persists after reload', 'photo and training data retained'], pageErrors: errors }, null, 2))
+  console.log('PASS dashboard photo preview and text account action at 320/390/1440; profile name and supported photo removal persist; other data remain intact')
+  await writeFile(`${artifacts}/report.json`, JSON.stringify({ passed: true, widths: [320, 390, 1440], cases: ['photo opens viewer instead of account menu', 'whole image fits without crop', 'Escape restores photo focus', 'texts open mobile account dialog and desktop menu', 'account button accessible name includes visible text', 'profile layout has no horizontal overflow', 'supported mobile photo deletion persists after reload', 'name edit persists after reload', 'photo removal retained and training data preserved'], pageErrors: errors }, null, 2))
 } catch (error) {
   await page?.screenshot({ path: `${artifacts}/failure.png`, fullPage: true }).catch(() => {})
   throw error

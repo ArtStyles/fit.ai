@@ -327,7 +327,7 @@ export function BottomNav() {
                 data-bottom-nav-label
                 className={cn(
                 'mt-0.5 inline-block w-max max-w-none whitespace-nowrap text-center font-display text-[10px] font-semibold leading-none tracking-[-0.03em] transition-colors',
-                isTrainAction ? '-mt-1 text-primary' : isActive ? 'text-primary' : 'text-muted-foreground',
+                isTrainAction ? '-mt-1 text-violet-400' : isActive ? 'text-violet-400' : 'text-muted-foreground',
               )}>
                 {t(label)}
               </span>

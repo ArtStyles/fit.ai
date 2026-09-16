@@ -31,6 +31,7 @@ export function TimelineNode({
   return (
     <li data-timeline-tone={tone} className={cn('relative pl-8', className)}>
       <span
+        role="img"
         aria-label={label}
         className={cn(
           'absolute left-0 top-4 z-10 h-3.5 w-3.5 rounded-full border-2 border-background transition-[box-shadow,transform] duration-[var(--motion-expand)] motion-reduce:transition-none',

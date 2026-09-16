@@ -2,7 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { normalizeLanguage } from '@/lib/i18n'
 
-const PUBLIC_EXACT = ['/', '/login', '/register', '/auth/callback', '/privacy', '/pricing', '/suspended', '/language-selector']
+const PUBLIC_EXACT = ['/', '/login', '/register', '/recover-password', '/delete-account', '/auth/callback', '/privacy', '/pricing', '/suspended', '/language-selector']
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_EXACT.includes(pathname)
@@ -45,6 +45,10 @@ export async function proxy(request: NextRequest) {
 
   let supabaseResponse = createForwardedResponse()
 
+  // The mobile account endpoint verifies its bearer token itself. Cookie auth
+  // redirects would turn an API failure into HTML or block Capacitor preflight.
+  if (pathname === '/api/account/delete') return supabaseResponse
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -78,7 +82,7 @@ export async function proxy(request: NextRequest) {
     const suspensionActive = accessProfile?.account_status === 'suspended'
       && (!accessProfile.suspended_until || new Date(accessProfile.suspended_until).getTime() > Date.now())
 
-    if (suspensionActive && pathname !== '/suspended' && !pathname.startsWith('/auth')) {
+    if (suspensionActive && !['/suspended', '/delete-account', '/recover-password'].includes(pathname) && !pathname.startsWith('/auth')) {
       const redirectResponse = NextResponse.redirect(new URL('/suspended', request.url))
       supabaseResponse.cookies.getAll().forEach(cookie => redirectResponse.cookies.set(cookie))
       return redirectResponse

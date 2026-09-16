@@ -57,7 +57,7 @@ async function run(name, width, options, check) {
     await page.goto(`${origin}/login`)
     await expect(page.getByLabel('Correo electrónico', { exact: true })).toBeVisible()
     await installAccountFixture(page, state)
-    await page.goto(`${origin}/progress`)
+    await page.goto(`${origin}/progress`); await openCompletedMuscles(page)
     await check(page, state)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
@@ -71,7 +71,7 @@ async function run(name, width, options, check) {
   } finally { await context.close() }
 }
 async function selectChest(page, english = false) {
-  await page.getByRole('button', { name: english ? '1 week' : '1 semana', exact: true }).click()
+  await selectProgressPeriod(page, 1, english)
   const map = page.locator('[data-muscle-map="completed"]')
   const muscle = map.getByRole('button', { name: english ? 'Chest: 12 completed sets' : 'Pecho: 12 series completadas', exact: true })
   await muscle.focus()
@@ -91,7 +91,7 @@ async function capture(page, element, filename) {
 }
 try {
   await run('tap-anatomy', 390, {}, async page => {
-    await page.getByRole('button', { name: '1 semana', exact: true }).click()
+    await selectProgressPeriod(page, 1)
     const chest = page.locator('[data-muscle-map="completed"] g[data-muscle-group="chest"] path').first()
     await chest.tap()
     await expect(page.getByRole('region', { name: 'Detalle de Pecho', exact: true })).toBeVisible()
@@ -117,7 +117,7 @@ try {
       await currentPress.getByRole('link', { name: /Torso A/ }).click()
       await expect(page).toHaveURL(`${origin}/history/${id(41)}`)
       await expect(page.getByRole('heading', { name: 'Torso A', level: 2, exact: true })).toBeVisible()
-      await page.goto(`${origin}/progress`)
+      await page.goto(`${origin}/progress`); await openCompletedMuscles(page)
       const repeated = await selectChest(page)
       await repeated.getByRole('link', { name: 'Historial de Press de banca', exact: true }).click()
       await expect(page).toHaveURL(`${origin}/exercises/${id(10)}#exercise-history-title`)
@@ -125,13 +125,13 @@ try {
       await expect(historyHeading).toBeInViewport()
       await page.reload()
       await expect(historyHeading).toBeInViewport()
-      await page.goto(`${origin}/progress`)
+      await page.goto(`${origin}/progress`); await openCompletedMuscles(page)
       await selectChest(page)
-      await page.getByRole('button', { name: '4 semanas', exact: true }).click()
+      await selectProgressPeriod(page, 4)
       const rangeChanged = page.getByRole('region', { name: 'Detalle de Pecho', exact: true })
       await expect(rangeChanged.locator('[data-period="current"]')).toContainText('31')
       await expect(rangeChanged).toContainText('Sin registros en el periodo anterior para comparar.')
-      await page.getByRole('button', { name: '1 semana', exact: true }).click()
+      await selectProgressPeriod(page, 1)
       await expect(rangeChanged.locator('[data-period="current"]')).toContainText('12')
       const map = page.locator('[data-muscle-map="completed"]')
       await map.getByRole('button', { name: 'Abdomen: 2 series completadas', exact: true }).click()
@@ -160,4 +160,21 @@ try {
 } finally {
   await writeFile(`${artifacts}/results.json`, JSON.stringify({ passed }, null, 2))
   await browser.close()
+}
+
+// Regression helper: ProgressHub now collapses the textual muscle controls.
+// Open the actual summary with a click; retain every original muscle assertion.
+async function openCompletedMuscles(page) {
+  const map = page.locator('[data-muscle-map="completed"]')
+  await expect(map).toBeVisible()
+  const explorer = map.locator('details[data-muscle-explorer="true"]')
+  await expect(explorer).toHaveCount(1)
+  if (!(await explorer.getAttribute('open') !== null)) await explorer.locator(':scope > summary').click()
+  await expect(explorer).toHaveAttribute('open', '')
+}
+async function selectProgressPeriod(page, weeks, english = false) {
+  await page.getByRole('combobox', { name: english ? 'Select period' : 'Seleccionar periodo', exact: true }).click()
+  const label = english ? weeks + (weeks === 1 ? ' week' : ' weeks') : weeks + (weeks === 1 ? ' semana' : ' semanas')
+  await page.getByRole('option', { name: label, exact: true }).click()
+  await expect(page.getByRole('combobox', { name: english ? 'Select period' : 'Seleccionar periodo', exact: true })).toHaveText(label)
 }

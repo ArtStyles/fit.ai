@@ -18,51 +18,14 @@ import {
   scheduleWorkoutReminders,
   cancelWorkoutReminders,
 } from '@/lib/native/notifications'
+import { DEFAULT_REMINDER_TIME, loadWorkoutReminderPreference, persistWorkoutReminderPreference, reminderTime, validReminderTime } from '@/lib/native/workoutReminderPreferences'
 
-const STORAGE_KEY = 'fitai:workout-reminders'
-const DEFAULT_TIME = '18:00'
+const DEFAULT_TIME = DEFAULT_REMINDER_TIME
 
 const DAY_KEYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as const
 
-interface StoredPref {
-  enabled: boolean
-  time: string // "HH:MM"
-}
-
-function loadPref(): StoredPref {
-  if (typeof window === 'undefined') return { enabled: false, time: DEFAULT_TIME }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<StoredPref>
-      return {
-        enabled: Boolean(parsed.enabled),
-        time: typeof parsed.time === 'string' ? parsed.time : DEFAULT_TIME,
-      }
-    }
-  } catch {
-    /* preferencia corrupta → valores por defecto */
-  }
-  return { enabled: false, time: DEFAULT_TIME }
-}
-
-function persist(pref: StoredPref): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pref))
-  } catch {
-    /* almacenamiento no disponible: la programación nativa ya quedó hecha */
-  }
-}
-
-function parseTime(time: string): { hour: number; minute: number } {
-  const [h, m] = time.split(':').map(Number)
-  return {
-    hour: Number.isFinite(h) ? h : 18,
-    minute: Number.isFinite(m) ? m : 0,
-  }
-}
-
 interface Props {
+  accountId: string
   preferredWorkoutDays: number[]
 }
 
@@ -125,7 +88,7 @@ export function WorkoutReminderControls({
   )
 }
 
-export function WorkoutReminders({ preferredWorkoutDays }: Props) {
+export function WorkoutReminders({ accountId, preferredWorkoutDays }: Props) {
   const { showToast } = useToast()
   const { language, t } = useI18n()
   const operations = useRef(createSingleFlight()).current
@@ -134,6 +97,11 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   const [time, setTime] = useState(DEFAULT_TIME)
   const [busy, setBusy] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
+  const active = useRef(false)
+  const owner = useRef(accountId)
+  owner.current = accountId
+  const isCurrent = () => active.current && owner.current === accountId
+  const persist = (pref: { enabled: boolean; time: string }) => { if (isCurrent()) persistWorkoutReminderPreference(accountId, pref) }
 
   const days = [...preferredWorkoutDays].sort((a, b) => a - b)
   const hasDays = days.length > 0
@@ -150,6 +118,7 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   }
 
   function reportPermissionRequired() {
+    if (!isCurrent()) return
     const message = t('Permiso necesario')
     setStatusMessage(message)
     showToast({
@@ -160,33 +129,36 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   }
 
   function reportNativeFailure() {
+    if (!isCurrent()) return
     const message = t('No se pudieron actualizar los recordatorios.')
     setStatusMessage(message)
     showToast({ title: message, variant: 'error' })
   }
 
-  // Hidratar preferencia + detectar plataforma (solo en cliente). Si ya estaba
-  // activado, reprograma con los días actuales para captar cambios del perfil.
+  // Android reconciles account/profile changes from the app lifecycle, even
+  // when this settings screen is closed. Hydration never asks for permission.
   useEffect(() => {
+    active.current = true
     const native = remindersSupported()
     setSupported(native)
-    const pref = loadPref()
+    const pref = loadWorkoutReminderPreference(accountId)
     setEnabled(pref.enabled)
     setTime(pref.time)
-    if (native && pref.enabled && days.length > 0) {
+    if (process.env.NEXT_PUBLIC_LOCAL_APP !== 'true' && native && pref.enabled && days.length > 0) {
       void runOperation(() => applyWorkoutReminderToggle({
         enable: true,
-        schedule: () => scheduleWorkoutReminders(days, parseTime(pref.time), language),
+        schedule: () => scheduleWorkoutReminders(days, reminderTime(pref.time), language, { requestPermission: false, isCurrent }),
         cancel: cancelWorkoutReminders,
       })).then(outcome => {
-        if (outcome !== 'permission-denied') return
+        if (!isCurrent() || outcome !== 'permission-denied') return
         setEnabled(false)
         persist({ enabled: false, time: pref.time })
         reportPermissionRequired()
       }).catch(reportNativeFailure)
     }
+    return () => { active.current = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [accountId])
 
   async function handleToggle() {
     if (operations.isPending || !hasDays) return
@@ -194,10 +166,10 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
     try {
       const outcome = await runOperation(() => applyWorkoutReminderToggle({
         enable: next,
-        schedule: () => scheduleWorkoutReminders(days, parseTime(time), language),
+        schedule: () => scheduleWorkoutReminders(days, reminderTime(time), language, { isCurrent }),
         cancel: cancelWorkoutReminders,
       }))
-      if (!outcome) return
+      if (!isCurrent() || !outcome) return
       if (outcome === 'permission-denied') {
         reportPermissionRequired()
         return
@@ -222,7 +194,7 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
   }
 
   async function handleTimeChange(value: string) {
-    if (operations.isPending) return
+    if (operations.isPending || !validReminderTime(value)) return
     const previousTime = time
     setTime(value)
     if (!enabled || !supported) {
@@ -232,12 +204,14 @@ export function WorkoutReminders({ preferredWorkoutDays }: Props) {
 
     try {
       const scheduled = await runOperation(() => rescheduleWorkoutReminder({
-        schedule: () => scheduleWorkoutReminders(days, parseTime(value), language),
+        schedule: () => scheduleWorkoutReminders(days, reminderTime(value), language, { isCurrent }),
         onRollback: () => {
+          if (!isCurrent()) return
           setTime(previousTime)
           persist({ enabled, time: previousTime })
         },
       }))
+      if (!isCurrent()) return
       if (scheduled) {
         persist({ enabled, time: value })
       } else if (scheduled === false) {

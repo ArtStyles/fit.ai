@@ -1,5 +1,5 @@
 import { getLocalDateString } from '@/lib/workouts/schedule'
-import { occurrenceCompleted } from '@/lib/workouts/occurrences'
+import { occurrenceCompleted, isGuidedSessionLog } from '@/lib/workouts/occurrences'
 import { buildProgressionSuggestions, type ProgressionSuggestion } from '@/lib/progression'
 import { detectPersonalRecord, type PRRecord } from '@/lib/progression/records'
 import { createSessionResultSnapshot, parseSessionResultSnapshot } from '@/lib/session/resultSnapshot'
@@ -44,10 +44,11 @@ export async function saveInState(state: State, payload: SaveSessionPayload, now
   const occurrenceSourceDate = authorization.occurrence_source_date ?? getLocalDateString(originalWindowStart, authorization.policy_timezone)
   const occurrenceScheduledDate = authorization.occurrence_scheduled_date ?? occurrenceSourceDate
   if (!Number.isFinite(start) || !Number.isFinite(end)) return fail('No se pudo validar el día de la sesión.')
-  if (rows(state, 'progress_logs').some(row => row.user_id === owner(state) && Date.parse(row.completed_at) >= start && Date.parse(row.completed_at) < end) || rows(state, 'session_authorizations').some(row => row.user_id === owner(state) && row.client_session_id !== payload.clientSessionId && row.policy_date === authorization.policy_date && row.consumed_at)) return fail('Ya registraste una sesión hoy. Máximo una sesión por día.')
+  const guidedLogs = rows(state, 'progress_logs').filter(row => row.user_id === owner(state) && isGuidedSessionLog(row as { workout_id: string | null }))
+  if (guidedLogs.some(row => Date.parse(row.completed_at) >= start && Date.parse(row.completed_at) < end) || rows(state, 'session_authorizations').some(row => row.user_id === owner(state) && row.client_session_id !== payload.clientSessionId && row.policy_date === authorization.policy_date && row.consumed_at)) return fail('Ya registraste una sesión hoy. Máximo una sesión por día.')
   if (authorization.occurrence_source_date
-    ? occurrenceCompleted({ workoutId: payload.workoutId, sourceDate: authorization.occurrence_source_date, scheduledDate: authorization.occurrence_scheduled_date }, rows(state, 'progress_logs') as any, authorization.policy_timezone)
-    : rows(state, 'progress_logs').some(row => row.user_id === owner(state) && row.workout_id === payload.workoutId && Date.parse(row.completed_at) >= Date.parse(authorization.workout_window_start) && Date.parse(row.completed_at) < end)) return fail('Esta rutina ya fue completada.')
+    ? occurrenceCompleted({ workoutId: payload.workoutId, sourceDate: authorization.occurrence_source_date, scheduledDate: authorization.occurrence_scheduled_date }, guidedLogs as any, authorization.policy_timezone)
+    : guidedLogs.some(row => row.workout_id === payload.workoutId && Date.parse(row.completed_at) >= Date.parse(authorization.workout_window_start) && Date.parse(row.completed_at) < end)) return fail('Esta rutina ya fue completada.')
   const canonical = (authorization.prescription_snapshot ?? []) as Row[]
   const locked = context.plan?.prescriptionLocked === true
   const used = new Set<string>()
