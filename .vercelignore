@@ -1,5 +1,7 @@
 # Only the web application is deployed to Vercel. Keep local credentials,
 # signing material, device builds and audit fixtures on the development host.
+# Root directory patterns intentionally omit trailing slashes: CLI archive
+# mode can otherwise retain empty directory entries and traverse them again.
 /.git
 /.vercel
 .env*

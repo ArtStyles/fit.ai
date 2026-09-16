@@ -2,7 +2,7 @@
 
 ## Estado y alcance
 
-Este procedimiento acompaña a la rama `codex/android-offline`. **No se ejecutó contra producción ni se desplegaron estos cambios.** La URL pública confirmada por el propietario es <https://fit-ai-kohl.vercel.app/>; esa URL no identifica por sí sola el proyecto Supabase correcto.
+Este procedimiento acompaña a la rama `codex/android-offline`. **La migración y la web se desplegaron el 16/09/2026**, después de la autorización del propietario. Recibos y límites de la verificación: `android-account-deletion-deployment.md` y `android-web-deployment.md`. La URL pública es <https://fit-ai-kohl.vercel.app/> y el proyecto Supabase verificado es `duqayqktljywufgxobbl`.
 
 La implementación local requiere juntos:
 
@@ -87,7 +87,7 @@ El runner SQL crea su propio contenedor efímero, carga el esquema real y usa cu
 Orden para un operador autorizado:
 
 1. Preparar un despliegue del servidor desde el código revisado, configurar sus variables y comprobar build/typecheck y pruebas correspondientes. Revisar el texto de retención de `/delete-account` y privacidad contra la sección 6.
-2. En el proyecto verificado, revisar de nuevo el ledger y el dry-run. Aplicar mediante `pnpm supabase:migrations:push`. Este comando **sí modifica la base de datos**; no fue ejecutado aquí. No editar el ledger a mano ni usar reset remoto.
+2. En el proyecto verificado, revisar de nuevo el ledger y el dry-run. Aplicar mediante `pnpm supabase:migrations:push`. Este comando **sí modifica la base de datos**. El recibo de este lanzamiento documenta el fallback de transporte con el migrador oficial Go 2.101.0 ante fallos de la CLI fijada. No editar el ledger a mano ni usar reset remoto.
 3. Repetir `pnpm supabase:migrations:list` y `pnpm supabase:migrations:dry-run`: la versión `20260916010000` debe figurar aplicada y no deben quedar migraciones previstas para este lanzamiento.
 4. Ejecutar las consultas de la sección 4. Publicar después el servidor preparado, incluyendo API, acción web, páginas y excepciones de rutas públicas. No activar en Android el flujo contra una API anterior.
 5. Verificar páginas/API y correo real con las cuentas controladas de la sección 5. Configurar las URLs de eliminación y privacidad de la ficha de Play Store cuando las páginas públicas estén disponibles.

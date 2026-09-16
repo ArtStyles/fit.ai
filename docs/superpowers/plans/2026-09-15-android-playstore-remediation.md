@@ -43,5 +43,6 @@ Incorporate the audited E2E selector/fixture corrections into maintained tests; 
 - Baseline confirmed clean on the approved Android worktree.
 - Tasks 1-6: implementation and local verification completed on 2026-09-16. Independent review findings corrected; professional account deletion additionally verified with the full local PostgreSQL schema.
 - Final evidence and package hashes: `docs/android-playstore-remediation.md`; account backend release procedure: `docs/android-account-deletion-release.md`.
-- APK/AAB 1.1.26-offline (28) generated with the original signing identity. No commits, push, deployment, remote migration or real-user deletion performed.
-- Production remains gated on coordinated backend/migration deployment, recovery email configuration, physical Android tests and Play Console verification. Native push is explicitly unavailable until Firebase is configured and tested.
+- APK/AAB 1.1.26-offline (28) generated with the original signing identity. The initial local delivery did not include a deployment.
+- On 2026-09-16, the owner authorized deployment: implementation committed/pushed to the Android branch, account migration applied and web promoted on the confirmed production domain. See `docs/android-web-deployment.md` and `docs/android-account-deletion-deployment.md`.
+- Play Store remains gated on recovery email configuration, real test-account journeys, physical Android tests and Play Console verification. No real-user deletion or recovery email was performed. Native push is explicitly unavailable until Firebase is configured and tested.

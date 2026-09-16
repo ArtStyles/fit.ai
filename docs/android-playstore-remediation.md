@@ -4,7 +4,7 @@ Trabajo iniciado el 15 de septiembre de 2026 sobre `codex/android-offline`, a pa
 
 ## Dictamen
 
-Las correcciones están implementadas localmente. **El candidato necesita desplegar y verificar los servicios de cuenta y pasar las pruebas físicas antes de publicarse en producción.** No se han publicado cambios web, aplicado migraciones remotas, enviado correos de recuperación ni eliminado cuentas reales durante esta ejecución.
+Las correcciones están implementadas y el **servidor web y la migración de cuentas se desplegaron el 16/09/2026**. El dominio público supera 8/8 comprobaciones HTTP y los permisos/objetos SQL están verificados. **Antes de Play Store quedan la configuración real del correo, los recorridos con cuentas de prueba, las pruebas físicas y Play Console.** No se enviaron correos ni se eliminaron cuentas reales. Recibos: `docs/android-web-deployment.md` y `docs/android-account-deletion-deployment.md`.
 
 ## Correcciones y cobertura
 
@@ -19,7 +19,7 @@ Las correcciones están implementadas localmente. **El candidato necesita desple
 
 | Hallazgo inicial | Resultado de la corrección |
 |---|---|
-| A01 · Eliminación | API autenticada, limpieza local condicionada al éxito y migración para las dependencias profesionales. Falta despliegue y prueba remota. |
+| A01 · Eliminación | API y migración desplegadas, ledger/permisos SQL verificados; página pública 200 y solicitudes sin identidad válida 401. Falta el recorrido integral con una cuenta dedicada a pruebas. |
 | A02 · Restauración | Vista previa, confirmación y recuperación duradera; aislamiento de cuentas y conservación del resultado después de sincronizar dos veces. |
 | A03 · Libre/guiada | Permite finalizar la guiada después de registrar una constancia libre; conserva autorizaciones y evita duplicados. |
 | A04 · Peso | Perfil y medidas coinciden al crear, editar y borrar. |
@@ -67,7 +67,7 @@ pnpm android:offline:bundle
 
 Ambos comandos recompilan con la configuración local de publicación, sincronizan Capacitor y comprueban que no haya un cargador web remoto. Utilizan la identidad de firma existente; no generan claves nuevas. El runner E2E deja un bundle de prueba en `mobile/dist`, por lo que no debe copiarse manualmente para distribuirlo: los comandos Android siempre lo recompilan.
 
-## Configuración y despliegue pendientes de verificar
+## Configuración y verificación de servicios
 
 El usuario confirmó la web **https://fit-ai-kohl.vercel.app**. Los valores locales `VITE_ACCOUNT_API_URL` y `VITE_WEB_APP_URL` usan ese origen HTTPS. No contienen rutas ni tokens.
 
@@ -81,7 +81,7 @@ La configuración Firebase nativa no está presente en este equipo. El paquete l
 
 ## Antes de enviar a producción
 
-1. Desplegar y verificar servidor, migraciones y páginas públicas, incluida la URL de eliminación para Play Console.
+1. Servidor, migración y páginas públicas desplegados y verificados; registrar las URLs de eliminación y privacidad en Play Console y completar la configuración del correo.
 2. Probar en Android físico: actualización desde 1.1.25 conservando datos, reinicio/proceso cerrado, permisos, cámara e imagen QR, música, notificaciones, restauración y cambio de cuenta. Añadir comprobaciones en API mínima y un entorno de páginas de memoria de 16 KB.
 3. Verificar AAB, firma/Play App Signing, ficha, política de privacidad, Data safety, declaración de salud y acceso de revisión. Comprobar si la cuenta de Play Console requiere prueba cerrada previa.
 4. Hacer una prueba real controlada de recuperación, sincronización y eliminación con cuentas destinadas a pruebas.
