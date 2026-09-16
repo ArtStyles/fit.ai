@@ -26,7 +26,7 @@ Las correcciones están implementadas y el **servidor web y la migración de cue
 | A05 · Alta/foto profesional | Apertura explícita de la web; el perfil y servicios editables siguen disponibles. Las credenciales privilegiadas quedan en servidor. |
 | A06 · Push | Inicialización y reintentos asociados a la cuenta; desactivado de forma explícita mientras falte Firebase. Recepción física pendiente. |
 | A07 · Recordatorios | Preferencias por cuenta, actualización al cambiar agenda y cancelación al salir; incluye protección contra carreras asíncronas. |
-| A08 · Recuperación | Flujo visible por código y nueva contraseña, sin reemplazar la sesión local durante la recuperación. SMTP/plantilla pendientes de comprobar. |
+| A08 · Recuperación | Flujo visible por código y nueva contraseña, sin reemplazar la sesión local. Plantilla con código desplegada, OTP de 8 dígitos compatible; falta retirar el enlace heredado, configurar SMTP propio y comprobar entrega. |
 | A09 · Lint nativo | Recursos de API 27 separados; el control de release pasa. |
 | A10 · Accesibilidad | Contrastes y semántica corregidos, catálogo con controles hermanos y diálogos con foco/Escape comprobados. |
 | A11 · Idioma | Documentos y avisos nuevos en español/inglés. Las pantallas profesionales preexistentes mantienen textos en español. |
@@ -71,11 +71,11 @@ Ambos comandos recompilan con la configuración local de publicación, sincroniz
 
 El usuario confirmó la web **https://fit-ai-kohl.vercel.app**. Los valores locales `VITE_ACCOUNT_API_URL` y `VITE_WEB_APP_URL` usan ese origen HTTPS. No contienen rutas ni tokens.
 
-La comprobación pública del 16 de septiembre devolvió la página de acceso al pedir `/delete-account`, `/recover-password` y `/api/account/delete`: los cambios nuevos todavía necesitan despliegue. La API de borrado requiere las variables de Supabase del servidor, incluidas sus credenciales de servicio exclusivamente en el servidor, y el esquema de eliminación correspondiente. Hay que verificar el resultado con cuentas de prueba que incluyan relaciones profesionales.
+La comprobación pública posterior al despliegue del 16 de septiembre devolvió 200 y el contenido esperado en `/delete-account` y `/recover-password`; la API respondió OPTIONS 204 y POST sin identidad válida 401. Las variables de Supabase del servidor y la migración requerida están verificadas. Hay que completar el recorrido con cuentas de prueba que incluyan relaciones profesionales; las comprobaciones sin identidad no ejecutan un borrado.
 
 La migración requerida es `infra/supabase/migrations/20260916010000_verified_account_deletion.sql`. El borrado conserva las prescripciones e historial que pertenecen a otros clientes, además de la auditoría profesional inmutable con identificadores. Storage, PostgreSQL y Auth no comparten una transacción: un error conserva el estado local y requiere reintento; puede haber archivos o perfil ya eliminados remotamente. No debe presentarse como una operación atómica ni como anonimización total. El procedimiento de despliegue y recuperación se documenta en `docs/android-account-deletion-release.md`.
 
-La plantilla de recuperación de Supabase debe entregar el código `{{ .Token }}` y tener SMTP operativo. Las pruebas HTTP simuladas no validan entrega, caducidad ni configuración remota.
+La plantilla de recuperación de Supabase ya incluye `{{ .Token }}` y su guardado remoto está verificado; la configuración real usa 8 dígitos y 3.600 segundos de caducidad. Está preparado un ajuste para retirar el enlace heredado incompatible con el flujo por código, pendiente de renovar el acceso a Supabase. No hay SMTP propio configurado. El envío predeterminado está limitado a direcciones autorizadas del equipo y no permite dar por resuelto el correo para usuarios públicos. Falta proveedor/remitente y prueba de entrega. Ver `docs/android-recovery-email-deployment.md`.
 
 La configuración Firebase nativa no está presente en este equipo. El paquete lo refleja en las preferencias; no se debe prometer recepción push con la app cerrada hasta configurarla y verificarla en un teléfono.
 

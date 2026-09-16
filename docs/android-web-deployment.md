@@ -30,7 +30,7 @@ La página de recuperación del candidato compilado con variables de producción
 
 ## Límites y pendientes
 
-- El panel de Supabase requiere iniciar sesión para comprobar/configurar SMTP y la plantilla de recuperación con `{{ .Token }}`. El formulario publicado no prueba entrega de correo.
+- Tras autorizar el acceso a Supabase, la plantilla de recuperación se actualizó el 16/09/2026 para incluir `{{ .Token }}` visible en español/inglés. OTP: 8 dígitos, caducidad de 3.600 segundos; compatible con la app. Site URL de producción correcto, proveedor email activo y sin hook de correo. Está preparado el retiro del enlace heredado incompatible con el flujo por código; falta renovar el acceso para publicarlo. **No hay SMTP propio configurado**: falta elegir/configurar proveedor y remitente y verificar entrega con una cuenta de prueba. Recibo: `android-recovery-email-deployment.md`.
 - No se enviaron correos ni se eliminaron cuentas reales. Sigue pendiente un recorrido con cuentas dedicadas a pruebas.
 - No se publicó en Play Console ni se probó un teléfono físico. APK/AAB 1.1.26 conservan los hashes del informe de remediación.
 - Firebase nativo continúa sin configurar; no se promete recepción push con la app cerrada.

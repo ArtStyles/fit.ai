@@ -30,7 +30,7 @@ Variables por nombre, sin valores:
 
 La clave de servicio no debe existir en variables `VITE_*`, `NEXT_PUBLIC_*`, recursos Android ni repositorio. Las variables de Vite se incorporan al compilar: cambiar solo el servidor no actualiza una APK ya construida.
 
-Para recuperar acceso, revisar SMTP y la plantilla **Reset password** de Supabase. El formulario implementado espera el código `{{ .Token }}`; una plantilla que solo envía un enlace no completa este flujo. Revisar también la caducidad configurada, los límites de envío y Site URL/URLs permitidas para cualquier enlace que conserve la plantilla. No se fija aquí un valor de caducidad ni se afirma que el correo real ya funciona.
+Para recuperar acceso, revisar SMTP y la plantilla **Reset password** de Supabase. El formulario implementado espera el código `{{ .Token }}`; una plantilla que solo envía un enlace no completa este flujo. La configuración consultada el 16/09/2026 usa 8 dígitos y 3.600 segundos de caducidad; el código ya está incluido en la plantilla remota. SMTP propio y entrega real siguen pendientes. El recibo `android-recovery-email-deployment.md` detalla también el ajuste preparado para retirar el enlace heredado. Revisar límites de envío y configuración vigente antes de liberar la app.
 
 ## 2. Comprobaciones previas sin modificar datos
 
