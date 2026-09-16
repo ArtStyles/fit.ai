@@ -61,3 +61,6 @@ mobile/public/
 mobile/test-results/
 mobile/tests/*.png
 .superpowers/sdd/
+
+.env*
+!.env.example
