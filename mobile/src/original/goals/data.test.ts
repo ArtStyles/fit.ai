@@ -107,6 +107,23 @@ describe('personal exercise goal mutations', () => {
 })
 
 describe('personal exercise goal evidence', () => {
+  it('loads exact imported seconds without a catalog row, preserving nullable strength measures', async () => {
+    const initial = state()
+    initial.tables.exercises = initial.tables.exercises.filter(row => row.id !== PLANK)
+    addSession(initial.tables, { id: '20000000-0000-4000-8000-000000000001', completedAt: '2025-01-01T12:00:00Z', exerciseId: PLANK, weights: [null, null], reps: [null, null], historical: { name: 'Plank', nameEs: 'Plancha importada' } })
+    const log = initial.tables.progress_logs[0]
+    log.workout_id = null
+    log.mobile_session_kind = 'imported'
+    log.mobile_import = { version: 1, source: 'fitnotes', exercises: [45, 30].map((durationSeconds, index) => ({ key: String(index), exerciseId: PLANK, sets: [{ weightKg: null, reps: null, durationSeconds, distanceMeters: null, rpe: null, kind: 'normal', notes: '' }] })) }
+    initial.tables.exercise_logs[0].duration_seconds = 75
+    await setup(initial)
+    expect((await loadExerciseGoalsModel()).catalog.find(row => row.id === PLANK)).toMatchObject({ kind: 'duration', name: 'Plancha importada' })
+    expect(await saveExerciseGoal({ accountId: OWNER, id: GOAL_2, exerciseId: PLANK, expectedVersion: null, target: { kind: 'duration', seconds: 50 } })).toEqual({ success: true })
+    const goal = (await loadExerciseGoalsModel()).goals[0]
+    expect(goal.points[0].sets.map(set => set.seconds)).toEqual([45, 30])
+    expect(goal.best?.best.seconds).toBe(45)
+    expect(goal.achieved).toBe(false)
+  })
   function addSession(tables: Record<string, AppRow[]>, input: {
     id: string; completedAt: string; exerciseId: string; weights?: unknown[]; reps?: unknown[]; skipReason?: string | null
     detailLevel?: 'attendance' | 'partial' | 'complete'; freeSets?: Array<{ weightKg: number; reps: number; durationSeconds?: number }>; historical?: { name: string; nameEs?: string }

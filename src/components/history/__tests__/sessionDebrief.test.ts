@@ -2,6 +2,25 @@ import { describe, expect, it } from 'vitest'
 import { buildSessionDebrief, readFreeTrainingDurations } from '../sessionDebrief'
 
 describe('session debrief', () => {
+  it('preserves missing imported measures and every recorded set without fabricating weighted evidence', () => {
+    const importedSets = [
+      { weightKg: null, reps: null, durationSeconds: 40, distanceMeters: 120, rpe: null, kind: 'warmup', notes: 'Suave' },
+      { weightKg: null, reps: 8, durationSeconds: null, distanceMeters: null, rpe: 7, kind: 'failure', notes: '' },
+    ]
+    const result = buildSessionDebrief({ durationMinutes: 0, exercises: [{ id: 'import', exerciseId: 'walk', exerciseName: 'Walking', muscleGroups: [], setsCompleted: 2, weightsKg: [null, null], repsCompleted: [null, 8], rpeValues: [null, 7], notes: null, importedSets }], previousByExercise: new Map() })
+    expect(result.exercises[0]).toMatchObject({ importedSets, bestSet: null, comparison: null, isRecord: false, completedSets: 2, totalDurationSeconds: 40, volumeRecorded: false })
+    expect(result.exercises[0].sets).toEqual([])
+    expect(result.totalSets).toBe(2)
+  })
+  it('calculates imported weighted evidence only from complete pairs, retaining genuine zero weight', () => {
+    const importedSets = [
+      { weightKg: 100, reps: null, durationSeconds: null, distanceMeters: null, rpe: null, kind: 'normal', notes: '' },
+      { weightKg: 0, reps: 12, durationSeconds: null, distanceMeters: null, rpe: 7, kind: 'drop', notes: '' },
+      { weightKg: 20, reps: 8, durationSeconds: null, distanceMeters: null, rpe: 8, kind: 'normal', notes: '' },
+    ]
+    const result = buildSessionDebrief({ durationMinutes: 0, exercises: [{ id: 'import', exerciseId: 'bench', exerciseName: 'Bench', muscleGroups: [], setsCompleted: 3, weightsKg: [100, 0, 20], repsCompleted: [null, 12, 8], rpeValues: [null, 7, 8], notes: null, importedSets }], previousByExercise: new Map() })
+    expect(result.exercises[0]).toMatchObject({ volumeKg: 160, volumeRecorded: true, bestSet: { weightKg: 20, reps: 8 }, completedSets: 3 })
+  })
   it('keeps recorded timed series without a fabricated weight comparison or best weighted set', () => {
     const result = buildSessionDebrief({ durationMinutes: 5, exercises: [
       { id: 'timed', exerciseId: 'walk', exerciseName: 'Walking', muscleGroups: [], setsCompleted: 2, weightsKg: [0, 0], repsCompleted: [0, 0], rpeValues: [null, null], notes: null, durationSeconds: [45, 30] },

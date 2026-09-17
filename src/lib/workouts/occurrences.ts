@@ -16,10 +16,10 @@ export type LocalWorkoutSchedule = {
   overrides: ScheduleOverride[]; logs: OccurrenceLog[]; authorizations: OccurrenceAuthorization[]
 }
 
-/** Only explicit standalone free records are outside the guided daily quota.
+/** Explicit standalone free and imported records are outside the guided daily quota.
  * Older history and records linked to a workout retain their existing policy. */
 export function isGuidedSessionLog(log: Pick<OccurrenceLog, 'workout_id' | 'mobile_session_kind'>): boolean {
-  return log.mobile_session_kind !== 'free' || log.workout_id != null
+  return (log.mobile_session_kind !== 'free' && log.mobile_session_kind !== 'imported') || log.workout_id != null
 }
 
 export function hasGuidedSessionOnDate(schedule: LocalWorkoutSchedule, date: string, timeZone: string): boolean {

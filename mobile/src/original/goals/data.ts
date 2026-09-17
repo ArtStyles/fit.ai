@@ -1,4 +1,5 @@
 import { parseSessionContextSnapshot, type SessionContextSnapshotV1 } from '@/lib/session/contextSnapshot'
+import { readImportedTrainingSets } from '@/lib/session/importedTrainingEvidence'
 import { MAX_SESSION_DURATION_SECONDS, MAX_SESSION_REPS, MAX_SESSION_SETS, MAX_SESSION_WEIGHT_KG } from '@/lib/session/limits'
 import { getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { getAppStore } from '../storage'
@@ -79,7 +80,12 @@ function validGuidedDurationSets(log: AppRow, exerciseId: string): GoalSet[] | n
   return sets.length ? sets : null
 }
 
-function durationSets(log: AppRow, exerciseId: string): GoalSet[] | null {
+function durationSets(log: AppRow, exerciseId: string, setsCompleted: number | null = null): GoalSet[] | null {
+  if (log.mobile_session_kind === 'imported') {
+    const sets = (readImportedTrainingSets(log, exerciseId, setsCompleted) ?? []).flatMap(set =>
+      set.durationSeconds !== null && set.durationSeconds > 0 ? [{ weightKg: set.weightKg, reps: set.reps, seconds: set.durationSeconds }] : [])
+    return sets.length ? sets : null
+  }
   return log.mobile_session_kind === 'free' ? validFreeDurationSets(log, exerciseId) : validGuidedDurationSets(log, exerciseId)
 }
 
@@ -148,7 +154,7 @@ function strengthSets(row: AppRow): GoalSet[] {
 
 function compareSets(left: GoalSet, right: GoalSet, kind: GoalKind): number {
   if (kind === 'duration') return (left.seconds ?? 0) - (right.seconds ?? 0)
-  return left.weightKg - right.weightKg || left.reps - right.reps
+  return (left.weightKg ?? -1) - (right.weightKg ?? -1) || (left.reps ?? -1) - (right.reps ?? -1)
 }
 
 function sessionName(state: AppState, log: AppRow, context: SessionContextSnapshotV1 | null, language: 'es' | 'en'): string {
@@ -167,7 +173,7 @@ function pointsFor(state: AppState, exerciseId: string, kind: GoalKind, language
     const rows = details.filter(row => row.progress_log_id === log.id && row.exercise_id === exerciseId
       && row.status !== 'skipped' && !(typeof row.skip_reason === 'string' && row.skip_reason.trim()))
     if (!rows.length) continue
-    const sets = kind === 'duration' ? durationSets(log, exerciseId) : rows.flatMap(strengthSets)
+    const sets = kind === 'duration' ? durationSets(log, exerciseId, rows.reduce((sum, row) => sum + (row.sets_completed ?? 0), 0)) : rows.flatMap(strengthSets)
     if (!sets?.length) continue
     const best = sets.reduce((current, set) => compareSets(set, current, kind) > 0 ? set : current)
     const context = parseSessionContextSnapshot(log.session_context_snapshot)
@@ -178,7 +184,7 @@ function pointsFor(state: AppState, exerciseId: string, kind: GoalKind, language
 }
 
 function targetReached(set: GoalSet, target: GoalTarget): boolean {
-  return target.kind === 'duration' ? (set.seconds ?? 0) >= target.seconds : set.weightKg >= target.weightKg && set.reps >= target.reps
+  return target.kind === 'duration' ? (set.seconds ?? 0) >= target.seconds : set.weightKg !== null && set.reps !== null && set.weightKg >= target.weightKg && set.reps >= target.reps
 }
 
 function goalModel(state: AppState, row: AppRow, sources: Map<string, CatalogSource>, language: 'es' | 'en', timeZone: string, now: Date): PersonalExerciseGoal {

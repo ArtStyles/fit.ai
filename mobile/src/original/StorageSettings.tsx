@@ -11,6 +11,7 @@ import { ORIGINAL_STATE_CHANGED, type BackupRecoverySummary, type BackupRestoreP
 import { synchronize } from './sync'
 import { navigate } from './router'
 import { recoverOriginalDrafts } from './legacyRecovery'
+import { FitnessImportEntry } from './imports/FitnessImportScreen'
 
 export function StorageSettings() {
   const { language } = useI18n(), en = language === 'en'
@@ -60,6 +61,7 @@ export function StorageSettings() {
   }
   return <SettingsScreen title={en ? 'Offline storage and backup' : 'Sin conexión y respaldo'} description={en ? 'Your screens and data available on this device.' : 'Tus pantallas y datos disponibles en este dispositivo.'} backHref="/settings" backLabel={en ? 'Settings' : 'Ajustes'} icon="user-cog"><div className="space-y-4">
     {message && <p role="status" className="rounded-xl border border-border p-4 text-sm">{message}</p>}
+    <FitnessImportEntry />
     <SettingsSection title={en ? 'Saved on this device' : 'Guardado en el dispositivo'} description={en ? 'Routines, history, complete sets and measurements are saved locally.' : 'Rutinas, historial, series completas y medidas se guardan localmente.'}>
       <div className="space-y-3">
         <p className="text-sm leading-6 text-muted-foreground">{en ? 'Exported files contain personal and health data. Store them safely. Android system backup is not used: export or synchronize before changing devices.' : 'Los archivos exportados contienen datos personales y de salud. Guárdalos en un lugar seguro. No se usa el respaldo del sistema Android: exporta o sincroniza antes de cambiar de dispositivo.'}</p>

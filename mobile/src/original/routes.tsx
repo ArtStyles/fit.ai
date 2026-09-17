@@ -41,13 +41,17 @@ export const originalRoutes: readonly OriginalRouteDefinition[] = [
   route('/session/:workoutId', () => import('@/app/(app)/session/[workoutId]/page')),
   route('/history', () => import('@/app/(app)/history/page')),
   route('/history/:logId', () => import('@/app/(app)/history/[logId]/page')),
-  route('/progress', () => import('@/app/(app)/progress/page')),
+  route('/progress', async () => {
+    const [page, { FitnessImportEntry }] = await Promise.all([import('@/app/(app)/progress/page'), import('./imports/FitnessImportScreen')])
+    return { default: async () => <>{await page.default()}<div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><FitnessImportEntry /></div></> }
+  }),
   route('/calendario', () => import('@/app/(app)/calendario/page')),
   route('/medidas', () => import('@/app/(app)/medidas/page')),
   route('/exercises', () => import('@/app/(app)/exercises/page')),
   route('/exercises/:exerciseId', () => import('@/app/(app)/exercises/[exerciseId]/page')),
   route('/plans/generate', () => import('@/app/(app)/plans/generate/page')),
   route('/settings', () => import('@/app/(app)/settings/page')),
+  route('/settings/importar', () => import('./imports/FitnessImportScreen'), 'local', 'mobile/src/original/imports/FitnessImportScreen.tsx'),
   route('/settings/perfil', () => import('@/app/(app)/settings/perfil/page')),
   route('/settings/datos', () => import('@/app/(app)/settings/datos/page')),
   route('/settings/entrenamiento', () => import('@/app/(app)/settings/entrenamiento/page')),

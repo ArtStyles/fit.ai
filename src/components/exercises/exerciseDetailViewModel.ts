@@ -1,13 +1,13 @@
 import { shiftDateStr } from '@/lib/calendar/aggregate'
 import { dateLocale } from '@/lib/i18n'
-import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
+import { summarizeRecordedStrength } from '@/lib/session/importedTrainingEvidence'
 import { getLocalDateString } from '@/lib/workouts/schedule'
 
 export type ExerciseDetailLogInput = {
   logId: string
   completedAt: string
-  weightsKg: number[] | null
-  repsCompleted: number[] | null
+  weightsKg: (number | null)[] | null
+  repsCompleted: (number | null)[] | null
   rpeValues: (number | null)[] | null
 }
 
@@ -38,12 +38,13 @@ export function buildExerciseDetailView(
   locale: 'es' | 'en',
   timeZone: string,
 ) {
-  const points: ExerciseProgressPoint[] = logs.map(log => {
-    const performance = summarizeExercisePerformance(log.weightsKg, log.repsCompleted, log.rpeValues)
+  const points: ExerciseProgressPoint[] = logs.flatMap(log => {
+    const performance = summarizeRecordedStrength(log.weightsKg, log.repsCompleted, log.rpeValues)
+    if (!performance.bestSet) return []
     const date = getLocalDateString(new Date(log.completedAt), timeZone)
     const [year, month, day] = date.split('-').map(Number)
 
-    return {
+    return [{
       logId: log.logId,
       date,
       dateLabel: new Intl.DateTimeFormat(dateLocale(locale), {
@@ -56,10 +57,11 @@ export function buildExerciseDetailView(
       repsAtMaxWeight: performance.bestSet?.reps ?? 0,
       volumeKg: performance.volumeKg,
       averageRpe: performance.averageRpe,
-    }
+    }]
   }).sort((a, b) => a.completedAt.localeCompare(b.completedAt))
 
-  const latest = points.at(-1) ?? null
+  const latestLog = [...logs].sort((a, b) => a.completedAt.localeCompare(b.completedAt)).at(-1)
+  const latest = points.find(point => point.logId === latestLog?.logId) ?? null
   const best = points.reduce<ExerciseProgressPoint | null>((currentBest, point) => {
     if (!currentBest) return point
     if (point.maxWeightKg > currentBest.maxWeightKg) return point
@@ -80,7 +82,7 @@ export function buildExerciseDetailView(
 
   return {
     points,
-    sessions: points.length,
+    sessions: logs.length,
     latest,
     best,
     latestAverageRpe: latest?.averageRpe ?? null,

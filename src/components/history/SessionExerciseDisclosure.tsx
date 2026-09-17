@@ -6,6 +6,7 @@ import { useI18n } from '@/components/i18n/I18nProvider'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { dateLocale } from '@/lib/i18n'
 import type { SessionExerciseEvidence } from './sessionDebrief'
+import type { ImportedTrainingSet } from '@/lib/session/importedTrainingEvidence'
 
 function formatNumber(value: number, language: 'es' | 'en'): string {
   return new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 1 }).format(value)
@@ -21,6 +22,34 @@ function comparisonText(exercise: SessionExerciseEvidence, language: 'es' | 'en'
   ].filter(Boolean)
   if (parts.length === 0) return language === 'en' ? 'Same as previous appearance' : 'Igual que la aparición anterior'
   return `${language === 'en' ? 'Vs. previous' : 'Vs. anterior'} ${parts.join(' · ')}`
+}
+
+function importedSetKind(kind: string, language: 'es' | 'en'): string {
+  const labels: Record<string, [string, string]> = {
+    normal: ['Normal', 'Normal'], warmup: ['Calentamiento', 'Warm-up'],
+    drop: ['Descendente', 'Drop set'], dropset: ['Descendente', 'Drop set'],
+    failure: ['Al fallo', 'To failure'],
+  }
+  return labels[kind.toLowerCase()]?.[language === 'es' ? 0 : 1] ?? kind
+}
+
+function ImportedSets({ sets, language }: { sets: ImportedTrainingSet[]; language: 'es' | 'en' }) {
+  const fields = [
+    { key: 'weightKg' as const, label: language === 'es' ? 'Peso' : 'Weight', unit: ' kg' },
+    { key: 'reps' as const, label: 'Reps', unit: '' },
+    { key: 'durationSeconds' as const, label: language === 'es' ? 'Duración' : 'Duration', unit: ' s' },
+    { key: 'distanceMeters' as const, label: language === 'es' ? 'Distancia' : 'Distance', unit: ' m' },
+    { key: 'rpe' as const, label: 'RPE', unit: '' },
+  ].filter(field => sets.some(set => set[field.key] !== null))
+  return <ol className="divide-y divide-border/50">{sets.map((set, index) => <li key={index} className="py-3">
+    <p className="text-xs font-semibold text-foreground">{language === 'es' ? 'Serie' : 'Set'} {index + 1} · {importedSetKind(set.kind, language)}</p>
+    <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs">{fields.map(field => <div key={field.key}>
+      <dt className="text-muted-foreground">{field.label}</dt>
+      <dd className="mt-0.5 tabular-nums text-foreground">{set[field.key] === null ? '—' : `${formatNumber(set[field.key]!, language)}${field.unit}`}</dd>
+    </div>)}</dl>
+    {!fields.length ? <p className="mt-2 text-xs text-muted-foreground">{language === 'es' ? 'Sin medidas registradas' : 'No recorded measures'}</p> : null}
+    {set.notes ? <p className="mt-2 text-xs text-muted-foreground">{set.notes}</p> : null}
+  </li>)}</ol>
 }
 
 export function SessionExerciseDisclosure({
@@ -58,15 +87,18 @@ export function SessionExerciseDisclosure({
           {!exercise.skipped ? (
             <>
               <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs">
-                {exercise.timed ? <div><dt className="text-muted-foreground">{language === 'en' ? 'Recorded time' : 'Tiempo registrado'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.totalDurationSeconds!, language)} s</dd></div> : <>
+                {exercise.importedSets ? <>
+                  {exercise.totalDurationSeconds !== null ? <div><dt className="text-muted-foreground">{language === 'en' ? 'Recorded time' : 'Tiempo registrado'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.totalDurationSeconds, language)} s</dd></div> : null}
+                  {exercise.volumeRecorded ? <div><dt className="text-muted-foreground">{language === 'en' ? 'Recorded volume' : 'Volumen registrado'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.volumeKg, language)} kg</dd></div> : null}
+                </> : exercise.timed ? <div><dt className="text-muted-foreground">{language === 'en' ? 'Recorded time' : 'Tiempo registrado'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.totalDurationSeconds!, language)} s</dd></div> : <>
                   <div><dt className="text-muted-foreground">{language === 'en' ? 'Best set' : 'Mejor serie'}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{exercise.bestSet ? `${formatNumber(exercise.bestSet.weightKg, language)} kg × ${exercise.bestSet.reps}` : '—'}</dd></div>
-                  <div><dt className="text-muted-foreground">{t('Volumen')}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{formatNumber(exercise.volumeKg, language)} kg</dd></div>
+                  <div><dt className="text-muted-foreground">{t('Volumen')}</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{exercise.volumeRecorded ? `${formatNumber(exercise.volumeKg, language)} kg` : '—'}</dd></div>
                 </>}
                 <div><dt className="text-muted-foreground">RPE</dt><dd className="mt-0.5 font-semibold tabular-nums text-foreground">{exercise.averageRpe ?? '—'}</dd></div>
               </dl>
               {comparison ? <p className="mt-3 text-xs font-medium text-violet-200">{comparison}</p> : null}
 
-              {exercise.sets.length > 0 ? (
+              {exercise.importedSets?.length ? <DisclosureSection summary={t('Mostrar series')} className="mt-4"><ImportedSets sets={exercise.importedSets} language={language} /></DisclosureSection> : exercise.sets.length > 0 ? (
                 <DisclosureSection summary={t('Mostrar series')} className="mt-4">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">

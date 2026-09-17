@@ -23,6 +23,22 @@ function context(rows = [
 const now = new Date('2026-09-12T16:00:00.000Z')
 
 describe('projectFitnessCard', () => {
+  it('counts recorded imported warm-up activity without inventing a strength record from missing weight', () => {
+    const result = projectFitnessCard({ ownerId: owner, logs: [{
+      id: 'imported', user_id: owner, completed_at: '2026-09-11T12:00:00Z', mobile_session_kind: 'imported',
+      mobile_import: { version: 1, source: 'hevy', exercises: [{ key: 'a', exerciseId: plank, sets: [{ weightKg: null, reps: 8, durationSeconds: null, distanceMeters: null, rpe: null, kind: 'warmup', notes: '' }] }] },
+    }], exerciseLogs: [{ id: 'detail', progress_log_id: 'imported', exercise_id: plank, sets_completed: 1, weights_kg: [null], reps_completed: [8] }], exercises, timeZone: 'UTC', language: 'es', now })
+    expect(result.records).toEqual([])
+    expect(result.muscles.find(row => row.id === 'core')?.sessions).toBe(1)
+  })
+  it('uses exact imported set durations across repeated blocks, without dividing their total', () => {
+    const sets = [45, 30].map(durationSeconds => ({ weightKg: null, reps: null, durationSeconds, distanceMeters: null, rpe: null, kind: 'warmup', notes: '' }))
+    const result = projectFitnessCard({ ownerId: owner, logs: [{
+      id: 'imported', user_id: owner, completed_at: '2026-09-11T12:00:00Z', mobile_session_kind: 'imported',
+      mobile_import: { version: 1, source: 'strong', exercises: sets.map((set, index) => ({ key: String(index), exerciseId: plank, sets: [set] })) },
+    }], exerciseLogs: [{ id: 'detail', progress_log_id: 'imported', exercise_id: plank, sets_completed: 2, weights_kg: [null, null], reps_completed: [null, null], duration_seconds: 75 }], exercises, timeZone: 'UTC', language: 'es', now })
+    expect(result.records).toEqual([expect.objectContaining({ exerciseId: plank, kind: 'duration', seconds: 45, weightKg: null, reps: null })])
+  })
   it('deduplicates client sessions, bounds historic labels and rejects impossible instants', () => {
     const logs = [
       { id: 'canonical', client_session_id: owner, user_id: owner, completed_at: '2026-09-11T12:00:00Z' },

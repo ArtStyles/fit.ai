@@ -1,5 +1,6 @@
 import { MAX_SESSION_DURATION_SECONDS, MAX_SESSION_REPS, MAX_SESSION_SETS, MAX_SESSION_WEIGHT_KG } from '@/lib/session/limits'
 import { parseSessionContextSnapshot } from '@/lib/session/contextSnapshot'
+import { readImportedTrainingSets } from '@/lib/session/importedTrainingEvidence'
 import { MUSCLE_GROUPS, type MuscleGroupId } from '@/lib/muscles/activity'
 import { getLocalDateString } from '@/lib/workouts/schedule'
 import { isCivilDate } from '@/lib/workouts/occurrences'
@@ -66,6 +67,10 @@ function validStrengthSets(row: RawRow): ValidSet[] {
 
 function persistedDurationSets(log: RawRow, row: RawRow, exerciseId: string): number[] {
   if (!Number.isInteger(row.sets_completed) || (row.sets_completed as number) < 1 || (row.sets_completed as number) > MAX_SESSION_SETS) return []
+  if (log.mobile_session_kind === 'imported') {
+    return (readImportedTrainingSets(log, exerciseId, row.sets_completed as number) ?? [])
+      .flatMap(set => set.durationSeconds !== null && set.durationSeconds > 0 ? [set.durationSeconds] : [])
+  }
   const sources = [
     object(log.mobile_session_payload)?.exercises,
     object(log.mobile_free_training)?.exercises,
@@ -160,8 +165,10 @@ export function projectFitnessCard(input: FitnessCardProjectionInput): FitnessEv
       const best = sets.reduce((current, set) => set.weightKg > current.weightKg || (set.weightKg === current.weightKg && set.reps > current.reps) ? set : current)
       candidate = { exerciseId, name: display.name, kind: 'strength', weightKg: best.weightKg, reps: best.reps, seconds: null, date: parent.date }
     }
-    if (!candidate) continue
-    if (betterRecord(candidate, records.get(exerciseId))) records.set(exerciseId, candidate)
+    const importedSets = parent.row.mobile_session_kind === 'imported' && typeof row.sets_completed === 'number'
+      ? readImportedTrainingSets(parent.row, exerciseId, row.sets_completed) : null
+    if (!candidate && !importedSets?.length) continue
+    if (candidate && betterRecord(candidate, records.get(exerciseId))) records.set(exerciseId, candidate)
     if (parent.date < rangeFrom || parent.date > rangeTo) continue
     const recognized = new Set(display.muscles.flatMap(label => {
       const id = muscleAliases.get(normalizeLabel(label))

@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { buildHistoryEvidence } from '../historyViewModel'
 
 describe('history evidence', () => {
+  it('does not infer a PR or recorded volume from an imported weight with missing reps', () => {
+    const result = buildHistoryEvidence({ todayStr: '2026-09-17', sessions: [
+      { id: 'new', workoutId: null, date: '2026-09-17', completedAt: '2026-09-17T10:00:00Z', workoutName: 'Importado', focus: null, durationMinutes: 0, durationRecorded: false },
+      { id: 'old', workoutId: null, date: '2026-09-16', completedAt: '2026-09-16T10:00:00Z', workoutName: 'Importado', focus: null, durationMinutes: 0 },
+    ], exercises: [
+      { progressLogId: 'new', exerciseId: 'bench', weightsKg: [100], repsCompleted: [null], rpeValues: null, setsCompleted: 1 },
+      { progressLogId: 'old', exerciseId: 'bench', weightsKg: [20], repsCompleted: [8], rpeValues: null, setsCompleted: 1 },
+    ] })
+    expect(result.rows[0]).toMatchObject({ signal: null, volumeRecorded: false, durationRecorded: false, sets: 1 })
+  })
   it('prefers a new record over a volume comparison', () => {
     const result = buildHistoryEvidence({
       todayStr: '2026-08-10',

@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { buildExerciseDetailView, filterExercisePoints } from '../exerciseDetailViewModel'
 
 describe('exercise detail view model', () => {
+  it('counts an imported appearance without inventing a load point or best set for missing measures', () => {
+    const view = buildExerciseDetailView([
+      { logId: 'old', completedAt: '2026-07-01T10:00:00Z', weightsKg: [20, 100], repsCompleted: [8, null], rpeValues: [7, null] },
+      { logId: 'new', completedAt: '2026-08-20T10:00:00Z', weightsKg: [null], repsCompleted: [null], rpeValues: [null] },
+    ], 'es', 'UTC')
+    expect(view.sessions).toBe(2)
+    expect(view.points).toHaveLength(1)
+    expect(view.best).toMatchObject({ maxWeightKg: 20, repsAtMaxWeight: 8 })
+    expect(view.latest).toBeNull()
+  })
   it('keeps all points and separates latest stimulus from all-time totals', () => {
     const view = buildExerciseDetailView([
       { logId: 'new', completedAt: '2026-08-20T10:00:00Z', weightsKg: [60], repsCompleted: [5], rpeValues: [8] },

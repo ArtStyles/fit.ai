@@ -14,6 +14,7 @@ import {
 import { PageTopBar } from '@/components/navigation/PageTopBar'
 import { PendingLink } from '@/components/navigation/PendingLink'
 import { freeTrainingDetailLabel, readFreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
+import { readImportedTrainingDate, readImportedTrainingSets, readImportedTrainingSource, summarizeRecordedStrength, type ImportedTrainingEvidenceSource } from '@/lib/session/importedTrainingEvidence'
 import { ShareSessionButton } from '@/components/social/ShareSessionButton'
 import { requireAppUserContext } from '@/lib/auth/server'
 import { isCommunityEnabled } from '@/lib/features/community'
@@ -21,7 +22,6 @@ import { resolveHistoricalExercisePresentation } from '@/lib/exercises/historyPr
 import { exerciseLanguage } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
-import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { resolveUserTimeZone } from '@/lib/workouts/schedule'
 
@@ -29,7 +29,7 @@ export const metadata = { title: 'Detalle de sesión · Vekira' }
 
 type WorkoutSummary = CompletedSessionWorkoutRelation
 
-type ProgressLogRow = FreeTrainingEvidenceSource & {
+type ProgressLogRow = FreeTrainingEvidenceSource & ImportedTrainingEvidenceSource & {
   id: string
   workout_id: string | null
   completed_at: string
@@ -53,8 +53,8 @@ type ExerciseLogRow = {
   id: string
   exercise_id: string
   sets_completed: number | null
-  reps_completed: number[] | null
-  weights_kg: number[] | null
+  reps_completed: (number | null)[] | null
+  weights_kg: (number | null)[] | null
   rpe_values: (number | null)[] | null
   duration_seconds: number | null
   notes: string | null
@@ -63,8 +63,8 @@ type ExerciseLogRow = {
 
 type PreviousExerciseLogRow = {
   exercise_id: string
-  weights_kg: number[] | null
-  reps_completed: number[] | null
+  weights_kg: (number | null)[] | null
+  reps_completed: (number | null)[] | null
   rpe_values: (number | null)[] | null
   progress_logs: { completed_at: string } | { completed_at: string }[] | null
 }
@@ -83,15 +83,14 @@ function previousCompletedAt(row: PreviousExerciseLogRow): string {
     : row.progress_logs?.completed_at ?? ''
 }
 
-function formatDateTime(value: string, language: 'es' | 'en', timeZone: string): string {
+function formatDateTime(value: string, language: 'es' | 'en', timeZone: string, dateOnly: string | null): string {
   return new Intl.DateTimeFormat(dateLocale(language), {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone,
-  }).format(new Date(value))
+    ...(dateOnly ? { year: 'numeric' as const } : { hour: '2-digit' as const, minute: '2-digit' as const }),
+    timeZone: dateOnly ? 'UTC' : timeZone,
+  }).format(new Date(dateOnly ? `${dateOnly}T12:00:00Z` : value))
 }
 
 function formatDuration(minutes: number): string {
@@ -124,7 +123,7 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
       mood_rating,
       energy_rating,
       session_context_snapshot,
-      ${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'mobile_session_kind, mobile_free_training,' : ''}
+      ${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'mobile_session_kind, mobile_free_training, mobile_import,' : ''}
       workout:workouts(name, focus)
     `)
     .eq('id', params.logId)
@@ -181,7 +180,7 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
         rpeValues: previous.rpe_values,
       })
     }
-    const bestSet = summarizeExercisePerformance(previous.weights_kg, previous.reps_completed, previous.rpe_values).bestSet
+    const bestSet = summarizeRecordedStrength(previous.weights_kg, previous.reps_completed, previous.rpe_values).bestSet
     const currentBest = priorBestByExercise.get(previous.exercise_id)
     if (bestSet && (!currentBest || bestSet.weightKg > currentBest.weightKg || (bestSet.weightKg === currentBest.weightKg && bestSet.reps > currentBest.reps))) {
       priorBestByExercise.set(previous.exercise_id, { weightKg: bestSet.weightKg, reps: bestSet.reps })
@@ -206,6 +205,7 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
       repsCompleted: row.reps_completed,
       rpeValues: row.rpe_values,
       durationSeconds: readFreeTrainingDurations(log, row.exercise_id, row.sets_completed),
+      importedSets: readImportedTrainingSets(log, row.exercise_id, row.sets_completed),
       notes: row.notes,
     }
   })
@@ -218,12 +218,15 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
   const presentation = toCompletedSessionPresentation(log, t('Entrenamiento'))
   const workoutName = getWorkoutDisplayName(presentation.workoutName, presentation.focus)
   const freeDetail = readFreeTrainingDetail(log)
+  const importedSource = readImportedTrainingSource(log)
+  const imported = log.mobile_session_kind === 'imported'
+  const completedDateLabel = formatDateTime(log.completed_at, language, timeZone, readImportedTrainingDate(log))
 
   return (
     <div className="min-h-screen bg-background pb-20">
       <PageTopBar
         title={workoutName}
-        subtitle={formatDateTime(log.completed_at, language, timeZone)}
+        subtitle={completedDateLabel}
         backHref="/history"
         backLabel={t('Historial')}
         icon={<Dumbbell className="h-5 w-5" />}
@@ -231,22 +234,26 @@ export default async function HistoryDetailPage({ params: paramsPromise }: PageP
 
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
         <EvidenceHero
-          eyebrow={freeDetail ? freeTrainingDetailLabel(freeDetail, language) : t('Debrief de entrenamiento')}
+          eyebrow={imported ? `${language === 'en' ? 'Imported' : 'Importado'}${importedSource ? ` · ${importedSource}` : ''}` : freeDetail ? freeTrainingDetailLabel(freeDetail, language) : t('Debrief de entrenamiento')}
           title={workoutName}
-          description={[formatDateTime(log.completed_at, language, timeZone), presentation.focus].filter(Boolean).join(' · ')}
+          description={[completedDateLabel, presentation.focus].filter(Boolean).join(' · ')}
         >
           <MetricStrip
             items={[
-              ...(freeDetail && log.duration_minutes == null ? [] : [{ label: t('Duración'), value: formatDuration(debrief.durationMinutes) }]),
+              ...(log.duration_minutes == null ? [] : [{ label: t('Duración'), value: formatDuration(debrief.durationMinutes) }]),
               ...(freeDetail === 'attendance' ? [] : [
-                { label: t('Series completadas'), value: debrief.totalSets },
-                ...(!freeDetail || debrief.exercises.some(exercise => !exercise.timed)
+                { label: imported ? language === 'en' ? 'Recorded sets' : 'Series registradas' : t('Series completadas'), value: debrief.totalSets },
+                ...((imported ? debrief.exercises.some(exercise => exercise.volumeRecorded) : !freeDetail || debrief.exercises.some(exercise => !exercise.timed))
                   ? [{ label: t('Volumen'), value: formatVolume(debrief.totalVolumeKg, language) }]
                   : []),
               ]),
             ]}
           />
         </EvidenceHero>
+
+        {imported ? <p className="text-sm leading-relaxed text-muted-foreground">{language === 'en'
+          ? 'These records came from your imported file. Activity includes all recorded sets, including warm-ups. Missing measures remain unrecorded.'
+          : 'Estos registros proceden del archivo importado. La actividad incluye todas las series registradas, también las de calentamiento. Las medidas que faltaban siguen sin registrar.'}</p> : null}
 
         {freeDetail && <section className="rounded-2xl border border-violet-400/25 bg-violet-500/[0.05] p-5">
           <p className="text-sm leading-relaxed text-muted-foreground">{language === 'en'

@@ -3,8 +3,42 @@ import { readFreeTrainingDetail } from '@/lib/session/freeTrainingEvidence'
 import { buildHistoryEvidence } from '@/components/history/historyViewModel'
 import { buildProgressSnapshot } from '@/components/progress/progressViewModel'
 import { buildCalendarSessionPayload } from '@/lib/calendar/aggregate'
+import { readImportedTrainingDate, readImportedTrainingSets, readImportedTrainingSource } from '@/lib/session/importedTrainingEvidence'
 
 describe('free training evidence in existing journeys', () => {
+  it('reads only a valid FitNotes date without reinterpreting a storage anchor as workout time', () => {
+    const source = { mobile_session_kind: 'imported', mobile_import: { version: 1, source: 'fitnotes', date: '2026-03-08' } }
+    expect(readImportedTrainingDate(source)).toBe('2026-03-08')
+    expect(readImportedTrainingDate({ ...source, mobile_session_kind: 'free' })).toBeNull()
+    expect(readImportedTrainingDate({ ...source, mobile_import: { ...source.mobile_import, source: 'hevy' } })).toBeNull()
+    expect(readImportedTrainingDate({ ...source, mobile_import: { ...source.mobile_import, date: '2026-02-30' } })).toBeNull()
+    const calendar = buildCalendarSessionPayload([{ ...source, id: 'fitnotes', completed_at: '2026-03-08T16:00:00Z', duration_minutes: null, workout_id: null, workout: null, session_context_snapshot: null }], [], 'America/Havana')
+    expect(calendar.sessions[0].dateOnly).toBe('2026-03-08')
+  })
+  it('keeps missing imported duration and volume unavailable while counting all recorded sets', () => {
+    const calendar = buildCalendarSessionPayload([{
+      id: 'imported', workout_id: null, completed_at: '2026-09-11T12:00:00Z', duration_minutes: null,
+      session_context_snapshot: null, workout: null, mobile_session_kind: 'imported',
+    }], [{ progress_log_id: 'imported', weights_kg: [null], reps_completed: [8], sets_completed: 1 }], 'UTC')
+    expect(calendar.sessions[0]).toMatchObject({ durationRecorded: false, volumeRecorded: false, sets: 1 })
+    expect(calendar.days[0]).toMatchObject({ sessions: 1, durationRecorded: false, volumeRecorded: false })
+    expect(readFreeTrainingDetail({ mobile_session_kind: 'imported' })).toBeNull()
+  })
+
+  it('reads repeated imported exercise blocks in source order with exact nullable measures', () => {
+    const first = { reps: null, weightKg: null, durationSeconds: 45, distanceMeters: 100, rpe: null, kind: 'warmup', notes: 'Inicio' }
+    const second = { ...first, durationSeconds: 30, kind: 'normal', notes: '' }
+    const source = { mobile_session_kind: 'imported', mobile_import: { version: 1, source: 'hevy', exercises: [
+      { key: 'a', exerciseId: 'walk', sets: [first] }, { key: 'b', exerciseId: 'walk', sets: [second] },
+    ] } }
+    expect(readImportedTrainingSource(source)).toBe('Hevy')
+    expect(readImportedTrainingSets(source, 'walk', 2)).toEqual([first, second])
+    expect(readImportedTrainingSets(source, 'walk', 1)).toBeNull()
+    expect(readImportedTrainingSets(source, 'other', 2)).toBeNull()
+    expect(readImportedTrainingSets({ ...source, mobile_session_kind: 'free' }, 'walk', 2)).toBeNull()
+    expect(readImportedTrainingSets({ mobile_session_kind: 'imported' }, 'walk', 2)).toBeNull()
+    expect(readImportedTrainingSets({ ...source, mobile_import: { ...source.mobile_import, exercises: [{ key: 'a', exerciseId: 'walk', sets: [{ ...first, weightKg: -1 }] }] } }, 'walk', 1)).toBeNull()
+  })
   it('keeps missing duration and attendance metadata available to the calendar', () => {
     const calendar = buildCalendarSessionPayload([{
       id: 'free', workout_id: null, completed_at: '2026-09-11T12:00:00Z', duration_minutes: null,

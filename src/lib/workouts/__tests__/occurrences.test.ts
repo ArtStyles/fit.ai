@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { addCivilDays, resolveOccurrences, occurrenceCompleted, getOccurrenceWindow, isCivilDate, buildSchedulePresentation, loadLocalWorkoutSchedule } from '../occurrences'
+import { addCivilDays, resolveOccurrences, occurrenceCompleted, getOccurrenceWindow, isCivilDate, buildSchedulePresentation, loadLocalWorkoutSchedule, isGuidedSessionLog } from '../occurrences'
 
 const workout = { id: 'a', day_of_week: 1 }
 const move = { workout_id: 'a', source_date: '2026-09-14', target_date: '2026-09-15' }
 describe('dated workout occurrences', () => {
+  it('keeps standalone imports outside the daily quota without exempting workout-linked or legacy records', () => {
+    const log = { workout_id: null, mobile_session_kind: 'imported', completed_at: '2026-09-14T09:00:00Z' }
+    expect(isGuidedSessionLog(log)).toBe(false)
+    expect(isGuidedSessionLog({ ...log, workout_id: 'a' })).toBe(true)
+    expect(isGuidedSessionLog({ workout_id: null })).toBe(true)
+    expect(isGuidedSessionLog({ workout_id: null, mobile_session_kind: 'unknown' })).toBe(true)
+    const result = buildSchedulePresentation([{ ...workout, name: 'A' }], { overrides: [], logs: [log], authorizations: [] }, new Date('2026-09-14T12:00:00Z'), 'UTC')
+    expect(result.startableWorkoutIds).toContain('a')
+  })
   it('moves one Monday and preserves the next weekly occurrence', () => {
     expect(resolveOccurrences([workout], [move], '2026-09-14', '2026-09-21')).toEqual([
       { workoutId: 'a', sourceDate: '2026-09-14', scheduledDate: '2026-09-15' },

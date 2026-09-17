@@ -1,9 +1,10 @@
 import { getLocalDateString } from '@/lib/workouts/schedule'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { readFreeTrainingDetail, type FreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
+import { readImportedTrainingDate, summarizeRecordedStrength, type ImportedTrainingEvidenceSource } from '@/lib/session/importedTrainingEvidence'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
-export interface RawProgressLog extends FreeTrainingEvidenceSource {
+export interface RawProgressLog extends FreeTrainingEvidenceSource, ImportedTrainingEvidenceSource {
   id: string
   completed_at: string
   duration_minutes: number | null
@@ -11,8 +12,8 @@ export interface RawProgressLog extends FreeTrainingEvidenceSource {
 
 export interface RawExerciseLog {
   progress_log_id: string
-  weights_kg: number[] | null
-  reps_completed: number[] | null
+  weights_kg: (number | null)[] | null
+  reps_completed: (number | null)[] | null
 }
 
 export type CalendarWorkoutSummary = CompletedSessionWorkoutRelation
@@ -30,11 +31,13 @@ export interface RawCalendarExerciseLog extends RawExerciseLog {
 export interface CalendarSessionSummary {
   id: string
   date: string
+  dateOnly?: string | null
   completedAt: string
   workoutName: string
   focus: string | null
   durationMin: number
   durationRecorded?: boolean
+  volumeRecorded?: boolean
   detailLevel?: FreeTrainingDetail | null
   sets: number
   volumeKg: number
@@ -74,6 +77,7 @@ export function aggregateLogsToDays(
   timeZone: string,
 ): DayAggregate[] {
   const volumeByLog = new Map<string, number>()
+  const volumeRecorded = new Set<string>()
   for (const el of exerciseLogs) {
     const weights = el.weights_kg ?? []
     const reps = el.reps_completed ?? []
@@ -82,6 +86,7 @@ export function aggregateLogsToDays(
       v += (Number(weights[i]) || 0) * (Number(reps[i]) || 0)
     }
     volumeByLog.set(el.progress_log_id, v)
+    if (summarizeRecordedStrength(weights, reps).sets.length > 0) volumeRecorded.add(el.progress_log_id)
   }
 
   const byDate = new Map<string, DayAggregate>()
@@ -93,9 +98,10 @@ export function aggregateLogsToDays(
     const dur = Number(log.duration_minutes) || 0
     const detail = readFreeTrainingDetail(log)
     const evidence = evidenceByDate.get(date) ?? { hasFree: false, volume: false, duration: false }
-    evidence.hasFree ||= detail !== null
-    evidence.volume ||= detail !== 'attendance'
-    evidence.duration ||= detail === null || log.duration_minutes != null
+    const imported = log.mobile_session_kind === 'imported'
+    evidence.hasFree ||= detail !== null || imported
+    evidence.volume ||= imported ? volumeRecorded.has(log.id) : detail !== 'attendance'
+    evidence.duration ||= log.duration_minutes != null
     evidenceByDate.set(date, evidence)
     const existing = byDate.get(date)
     if (existing) {
@@ -139,22 +145,19 @@ export function buildCalendarSessionPayload(
         return sum + (row.sets_completed ?? fallback)
       }, 0)
       const volumeKg = sessionExerciseLogs.reduce((sessionVolume, row) => {
-        const weights = row.weights_kg ?? []
-        const reps = row.reps_completed ?? []
-        return sessionVolume + weights.reduce(
-          (exerciseVolume, weight, index) => exerciseVolume + (Number(weight) || 0) * (Number(reps[index]) || 0),
-          0,
-        )
+        return sessionVolume + summarizeRecordedStrength(row.weights_kg, row.reps_completed).sets.reduce((sum, set) => sum + set.weightKg * set.reps, 0)
       }, 0)
 
       return {
         id: presentation.id,
         date: getLocalDateString(new Date(log.completed_at), timeZone),
+        ...(readImportedTrainingDate(log) ? { dateOnly: readImportedTrainingDate(log) } : {}),
         completedAt: presentation.completedAt,
         workoutName: presentation.workoutName,
         focus: presentation.focus,
         durationMin: presentation.durationMinutes,
         ...(readFreeTrainingDetail(log) ? { detailLevel: readFreeTrainingDetail(log), durationRecorded: log.duration_minutes != null } : {}),
+        ...(log.mobile_session_kind === 'imported' ? { durationRecorded: log.duration_minutes != null, volumeRecorded: sessionExerciseLogs.some(row => summarizeRecordedStrength(row.weights_kg, row.reps_completed).sets.length > 0) } : {}),
         sets,
         volumeKg,
       }

@@ -13,7 +13,7 @@ import { exerciseLanguage, localizeEquipment, localizeExercise, localizeMuscleGr
 import { createTranslator, dateLocale } from '@/lib/i18n'
 import { toExerciseHistoryPresentation } from '@/lib/exercises/historyPresentation'
 import { parseSessionContextSnapshot } from '@/lib/session/contextSnapshot'
-import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
+import { summarizeRecordedStrength } from '@/lib/session/importedTrainingEvidence'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import type { Database } from '@/types/database'
@@ -55,8 +55,8 @@ type ExerciseLogRow = {
   id: string
   progress_log_id: string
   sets_completed: number | null
-  reps_completed: number[] | null
-  weights_kg: number[] | null
+  reps_completed: (number | null)[] | null
+  weights_kg: (number | null)[] | null
   rpe_values: (number | null)[] | null
   notes: string | null
   progress_log: EmbeddedProgressLog | EmbeddedProgressLog[] | null
@@ -382,7 +382,7 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
                   t('Entrenamiento'),
                 )
                 const workoutName = getWorkoutDisplayName(presentation.workoutName, presentation.focus)
-                const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed, row.rpe_values)
+                const performance = summarizeRecordedStrength(row.weights_kg, row.reps_completed, row.rpe_values)
 
                 return (
                   <SessionSummaryRow

@@ -16,7 +16,7 @@ import { exerciseLanguage, type ExerciseLanguage } from '@/lib/exercises/localiz
 import { createTranslator } from '@/lib/i18n'
 import { toCompletedSessionPresentation, type CompletedSessionWorkoutRelation } from '@/lib/session/historyRows'
 import { readFreeTrainingDetail, type FreeTrainingEvidenceSource } from '@/lib/session/freeTrainingEvidence'
-import { summarizeExercisePerformance } from '@/lib/training-evidence/performance'
+import { readImportedTrainingDate, summarizeRecordedStrength, type ImportedTrainingEvidenceSource } from '@/lib/session/importedTrainingEvidence'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
 import { getLocalDateString, resolveUserTimeZone } from '@/lib/workouts/schedule'
 
@@ -24,7 +24,7 @@ export const metadata = { title: 'Historial · Vekira' }
 
 type WorkoutSummary = CompletedSessionWorkoutRelation
 
-type ProgressLogRow = FreeTrainingEvidenceSource & {
+type ProgressLogRow = FreeTrainingEvidenceSource & ImportedTrainingEvidenceSource & {
   id: string
   workout_id: string | null
   completed_at: string
@@ -46,8 +46,8 @@ type ExerciseLogRow = {
   progress_log_id: string
   exercise_id: string | null
   sets_completed: number | null
-  weights_kg: number[] | null
-  reps_completed: number[] | null
+  weights_kg: (number | null)[] | null
+  reps_completed: (number | null)[] | null
   rpe_values: (number | null)[] | null
   notes: string | null
   exercise: ExerciseSummary | ExerciseSummary[] | null
@@ -72,7 +72,7 @@ async function loadHistoryPayload(
       duration_minutes,
       mood_rating,
       session_context_snapshot,
-      ${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'mobile_session_kind, mobile_free_training,' : ''}
+      ${process.env.NEXT_PUBLIC_LOCAL_APP === 'true' ? 'mobile_session_kind, mobile_free_training, mobile_import,' : ''}
       workout:workouts(name, focus)
     `)
     .eq('user_id', userId)
@@ -135,7 +135,7 @@ function buildHighlights(
       fallbackExerciseName,
     })
 
-    const performance = summarizeExercisePerformance(row.weights_kg, row.reps_completed, row.rpe_values)
+    const performance = summarizeRecordedStrength(row.weights_kg, row.reps_completed, row.rpe_values)
     const bestSet = performance.bestSet
     const maxReps = performance.sets.reduce((max, set) => Math.max(max, set.reps), 0)
     if (!bestSet && maxReps <= 0) continue
@@ -183,6 +183,7 @@ export default async function HistoryPage() {
       id: presentation.id,
       workoutId: presentation.workoutId,
       date: getLocalDateString(new Date(log.completed_at), timeZone),
+      dateOnly: readImportedTrainingDate(log),
       completedAt: presentation.completedAt,
       workoutName: getWorkoutDisplayName(presentation.workoutName, presentation.focus),
       focus: presentation.focus,
@@ -246,7 +247,7 @@ export default async function HistoryPage() {
           <MetricStrip
             items={[
               { label: t('Sesiones'), value: evidence.rows.length },
-              { label: t('Volumen'), value: `${new Intl.NumberFormat(language === 'en' ? 'en-US' : 'es-ES', { maximumFractionDigits: 0 }).format(totalVolume)} kg` },
+              { label: t('Volumen'), value: evidence.rows.some(row => row.volumeRecorded) ? `${new Intl.NumberFormat(language === 'en' ? 'en-US' : 'es-ES', { maximumFractionDigits: 0 }).format(totalVolume)} kg` : '—' },
               { label: t('Records personales'), value: highlights.length },
             ]}
           />

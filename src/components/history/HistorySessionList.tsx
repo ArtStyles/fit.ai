@@ -13,15 +13,14 @@ import type { HistoryEvidenceRow, HistorySignal } from './historyViewModel'
 
 type HistoryMode = 'all' | 'week' | 'volume'
 
-function formatDate(value: string, language: 'es' | 'en', timeZone: string): string {
+function formatDate(value: string, language: 'es' | 'en', timeZone: string, dateOnly?: string | null): string {
   return new Intl.DateTimeFormat(dateLocale(language), {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone,
-  }).format(new Date(value))
+    ...(dateOnly ? { year: 'numeric' as const } : { hour: '2-digit' as const, minute: '2-digit' as const }),
+    timeZone: dateOnly ? 'UTC' : timeZone,
+  }).format(new Date(dateOnly ? `${dateOnly}T12:00:00Z` : value))
 }
 
 function monthLabel(key: string, language: 'es' | 'en'): string {
@@ -160,15 +159,15 @@ export function HistorySessionList({ rows, todayStr }: { rows: HistoryEvidenceRo
                   <SessionSummaryRow
                     key={row.id}
                     href={`/history/${row.id}`}
-                    dateLabel={formatDate(row.completedAt, language, timeZone)}
+                    dateLabel={formatDate(row.completedAt, language, timeZone, row.dateOnly)}
                     title={row.workoutName}
                     context={[row.focus, row.detailLevel ? freeTrainingDetailLabel(row.detailLevel, language) : null].filter(Boolean).join(' · ')}
                     signal={signalPresentation(row.signal, language)}
                     metrics={[
-                      ...(row.detailLevel && row.durationRecorded === false ? [] : [{ label: t('Duración'), value: `${row.durationMinutes} min` }]),
+                      ...(row.durationRecorded === false ? [] : [{ label: t('Duración'), value: `${row.durationMinutes} min` }]),
                       ...(row.detailLevel === 'attendance' ? [] : [
                         { label: t('Series'), value: String(row.sets) },
-                        { label: t('Volumen'), value: `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 0 }).format(row.volumeKg)} kg` },
+                        ...(row.volumeRecorded === false ? [] : [{ label: t('Volumen'), value: `${new Intl.NumberFormat(dateLocale(language), { maximumFractionDigits: 0 }).format(row.volumeKg)} kg` }]),
                       ]),
                     ]}
                   />

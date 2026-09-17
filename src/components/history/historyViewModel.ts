@@ -1,4 +1,5 @@
-import { percentChange, summarizeExercisePerformance, type EvidenceSet } from '@/lib/training-evidence/performance'
+import { percentChange, type EvidenceSet } from '@/lib/training-evidence/performance'
+import { summarizeRecordedStrength } from '@/lib/session/importedTrainingEvidence'
 import { findPreviousComparableSession, groupEvidenceSessions } from '@/lib/training-evidence/timeline'
 import type { FreeTrainingDetail } from '@/lib/session/freeTrainingEvidence'
 
@@ -6,6 +7,7 @@ export type HistorySessionInput = {
   id: string
   workoutId: string | null
   date: string
+  dateOnly?: string | null
   completedAt: string
   workoutName: string
   focus: string | null
@@ -18,8 +20,8 @@ export type HistoryExerciseInput = {
   progressLogId: string
   exerciseId: string | null
   exerciseName?: string | null
-  weightsKg: number[] | null
-  repsCompleted: number[] | null
+  weightsKg: (number | null)[] | null
+  repsCompleted: (number | null)[] | null
   rpeValues: (number | null)[] | null
   setsCompleted: number | null
   notes?: string | null
@@ -35,6 +37,7 @@ export type HistoryEvidenceRow = {
   id: string
   workoutId: string | null
   date: string
+  dateOnly?: string | null
   completedAt: string
   workoutName: string
   focus: string | null
@@ -43,6 +46,7 @@ export type HistoryEvidenceRow = {
   detailLevel?: FreeTrainingDetail | null
   sets: number
   volumeKg: number
+  volumeRecorded?: boolean
   signal: HistorySignal
   searchText: string
 }
@@ -78,7 +82,7 @@ export function buildHistoryEvidence({
     const sessionExercises = exercisesBySession.get(session.id) ?? []
     const performances = sessionExercises.map(exercise => ({
       exercise,
-      performance: summarizeExercisePerformance(exercise.weightsKg, exercise.repsCompleted, exercise.rpeValues),
+      performance: summarizeRecordedStrength(exercise.weightsKg, exercise.repsCompleted, exercise.rpeValues),
     }))
     const sets = performances.reduce(
       (sum, item) => sum + (item.exercise.setsCompleted ?? item.performance.completedSets),
@@ -90,6 +94,7 @@ export function buildHistoryEvidence({
       ...session,
       sets,
       volumeKg,
+      volumeRecorded: performances.some(item => item.performance.sets.length > 0),
       signal: null as HistorySignal,
       searchText: normalize([
         session.workoutName,
@@ -108,7 +113,7 @@ export function buildHistoryEvidence({
 
     for (const currentExercise of currentExercises) {
       if (!currentExercise.exerciseId || recordExerciseIds.has(currentExercise.exerciseId)) continue
-      const currentBest = summarizeExercisePerformance(
+      const currentBest = summarizeRecordedStrength(
         currentExercise.weightsKg,
         currentExercise.repsCompleted,
         currentExercise.rpeValues,
@@ -122,7 +127,7 @@ export function buildHistoryEvidence({
           return candidateSession ? candidateSession.completedAt < row.completedAt : false
         })
         .flatMap(candidate => {
-          const bestSet = summarizeExercisePerformance(candidate.weightsKg, candidate.repsCompleted, candidate.rpeValues).bestSet
+          const bestSet = summarizeRecordedStrength(candidate.weightsKg, candidate.repsCompleted, candidate.rpeValues).bestSet
           return bestSet ? [bestSet] : []
         })
         .sort((a, b) => b.weightKg - a.weightKg || b.reps - a.reps)[0]
@@ -136,7 +141,7 @@ export function buildHistoryEvidence({
 
     const previous = findPreviousComparableSession(baseRows, row)
     // Free workouts have no prescribed identity proving comparable session volume.
-    const volumeDelta = previous && !row.detailLevel && !previous.detailLevel
+    const volumeDelta = previous && row.volumeRecorded && previous.volumeRecorded && !row.detailLevel && !previous.detailLevel
       ? percentChange(row.volumeKg, previous.volumeKg) : null
     if (volumeDelta !== null) {
       return { ...row, signal: { kind: 'volume' as const, changePercent: volumeDelta } }

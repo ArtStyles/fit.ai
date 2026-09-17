@@ -20,7 +20,7 @@ export function parseGoalTarget(enabled: boolean, kind: GoalKind, weight: string
 
 export function formatGoalSet(set: GoalSet, kind: GoalKind, language: 'es' | 'en') {
   const number = (value: number) => new Intl.NumberFormat(language === 'en' ? 'en-US' : 'es-ES', { maximumFractionDigits: 2 }).format(value)
-  return kind === 'duration' ? `${number(set.seconds ?? 0)} s` : `${number(set.weightKg)} kg × ${set.reps}`
+  return kind === 'duration' ? set.seconds === undefined ? '—' : `${number(set.seconds)} s` : `${set.weightKg === null ? '—' : `${number(set.weightKg)} kg`} × ${set.reps ?? '—'}`
 }
 
 export function formatGoalTarget(target: GoalTarget | null, language: 'es' | 'en') {

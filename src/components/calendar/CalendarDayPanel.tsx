@@ -41,7 +41,7 @@ export function CalendarDayPanel({ date, sessions }: { date: string; sessions: C
             <SessionSummaryRow
               key={session.id}
               href={`/history/${session.id}`}
-              dateLabel={new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
+              dateLabel={session.dateOnly ? formatDate(session.dateOnly, language) : new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
                 hour: 'numeric',
                 minute: '2-digit',
                 timeZone,
@@ -49,10 +49,10 @@ export function CalendarDayPanel({ date, sessions }: { date: string; sessions: C
               title={session.workoutName}
               context={[session.focus, session.detailLevel ? freeTrainingDetailLabel(session.detailLevel, language) : null].filter(Boolean).join(' · ')}
               metrics={[
-                ...(session.detailLevel && session.durationRecorded === false ? [] : [{ label: t('Duración'), value: `${session.durationMin} min` }]),
+                ...(session.durationRecorded === false ? [] : [{ label: t('Duración'), value: `${session.durationMin} min` }]),
                 ...(session.detailLevel === 'attendance' ? [] : [
                   { label: t('Series'), value: String(session.sets) },
-                  { label: t('Volumen'), value: formatVolume(session.volumeKg, language) },
+                  ...(session.volumeRecorded === false ? [] : [{ label: t('Volumen'), value: formatVolume(session.volumeKg, language) }]),
                 ]),
               ]}
             />

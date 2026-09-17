@@ -1,5 +1,6 @@
 import { summarizeExercisePerformance, type EvidenceSet } from '@/lib/training-evidence/performance'
 import { MAX_SESSION_DURATION_SECONDS, MAX_SESSION_SETS } from '@/lib/session/limits'
+import { summarizeRecordedStrength, type ImportedTrainingSet } from '@/lib/session/importedTrainingEvidence'
 
 export type SessionExerciseInput = {
   id: string
@@ -7,16 +8,17 @@ export type SessionExerciseInput = {
   exerciseName: string
   muscleGroups: string[]
   setsCompleted: number | null
-  weightsKg: number[] | null
-  repsCompleted: number[] | null
+  weightsKg: (number | null)[] | null
+  repsCompleted: (number | null)[] | null
   rpeValues: (number | null)[] | null
   durationSeconds?: number[] | null
+  importedSets?: ImportedTrainingSet[] | null
   notes: string | null
 }
 
 export type PreviousExercisePerformance = {
-  weightsKg: number[] | null
-  repsCompleted: number[] | null
+  weightsKg: (number | null)[] | null
+  repsCompleted: (number | null)[] | null
   rpeValues: (number | null)[] | null
 }
 
@@ -33,6 +35,8 @@ export type SessionExerciseEvidence = {
   skipped: boolean
   notes: string | null
   sets: Array<EvidenceSet & { durationSeconds?: number }>
+  importedSets?: ImportedTrainingSet[] | null
+  volumeRecorded: boolean
   timed: boolean
   totalDurationSeconds: number | null
   completedSets: number
@@ -67,6 +71,11 @@ function betterThan(current: EvidenceSet, previous: PriorBest): boolean {
     (current.weightKg === previous.weightKg && current.reps > previous.reps)
 }
 
+function averageImportedRpe(sets: ImportedTrainingSet[]): number | null {
+  const values = sets.flatMap(set => set.rpe === null ? [] : [set.rpe])
+  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 10) / 10 : null
+}
+
 export function buildSessionDebrief({
   durationMinutes,
   exercises,
@@ -79,12 +88,17 @@ export function buildSessionDebrief({
   priorBestByExercise?: Map<string, PriorBest>
 }) {
   const exerciseEvidence: SessionExerciseEvidence[] = exercises.map(exercise => {
-    const performance = summarizeExercisePerformance(exercise.weightsKg, exercise.repsCompleted, exercise.rpeValues)
+    const importedSets = exercise.importedSets
+    const performance = importedSets
+      ? summarizeRecordedStrength(importedSets.map(set => set.weightKg), importedSets.map(set => set.reps), importedSets.map(set => set.rpe))
+      : exercise.durationSeconds
+        ? summarizeExercisePerformance(exercise.weightsKg as number[], exercise.repsCompleted as number[], exercise.rpeValues)
+        : summarizeRecordedStrength(exercise.weightsKg, exercise.repsCompleted, exercise.rpeValues)
     const durations = exercise.durationSeconds
     const timed = Boolean(durations?.length && durations.length === performance.sets.length && durations.every(value => Number.isInteger(value) && value > 0 && value <= MAX_SESSION_DURATION_SECONDS))
     const previous = previousByExercise.get(exercise.exerciseId)
     const previousPerformance = previous
-      ? summarizeExercisePerformance(previous.weightsKg, previous.repsCompleted, previous.rpeValues)
+      ? summarizeRecordedStrength(previous.weightsKg, previous.repsCompleted, previous.rpeValues)
       : null
     const comparison = !timed && performance.bestSet && previousPerformance?.bestSet
       ? {
@@ -102,12 +116,16 @@ export function buildSessionDebrief({
       skipped: skippedExercise(exercise),
       notes: exercise.notes,
       sets: timed ? performance.sets.map((set, index) => ({ ...set, durationSeconds: durations![index] })) : performance.sets,
+      importedSets,
+      volumeRecorded: performance.sets.length > 0 && !timed,
       timed,
-      totalDurationSeconds: timed ? durations!.reduce((sum, value) => sum + value, 0) : null,
+      totalDurationSeconds: importedSets?.some(set => set.durationSeconds !== null)
+        ? importedSets.reduce((sum, set) => sum + (set.durationSeconds ?? 0), 0)
+        : timed ? durations!.reduce((sum, value) => sum + value, 0) : null,
       completedSets: exercise.setsCompleted ?? performance.completedSets,
       volumeKg: performance.volumeKg,
       bestSet: timed ? null : performance.bestSet,
-      averageRpe: performance.averageRpe,
+      averageRpe: importedSets ? averageImportedRpe(importedSets) : performance.averageRpe,
       comparison,
       isRecord: Boolean(!timed && performance.bestSet && priorBest && betterThan(performance.bestSet, priorBest)),
     }

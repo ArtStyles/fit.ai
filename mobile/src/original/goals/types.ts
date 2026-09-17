@@ -1,6 +1,6 @@
 export type GoalKind = 'strength' | 'duration'
 export type GoalTarget = { kind: 'strength'; weightKg: number; reps: number } | { kind: 'duration'; seconds: number }
-export type GoalSet = { weightKg: number; reps: number; seconds?: number }
+export type GoalSet = { weightKg: number | null; reps: number | null; seconds?: number }
 export type GoalCatalogItem = { id: string; name: string; muscleGroups: string[]; kind: GoalKind }
 export type GoalPoint = {
   sessionId: string; sessionName: string; completedAt: string; date: string
