@@ -18,9 +18,9 @@ export function MarketingFooter({ content, locale }: MarketingFooterProps) {
   const supportEmail = requiredSupportEmail()
 
   return (
-    <footer className="px-5 pb-8 pt-12 sm:px-8 sm:pt-16 lg:px-12">
+    <footer className="landing-footer px-5 pb-8 pt-10 sm:px-8 lg:px-12">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="flex flex-col items-start gap-6 rounded-card border border-primary/20 bg-primary/[0.06] p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
+        <div data-reveal className="flex flex-col items-start gap-6 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="max-w-2xl font-display text-3xl font-black leading-tight tracking-[-0.025em] text-foreground sm:text-4xl">
               {content.title}
@@ -32,7 +32,7 @@ export function MarketingFooter({ content, locale }: MarketingFooterProps) {
           <a
             href={`/${locale}#descargar`}
             data-download-cta="section"
-            className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-control bg-primary px-6 text-sm font-bold text-background transition-[filter] duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="landing-button inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-control border border-violet-300/40 bg-violet-400/10 px-6 text-sm font-bold text-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {content.cta}
             <ArrowRight className="h-4 w-4" aria-hidden />

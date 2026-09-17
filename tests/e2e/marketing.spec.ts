@@ -56,14 +56,17 @@ for (const landing of [
       await expect(fingerprint.locator('code')).toHaveText(/^[a-f0-9]{64}$/i)
       await expectNoHorizontalOverflow(page)
 
-      const screenshots = page.locator('main img[src*="demo-"]')
-      await expect(screenshots).toHaveCount(3)
+      // Three genuine views remain in the document; the two product panels
+      // share one slot so the mobile page does not repeat long screenshots.
+      await expect(page.locator('main img[src*="demo-"]')).toHaveCount(3)
+      const screenshots = page.locator('main img[src*="demo-"]:visible')
       for (const screenshot of await screenshots.all()) {
         await screenshot.scrollIntoViewIfNeeded()
         await expect.poll(() => screenshot.evaluate(image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0)).toBe(true)
         const ratios = await screenshot.evaluate(image => {
           const img = image as HTMLImageElement
-          return { natural: img.naturalWidth / img.naturalHeight, rendered: img.getBoundingClientRect().width / img.getBoundingClientRect().height }
+          // Layout dimensions exclude the decorative rotation of the hero.
+          return { natural: img.naturalWidth / img.naturalHeight, rendered: img.clientWidth / img.clientHeight }
         })
         expect(ratios.rendered).toBeCloseTo(ratios.natural, 2)
       }
@@ -120,9 +123,116 @@ for (const landing of [
   })
 
   test(`${landing.locale} landing has no automated accessibility violations`, async ({ page }) => {
+    // Audit every section at its final opacity, including content below the fold.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto(`/${landing.locale}`)
     await expect(page.locator('h1')).toHaveText(landing.h1)
     const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
     expect(results.violations).toEqual([])
+    await page.locator('#experiencia').getByRole('tab').last().click()
+    const progressResults = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
+    expect(progressResults.violations).toEqual([])
   })
 }
+
+test('keeps the download navigation visible without covering anchor headings', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/es')
+  await page.locator('header a[href="/es#ayuda"]').click()
+  await expect(page.locator('#faq-title')).toBeInViewport()
+  await expect(page.locator('header')).toBeInViewport({ ratio: 1 })
+  await expect.poll(async () => {
+    const header = await page.locator('header').boundingBox()
+    const heading = await page.locator('#faq-title').boundingBox()
+    return !!header && !!heading && heading.y >= header.y + header.height
+  }).toBe(true)
+  await page.locator('header a[data-download-cta]').click()
+  await expect(page.locator('#download-title')).toBeInViewport()
+  await expect.poll(async () => {
+    const header = await page.locator('header').boundingBox()
+    const heading = await page.locator('#download-title').boundingBox()
+    return !!header && !!heading && heading.y >= header.y + header.height
+  }).toBe(true)
+})
+
+test('explores both app views with the keyboard and keeps the showcase stable', async ({ page }) => {
+  await page.goto('/es')
+  const section = page.locator('#experiencia')
+  const tabs = section.getByRole('tab')
+  await expect(tabs).toHaveCount(2)
+  await section.scrollIntoViewIfNeeded()
+  await tabs.first().focus()
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true')
+  const before = await section.boundingBox()
+  await page.keyboard.press('ArrowRight')
+  await expect(tabs.last()).toBeFocused()
+  await expect(tabs.last()).toHaveAttribute('aria-selected', 'true')
+  const progress = section.getByRole('tabpanel').filter({ visible: true })
+  await expect(progress.getByRole('heading', { name: 'Ve cómo avanzas' })).toBeVisible()
+  const image = progress.locator('img')
+  await expect.poll(() => image.evaluate(img => img instanceof HTMLImageElement && img.complete && img.naturalWidth > 0)).toBe(true)
+  const ratios = await image.evaluate(img => ({ natural: (img as HTMLImageElement).naturalWidth / (img as HTMLImageElement).naturalHeight, shown: img.getBoundingClientRect().width / img.getBoundingClientRect().height }))
+  expect(ratios.shown).toBeCloseTo(ratios.natural, 2)
+  const after = await section.boundingBox()
+  expect(Math.abs(after!.height - before!.height)).toBeLessThan(5)
+  await page.keyboard.press('Home')
+  await expect(tabs.first()).toBeFocused()
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('End')
+  await expect(tabs.last()).toHaveAttribute('aria-selected', 'true')
+})
+
+test('keeps content and download usable with reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/es')
+  await page.locator('header a[href="/es#descargar"]').click()
+  await expect(page.locator('#download-title')).toBeInViewport()
+  await expect(page.locator('[data-reveal-state="pending"]')).toHaveCount(0)
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)).toBe('auto')
+  await expect(page.locator('#descargar a[download]')).toBeVisible()
+})
+
+test('reveals sections on arrival and keeps them readable when revisiting', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.goto('/es')
+  const download = page.locator('#descargar [data-reveal]')
+  await expect(download).toHaveAttribute('data-reveal-state', 'pending')
+  await page.locator('header a[data-download-cta]').click()
+  await expect(download).toHaveCSS('opacity', '1')
+  await page.locator('header a[href="/es#experiencia"]').click()
+  await expect(page.locator('#experiencia')).toBeInViewport()
+  await expect(download).toHaveCSS('opacity', '1')
+})
+
+test('keeps direct section links aligned after enhancing the app preview', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  for (const target of ['compartir', 'descargar']) {
+    await page.goto(`/es#${target}`)
+    await expect(page.locator('#experiencia').getByRole('tab')).toHaveCount(2)
+    await expect.poll(async () => {
+      const header = await page.locator('header').boundingBox()
+      const section = await page.locator(`#${target}`).boundingBox()
+      return !!header && !!section && section.y >= header.height && section.y < header.height + 64
+    }).toBe(true)
+  }
+})
+
+test('offers public content and the APK without JavaScript', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false, baseURL })
+  const page = await context.newPage()
+  try {
+    await page.goto('/es')
+    await expect(page.locator('h1')).toHaveText('Registra tu rutina. Sigue tu progreso.')
+    await expect(page.getByRole('heading', { name: 'Tu entrenamiento, organizado', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Ve cómo avanzas', exact: true })).toBeVisible()
+    await page.locator('header a[href="/es#descargar"]').click()
+    await expect(page.locator('#download-title')).toBeInViewport()
+    await expect(page.locator('#descargar a[download]')).toBeVisible()
+    await page.locator('header a[href="/es#ayuda"]').click()
+    await expect(page.locator('#faq-title')).toBeInViewport()
+    await page.locator('#ayuda details').first().locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#ayuda details').first()).toHaveAttribute('open', '')
+  } finally { await context.close() }
+})

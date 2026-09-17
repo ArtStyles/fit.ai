@@ -3,15 +3,18 @@ import { notFound } from 'next/navigation'
 import { TrackPageView } from '@/components/analytics/TrackPageView'
 import { DownloadSection } from '@/components/marketing/DownloadSection'
 import { HeroSection } from '@/components/marketing/HeroSection'
+import { LandingMotion } from '@/components/marketing/LandingMotion'
 import { MarketingFaq } from '@/components/marketing/MarketingFaq'
 import { MarketingFooter } from '@/components/marketing/MarketingFooter'
 import { MarketingHeader } from '@/components/marketing/MarketingHeader'
 import { ProductPreviewSection } from '@/components/marketing/ProductPreviewSection'
 import { SafetySection } from '@/components/marketing/SafetySection'
+import { SharingSection } from '@/components/marketing/SharingSection'
 import { TrainingLoopSection } from '@/components/marketing/TrainingLoopSection'
 import { isPublicLocale, localizedPath } from '@/lib/i18n/routing'
 import { HOME_CONTENT } from '@/lib/marketing/homeContent'
 import { buildLocalizedMetadata } from '@/lib/seo/metadata'
+import '@/components/marketing/landing.css'
 
 type LocalizedHomeProps = {
   params: Promise<{ locale: string }>
@@ -43,15 +46,17 @@ export default async function LocalizedHome({ params: paramsPromise }: Localized
   const sessionPreview = content.previews.find(preview => preview.screen === 'session')!
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div data-landing className="vekira-landing min-h-screen bg-background text-foreground">
+      <LandingMotion />
       <TrackPageView locale={locale} />
       <MarketingHeader locale={locale} cta={content.hero.cta} />
       <main id="app-main-content">
         <HeroSection content={content.hero} locale={locale} preview={sessionPreview} demoCaption={content.demoCaption} />
-        <DownloadSection content={content.download} />
         <TrainingLoopSection problem={content.problem} loop={content.loop} />
         <ProductPreviewSection previews={content.previews} locale={locale} demoCaption={content.demoCaption} />
-        <SafetySection content={content.safety} />
+        <SharingSection content={content.sharing} />
+        <SafetySection content={content.safety} locale={locale} />
+        <DownloadSection content={content.download} />
         <MarketingFaq title={content.faqTitle} items={content.faq} />
       </main>
       <MarketingFooter content={content.finalCta} locale={locale} />
