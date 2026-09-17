@@ -1,8 +1,8 @@
 'use client'
 
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { MAX_SESSION_DURATION_SECONDS, MAX_SESSION_REPS, MAX_SESSION_SETS } from '@/lib/session/limits'
-import { Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DisclosureSection } from '@/components/evidence/DisclosureSection'
@@ -17,16 +17,22 @@ export function ExerciseFieldsCard({ exercise, item, index, update, remove, reus
 }) {
   const t = (es: string, en: string) => language === 'es' ? es : en
   const name = item?.name ?? t('Ejercicio guardado', 'Saved exercise')
+  const [expanded, setExpanded] = useState(true)
+  const fieldsId = useId()
   return <section className="space-y-4 rounded-2xl border border-border/60 bg-muted/10 p-4" aria-label={name}>
     <div className="flex items-start justify-between gap-2">
-      <div className="min-w-0"><p className="text-xs text-muted-foreground">{t('Ejercicio', 'Exercise')} {index + 1}</p><h3 className="break-words font-display text-xl font-semibold">{name}</h3></div>
-      <Button type="button" variant="ghost" className="h-11 w-11 shrink-0 p-0" aria-label={`${t('Quitar', 'Remove')} ${name}`} onClick={remove}><Trash2 className="h-4 w-4" /></Button>
+      <div className="min-w-0"><p className="text-xs text-muted-foreground">{t('Ejercicio', 'Exercise')} {index + 1}</p><h3 className="mt-1 break-words font-display text-xl font-semibold">{name}</h3><p className="mt-1 text-xs text-muted-foreground">{exercise.sets.length} {exercise.sets.length === 1 ? t('serie', 'set') : t('series', 'sets')} · {exercise.timed ? t('Por tiempo', 'Timed') : t('Peso y reps', 'Weight and reps')}</p></div>
+      <div className="flex shrink-0 gap-1">
+        <Button type="button" variant="ghost" className="h-11 w-11 p-0" aria-label={`${expanded ? t('Ocultar series', 'Hide sets') : t('Mostrar series', 'Show sets')} · ${name}`} aria-expanded={expanded} aria-controls={fieldsId} onClick={() => setExpanded(value => !value)}><ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`} /></Button>
+        <Button type="button" variant="ghost" className="h-11 w-11 p-0" aria-label={`${t('Quitar', 'Remove')} ${name}`} onClick={remove}><Trash2 aria-hidden="true" className="h-4 w-4" /></Button>
+      </div>
     </div>
-    {item?.previous?.length ? <div className="rounded-xl border border-border/40 bg-background/50 p-3 text-sm tabular-nums">
-      <p className="font-medium">{t('Último registro · referencia', 'Last entry · reference')} {item.previousDate?.slice(0, 10)}</p>
-      <p className="mt-1 text-muted-foreground">{item.previous.map(set => exercise.timed ? `${set.durationSeconds ?? 0} s${set.weightKg ? ` · ${set.weightKg} kg` : ''}` : `${set.weightKg} kg × ${set.reps}`).join(' / ')}</p>
+    <div id={fieldsId} hidden={!expanded} className="space-y-4">
+    {item?.previous?.length ? <DisclosureSection summary={t('Ver último registro', 'View last entry')}>
+      <p className="text-xs text-muted-foreground">{t('Referencia', 'Reference')} · {item.previousDate?.slice(0, 10)}</p>
+      <p className="mt-1 text-sm tabular-nums text-muted-foreground">{item.previous.map(set => exercise.timed ? `${set.durationSeconds ?? 0} s${set.weightKg ? ` · ${set.weightKg} kg` : ''}` : `${set.weightKg} kg × ${set.reps}`).join(' / ')}</p>
       <Button type="button" variant="outline" className="mt-2 h-auto min-h-12 w-full whitespace-normal rounded-xl" onClick={reuse}>{t('Confirmar que hice estas series', 'Confirm I performed these sets')}</Button>
-    </div> : null}
+    </DisclosureSection> : null}
     <p className="text-xs text-muted-foreground">{exercise.timed ? t('Registra los segundos de cada serie realizada.', 'Enter seconds for each set you performed.') : t('Solo las series que realizaste. Peso vacío = sin carga externa (0–500 kg).', 'Only sets you performed. Empty weight = no external load (0–500 kg).')}</p>
     {exercise.sets.map((set, setIndex) => <div key={setIndex} className="flex items-end gap-2">
       <span className="flex h-12 w-5 shrink-0 items-center text-xs text-muted-foreground" aria-hidden="true">{setIndex + 1}</span>
@@ -35,13 +41,15 @@ export function ExerciseFieldsCard({ exercise, item, index, update, remove, reus
       <Button type="button" variant="ghost" className="h-12 w-11 shrink-0 p-0" aria-label={`${t('Quitar serie', 'Remove set')} ${setIndex + 1} · ${name}`} onClick={() => update({ ...exercise, sets: exercise.sets.filter((_, i) => i !== setIndex) })}><Trash2 className="h-4 w-4" /></Button>
     </div>)}
     <Button type="button" variant="outline" className="min-h-12 w-full rounded-xl" disabled={exercise.sets.length >= MAX_SESSION_SETS} onClick={() => update({ ...exercise, sets: [...exercise.sets, emptySet()] })}><Plus className="mr-2 h-4 w-4" />{t('Añadir serie', 'Add set')}</Button>
+    </div>
   </section>
 }
 
-export function TrainingFields({ form, today, onChange, language, hasActivePlan, disabled = false }: { form: FreeTrainingForm; today: string; onChange: (form: FreeTrainingForm) => void; language: 'es' | 'en'; hasActivePlan: boolean; disabled?: boolean }) {
+export function TrainingFields({ form, today, onChange, language, disabled = false }: { form: FreeTrainingForm; today: string; onChange: (form: FreeTrainingForm) => void; language: 'es' | 'en'; disabled?: boolean }) {
   const t = (es: string, en: string) => language === 'es' ? es : en
   const fieldId = useId()
-  return <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/10 p-4">
+  return <section className="space-y-4 rounded-2xl border border-border/60 bg-muted/10 p-4" aria-labelledby={`${fieldId}-title`}>
+    <h2 id={`${fieldId}-title`} className="text-base font-semibold">{t('Datos de la sesión', 'Session details')}</h2>
     <div className="space-y-2 text-sm font-medium">
       <label htmlFor={`${fieldId}-date`}>{t('Fecha', 'Date')}</label>
       <TrainingDatePicker id={`${fieldId}-date`} value={form.date} max={today} language={language} disabled={disabled} onChange={date => onChange({ ...form, date })} />
@@ -53,9 +61,19 @@ export function TrainingFields({ form, today, onChange, language, hasActivePlan,
         <label className="block space-y-2 text-sm">{t('Nota', 'Note')}<textarea maxLength={2000} rows={3} className="w-full rounded-xl border border-input bg-background p-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={form.notes} onChange={e => onChange({ ...form, notes: e.target.value })} /></label>
       </div>
     </DisclosureSection>
-    {!hasActivePlan && <div className="space-y-2 text-sm font-medium">
+  </section>
+}
+
+export function TrainingPreferences({ form, onChange, language, disabled = false }: { form: FreeTrainingForm; onChange: (form: FreeTrainingForm) => void; language: 'es' | 'en'; disabled?: boolean }) {
+  const t = (es: string, en: string) => language === 'es' ? es : en
+  const fieldId = useId()
+  return <DisclosureSection summary={`${t('Meta semanal', 'Weekly goal')}${form.weeklyGoal ? ` · ${form.weeklyGoal}` : ''}`} className="px-1">
+    <div className="space-y-3">
+      <p className="text-xs leading-relaxed text-muted-foreground">{t('Esta preferencia se aplica a tu progreso semanal.', 'This preference applies to your weekly progress.')}</p>
+      <div className="space-y-2 text-sm font-medium">
       <label htmlFor={`${fieldId}-goal`}>{t('Meta de entrenamientos por semana', 'Workout goal per week')}</label>
       <TrainingGoalSelect id={`${fieldId}-goal`} value={form.weeklyGoal} language={language} disabled={disabled} onChange={weeklyGoal => onChange({ ...form, weeklyGoal })} />
-    </div>}
-  </div>
+      </div>
+    </div>
+  </DisclosureSection>
 }

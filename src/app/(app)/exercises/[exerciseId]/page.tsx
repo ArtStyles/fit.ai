@@ -12,6 +12,7 @@ import { requireAppUserContext } from '@/lib/auth/server'
 import { exerciseLanguage, localizeEquipment, localizeExercise, localizeMuscleGroup } from '@/lib/exercises/localization'
 import { createTranslator, dateLocale } from '@/lib/i18n'
 import { toExerciseHistoryPresentation } from '@/lib/exercises/historyPresentation'
+import { getPersonalExerciseById } from '@/lib/exercises/personal-platform'
 import { parseSessionContextSnapshot } from '@/lib/session/contextSnapshot'
 import { summarizeRecordedStrength } from '@/lib/session/importedTrainingEvidence'
 import { getWorkoutDisplayName } from '@/lib/workouts/display'
@@ -22,6 +23,7 @@ import { ExerciseHistoryAnchor } from './ExerciseHistoryAnchor'
 export const metadata = { title: 'Ejercicio · Vekira' }
 
 type ExerciseRow = {
+  source?: string | null
   id: string
   name: string
   name_es?: string | null
@@ -171,7 +173,8 @@ async function loadExerciseDetailPayloadFallback(
   }
 
   const logs = sortExerciseLogs(rawLogs)
-  const exercise = catalogExercise ?? preservedExercise(exerciseId, logs)
+  const liveExercise = catalogExercise ?? await getPersonalExerciseById(exerciseId, userId)
+  const exercise = liveExercise ?? preservedExercise(exerciseId, logs)
   if (!exercise) return { exercise: null, logs: [], workoutsById: {}, historical: false }
   const workoutIds = Array.from(new Set(logs.flatMap(row => getProgressLog(row)?.workout_id ?? [])))
   let workoutsById: Record<string, WorkoutRow> = {}
@@ -190,7 +193,7 @@ async function loadExerciseDetailPayloadFallback(
     workoutsById = indexWorkouts(workouts ?? [])
   }
 
-  return { exercise, logs, workoutsById, historical: !catalogExercise }
+  return { exercise, logs, workoutsById, historical: !liveExercise }
 }
 
 async function loadExerciseDetailPayload(
@@ -300,7 +303,8 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
               {context ? <p className="text-xs capitalize leading-relaxed text-muted-foreground">{context}</p> : null}
               <h2 id="exercise-name" className="mt-1 break-words font-display text-2xl font-bold leading-tight text-foreground sm:text-3xl">{exercise.name}</h2>
               {payload.historical ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{language === 'en' ? 'Information preserved in your history' : 'Información conservada en tu historial'}</p> : null}
-              {exercise.is_compound === true || (exercise.exercise_type === 'strength' && exercise.is_compound === false) ? <p className="mt-2 text-xs text-violet-300">{exercise.is_compound ? (language === 'en' ? 'Compound movement' : 'Movimiento compuesto') : (language === 'en' ? 'Isolation movement' : 'Movimiento de aislamiento')}</p> : null}
+              {exercise.source !== 'mobile-personal' && (exercise.is_compound === true || (exercise.exercise_type === 'strength' && exercise.is_compound === false)) ? <p className="mt-2 text-xs text-violet-300">{exercise.is_compound ? (language === 'en' ? 'Compound movement' : 'Movimiento compuesto') : (language === 'en' ? 'Isolation movement' : 'Movimiento de aislamiento')}</p> : null}
+              {exercise.source === 'mobile-personal' ? <p className="mt-2 text-xs text-violet-300">{language === 'en' ? 'Personal exercise · Only you' : 'Ejercicio personal · Solo tú'}</p> : null}
             </div>
           </div>
           {muscleGroups.length > 0 || equipment ? (
@@ -320,10 +324,10 @@ export default async function ExerciseDetailPage({ params: paramsPromise }: Page
         {!payload.historical ? <section id="tecnica" className="scroll-mt-24 rounded-2xl border border-border/60 bg-card p-4 sm:p-5" aria-labelledby="technique-title">
           <h2 id="technique-title" className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Target className="h-4 w-4 text-violet-300" aria-hidden="true" />
-            {language === 'en' ? 'Technique and setup' : 'Técnica y preparación'}
+            {exercise.source === 'mobile-personal' ? (language === 'en' ? 'Personal description' : 'Descripción personal') : (language === 'en' ? 'Technique and setup' : 'Técnica y preparación')}
           </h2>
           {description ? <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
-          {!description && !instructions && !exercise.video_url && !exercise.motion_preview_url ? <p className="mt-3 text-sm text-muted-foreground">{language === 'en' ? 'No technique information available for this exercise yet.' : 'Aún no hay indicaciones técnicas para este ejercicio.'}</p> : null}
+          {!description && !instructions && !exercise.video_url && !exercise.motion_preview_url ? <p className="mt-3 text-sm text-muted-foreground">{exercise.source === 'mobile-personal' ? (language === 'en' ? 'You have not added a description.' : 'No has añadido una descripción.') : (language === 'en' ? 'No technique information available for this exercise yet.' : 'Aún no hay indicaciones técnicas para este ejercicio.')}</p> : null}
           {instructions ? (
             <DisclosureSection summary={t('Mostrar instrucciones')} className="mt-3">
               <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{instructions}</p>

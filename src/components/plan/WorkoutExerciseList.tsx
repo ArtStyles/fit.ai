@@ -7,6 +7,7 @@ import { addWorkoutExercise } from '@/app/actions/plan'
 import { PlusCircle } from 'lucide-react'
 import { useToast } from '@/components/feedback/ToastProvider'
 import { useI18n } from '@/components/i18n/I18nProvider'
+import { supportsPersonalExercises } from '@/lib/exercises/personal-platform'
 
 export type PlanExerciseOption = {
   id: string
@@ -17,6 +18,7 @@ export type PlanExerciseOption = {
   difficulty: string | null
   exercise_type: string | null
   is_compound: boolean | null
+  personal?: boolean
 }
 
 export type PlanWorkoutExerciseRow = {
@@ -26,6 +28,7 @@ export type PlanWorkoutExerciseRow = {
   sets: number | null
   reps: number | null
   rest_seconds: number | null
+  duration_seconds?: number | null
   weight_kg: number | null
   notes: string | null
   target_rpe: number | null
@@ -53,7 +56,7 @@ export function WorkoutExerciseList({
   onFormSubmit,
 }: WorkoutExerciseListProps) {
   const hasExerciseOptions = exerciseOptions.length > 0
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const { showToast } = useToast()
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -61,7 +64,7 @@ export function WorkoutExerciseList({
   if (!editing) return null
 
   async function addSelectedExercises(exerciseIds: string[]) {
-    if (adding || exerciseIds.length === 0) return
+    if (adding || exerciseIds.length === 0) return false
     setAdding(true)
     setAddError(null)
 
@@ -73,10 +76,11 @@ export function WorkoutExerciseList({
     try {
       onFormSubmit?.()
       await addWorkoutExercise(formData)
-      setCatalogOpen(false)
       showToast({ title: t('Ejercicio agregado'), variant: 'success' })
+      return true
     } catch {
       setAddError(t('No se pudieron agregar los ejercicios. Inténtalo nuevamente.'))
+      return false
     } finally {
       setAdding(false)
     }
@@ -88,11 +92,11 @@ export function WorkoutExerciseList({
       onChangeCapture={() => onDirtyChange?.(true)}
       onSubmitCapture={() => onFormSubmit?.()}
     >
-      <WorkoutExerciseManager planId={planId} workoutId={workoutId} exercises={exercises} exerciseOptions={exerciseOptions} />
+      <WorkoutExerciseManager planId={planId} workoutId={workoutId} exercises={exercises} exerciseOptions={exerciseOptions} allowPersonalExercises />
 
       <button
         type="button"
-        disabled={!hasExerciseOptions || adding}
+        disabled={(!hasExerciseOptions && !supportsPersonalExercises) || adding}
         onClick={() => {
           setAddError(null)
           setCatalogOpen(true)
@@ -111,12 +115,13 @@ export function WorkoutExerciseList({
           if (!adding) setCatalogOpen(open)
         }}
         options={toExerciseCatalogOptions(exerciseOptions)}
+        language={language}
+        allowPersonalExercises
         selectionMode="multiple"
         paginated
         title={t('Agregar ejercicios')}
-        onConfirm={ids => {
-          void addSelectedExercises(ids)
-        }}
+        confirmationError={addError}
+        onConfirm={addSelectedExercises}
       />
     </div>
   )

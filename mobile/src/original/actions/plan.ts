@@ -1,13 +1,21 @@
 import { selectedExerciseIds } from '@/app/actions/plan.logic'
 import { navigate } from '../router'
 import { createConnectedClient } from '../bridge-client'
+import { MAX_SESSION_DURATION_SECONDS } from '@/lib/session/limits'
+import { isSelectableExercise } from '../personal-exercises/data'
 import { mutate, read, rows, owner, ownedPlan, ownedWorkout, checkPlanLimit, touch, type State, type Row } from './state'
 
 const text = (form: FormData, key: string) => typeof form.get(key) === 'string' ? String(form.get(key)).trim() || null : null
 const integer = (form: FormData, key: string, min: number, max: number, fallback: number | null = null) => { const value = parseInt(text(form, key) ?? '', 10); return Number.isInteger(value) && value >= min && value <= max ? value : fallback }
 const weight = (form: FormData) => { const value = parseFloat((text(form, 'weightKg') ?? '').replace(',', '.')); return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) / 100 : null }
 const required = (form: FormData, key: string) => { const value = text(form, key); if (!value) throw new Error('missing_fields'); return value }
-function exercise(state: State, id: string) { if (!rows(state, 'exercises').some(row => row.id === id && row.is_public)) throw new Error('missing_fields') }
+function exercise(state: State, id: string) {
+  const row = rows(state, 'exercises').find(row => row.id === id && isSelectableExercise(row, owner(state)))
+  if (!row) throw new Error('missing_fields')
+  return row
+}
+const timed = (row?: Row) => row?.exercise_type === 'cardio' || row?.exercise_type === 'flexibility'
+const duration = (form: FormData, fallback = 30) => integer(form, 'durationSeconds', 1, MAX_SESSION_DURATION_SECONDS, fallback)
 function workoutExercise(state: State, form: FormData): { row: Row; plan: Row; workout: Row } {
   const plan = ownedPlan(state, required(form, 'planId'), true)
   const row = rows(state, 'workout_exercises').find(item => item.id === required(form, 'workoutExerciseId'))
@@ -23,6 +31,12 @@ async function formAction(action: (state: State) => void, notice?: string, refre
   try { await mutate(action) } catch (error) { const code = error instanceof Error && ['missing_fields', 'plan_locked', 'plan_limit'].includes(error.message) ? error.message : 'save_failed'; navigate(`/plan?error=${code}`); return }
   if (notice) navigate(`/plan?notice=${notice}`)
   else if (refresh) navigate('/plan', true)
+}
+// Exercise manager callers display success only after this promise resolves.
+// Keep failures in the active form so its catch can retain input and show errors.
+async function exercisePickerAction(action: (state: State) => void): Promise<void> {
+  await mutate(action)
+  navigate('/plan', true)
 }
 export function activateInState(state: State, planId: string) {
   const plan = ownedPlan(state, planId)
@@ -110,23 +124,27 @@ export const updateWorkoutSummary = (form: FormData) => formAction(state => {
   const plan = ownedPlan(state, required(form, 'planId'), true); const workout = ownedWorkout(state, required(form, 'workoutId'), plan.id)
   Object.assign(workout, { name: required(form, 'name'), focus: text(form, 'focus'), estimated_duration_minutes: integer(form, 'estimatedDurationMinutes', 1, Number.MAX_SAFE_INTEGER) }); touch(plan)
 })
-export const addWorkoutExercise = (form: FormData) => formAction(state => {
+export const addWorkoutExercise = (form: FormData) => exercisePickerAction(state => {
   const plan = ownedPlan(state, required(form, 'planId'), true); const workout = ownedWorkout(state, required(form, 'workoutId'), plan.id)
   const selected = selectedExerciseIds(form); if (!selected) throw new Error('missing_fields')
   selected.forEach(id => exercise(state, id))
   const nextOrder = Math.max(0, ...reorderRows(state, workout.id).map(row => Number(row.order_index) || 0)) + 1
-  selected.forEach((id, index) => rows(state, 'workout_exercises').push({ id: crypto.randomUUID(), workout_id: workout.id, exercise_id: id, order_index: nextOrder + index, sets: integer(form, 'sets', 1, 12, 3), reps: integer(form, 'reps', 1, 100, 10), duration_seconds: null, rest_seconds: integer(form, 'restSeconds', 0, 600, 60), weight_kg: weight(form), target_rpe: integer(form, 'targetRpe', 1, 10, 8), notes: text(form, 'notes'), weight_suggestion_basis: 'user_baseline_pending' }))
+  selected.forEach((id, index) => {
+    const time = timed(exercise(state, id))
+    rows(state, 'workout_exercises').push({ id: crypto.randomUUID(), workout_id: workout.id, exercise_id: id, order_index: nextOrder + index, sets: integer(form, 'sets', 1, 12, 3), reps: time ? null : integer(form, 'reps', 1, 100, 10), duration_seconds: time ? duration(form) : null, rest_seconds: integer(form, 'restSeconds', 0, 600, 60), weight_kg: time ? null : weight(form), target_rpe: integer(form, 'targetRpe', 1, 10, 8), notes: text(form, 'notes'), weight_suggestion_basis: 'user_baseline_pending' })
+  })
   touch(plan)
 })
-export const updateWorkoutExercise = (form: FormData) => formAction(state => {
+export const updateWorkoutExercise = (form: FormData) => exercisePickerAction(state => {
   const { row, plan } = workoutExercise(state, form)
-  Object.assign(row, { sets: integer(form, 'sets', 1, 12), reps: integer(form, 'reps', 1, 100), rest_seconds: integer(form, 'restSeconds', 0, 600), weight_kg: weight(form), target_rpe: integer(form, 'targetRpe', 1, 10), notes: text(form, 'notes'), weight_suggestion_basis: 'user_baseline_pending' }); touch(plan)
+  const time = row.duration_seconds > 0 || timed(rows(state, 'exercises').find(item => item.id === row.exercise_id))
+  Object.assign(row, { sets: integer(form, 'sets', 1, 12), reps: time ? null : integer(form, 'reps', 1, 100), duration_seconds: time ? duration(form, row.duration_seconds > 0 ? row.duration_seconds : 30) : null, rest_seconds: integer(form, 'restSeconds', 0, 600), weight_kg: time ? null : weight(form), target_rpe: integer(form, 'targetRpe', 1, 10), notes: text(form, 'notes'), weight_suggestion_basis: 'user_baseline_pending' }); touch(plan)
 })
-export const replaceWorkoutExercise = (form: FormData) => formAction(state => {
-  const { row, plan } = workoutExercise(state, form); const id = required(form, 'exerciseId'); exercise(state, id)
-  Object.assign(row, { exercise_id: id, weight_kg: null, weight_suggestion_basis: 'user_baseline_pending' }); touch(plan)
+export const replaceWorkoutExercise = (form: FormData) => exercisePickerAction(state => {
+  const { row, plan } = workoutExercise(state, form); const id = required(form, 'exerciseId'); const time = timed(exercise(state, id))
+  Object.assign(row, { exercise_id: id, reps: time ? null : row.reps ?? 10, duration_seconds: time ? duration(form) : null, weight_kg: null, weight_suggestion_basis: 'user_baseline_pending' }); touch(plan)
 })
-export const removeWorkoutExercise = (form: FormData) => formAction(state => {
+export const removeWorkoutExercise = (form: FormData) => exercisePickerAction(state => {
   const { row, plan, workout } = workoutExercise(state, form)
   state.tables.workout_exercises = rows(state, 'workout_exercises').filter(item => item !== row); normalize(state, workout.id); touch(plan)
 })

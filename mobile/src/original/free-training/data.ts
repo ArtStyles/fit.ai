@@ -5,6 +5,7 @@ import { addCivilDays, civilWeekday, isCivilDate } from '@/lib/workouts/occurren
 import { addDays, getLocalDateString, getLocalDayBounds, resolveUserTimeZone } from '@/lib/workouts/schedule'
 import { getAppStore, type AppState, type AppStore, type AppRow } from '../storage'
 import { uuid } from '../actions/state'
+import { isSelectableExercise } from '../personal-exercises/data'
 import type { FreeTrainingCatalogItem, FreeTrainingInput, FreeTrainingModel, FreeTrainingResult, FreeTrainingSet } from './types'
 
 const fail = (error: string): FreeTrainingResult => ({ success: false, error })
@@ -69,8 +70,8 @@ export function saveFreeTrainingInState(state: AppState, input: FreeTrainingInpu
       if (!exercise || !uuid(exercise.exerciseId) || seen.has(exercise.exerciseId) || !Array.isArray(exercise.sets) || exercise.sets.length < 1 || exercise.sets.length > MAX_SESSION_SETS) throw new Error('Revisa los ejercicios y el número de series; no se permiten duplicados.')
       seen.add(exercise.exerciseId)
       const historical = previousSnapshot?.exercises.find(row => row.exerciseId === exercise.exerciseId)
-      const catalog = table(state, 'exercises').find(row => row.id === exercise.exerciseId && row.is_public === true)
-      if (!historical && !catalog) throw new Error('El ejercicio no está disponible en el catálogo público.')
+      const catalog = table(state, 'exercises').find(row => row.id === exercise.exerciseId && isSelectableExercise(row, state.accountId))
+      if (!historical && !catalog) throw new Error('El ejercicio no está disponible en tu catálogo.')
       const oldExercise = existing?.mobile_free_training.exercises.find((row: { exerciseId: string }) => row.exerciseId === exercise.exerciseId)
       const timed = historical ? oldExercise?.sets.some((set: FreeTrainingSet) => set.durationSeconds !== undefined) === true : timedCatalog(catalog)
       const sets = exercise.sets.map(set => {
@@ -192,7 +193,7 @@ export async function loadFreeTrainingModel(logId?: string, draftId?: string): P
   const draft = await loadFreeTrainingDraft(state.accountId, initial.sessionId).catch(() => null)
   if (draft && draft.expectedVersion === initial.expectedVersion) initial = draft
   const historical = existing ? parseSessionContextSnapshot(existing.session_context_snapshot)?.exercises ?? [] : []
-  const publicCatalog = table(state, 'exercises').filter(row => row.is_public === true && uuid(row.id))
+  const publicCatalog = table(state, 'exercises').filter(row => isSelectableExercise(row, state.accountId) && uuid(row.id))
   const ids = new Set([...publicCatalog.map(row => row.id), ...historical.map(row => row.exerciseId)])
   const before = isCivilDate(initial.date) && initial.date <= today ? occurrenceTime(initial.date, timeZone, now, existing) : now.toISOString()
   const catalog: FreeTrainingCatalogItem[] = [...ids].map(exerciseId => {
@@ -205,7 +206,7 @@ export async function loadFreeTrainingModel(logId?: string, draftId?: string): P
     const timed = old ? oldInput?.sets.some((set: FreeTrainingSet) => set.durationSeconds !== undefined) === true : timedCatalog(live)
     // Older guided logs only retain total seconds: do not invent per-set durations.
     if (timed && sets?.some(set => !set.durationSeconds)) sets = null
-    return { id: exerciseId, name: old ? (language === 'es' ? old.nameEs || old.name : old.name) : (language === 'es' ? live!.name_es || live!.name : live!.name), muscleGroups: old ? (language === 'es' && old.muscleGroupsEs.length ? old.muscleGroupsEs : old.muscleGroups) : cleanStrings(language === 'es' && live!.muscle_groups_es?.length ? live!.muscle_groups_es : live!.muscle_groups), timed, previous: sets, previousDate: sets && previous ? getLocalDateString(new Date(previous.completed_at), timeZone) : null }
+    return { id: exerciseId, name: old ? (language === 'es' ? old.nameEs || old.name : old.name) : (language === 'es' ? live!.name_es || live!.name : live!.name), muscleGroups: old ? (language === 'es' && old.muscleGroupsEs.length ? old.muscleGroupsEs : old.muscleGroups) : cleanStrings(language === 'es' && live!.muscle_groups_es?.length ? live!.muscle_groups_es : live!.muscle_groups), equipment: cleanStrings(language === 'es' && live?.equipment_es?.length ? live.equipment_es : live?.equipment), imageUrl: live?.image_url ?? null, personal: live?.is_public === false && live.user_id === state.accountId, timed, previous: sets, previousDate: sets && previous ? getLocalDateString(new Date(previous.completed_at), timeZone) : null }
   }).sort((a, b) => a.name.localeCompare(b.name, language))
   if (store.sessionVersion() !== version || (await store.read())?.accountId !== state.accountId) throw changed()
   return { accountId: state.accountId, language, timeZone, today, hasActivePlan: activePlan(state), weeklyGoal: Number.isInteger(profile.days_per_week) ? profile.days_per_week : null, catalog, initial, recent: table(state, 'progress_logs').filter(row => row.user_id === state.accountId && row.mobile_session_kind === 'free' && row.mobile_free_training).sort((a, b) => Date.parse(b.completed_at) - Date.parse(a.completed_at)).slice(0, 10).map(row => ({ id: row.id, name: parseSessionContextSnapshot(row.session_context_snapshot)?.workout.name || (language === 'es' ? 'Entrenamiento libre' : 'Free workout'), date: row.mobile_free_training.date, detailLevel: row.mobile_free_training.detailLevel })) }

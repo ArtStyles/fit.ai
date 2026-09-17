@@ -9,6 +9,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Exercise, ExerciseFilters, ExercisePage } from '@/types/exercise'
 import { localizeExercise, type ExerciseLanguage } from './localization'
+import { getPersonalExerciseById } from '@/lib/exercises/personal-platform'
 
 const DEFAULT_LIMIT = 24
 
@@ -113,7 +114,8 @@ export async function getExerciseById(
     throw new Error(result.error.message)
   }
 
-  return result.data ? localizeExercise(result.data, language) : null
+  const exercise = result.data ?? await getPersonalExerciseById(id)
+  return exercise ? localizeExercise(exercise, language) : null
 }
 
 /**

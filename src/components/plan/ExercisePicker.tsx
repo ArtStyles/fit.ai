@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PlanExerciseOption } from '@/components/plan/WorkoutExerciseList'
-import { Check, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Loader2, Plus, Search } from 'lucide-react'
 import { ExerciseImage } from '@/components/exercises/ExerciseImage'
+import { PersonalExerciseForm } from '@/components/exercises/PersonalExerciseForm'
+import { supportsPersonalExercises } from '@/lib/exercises/personal-platform'
+import { useOptionalI18n } from '@/components/i18n/I18nProvider'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import {
   CompactCategorySelect,
@@ -16,6 +19,8 @@ export type ExerciseCatalogOption = {
   muscleGroups: string[]
   equipment: string[]
   imageUrl: string | null
+  exerciseType?: string
+  personal?: boolean
 }
 
 async function requestExerciseCatalogPage(request: {
@@ -23,6 +28,7 @@ async function requestExerciseCatalogPage(request: {
   query?: string
   muscle?: string
   equipment?: string
+  includePersonal?: boolean
 }) {
   const { loadExerciseCatalogPage } = await import('@/app/actions/exerciseCatalog')
   return loadExerciseCatalogPage(request)
@@ -75,6 +81,8 @@ export function toExerciseCatalogOptions(options: PlanExerciseOption[]): Exercis
     muscleGroups: option.muscle_groups ?? [],
     equipment: option.equipment ?? [],
     imageUrl: option.image_url ?? null,
+    ...(option.exercise_type ? { exerciseType: option.exercise_type } : {}),
+    ...(option.personal === undefined ? {} : { personal: option.personal }),
   }))
 }
 
@@ -101,6 +109,7 @@ export function toggleExerciseSelection(
 }
 
 type ExerciseCatalogDialogViewProps = {
+  language?: 'es' | 'en'
   options: ExerciseCatalogOption[]
   facets?: {
     muscles: CompactCategoryOption[]
@@ -127,9 +136,11 @@ type ExerciseCatalogDialogViewProps = {
   confirmationError?: string | null
   confirmationDetails?: ReactNode
   invalidIds?: string[]
+  onCreatePersonal?: () => void
 }
 
 export function ExerciseCatalogDialogView({
+  language = 'es',
   options,
   facets: providedFacets,
   query,
@@ -141,7 +152,7 @@ export function ExerciseCatalogDialogView({
   onEquipmentChange,
   onToggle,
   onConfirm,
-  confirmVerb = 'Agregar',
+  confirmVerb,
   selectionLimit,
   paginated = false,
   page = 1,
@@ -153,14 +164,16 @@ export function ExerciseCatalogDialogView({
   confirmationError = null,
   confirmationDetails,
   invalidIds = [],
+  onCreatePersonal,
 }: ExerciseCatalogDialogViewProps) {
+  const copy = (es: string, en: string) => language === 'es' ? es : en
   const localFacets = collectExerciseFacets(options)
   const facets = providedFacets ?? {
     muscles: localFacets.muscles.map(value => ({ value, label: value })),
     equipment: localFacets.equipment.map(value => ({ value, label: value })),
   }
   const matches = paginated ? options : filterExerciseCatalog(options, { query, muscle, equipment })
-  const selectionLabel = `${selectedIds.length} ${selectedIds.length === 1 ? 'ejercicio' : 'ejercicios'}`
+  const selectionLabel = `${selectedIds.length} ${selectedIds.length === 1 ? copy('ejercicio', 'exercise') : copy('ejercicios', 'exercises')}`
 
   return (
     <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
@@ -169,11 +182,11 @@ export function ExerciseCatalogDialogView({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input
             type="search"
-            aria-label="Buscar ejercicios"
+            aria-label={copy('Buscar ejercicios', 'Search exercises')}
             value={query}
             onChange={event => onQueryChange(event.target.value)}
             disabled={confirming}
-            placeholder="Buscar ejercicio"
+            placeholder={copy('Buscar ejercicio', 'Search exercise')}
             autoFocus
             className="h-12 w-full rounded-xl border border-border/70 bg-muted/40 pl-10 pr-3 text-base text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
           />
@@ -182,25 +195,26 @@ export function ExerciseCatalogDialogView({
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
           <fieldset disabled={confirming} className={`m-0 min-w-0 border-0 p-0 ${confirming ? 'opacity-60' : ''}`} aria-disabled={confirming || undefined}>
             <CompactCategorySelect
-              ariaLabel="Filtrar por equipo"
+              ariaLabel={copy('Filtrar por equipo', 'Filter by equipment')}
               value={equipment}
               onValueChange={onEquipmentChange}
               options={facets.equipment}
-              allLabel="Todo el equipo"
+              allLabel={copy('Todo el equipo', 'All equipment')}
               className="bg-muted/40 font-medium"
             />
           </fieldset>
           <fieldset disabled={confirming} className={`m-0 min-w-0 border-0 p-0 ${confirming ? 'opacity-60' : ''}`} aria-disabled={confirming || undefined}>
             <CompactCategorySelect
-              ariaLabel="Filtrar por músculo"
+              ariaLabel={copy('Filtrar por músculo', 'Filter by muscle')}
               value={muscle}
               onValueChange={onMuscleChange}
               options={facets.muscles}
-              allLabel="Todos los músculos"
+              allLabel={copy('Todos los músculos', 'All muscles')}
               className="bg-muted/40 font-medium"
             />
           </fieldset>
         </div>
+        {onCreatePersonal ? <button type="button" onClick={onCreatePersonal} disabled={confirming || (selectionLimit !== undefined && selectedIds.length >= selectionLimit)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 text-sm font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"><Plus className="h-4 w-4" aria-hidden="true" />{copy('Crear ejercicio', 'Create exercise')}</button> : null}
       </div>
 
       <div
@@ -211,11 +225,11 @@ export function ExerciseCatalogDialogView({
         {loading && matches.length === 0 ? (
           <div className="flex min-h-48 items-center justify-center" role="status">
             <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" />
-            <span className="sr-only">Cargando ejercicios</span>
+            <span className="sr-only">{copy('Cargando ejercicios', 'Loading exercises')}</span>
           </div>
         ) : error ? (
           <div className="flex min-h-48 flex-col items-center justify-center px-6 text-center" role="alert">
-            <p className="font-semibold text-foreground">No pudimos cargar los ejercicios</p>
+            <p className="font-semibold text-foreground">{copy('No pudimos cargar los ejercicios', 'Could not load exercises')}</p>
             <p className="mt-1 text-sm text-muted-foreground">{error}</p>
           </div>
         ) : matches.length > 0 ? (
@@ -245,7 +259,8 @@ export function ExerciseCatalogDialogView({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-foreground">{option.name}</span>
                       {meta ? <span className="mt-0.5 block truncate text-xs text-foreground/70">{meta}</span> : null}
-                      {invalid ? <span className="mt-0.5 block truncate text-xs font-semibold text-destructive">ID {option.id} ya no disponible</span> : null}
+                      {option.personal ? <span className="mt-1 inline-flex rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{copy('Solo tú', 'Only you')}</span> : null}
+                      {invalid ? <span className="mt-0.5 block truncate text-xs font-semibold text-destructive">{copy(`ID ${option.id} ya no disponible`, `ID ${option.id} is no longer available`)}</span> : null}
                     </span>
                     <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent'}`}>
                       <Check className="h-4 w-4" aria-hidden="true" />
@@ -257,8 +272,8 @@ export function ExerciseCatalogDialogView({
           </ul>
         ) : (
           <div className="flex min-h-48 flex-col items-center justify-center px-6 text-center">
-            <p className="font-semibold text-foreground">No encontramos ejercicios</p>
-            <p className="mt-1 text-sm text-muted-foreground">Prueba con otro nombre o limpia los filtros.</p>
+            <p className="font-semibold text-foreground">{copy('No encontramos ejercicios', 'No exercises found')}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{copy('Prueba con otro nombre o limpia los filtros.', 'Try another name or clear the filters.')}</p>
           </div>
         )}
       </div>
@@ -272,10 +287,10 @@ export function ExerciseCatalogDialogView({
             className="inline-flex min-h-11 min-w-0 shrink items-center gap-1 rounded-xl border border-border px-2 text-xs font-semibold text-foreground disabled:opacity-40 sm:px-3"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            Anterior
+            {copy('Anterior', 'Previous')}
           </button>
           <p className="shrink-0 text-xs font-medium text-muted-foreground" aria-live="polite">
-            Página {page} de {totalPages}
+            {copy(`Página ${page} de ${totalPages}`, `Page ${page} of ${totalPages}`)}
           </p>
           <button
             type="button"
@@ -283,7 +298,7 @@ export function ExerciseCatalogDialogView({
             disabled={confirming || page >= totalPages || loading}
             className="inline-flex min-h-11 min-w-0 shrink items-center gap-1 rounded-xl border border-border px-2 text-xs font-semibold text-foreground disabled:opacity-40 sm:px-3"
           >
-            Siguiente
+            {copy('Siguiente', 'Next')}
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
@@ -292,7 +307,7 @@ export function ExerciseCatalogDialogView({
       <div className="border-t border-border/60 bg-background/95 p-4 backdrop-blur">
         {selectionLimit !== undefined && selectedIds.length >= selectionLimit ? (
           <p role="status" className="mb-2 text-center text-xs text-muted-foreground">
-            Máximo de {selectionLimit} ejercicios por vez.
+            {copy(`Máximo de ${selectionLimit} ejercicios por vez.`, `Up to ${selectionLimit} exercises at a time.`)}
           </p>
         ) : null}
         {confirmationDetails ? <div className="mb-2 text-sm text-muted-foreground">{confirmationDetails}</div> : null}
@@ -304,7 +319,7 @@ export function ExerciseCatalogDialogView({
           onClick={onConfirm}
           className="min-h-12 w-full rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 disabled:opacity-40"
         >
-          {confirming ? 'Agregando…' : `${confirmVerb} ${selectionLabel}`}
+          {confirming ? copy('Agregando…', 'Adding…') : `${confirmVerb ?? copy('Agregar', 'Add')} ${selectionLabel}`}
         </button>
       </div>
     </div>
@@ -312,20 +327,26 @@ export function ExerciseCatalogDialogView({
 }
 
 export function ExerciseCatalogDialog({
+  language: providedLanguage,
+  allowPersonalExercises = false,
   open,
   onOpenChange,
   options,
   selectedIds = [],
   selectionMode = 'single',
-  title = 'Agregar ejercicio',
-  confirmVerb = 'Agregar',
+  title,
+  confirmVerb,
   maxSelections = 12,
   paginated = false,
   confirmationError,
   confirmationDetails,
   invalidIds = [],
   onConfirm,
+  onCloseAutoFocus,
+  onPersonalExerciseCreated,
 }: {
+  language?: 'es' | 'en'
+  allowPersonalExercises?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   options: ExerciseCatalogOption[]
@@ -339,7 +360,13 @@ export function ExerciseCatalogDialog({
   confirmationDetails?: ReactNode
   invalidIds?: string[]
   onConfirm: (ids: string[], selectedOptions?: ExerciseCatalogOption[]) => boolean | void | Promise<boolean | void>
+  onCloseAutoFocus?: (event: Event) => void
+  onPersonalExerciseCreated?: (exercise: ExerciseCatalogOption) => void
 }) {
+  const i18n = useOptionalI18n()
+  const language = providedLanguage ?? i18n?.language ?? 'es'
+  const copy = (es: string, en: string) => language === 'es' ? es : en
+  const personalEnabled = allowPersonalExercises && supportsPersonalExercises
   const [query, setQuery] = useState('')
   const [muscle, setMuscle] = useState('')
   const [equipment, setEquipment] = useState('')
@@ -364,10 +391,25 @@ export function ExerciseCatalogDialog({
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [internalConfirmationError, setInternalConfirmationError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [creatingBusy, setCreatingBusy] = useState(false)
+  const [createdOptions, setCreatedOptions] = useState<ExerciseCatalogOption[]>([])
+  const opened = useRef(false)
+  const lifecycle = useRef(0)
+  const confirmationPending = useRef(false)
   const selectedIdsKey = selectedIds.join(',')
 
   useEffect(() => {
-    if (!open) return
+    if (!open) { opened.current = false; lifecycle.current++; return }
+    if (opened.current) {
+      setKnownOptions(current => {
+        const next = new Map(current)
+        for (const option of options) next.set(option.id, option)
+        return next
+      })
+      return
+    }
+    opened.current = true
     setQuery('')
     setMuscle('')
     setEquipment('')
@@ -375,15 +417,23 @@ export function ExerciseCatalogDialog({
     setPageOptions(options.slice(0, 24))
     setKnownOptions(new Map(options.map(option => [option.id, option])))
     setDraftIds(selectedIdsKey ? selectedIdsKey.split(',') : [])
+    setCreatedOptions([])
+    setCreating(false)
+    setCreatingBusy(false)
+    setInternalConfirmationError(null)
+    setConfirming(false)
+    confirmationPending.current = false
   }, [open, options, selectedIdsKey])
 
+  useEffect(() => () => { lifecycle.current++ }, [])
+
   useEffect(() => {
-    if (!open || !paginated) return
+    if (!open || !paginated || creating) return
     let active = true
     const timer = window.setTimeout(() => {
       setLoading(true)
       setError(null)
-      void requestExerciseCatalogPage({ page, query, muscle, equipment })
+      void requestExerciseCatalogPage({ page, query, muscle, equipment, ...(personalEnabled ? { includePersonal: true } : {}) })
         .then(result => {
           if (!active) return
           setPageOptions(result.items)
@@ -397,7 +447,7 @@ export function ExerciseCatalogDialog({
         })
         .catch(cause => {
           if (!active) return
-          setError(cause instanceof Error ? cause.message : 'Inténtalo otra vez.')
+          setError(cause instanceof Error ? cause.message : language === 'es' ? 'Inténtalo otra vez.' : 'Try again.')
         })
         .finally(() => {
           if (active) setLoading(false)
@@ -408,12 +458,17 @@ export function ExerciseCatalogDialog({
       active = false
       window.clearTimeout(timer)
     }
-  }, [equipment, muscle, open, page, paginated, query])
+  }, [equipment, muscle, open, page, paginated, query, creating, personalEnabled, language])
 
-  const visibleOptions = paginated ? pageOptions : options
+  const visibleOptions = Array.from(new Map([
+    ...filterExerciseCatalog(createdOptions, { query, muscle, equipment }),
+    ...(paginated ? pageOptions : options),
+  ].map(option => [option.id, option])).values())
 
   async function confirmSelection() {
-    if (confirming || draftIds.length === 0) return
+    if (confirmationPending.current || draftIds.length === 0) return
+    confirmationPending.current = true
+    const version = lifecycle.current
     setConfirming(true)
     setInternalConfirmationError(null)
     try {
@@ -422,16 +477,16 @@ export function ExerciseCatalogDialog({
         return option ? [option] : []
       })
       const result = await onConfirm(draftIds, selectedOptions)
-      if (result !== false) onOpenChange(false)
+      if (version === lifecycle.current && result !== false) onOpenChange(false)
     } catch (cause) {
-      setInternalConfirmationError(cause instanceof Error ? cause.message : 'No se pudo completar la selección.')
+      if (version === lifecycle.current) setInternalConfirmationError(cause instanceof Error ? cause.message : copy('No se pudo completar la selección.', 'Could not complete the selection.'))
     } finally {
-      setConfirming(false)
+      if (version === lifecycle.current) { setConfirming(false); confirmationPending.current = false }
     }
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && confirming) return
+    if (!nextOpen && (confirming || creatingBusy)) return
     onOpenChange(nextOpen)
   }
 
@@ -439,13 +494,23 @@ export function ExerciseCatalogDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         aria-describedby={undefined}
+        closeLabel={copy('Cerrar', 'Close')}
+        onCloseAutoFocus={onCloseAutoFocus}
         className="h-[42rem] max-w-lg gap-0 border-border/70 bg-background p-0"
       >
         <div className="flex min-h-0 min-w-0 max-w-full flex-col overflow-hidden">
           <div className="border-b border-border/60 px-4 py-4 pr-16">
-            <DialogTitle className="text-center text-base sm:text-left">{title}</DialogTitle>
+            <DialogTitle className="text-center text-base sm:text-left">{creating ? copy('Crear ejercicio', 'Create exercise') : title ?? copy('Agregar ejercicio', 'Add exercise')}</DialogTitle>
           </div>
-          <ExerciseCatalogDialogView
+          {creating && personalEnabled ? <PersonalExerciseForm language={language} onBusyChange={setCreatingBusy} onCancel={() => { if (!creatingBusy) setCreating(false) }} onCreated={exercise => {
+            onPersonalExerciseCreated?.(exercise)
+            setCreatedOptions(current => [exercise, ...current.filter(option => option.id !== exercise.id)])
+            setKnownOptions(current => new Map(current).set(exercise.id, exercise))
+            setDraftIds(current => toggleExerciseSelection(current, exercise.id, selectionMode, maxSelections))
+            setQuery(''); setMuscle(''); setEquipment(''); setPage(1)
+            setCreating(false); setCreatingBusy(false); setInternalConfirmationError(null)
+          }} /> : <ExerciseCatalogDialogView
+            language={language}
             options={visibleOptions}
             facets={paginated ? facets : undefined}
             query={query}
@@ -472,7 +537,8 @@ export function ExerciseCatalogDialog({
             confirmationError={confirmationError ?? internalConfirmationError}
             confirmationDetails={confirmationDetails}
             invalidIds={invalidIds}
-          />
+            onCreatePersonal={personalEnabled ? () => { setCreating(true); setError(null) } : undefined}
+          />}
         </div>
       </DialogContent>
     </Dialog>
@@ -480,6 +546,7 @@ export function ExerciseCatalogDialog({
 }
 
 type ExercisePickerProps = {
+  language?: 'es' | 'en'
   name: string
   label: string
   options: PlanExerciseOption[]
@@ -491,15 +558,19 @@ type ExercisePickerProps = {
 }
 
 export function ExercisePicker({
+  language: providedLanguage,
   name,
   label,
   options,
-  placeholder = 'Buscar ejercicio',
+  placeholder,
   disabled = false,
   multiple = false,
   paginated = false,
   onSelectionChange,
 }: ExercisePickerProps) {
+  const i18n = useOptionalI18n()
+  const language = providedLanguage ?? i18n?.language ?? 'es'
+  const copy = (es: string, en: string) => language === 'es' ? es : en
   const [selected, setSelected] = useState<PlanExerciseOption[]>([])
   const [open, setOpen] = useState(false)
   const catalogOptions = useMemo<ExerciseCatalogOption[]>(
@@ -526,8 +597,8 @@ export function ExercisePicker({
             {selected.length === 1
               ? selected[0].name
               : selected.length > 1
-                ? `${selected.length} ejercicios seleccionados`
-                : placeholder}
+                ? copy(`${selected.length} ejercicios seleccionados`, `${selected.length} exercises selected`)
+                : placeholder ?? copy('Buscar ejercicio', 'Search exercise')}
           </span>
         </button>
       </div>
@@ -536,7 +607,7 @@ export function ExercisePicker({
         <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
           <Check className="h-4 w-4" aria-hidden="true" />
           <span className="truncate">
-            {selected.length === 1 ? `Seleccionado: ${selected[0].name}` : `${selected.length} ejercicios listos para agregar`}
+            {selected.length === 1 ? copy(`Seleccionado: ${selected[0].name}`, `Selected: ${selected[0].name}`) : copy(`${selected.length} ejercicios listos para agregar`, `${selected.length} exercises ready to add`)}
           </span>
         </div>
       ) : null}
@@ -546,8 +617,9 @@ export function ExercisePicker({
         onOpenChange={setOpen}
         options={catalogOptions}
         selectedIds={selected.map(option => option.id)}
+        language={language}
         selectionMode={multiple ? 'multiple' : 'single'}
-        title={multiple ? 'Agregar ejercicios' : 'Agregar ejercicio'}
+        title={multiple ? copy('Agregar ejercicios', 'Add exercises') : copy('Agregar ejercicio', 'Add exercise')}
         paginated={paginated}
         onConfirm={(ids, remoteOptions = []) => {
           const nextSelected = ids.flatMap(id => {
@@ -561,8 +633,9 @@ export function ExercisePicker({
               muscle_groups: remote.muscleGroups,
               equipment: remote.equipment,
               difficulty: null,
-              exercise_type: null,
+              exercise_type: remote.exerciseType ?? null,
               is_compound: null,
+              ...(remote.personal === undefined ? {} : { personal: remote.personal }),
             }] : []
           })
           setSelected(nextSelected)

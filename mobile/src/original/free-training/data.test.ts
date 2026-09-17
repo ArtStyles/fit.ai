@@ -23,6 +23,14 @@ afterEach(async () => { setAppStoreForTests(null); for (const driver of drivers.
 async function setup(state = fixture()) { const driver = new NodeSqliteDriver(':memory:'); drivers.push(driver); const store = await createAppStore(driver); await store.create(state); setAppStoreForTests(store); return store }
 
 describe('free training atomic data', () => {
+  it('records owned personal exercises and freezes their chosen name and muscles', () => {
+    const state = fixture()
+    Object.assign(state.tables.exercises[0], { is_public: false, user_id: id(1), name: 'Mi ejercicio', name_es: null, muscle_groups: [] })
+    expect(saveFreeTrainingInState(state, input({ detailLevel: 'complete', exercises: [exercise] }), now).success).toBe(true)
+    expect(parseSessionContextSnapshot(state.tables.progress_logs[0].session_context_snapshot)?.exercises[0]).toMatchObject({ name: 'Mi ejercicio', muscleGroups: [] })
+    const foreign = fixture(); Object.assign(foreign.tables.exercises[0], { is_public: false, user_id: id(99) })
+    expect(saveFreeTrainingInState(foreign, input({ detailLevel: 'complete', exercises: [exercise] }), now).success).toBe(false)
+  })
   it('stores attendance without fabricated details or workload and accepts genuine same-day sessions', () => {
     const state = fixture(); const result = saveFreeTrainingInState(state, input(), now)
     expect(result).toMatchObject({ success: true, logId: id(10), version: 1, sets: 0, volumeKg: 0, trainedDaysThisWeek: 1, improvements: [] })
@@ -105,6 +113,14 @@ describe('free training atomic data', () => {
 })
 
 describe('free training storage and model', () => {
+  it('lists public and owned personal options, excluding foreign and ownerless private rows', async () => {
+    const state = fixture()
+    state.tables.exercises.push({ id: id(40), name: 'Personal', user_id: id(1), is_public: false, image_url: '/exercises/personal/core.svg', exercise_type: 'flexibility', muscle_groups: ['core'], equipment: [] }, { id: id(41), name: 'Foreign', user_id: id(99), is_public: false }, { id: id(42), name: 'Retired', is_public: false })
+    await setup(state)
+    const model = await loadFreeTrainingModel()
+    expect(model.catalog.map(item => item.id).sort()).toEqual([id(2), id(3), id(40)])
+    expect(model.catalog.find(item => item.id === id(40))).toMatchObject({ timed: true, imageUrl: '/exercises/personal/core.svg', equipment: [] })
+  })
   it('reopens the latest unfinished draft from the default entry and honors an explicit new session', async () => {
     await setup()
     const draft = { ...input({ name: 'Unfinished' }), uiDraft: { name: 'Raw unfinished name', durationMinutes: '1.' } }

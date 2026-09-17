@@ -16,6 +16,9 @@ export type FreeTrainingInput = {
   weeklyGoal?: number
 }
 export type FreeTrainingCatalogItem = {
+  equipment?: string[]
+  imageUrl?: string | null
+  personal?: boolean
   id: string
   name: string
   muscleGroups: string[]

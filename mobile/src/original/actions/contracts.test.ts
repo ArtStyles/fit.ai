@@ -26,6 +26,17 @@ function payload(): SaveSessionPayload {
   return { clientSessionId: id(6), workoutId: id(3), startedAt: now.getTime(), finishedAt: now.getTime() + 60_000, moodRating: 4, exercises: [{ workoutExerciseId: id(4), exerciseId: id(5), name: 'Sentadilla', targetSets: 2, targetReps: 8, targetRpe: 8, status: 'completed', sets: [{ weightKg: '20', reps: '8', rpe: 7, completed: true }, { weightKg: '22', reps: '9', rpe: 8, completed: true }] }] }
 }
 describe('original screen action contracts', () => {
+  it('rejects another account private exercise even when a forged prescription references it', async () => {
+    const state = fixture(); Object.assign(state.tables.exercises[0], { is_public: false, user_id: id(99) })
+    expect((await authorizeInState(state, id(6), id(3), now)).success).toBe(true)
+    expect((await saveInState(state, payload(), new Date(now.getTime() + 60_000))).success).toBe(false)
+    expect(state.tables.progress_logs).toHaveLength(0)
+  })
+  it.each([undefined, id(1)])('retains owned or legacy prescribed private exercise evidence for owner %s', async privateOwner => {
+    const state = fixture(); Object.assign(state.tables.exercises[0], { is_public: false, user_id: privateOwner })
+    expect((await authorizeInState(state, id(6), id(3), now)).success).toBe(true)
+    expect((await saveInState(state, payload(), new Date(now.getTime() + 60_000))).success).toBe(true)
+  })
   it('keeps complete session details and frozen context; retries cannot duplicate or rewrite them', async () => {
     const state = fixture()
     expect((await authorizeInState(state, id(6), id(3), now)).success).toBe(true)

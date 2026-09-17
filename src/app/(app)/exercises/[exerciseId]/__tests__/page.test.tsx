@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const auth = vi.hoisted(() => ({ context: vi.fn() }))
+const personal = vi.hoisted(() => ({ getById: vi.fn() }))
+vi.mock('@/lib/exercises/personal-platform', () => ({ getPersonalExerciseById: personal.getById }))
 vi.mock('@/lib/auth/server', () => ({ requireAppUserContext: auth.context }))
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
 vi.mock('@/components/navigation/PageTopBar', () => ({ PageTopBar: ({ title }: { title: string }) => <h1>{title}</h1> }))
@@ -96,7 +98,17 @@ async function renderPage() {
 }
 
 describe('exercise detail preserved history', () => {
-  beforeEach(() => { auth.context.mockReset() })
+  beforeEach(() => { auth.context.mockReset(); personal.getById.mockReset().mockResolvedValue(null) })
+
+  it('opens a personal exercise before any history exists and labels user content honestly', async () => {
+    useDatabase()
+    personal.getById.mockResolvedValue({ ...exercise(), source: 'mobile-personal', name: 'Mi ejercicio', name_es: null, description: 'Mi descripción', description_es: null, image_url: '/exercises/personal/chest.svg', is_public: false })
+    const html = await renderPage()
+    expect(html).toContain('Mi ejercicio'); expect(html).toContain('Mi descripción')
+    expect(html).toContain('Descripción personal')
+    expect(html).not.toContain('Movimiento de aislamiento')
+    expect(html).not.toContain('Técnica y preparación'); expect(html).not.toContain('Información conservada en tu historial')
+  })
 
   it('opens an owned frozen exercise when the public catalog and RPC no longer return it', async () => {
     useDatabase({ logs: [log()] })

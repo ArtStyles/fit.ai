@@ -1,0 +1,18 @@
+{
+  "chest": ["chest"],
+  "back": ["upperBack"],
+  "traps": ["trapezius"],
+  "lower_back": ["lowerBack"],
+  "shoulders": ["deltoids"],
+  "biceps": ["biceps"],
+  "triceps": ["triceps"],
+  "forearms": ["forearm"],
+  "core": ["abs", "obliques", "serratus"],
+  "glutes": ["gluteal"],
+  "quads": ["quadriceps"],
+  "hamstrings": ["hamstring"],
+  "calves": ["calves"],
+  "hips": ["adductors", "hipFlexors"],
+  "neck": ["neck"],
+  "tibialis": ["tibialis"]
+}

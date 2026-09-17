@@ -14,7 +14,7 @@ function firstExercise(row: PlanWorkoutExerciseRow) {
 
 function prescription(row: PlanWorkoutExerciseRow, t: (source: string, values?: Record<string, string | number>) => string) {
   const parts = [
-    row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.sets ? t('{count} series', { count: row.sets }) : null,
+    row.sets && row.duration_seconds ? `${row.sets} × ${row.duration_seconds} s` : row.sets && row.reps ? `${row.sets} × ${row.reps}` : row.sets ? t('{count} series', { count: row.sets }) : null,
     row.weight_kg ? t('{weight} kg', { weight: row.weight_kg }) : null,
     row.target_rpe ? `RPE ${row.target_rpe}` : null,
     row.rest_seconds ? t('{seconds} s descanso', { seconds: row.rest_seconds }) : null,

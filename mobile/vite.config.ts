@@ -33,6 +33,8 @@ export default defineConfig(({ mode }) => {
     },
   }],
   resolve: { alias: [
+    { find: '@/lib/exercises/personal-platform', replacement: original('personal-exercises/platform.ts') },
+    { find: '@/app/actions/exerciseCatalog', replacement: original('personal-exercises/catalog.ts') },
     ...['admin', 'adminOverview', 'adminTrainers'].map((name, index) => ({ find: `@/lib/auth/${name}`, replacement: original(`admin/${['auth', 'overview', 'trainers'][index]}.ts`) })),
     ...['admin', 'adminTrainers', 'dashboardBanner'].map((name, index) => ({ find: `@/app/actions/${name}`, replacement: original(`admin/${['actions', 'trainer-actions', 'banner-actions'][index]}.ts`) })),
     ...['trainerApplications', 'chat', 'trainerProfile'].map(name => ({ find: `@/app/actions/${name}`, replacement: original(`actions/${name}.ts`) })),

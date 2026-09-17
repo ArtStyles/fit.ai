@@ -74,4 +74,9 @@ describe('professional plan prescription presentation', () => {
     expect(html).toContain('Controla la bajada.')
     expect(html).not.toContain('Indicación del entrenador')
   })
+  it('presents timed prescriptions as seconds per set, without invented reps', () => {
+    const html = renderToStaticMarkup(<PlanWorkoutReadView {...readViewProps} exercises={[{ ...readViewProps.exercises[0], reps: null, duration_seconds: 45 }]} />)
+    expect(html).toContain('3 × 45 s')
+    expect(html).not.toContain('3 × 8')
+  })
 })

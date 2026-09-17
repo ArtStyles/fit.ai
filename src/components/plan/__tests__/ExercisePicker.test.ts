@@ -184,4 +184,38 @@ describe('professional exercise picker search', () => {
     expect(toggleExerciseSelection?.(twelve, 'exercise-1', 'multiple', 12)).toEqual(twelve.slice(1))
     expect(toggleExerciseSelection?.(['exercise-1'], 'exercise-2', 'single', 12)).toEqual(['exercise-2'])
   })
+
+  it('localizes the shared catalog and identifies private choices without changing selection', () => {
+    const html = renderToStaticMarkup(createElement(exercisePicker.ExerciseCatalogDialogView, {
+      options: [{ ...options[0], personal: true }], language: 'en', query: '', muscle: '', equipment: '', selectedIds: ['bench'],
+      onQueryChange() {}, onMuscleChange() {}, onEquipmentChange() {}, onToggle() {}, onConfirm() {},
+      onCreatePersonal() {}, paginated: true, page: 1, totalPages: 2,
+    }))
+    expect(html).toContain('Search exercises')
+    expect(html).toContain('All equipment')
+    expect(html).toContain('All muscles')
+    expect(html).toContain('Only you')
+    expect(html).toContain('Create exercise')
+    expect(html).toContain('Add 1 exercise')
+    expect(html).toContain('Page 1 of 2')
+    expect(html).not.toContain('Agregar')
+  })
+
+  it('hides personal creation unless the caller enables it', () => {
+    const html = renderToStaticMarkup(createElement(exercisePicker.ExerciseCatalogDialogView, {
+      options, query: '', muscle: '', equipment: '', selectedIds: [],
+      onQueryChange() {}, onMuscleChange() {}, onEquipmentChange() {}, onToggle() {}, onConfirm() {},
+    }))
+    expect(html).not.toContain('Crear ejercicio')
+  })
+
+  it('preserves recording type and private status when adapting catalog rows', () => {
+    expect(exercisePicker.toExerciseCatalogOptions([{
+      id: 'personal', name: 'My hold', muscle_groups: ['core'], equipment: [], difficulty: null,
+      exercise_type: 'cardio', is_compound: false, personal: true,
+    }])).toEqual([{
+      id: 'personal', name: 'My hold', muscleGroups: ['core'], equipment: [], imageUrl: null,
+      exerciseType: 'cardio', personal: true,
+    }])
+  })
 })

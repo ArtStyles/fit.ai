@@ -32,12 +32,28 @@ async function fixture(language = 'es', previous = false) {
   return state
 }
 async function snapshot(page) { return (await storedAccountSnapshot(page)).accounts[0] }
+async function goalControl(page, english = false) {
+  const goal = page.getByRole('combobox', { name: english ? 'Workout goal per week' : 'Meta de entrenamientos por semana', exact: true })
+  if (!await goal.isVisible()) await page.locator('summary').filter({ hasText: english ? /^Weekly goal/ : /^Meta semanal/ }).click()
+  return goal
+}
 async function chooseGoal(page, value) {
-  await page.getByRole('combobox', { name: 'Meta de entrenamientos por semana', exact: true }).click()
+  await (await goalControl(page)).click()
   const menu = page.getByRole('listbox')
   await expect(menu).toBeVisible()
   await menu.getByRole('option', { name: `${value} entrenamientos`, exact: true }).click()
   await expect(menu).toHaveCount(0)
+}
+async function addExercises(page, names, english = false) {
+  const label = english ? 'Add exercises' : 'Añadir ejercicios'
+  const trigger = page.getByRole('button', { name: label, exact: true })
+  await trigger.click()
+  const dialog = page.getByRole('dialog', { name: label, exact: true })
+  await expect(dialog).toBeVisible()
+  for (const name of names) await dialog.getByRole('button').filter({ has: page.getByText(name, { exact: true }) }).click()
+  await dialog.getByRole('button', { name: `${english ? 'Add' : 'Añadir'} ${names.length} ${english ? names.length === 1 ? 'exercise' : 'exercises' : names.length === 1 ? 'ejercicio' : 'ejercicios'}`, exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(trigger).toBeFocused()
 }
 async function shot(page, name) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `overflow ${name}`)
@@ -84,7 +100,7 @@ try {
     await page.getByRole('link', { name: /A tu manera Registrar entrenamiento/ }).click()
     await expect(page).toHaveURL(pendingUrl)
     await expect(page.getByLabel('Nombre (opcional)', { exact: true })).toHaveValue('Torso libre')
-    await expect(page.getByRole('combobox', { name: 'Meta de entrenamientos por semana', exact: true })).toContainText('4 entrenamientos')
+    await expect(await goalControl(page)).toContainText('4 entrenamientos')
     assert.equal((await snapshot(page)).tables.progress_logs.length, 0)
     await shot(page, '01-register-390')
     await page.getByRole('button', { name: 'Guardar constancia', exact: true }).click()
@@ -103,9 +119,7 @@ try {
     await expect(page.getByText('Solo constancia', { exact: true })).toBeVisible()
     await expect(page.getByText('0 min', { exact: true })).toHaveCount(0)
     await page.getByRole('link', { name: 'Añadir detalles', exact: true }).click()
-    await page.getByRole('button', { name: 'Añadir ejercicios', exact: true }).click()
-    await page.getByLabel('Buscar ejercicio').fill('banca')
-    await page.getByRole('button', { name: 'Press de banca', exact: true }).click()
+    await addExercises(page, ['Press de banca'])
     await page.getByLabel('Press de banca, serie 1, kg', { exact: true }).fill('60')
     await page.getByLabel('Press de banca, serie 1, reps', { exact: true }).fill('10')
     await expect(page.getByText('Borrador guardado en este dispositivo', { exact: true })).toBeVisible()
@@ -141,10 +155,10 @@ try {
 
   await run('previous-and-complete', 1440, { previous: true }, async page => {
     await page.goto(`${origin}/registrar`)
-    await page.getByRole('button', { name: 'Añadir ejercicios', exact: true }).click()
-    await page.getByRole('button', { name: 'Press de banca', exact: true }).click()
+    await addExercises(page, ['Press de banca'])
     const reps = page.getByLabel('Press de banca, serie 1, reps', { exact: true })
     await expect(reps).toHaveValue('')
+    await page.getByText('Ver último registro', { exact: true }).click()
     await page.getByRole('button', { name: 'Confirmar que hice estas series', exact: true }).click()
     await expect(reps).toHaveValue('8')
     await reps.fill('10')
@@ -166,8 +180,7 @@ try {
   await run('english-small-screen-timed', 320, { language: 'en' }, async page => {
     await page.goto(`${origin}/entrenar`)
     await expect(page.getByRole('heading', { name: 'Log workout', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Add exercises', exact: true }).click()
-    await page.getByRole('button', { name: 'Stretch', exact: true }).click()
+    await addExercises(page, ['Stretch'], true)
     const seconds = page.getByLabel('Stretch, set 1, seconds', { exact: true })
     await seconds.fill('bad')
     await page.getByRole('button', { name: 'Save workout', exact: true }).click()
@@ -228,6 +241,59 @@ try {
     await expect(day).not.toHaveAttribute('aria-label', /0 kg|0 min/)
   })
 
+  for (const [width, language] of [[390, 'es'], [320, 'en']]) {
+    await run('catalog-batch-cancel-and-recovery', width, { language }, async page => {
+      const english = language === 'en'
+      await page.goto(`${origin}/registrar`)
+      const name = page.getByLabel(english ? 'Name (optional)' : 'Nombre (opcional)', { exact: true })
+      await name.fill('Batch draft')
+      const add = page.getByRole('button', { name: english ? 'Add exercises' : 'Añadir ejercicios', exact: true })
+      await add.click()
+      const dialog = page.getByRole('dialog', { name: english ? 'Add exercises' : 'Añadir ejercicios', exact: true })
+      const press = english ? 'Bench press' : 'Press de banca'
+      const timed = english ? 'Stretch' : 'Estiramiento'
+      const pressOption = dialog.getByRole('button').filter({ has: page.getByText(press, { exact: true }) })
+      await pressOption.click()
+      await expect(page.getByText(english ? 'Draft saved on this device' : 'Borrador guardado en este dispositivo', { exact: true })).toBeVisible()
+      await expect(pressOption).toHaveAttribute('aria-pressed', 'true')
+      await expect(dialog.getByRole('combobox')).toHaveCount(2)
+      await shot(page, `13-catalog-${width}`)
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+      await expect(add).toBeFocused()
+      await expect(name).toHaveValue('Batch draft')
+      await expect(page.getByRole('region', { name: press, exact: true })).toHaveCount(0)
+      assert.equal((await snapshot(page)).tables.progress_logs.length, 0)
+      await addExercises(page, [press, timed], english)
+      await expect(page.getByLabel(`${press}, ${english ? 'set' : 'serie'} 1, reps`, { exact: true })).toHaveValue('')
+      await page.getByLabel(`${press}, ${english ? 'set' : 'serie'} 1, kg`, { exact: true }).fill('30')
+      await page.getByLabel(`${press}, ${english ? 'set' : 'serie'} 1, reps`, { exact: true }).fill('8')
+      await page.getByLabel(`${timed}, ${english ? 'set' : 'serie'} 1, ${english ? 'seconds' : 'segundos'}`, { exact: true }).fill('45')
+      await expect(page.getByText(english ? 'Draft saved on this device' : 'Borrador guardado en este dispositivo', { exact: true })).toBeVisible()
+      const priorFoldSnapshot = await storedAccountSnapshot(page)
+      await page.getByRole('button', { name: `${english ? 'Hide sets' : 'Ocultar series'} · ${press}`, exact: true }).click()
+      await expect(page.getByLabel(`${press}, ${english ? 'set' : 'serie'} 1, reps`, { exact: true })).toBeHidden()
+      await expect(page.getByLabel(`${timed}, ${english ? 'set' : 'serie'} 1, ${english ? 'seconds' : 'segundos'}`, { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: `${english ? 'Show sets' : 'Mostrar series'} · ${press}`, exact: true }).click()
+      await expect(page.getByLabel(`${press}, ${english ? 'set' : 'serie'} 1, reps`, { exact: true })).toHaveValue('8')
+      assert.deepEqual(await storedAccountSnapshot(page), priorFoldSnapshot)
+      await page.reload()
+      await expect(page.getByLabel(`${press}, ${english ? 'set' : 'serie'} 1, reps`, { exact: true })).toHaveValue('8')
+      await expect(page.getByLabel(`${timed}, ${english ? 'set' : 'serie'} 1, ${english ? 'seconds' : 'segundos'}`, { exact: true })).toHaveValue('45')
+      await add.click()
+      await expect(dialog.getByRole('button').filter({ has: page.getByText(press, { exact: true }) })).toHaveCount(0)
+      assert.equal(await androidBack(page), true)
+      await expect(dialog).toHaveCount(0)
+      await expect(add).toBeFocused()
+      await page.getByRole('button', { name: english ? 'Save workout' : 'Guardar entrenamiento', exact: true }).click()
+      await expect(page.getByRole('heading', { name: english ? 'Workout saved' : 'Entrenamiento guardado', exact: true })).toBeVisible()
+      const saved = await snapshot(page)
+      assert.equal(saved.tables.progress_logs.length, 1)
+      assert.equal(saved.tables.exercise_logs.length, 2)
+      assert.equal(saved.tables.progress_logs[0].mobile_free_training.detailLevel, 'partial')
+    })
+  }
+
   for (const [width, height, language] of [[320, 568, 'es'], [1440, 900, 'en']]) {
     await run('custom-selectors', width, { height, language }, async page => {
       const english = language === 'en'
@@ -277,7 +343,7 @@ try {
       await date.click()
       await calendar.getByRole('button', { name: english ? 'Today' : 'Hoy', exact: true }).click()
       await expect(date).toHaveAttribute('data-date', '2026-09-11')
-      const goal = page.getByRole('combobox', { name: english ? 'Workout goal per week' : 'Meta de entrenamientos por semana', exact: true })
+      const goal = await goalControl(page, english)
       await goal.click()
       const menu = page.getByRole('listbox')
       await expect(menu).toBeVisible()
@@ -301,7 +367,7 @@ try {
       await goal.click()
       await menu.getByRole('option', { name: english ? '7 workouts' : '7 entrenamientos', exact: true }).scrollIntoViewIfNeeded()
       await menu.getByRole('option', { name: english ? '7 workouts' : '7 entrenamientos', exact: true }).click()
-      await expect(goal).toContainText(english ? '7 workouts' : '7 entrenamientos')
+      await expect(await goalControl(page, english)).toContainText(english ? '7 workouts' : '7 entrenamientos')
       await goal.click()
       await expect(menu).toBeVisible()
       await expect(menu.getByRole('option', { name: english ? '7 workouts' : '7 entrenamientos', exact: true })).toBeFocused()
@@ -316,7 +382,7 @@ try {
       assert.equal(await androidBack(page), false)
       await expect(page.getByText(english ? 'Draft saved on this device' : 'Borrador guardado en este dispositivo', { exact: true })).toBeVisible()
       await page.reload()
-      await expect(goal).toContainText(english ? '7 workouts' : '7 entrenamientos')
+      await expect(await goalControl(page, english)).toContainText(english ? '7 workouts' : '7 entrenamientos')
       await page.getByRole('button', { name: english ? 'Save attendance' : 'Guardar constancia', exact: true }).click()
       await expect(page.getByRole('heading', { name: english ? 'Workout saved' : 'Entrenamiento guardado', exact: true })).toBeVisible()
       assert.equal((await snapshot(page)).tables.profiles[0].days_per_week, 7)

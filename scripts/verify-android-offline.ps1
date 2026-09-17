@@ -32,6 +32,11 @@ try {
   foreach ($asset in Get-ChildItem mobile/dist/assets -File) {
     if ((Zip-Hash ('assets/public/assets/' + $asset.Name)) -ne (Get-FileHash $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()) { throw "Built asset mismatch: $($asset.Name)" }
   }
+  $personalIllustrations = @(Get-ChildItem 'mobile/dist/exercises/personal' -File -Filter '*.svg')
+  if ($personalIllustrations.Count -ne 16) { throw 'Missing personal muscle illustrations' }
+  foreach ($illustration in $personalIllustrations) {
+    if ((Zip-Hash ('assets/public/exercises/personal/' + $illustration.Name)) -ne (Get-FileHash $illustration.FullName -Algorithm SHA256).Hash.ToLowerInvariant()) { throw "Personal illustration mismatch: $($illustration.Name)" }
+  }
   $fonts = @(Get-ChildItem mobile/dist/fonts/vekira -File -Filter *.woff2)
   if ($fonts.Count -ne 16) { throw 'Missing original font files' }
   foreach ($font in $fonts) {
@@ -55,6 +60,7 @@ try {
     remoteLoader = $false
     splashAutoHide = $config.plugins.SplashScreen.launchAutoHide
     reviewedPostersVerified = $manifest.exercises.Count
+    personalIllustrationsVerified = $personalIllustrations.Count
     originalFontsVerified = $fonts.Count
     builtAssetsMatch = $true
     sqliteRuntimeBundled = $true

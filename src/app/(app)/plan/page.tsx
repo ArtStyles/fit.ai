@@ -245,6 +245,7 @@ export default async function PlanPage() {
         order_index,
         sets,
         reps,
+        duration_seconds,
         rest_seconds,
         weight_kg,
         notes,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { Reorder, useDragControls } from 'framer-motion'
 import { GripVertical, PencilLine, Repeat2, Trash2, TrendingUp } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -27,10 +27,11 @@ function getExercise(row: PlanWorkoutExerciseRow): PlanExerciseOption | null {
   if (Array.isArray(row.exercise)) return row.exercise[0] ?? null
   return row.exercise
 }
-function formatExerciseDetail(row: PlanWorkoutExerciseRow, t: (source: string) => string): string {
+export function formatExerciseDetail(row: PlanWorkoutExerciseRow, t: (source: string) => string): string {
+  const timed = (row.duration_seconds ?? 0) > 0
   return [
-    row.sets && row.reps ? `${row.sets}x${row.reps}` : null,
-    row.weight_kg !== null ? `${row.weight_kg} kg` : null,
+    timed ? `${row.sets ?? 1} × ${row.duration_seconds} s` : row.sets && row.reps ? `${row.sets}x${row.reps}` : null,
+    !timed && row.weight_kg !== null ? `${row.weight_kg} kg` : null,
     row.target_rpe ? `RPE ${row.target_rpe}` : null,
     row.rest_seconds !== null ? `${row.rest_seconds}s ${t('descanso')}` : null,
   ].filter(Boolean).join(' · ')
@@ -49,17 +50,20 @@ function HiddenFields({ planId, workoutExerciseId }: { planId: string; workoutEx
   )
 }
 
-function PrescriptionFields({ row }: { row?: PlanWorkoutExerciseRow }) {
-  const { t } = useI18n()
+export function WorkoutExercisePrescriptionFields({ row }: { row?: PlanWorkoutExerciseRow }) {
+  const { t, language } = useI18n()
+  const exercise = row ? getExercise(row) : null
+  const timed = (row?.duration_seconds ?? 0) > 0 || ['cardio', 'flexibility'].includes(exercise?.exercise_type ?? '')
 
   return (
     <div className="grid grid-cols-2 gap-3">
       <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Series')}</span>
         <input name="sets" type="number" min={1} max={12} defaultValue={row?.sets ?? 3} className={inputClass} /></label>
-      <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Reps')}</span>
+      {timed ? <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{language === 'en' ? 'Seconds per set' : 'Segundos por serie'}</span>
+        <input name="durationSeconds" type="number" min={1} max={43200} defaultValue={row?.duration_seconds ?? 30} className={inputClass} /></label> : <><label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Reps')}</span>
         <input name="reps" type="number" min={1} max={100} defaultValue={row?.reps ?? 10} className={inputClass} /></label>
       <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Peso kg')}</span>
-        <input name="weightKg" type="number" min={0} step={0.25} defaultValue={row?.weight_kg ?? ''} placeholder={t('Opcional')} className={inputClass} /></label>
+        <input name="weightKg" type="number" min={0} step={0.25} defaultValue={row?.weight_kg ?? ''} placeholder={t('Opcional')} className={inputClass} /></label></>}
       <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('Descanso seg.')}</span>
         <input name="restSeconds" type="number" min={0} max={600} defaultValue={row?.rest_seconds ?? 60} className={inputClass} /></label>
       <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{t('RPE objetivo')}</span>
@@ -69,14 +73,15 @@ function PrescriptionFields({ row }: { row?: PlanWorkoutExerciseRow }) {
 }
 
 export function WorkoutExerciseManager({
-  planId, workoutId, exercises, exerciseOptions,
+  planId, workoutId, exercises, exerciseOptions, allowPersonalExercises = false,
 }: {
   planId: string
   workoutId: string
   exercises: PlanWorkoutExerciseRow[]
   exerciseOptions: PlanExerciseOption[]
+  allowPersonalExercises?: boolean
 }) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const { showToast } = useToast()
   const [order, setOrder] = useState<PlanWorkoutExerciseRow[]>(
     [...exercises].sort((a, b) => a.order_index - b.order_index),
@@ -84,6 +89,9 @@ export function WorkoutExerciseManager({
   const [dialog, setDialog] = useState<{ kind: 'adjust' | 'replace'; row: PlanWorkoutExerciseRow } | null>(null)
   const [savingDetails, setSavingDetails] = useState(false)
   const [replacing, setReplacing] = useState(false)
+  const [replacementError, setReplacementError] = useState<string | null>(null)
+  const removing = useRef(new Set<string>())
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set())
   const [, startTransition] = useTransition()
 
   useEffect(() => {
@@ -95,16 +103,23 @@ export function WorkoutExerciseManager({
     startTransition(() => { void reorderWorkoutExercises(planId, workoutId, ids) })
   }
 
-  function removeRow(row: PlanWorkoutExerciseRow) {
+  async function removeRow(row: PlanWorkoutExerciseRow) {
+    if (removing.current.has(row.id)) return
+    removing.current.add(row.id)
+    setRemovingIds(new Set(removing.current))
     const fd = new FormData()
     fd.set('planId', planId)
     fd.set('workoutExerciseId', row.id)
-    setOrder(prev => prev.filter(r => r.id !== row.id))
-    startTransition(() => {
-      void removeWorkoutExercise(fd)
-        .then(() => showToast({ title: t('Ejercicio quitado'), variant: 'success' }))
-        .catch(() => showToast({ title: t('No se pudo guardar'), variant: 'error' }))
-    })
+    try {
+      await removeWorkoutExercise(fd)
+      setOrder(prev => prev.filter(r => r.id !== row.id))
+      showToast({ title: t('Ejercicio quitado'), variant: 'success' })
+    } catch {
+      showToast({ title: t('No se pudo guardar'), variant: 'error' })
+    } finally {
+      removing.current.delete(row.id)
+      setRemovingIds(new Set(removing.current))
+    }
   }
 
   async function saveExerciseDetails(formData: FormData) {
@@ -124,7 +139,7 @@ export function WorkoutExerciseManager({
   async function replaceSelectedExercise(exerciseIds: string[]) {
     const row = dialog?.kind === 'replace' ? dialog.row : null
     const exerciseId = exerciseIds[0]
-    if (!row || !exerciseId || replacing) return
+    if (!row || !exerciseId || replacing) return false
 
     const formData = new FormData()
     formData.set('planId', planId)
@@ -132,12 +147,16 @@ export function WorkoutExerciseManager({
     formData.set('exerciseId', exerciseId)
 
     setReplacing(true)
+    setReplacementError(null)
     try {
       await replaceWorkoutExercise(formData)
       setDialog(null)
       showToast({ title: t('Ejercicio cambiado'), variant: 'success' })
+      return true
     } catch {
       showToast({ title: t('No se pudo guardar'), variant: 'error' })
+      setReplacementError(t('No se pudo guardar'))
+      return false
     } finally {
       setReplacing(false)
     }
@@ -160,9 +179,10 @@ export function WorkoutExerciseManager({
             key={row.id}
             row={row}
             index={index}
+            removing={removingIds.has(row.id)}
             onAdjust={() => setDialog({ kind: 'adjust', row })}
-            onReplace={() => setDialog({ kind: 'replace', row })}
-            onRemove={() => removeRow(row)}
+            onReplace={() => { setReplacementError(null); setDialog({ kind: 'replace', row }) }}
+            onRemove={() => { void removeRow(row) }}
           />
         ))}
       </Reorder.Group>
@@ -181,7 +201,7 @@ export function WorkoutExerciseManager({
               }}
             >
               <HiddenFields planId={planId} workoutExerciseId={dialog.row.id} />
-              <PrescriptionFields row={dialog.row} />
+              <WorkoutExercisePrescriptionFields row={dialog.row} />
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-muted-foreground">{t('Notas')}</span>
                 <textarea name="notes" defaultValue={dialog.row.notes ?? ''} rows={2}
@@ -201,23 +221,25 @@ export function WorkoutExerciseManager({
           if (!open && !replacing) setDialog(null)
         }}
         options={toExerciseCatalogOptions(exerciseOptions)}
+        language={language}
+        allowPersonalExercises={allowPersonalExercises}
         selectionMode="single"
         paginated
         title={t('Reemplazar ejercicio')}
         confirmVerb={t('Reemplazar')}
-        onConfirm={exerciseIds => {
-          void replaceSelectedExercise(exerciseIds)
-        }}
+        confirmationError={replacementError}
+        onConfirm={replaceSelectedExercise}
       />
     </div>
   )
 }
 
 function ExerciseRow({
-  row, index, onAdjust, onReplace, onRemove,
+  row, index, removing = false, onAdjust, onReplace, onRemove,
 }: {
   row: PlanWorkoutExerciseRow
   index: number
+  removing?: boolean
   onAdjust: () => void
   onReplace: () => void
   onRemove: () => void
@@ -236,9 +258,9 @@ function ExerciseRow({
 
   return (
     <Reorder.Item value={row} dragListener={false} dragControls={dragControls}>
-      <LongPressMenu actions={actions} label={`${exercise?.name ?? t('Ejercicio')}`}>
-        <div className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden rounded-xl border border-border/40 bg-background/50 p-3.5">
-          <button type="button" aria-label={t('Arrastrar para reordenar')}
+      <LongPressMenu actions={actions} disabled={removing} label={`${exercise?.name ?? t('Ejercicio')}`}>
+        <div aria-busy={removing || undefined} className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden rounded-xl border border-border/40 bg-background/50 p-3.5">
+          <button type="button" disabled={removing} aria-label={t('Arrastrar para reordenar')}
             onPointerDown={(e) => { e.stopPropagation(); dragControls.start(e) }}
             className="mt-0.5 flex h-11 w-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted-foreground/60 outline-none hover:bg-muted/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-violet-500 active:cursor-grabbing">
             <GripVertical className="h-5 w-5" />

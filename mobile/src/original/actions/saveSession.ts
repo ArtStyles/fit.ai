@@ -53,7 +53,8 @@ export async function saveInState(state: State, payload: SaveSessionPayload, now
   const locked = context.plan?.prescriptionLocked === true
   const used = new Set<string>()
   for (const exercise of payload.exercises) {
-    if (!uuid(exercise.exerciseId) || !rows(state, 'exercises').some(row => row.id === exercise.exerciseId) || used.has(exercise.workoutExerciseId)) return fail('La sesión contiene ejercicios inválidos o repetidos.')
+    const catalogExercise = rows(state, 'exercises').find(row => row.id === exercise.exerciseId)
+    if (!uuid(exercise.exerciseId) || !catalogExercise || (catalogExercise.is_public !== true && catalogExercise.user_id != null && catalogExercise.user_id !== owner(state)) || used.has(exercise.workoutExerciseId)) return fail('La sesión contiene ejercicios inválidos o repetidos.')
     used.add(exercise.workoutExerciseId)
     if (!Array.isArray(exercise.sets) || exercise.sets.length > 100) return fail('Número de series inválido.')
     const planned = canonical.find(row => row.id === exercise.workoutExerciseId)

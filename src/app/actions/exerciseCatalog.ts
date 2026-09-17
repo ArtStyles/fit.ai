@@ -19,6 +19,7 @@ export async function loadExerciseCatalogPage(request: {
   query?: string
   muscle?: string
   equipment?: string
+  includePersonal?: boolean
 } = {}) {
   const { profile } = await requireAppUserContext()
   const language = exerciseLanguage(profile.language)
