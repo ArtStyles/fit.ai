@@ -1,8 +1,11 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Database } from '@/types/database'
+import { getMobileApiContext } from '@/lib/mobile-api/context'
 
 export async function createClient() {
+  const mobile = getMobileApiContext()
+  if (mobile) return mobile.client
   const cookieStore = await cookies()
 
   return createServerClient<Database>(

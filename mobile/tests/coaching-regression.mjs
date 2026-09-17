@@ -116,6 +116,10 @@ try {
     if (request.method() === 'OPTIONS') return fulfill(null)
     backendRequests.push({ method: request.method(), path: url.pathname, select: url.searchParams.get('select') })
     if (url.pathname === '/auth/v1/user' && request.method() === 'GET') return fulfill(user)
+    if (url.pathname === '/rest/v1/profiles' && request.method() === 'GET') {
+      assert.equal(url.searchParams.get('id'), `eq.${user.id}`)
+      return fulfill({ id: user.id, onboarding_done: true, weight_kg: 75 })
+    }
     // Background fixture: explicit empty FitnessHubState for the independently added auto-sync coordinator.
     if (url.pathname === '/rest/v1/rpc/get_fitness_card_state' && request.method() === 'POST') {
       assert.deepEqual(request.postDataJSON(), {})

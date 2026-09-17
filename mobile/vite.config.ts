@@ -33,6 +33,9 @@ export default defineConfig(({ mode }) => {
     },
   }],
   resolve: { alias: [
+    ...['admin', 'adminOverview', 'adminTrainers'].map((name, index) => ({ find: `@/lib/auth/${name}`, replacement: original(`admin/${['auth', 'overview', 'trainers'][index]}.ts`) })),
+    ...['admin', 'adminTrainers', 'dashboardBanner'].map((name, index) => ({ find: `@/app/actions/${name}`, replacement: original(`admin/${['actions', 'trainer-actions', 'banner-actions'][index]}.ts`) })),
+    ...['trainerApplications', 'chat', 'trainerProfile'].map(name => ({ find: `@/app/actions/${name}`, replacement: original(`actions/${name}.ts`) })),
     { find: '@/lib/legal/platformLegalCopy', replacement: original('legal-content.ts') },
     { find: '@/components/coaching/TrainerProfilePhotoField', replacement: original('TrainerProfilePhotoField.tsx') },
     { find: '@/lib/coaching/trainerPhotoOwner', replacement: original('trainer-photo-owner.ts') },

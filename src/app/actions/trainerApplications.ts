@@ -325,6 +325,74 @@ export async function uploadTrainerCredential(formData: FormData): Promise<Crede
   return { ok: true, credentialId }
 }
 
+function mobileCredentialMetadata(formData: FormData) {
+  const size = Number(formString(formData, 'sizeBytes'))
+  return validateTrainerCredential({
+    credentialType: formString(formData, 'credentialType'),
+    title: formString(formData, 'title'), issuer: formString(formData, 'issuer'),
+    issuedOn: formString(formData, 'issuedOn'), expiresOn: formString(formData, 'expiresOn'),
+    externalUrl: formString(formData, 'externalUrl'),
+    file: Number.isSafeInteger(size) ? { type: formString(formData, 'mimeType'), size } : null,
+  })
+}
+
+/** Bytes go directly to private Storage; the API receives validated metadata only. */
+export async function prepareTrainerCredentialUpload(formData: FormData): Promise<
+  { ok: true; credentialId: string; path: string; token: string } | ActionError
+> {
+  const applicationId = formString(formData, 'applicationId')
+  const validation = mobileCredentialMetadata(formData)
+  if (!validUuid(applicationId) || !validation.ok || validation.value.credentialType !== 'document') {
+    return actionError('Revisa la credencial.', validation)
+  }
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return actionError('Sesión no válida.')
+  const { data: application, error } = await supabase.from('trainer_applications')
+    .select('id, user_id, status, application_kind').eq('id', applicationId).eq('user_id', user.id).maybeSingle() as unknown as {
+      data: { id: string; user_id: string; status: string; application_kind: string } | null; error: unknown
+    }
+  if (error || !application || application.application_kind !== 'initial' || !['draft', 'changes_requested'].includes(application.status)) {
+    return actionError('Solicitud no disponible.')
+  }
+  if (!await processPendingTrainerCredentialCleanup(supabase, user.id)) return actionError('Hay una limpieza de credencial pendiente; intenta nuevamente.')
+  const credentialId = crypto.randomUUID()
+  const path = trainerCredentialPath(user.id, applicationId, credentialId, EXTENSION_BY_MIME_TYPE[validation.value.file!.type])
+  const { data: queued, error: queueError } = await (supabase.rpc as any)('queue_trainer_credential_cleanup', {
+    p_application_id: applicationId, p_credential_id: credentialId, p_storage_path: path,
+  })
+  if (queueError || !isCleanupJob(queued) || queued.storage_path !== path) return actionError('No se pudo preparar la carga privada.')
+  const { data, error: signingError } = await createServiceClient().storage.from(TRAINER_CREDENTIAL_BUCKET).createSignedUploadUrl(path, { upsert: false })
+  if (signingError || data?.path !== path || !data.token) return actionError('No se pudo autorizar la carga privada. Intenta nuevamente.')
+  return { ok: true, credentialId, path, token: data.token }
+}
+
+/** The existing RPC checks actual Storage bytes/MIME, ownership and editable state. */
+export async function finishTrainerCredentialUpload(formData: FormData): Promise<CredentialActionResult> {
+  const applicationId = formString(formData, 'applicationId'), credentialId = formString(formData, 'credentialId')
+  const validation = mobileCredentialMetadata(formData)
+  if (!validUuid(applicationId) || !validUuid(credentialId) || !validation.ok || validation.value.credentialType !== 'document') {
+    return actionError('Revisa la credencial.', validation)
+  }
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return actionError('Sesión no válida.')
+  const value = validation.value
+  const args = {
+    p_application_id: applicationId, p_credential_id: credentialId, p_credential_type: 'document',
+    p_title: value.title, p_issuer: value.issuer, p_issued_on: value.issuedOn,
+    p_expires_on: value.expiresOn, p_external_url: null,
+    p_mime_type: value.file!.type, p_size_bytes: value.file!.size,
+  }
+  // The RPC is idempotent for this owned credential ID; a lost first response is safe to reconcile.
+  let result = await (supabase.rpc as any)('create_trainer_application_credential', args)
+  if (result.error) result = await (supabase.rpc as any)('create_trainer_application_credential', args)
+  if (result.error || result.data?.id !== credentialId || result.data?.application_id !== applicationId) {
+    return actionError('No se pudo confirmar la credencial. Comprueba la solicitud antes de volver a subirla.')
+  }
+  return { ok: true, credentialId }
+}
+
 export async function removeTrainerCredential(formData: FormData): Promise<SimpleActionResult> {
   const applicationId = formString(formData, 'applicationId')
   const credentialId = formString(formData, 'credentialId')

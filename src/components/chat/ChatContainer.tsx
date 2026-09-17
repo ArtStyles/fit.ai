@@ -60,6 +60,9 @@ export function ChatContainer({ initialConversations }: Props) {
   const [sending, setSending]                     = useState(false)
   const [showNewDialog, setShowNewDialog]         = useState(false)
   const [creating, setCreating]                   = useState(false)
+  const [error, setError] = useState('')
+  const requestGeneration = useRef(0)
+  useEffect(() => () => { requestGeneration.current++ }, [])
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -67,25 +70,35 @@ export function ChatContainer({ initialConversations }: Props) {
   }, [messages])
 
   async function handleSelectConversation(conv: ConversationRow) {
+    const generation = ++requestGeneration.current
     setSelected(conv)
     setView('chat')
     setLoadingMessages(true)
-    const msgs = await getMessages(conv.id)
-    setMessages(msgs)
-    setLoadingMessages(false)
+    setMessages([]); setError('')
+    try {
+      const msgs = await getMessages(conv.id)
+      if (generation === requestGeneration.current) setMessages(msgs)
+    } catch (reason) {
+      if (generation === requestGeneration.current) setError(reason instanceof Error ? reason.message : t('No se pudieron cargar los mensajes.'))
+    } finally { if (generation === requestGeneration.current) setLoadingMessages(false) }
   }
 
   async function handleNewConversation(context: ConversationContext) {
+    if (creating) return
+    const generation = requestGeneration.current
     setCreating(true)
+    setError('')
     const label = t(CONTEXT_LABELS[context])
     const date  = new Date().toLocaleDateString(dateLocale(language), {
       day: 'numeric', month: 'short', timeZone,
     })
     const title = `${label} · ${date}`
 
-    const result = await createConversation(context, title)
-    setCreating(false)
-    if (!result.success || !result.conversationId) return
+    let result: Awaited<ReturnType<typeof createConversation>>
+    try { result = await createConversation(context, title); if (generation !== requestGeneration.current) return }
+    catch (reason) { if (generation === requestGeneration.current) setError(reason instanceof Error ? reason.message : t('No se pudo crear la conversación.')); return }
+    finally { setCreating(false) }
+    if (!result.success || !result.conversationId) { setError(result.error ?? t('No se pudo crear la conversación.')); return }
 
     const newConv: ConversationRow = {
       id:         result.conversationId,
@@ -103,6 +116,7 @@ export function ChatContainer({ initialConversations }: Props) {
 
   async function handleSendMessage(content: string) {
     if (!selected || sending) return
+    const generation = requestGeneration.current
 
     const tempId = Date.now()
     const tempUser: MessageRow = {
@@ -122,31 +136,45 @@ export function ChatContainer({ initialConversations }: Props) {
 
     setMessages(prev => [...prev, tempUser, tempAssistant])
     setSending(true)
+    setError('')
 
-    const result = await sendMessage(selected.id, content)
+    try {
+      const result = await sendMessage(selected.id, content)
+      if (generation !== requestGeneration.current) return
 
-    if (result.success && result.assistantContent) {
-      setMessages(prev => prev.map(msg => {
-        if (msg.id === tempUser.id)      return { ...msg, id: result.userMessageId ?? msg.id }
-        if (msg.id === tempAssistant.id) return { ...msg, id: result.assistantMessageId ?? msg.id, content: result.assistantContent! }
-        return msg
-      }))
-      setConversations(prev => prev.map(c =>
-        c.id === selected.id ? { ...c, updated_at: new Date().toISOString() } : c,
-      ))
-    } else {
-      setMessages(prev => prev.filter(m => m.id !== tempUser.id && m.id !== tempAssistant.id))
-    }
-
-    setSending(false)
+      if (result.success && result.assistantContent) {
+        setMessages(prev => prev.map(msg => {
+          if (msg.id === tempUser.id)      return { ...msg, id: result.userMessageId ?? msg.id }
+          if (msg.id === tempAssistant.id) return { ...msg, id: result.assistantMessageId ?? msg.id, content: result.assistantContent! }
+          return msg
+        }))
+        setConversations(prev => prev.map(c =>
+          c.id === selected.id ? { ...c, updated_at: new Date().toISOString() } : c,
+        ))
+      } else {
+        setMessages(prev => prev.filter(m => m.id !== tempUser.id && m.id !== tempAssistant.id))
+        setError(result.error ?? t('No se pudo enviar el mensaje.'))
+      }
+    } catch (reason) {
+      if (generation === requestGeneration.current) {
+        setMessages(prev => prev.filter(m => m.id !== tempUser.id && m.id !== tempAssistant.id))
+        setError(`${reason instanceof Error ? reason.message : t('No se pudo confirmar el mensaje.')} ${t('Vuelve a cargar los mensajes antes de reenviarlo.')}`)
+      }
+    } finally { setSending(false) }
   }
 
   async function handleDeleteConversation(id: string) {
-    setConversations(prev => prev.filter(c => c.id !== id))
-    await deleteConversation(id)
+    setError('')
+    try {
+      const result = await deleteConversation(id)
+      if (!result.success) { setError(t('No se pudo eliminar la conversación.')); return }
+      setConversations(prev => prev.filter(c => c.id !== id))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('No se pudo eliminar la conversación.')) }
   }
 
   function handleBack() {
+    requestGeneration.current++
+    setError(''); setLoadingMessages(false)
     setView('list')
     setSelected(null)
     setMessages([])
@@ -176,6 +204,7 @@ export function ChatContainer({ initialConversations }: Props) {
         </FixedTopBar>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
+          {error && <div role="alert" className="mb-4 rounded-xl border border-red-400/30 p-3 text-sm text-red-200"><p>{error}</p><button type="button" className="mt-2 min-h-11 underline" onClick={() => void handleSelectConversation(selected)}>{t('Volver a cargar mensajes')}</button></div>}
           {loadingMessages ? (
             <div className="flex items-center justify-center py-16">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
@@ -232,6 +261,7 @@ export function ChatContainer({ initialConversations }: Props) {
       </FixedTopBar>
 
       <main className="mx-auto max-w-lg px-4 pt-6">
+        {error && <p role="alert" className="mb-4 rounded-xl border border-red-400/30 p-3 text-sm text-red-200">{error}</p>}
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-400">
@@ -272,6 +302,7 @@ export function ChatContainer({ initialConversations }: Props) {
             <DialogTitle className="text-base text-white">{t('Nueva conversación')}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-2 p-4">
+            {error && <p role="alert" className="rounded-xl border border-red-400/30 p-3 text-sm text-red-200">{error}</p>}
             {CONTEXT_OPTIONS.map(({ value, label, description, Icon }) => (
               <button
                 key={value}

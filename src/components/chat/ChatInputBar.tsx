@@ -60,6 +60,7 @@ export function ChatInputBar({ onSend, disabled }: Props) {
           onInput={handleInput}
           placeholder={t('Escribe un mensaje…')}
           rows={1}
+          maxLength={8000}
           disabled={disabled}
           className="flex-1 resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:opacity-50"
           style={{ minHeight: '24px', maxHeight: '120px' }}

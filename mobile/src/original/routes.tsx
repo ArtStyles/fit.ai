@@ -60,10 +60,14 @@ export const originalRoutes: readonly OriginalRouteDefinition[] = [
   route('/trainers/:slug', () => import('@/app/(app)/trainers/[slug]/page'), 'connected'),
   route('/coaching', () => import('@/app/(app)/coaching/page'), 'connected'),
   route('/notifications', () => import('@/app/(app)/notifications/page'), 'connected'),
-  route('/chat', () => import('./WebHandoffScreen').then(module => ({ default: module.ChatHandoff })), 'local', 'mobile/src/original/WebHandoffScreen.tsx'),
-  route('/admin', () => import('./WebHandoffScreen').then(module => ({ default: module.AdminHandoff })), 'local', 'mobile/src/original/WebHandoffScreen.tsx'),
+  route('/chat', () => import('@/app/(app)/chat/page'), 'connected'),
+  route('/admin', () => import('@/app/(admin)/admin/page'), 'connected', 'src/app/(admin)/admin/page.tsx'),
+  route('/admin/users', () => import('@/app/(admin)/admin/users/page'), 'connected', 'src/app/(admin)/admin/users/page.tsx'),
+  route('/admin/content', () => import('@/app/(admin)/admin/content/page'), 'connected', 'src/app/(admin)/admin/content/page.tsx'),
+  route('/admin/trainers', () => import('@/app/(admin)/admin/trainers/page'), 'connected', 'src/app/(admin)/admin/trainers/page.tsx'),
+  route('/admin/trainers/:applicationId', () => import('@/app/(admin)/admin/trainers/[applicationId]/page'), 'connected', 'src/app/(admin)/admin/trainers/[applicationId]/page.tsx'),
   route('/coach', () => import('@/app/(app)/coach/page'), 'connected'),
-  route('/coach/apply', () => import('./WebHandoffScreen').then(module => ({ default: module.TrainerApplicationHandoff })), 'local', 'mobile/src/original/WebHandoffScreen.tsx'),
+  route('/coach/apply', () => import('@/app/(app)/coach/apply/page'), 'connected'),
   route('/coach/clients', () => import('@/app/(app)/coach/clients/page'), 'connected'),
   route('/coach/clients/:clientId', () => import('@/app/(app)/coach/clients/[clientId]/page'), 'connected'),
   route('/coach/programs', () => import('@/app/(app)/coach/programs/page'), 'connected'),
@@ -154,8 +158,11 @@ export async function loadOriginalRoute(pathname: string, searchParams: URLSearc
   const page = pageModule.default as (props: PageProps) => ReactNode | Promise<ReactNode>
   // Only invoke the designated page. Its returned client components must render
   // normally under React so hooks, context, state and event handlers stay intact.
-  return await page({
+  const rendered = await page({
     params: Promise.resolve(match.params),
     searchParams: Promise.resolve(searchRecord(searchParams)),
   })
+  return /^\/admin(?:\/|$)/.test(pathname)
+    ? (await import('./admin/layout')).wrapAdminPage(rendered)
+    : rendered
 }

@@ -195,11 +195,11 @@ export async function deleteConversation(conversationId: string): Promise<{ succ
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { success: false }
 
-  await (supabase
+  const { error } = await (supabase
     .from('ai_conversations') as any)
     .delete()
     .eq('id', conversationId)
     .eq('user_id', user.id)
 
-  return { success: true }
+  return { success: !error }
 }

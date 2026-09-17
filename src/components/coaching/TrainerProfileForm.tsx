@@ -82,13 +82,14 @@ export function TrainerProfileForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [announcement, setAnnouncement] = useState('')
   const [saving, setSaving] = useState(false)
+  const [photoBusy, setPhotoBusy] = useState(false)
   const reviewLocked = pendingReview?.status === 'under_review'
     || pendingReview?.status === 'interview_required'
   const reviewValues = pendingReview && !reviewLocked ? pendingReview : approvedProfile
 
   async function submitProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (saving) return
+    if (saving || photoBusy) return
     setSaving(true)
     const result = await persistTrainerProfileChanges(new FormData(event.currentTarget))
     setSaving(false)
@@ -134,7 +135,7 @@ export function TrainerProfileForm({
           <h2 className="text-lg font-bold text-foreground">Se actualizan al guardar</h2>
           <p className="mt-1 text-sm text-muted-foreground">Estos datos no necesitan una nueva decisión administrativa.</p>
           <div className="mt-5 space-y-5">
-            <TrainerProfilePhotoField photoUrl={approvedProfile.professionalPhotoUrl} error={fieldErrors.professionalPhotoUrl} />
+            <TrainerProfilePhotoField photoUrl={approvedProfile.professionalPhotoUrl} error={fieldErrors.professionalPhotoUrl} disabled={saving} onBusyChange={setPhotoBusy} />
             <label htmlFor="bio" className="block text-sm font-semibold text-foreground">
               Biografía
               <textarea id="bio" name="bio" rows={5} maxLength={2000} defaultValue={approvedProfile.bio} aria-invalid={Boolean(fieldErrors.bio)} aria-describedby={describedBy('bio', fieldErrors.bio)} className="mt-2 w-full rounded-xl border border-input bg-background px-3 py-3 font-normal" />
@@ -192,7 +193,7 @@ export function TrainerProfileForm({
           </div>
         </fieldset>
 
-        <button type="submit" disabled={saving} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white disabled:opacity-50">
+        <button type="submit" disabled={saving || photoBusy} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white disabled:opacity-50">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
           {saving ? 'Guardando…' : 'Guardar perfil'}
         </button>

@@ -2,6 +2,7 @@ import { createClient as createSupabaseClient, type SupabaseClient } from '@supa
 import { createAppClient } from './query'
 import { getAppStore } from './storage'
 import type { AppStore } from './types'
+import { ensureCanonicalOnboarding } from './onboarding-sync'
 
 export const AUTH_STORAGE_KEY = 'vekira-original-auth'
 const AUTH_KEYS = [AUTH_STORAGE_KEY, `${AUTH_STORAGE_KEY}-code-verifier`, `${AUTH_STORAGE_KEY}-user`]
@@ -42,7 +43,7 @@ export async function signOutLocally(client: SupabaseClient | null = remote, sto
   }
 }
 export function isConnectedRoute(pathname = typeof location === 'undefined' ? '/' : location.pathname) {
-  return /^\/(coach(?:\/|$)|coaching(?:\/|$)|trainers(?:\/|$)|solicitudes(?:\/|$)|feed(?:\/|$)|notifications(?:\/|$)|chat(?:\/|$)|post(?:\/|$)|u(?:\/|$)|buscar(?:\/|$))/.test(pathname)
+  return /^\/(admin(?:\/|$)|coach(?:\/|$)|coaching(?:\/|$)|trainers(?:\/|$)|solicitudes(?:\/|$)|feed(?:\/|$)|notifications(?:\/|$)|chat(?:\/|$)|post(?:\/|$)|u(?:\/|$)|buscar(?:\/|$))/.test(pathname)
 }
 const changedAccount = () => new Error('La cuenta activa cambió o no corresponde a la sesión conectada. Vuelve a conectar esta cuenta para continuar.')
 const offline = () => new Error('Conecta a internet para usar esta función. Tu entrenamiento personal sigue disponible sin conexión.')
@@ -61,12 +62,14 @@ export async function createBoundClient({
   fetcher?: typeof fetch
   expectedAccountId?: string | null
 }): Promise<SupabaseClient> {
+  const initialSessionVersion = store.sessionVersion()
   const initial = await store.read()
+  if (store.sessionVersion() !== initialSessionVersion) throw changedAccount()
   const owner = initial?.accountId ?? null
   if (expectedAccountId !== undefined && expectedAccountId !== owner) throw changedAccount()
   const readSameAccount = async () => {
     const state = await store.read()
-    return state?.accountId === owner ? state : null
+    return store.sessionVersion() === initialSessionVersion && state?.accountId === owner ? state : null
   }
 
   if (!isConnectedRoute(pathname)) {
@@ -101,7 +104,7 @@ export async function createBoundClient({
     if (!online()) throw offline()
     const state = await readSameAccount()
     const current = await remoteClient!.auth.getSession()
-    if (!state || state.remoteUserId !== owner || current.error || current.data.session?.user.id !== owner) throw changedAccount()
+    if (!state || state.remoteUserId !== owner || current.error || current.data.session?.user.id !== owner || store.sessionVersion() !== initialSessionVersion) throw changedAccount()
   }
   await guard()
   // A fixed verified access token prevents a request constructed for account A
@@ -130,6 +133,7 @@ export async function createBoundClient({
       catch (reason) { return { data: { session: null }, error: authFailure(reason) } }
     },
   }
+  await ensureCanonicalOnboarding({ store, client: scoped, owner: owner!, session: initialSessionVersion, assertCurrent: guard })
   return new Proxy(scoped, { get(target, property) {
     if (property === 'auth') return auth
     if (property === 'channel') return () => { throw new Error('La conexión en tiempo real necesita volver a abrirse desde la cuenta activa.') }

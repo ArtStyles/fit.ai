@@ -13,7 +13,7 @@ const suites = [
   'session-readiness-regression', 'free-training-regression', 'guided-free-regression', 'progress-goals-regression',
   'measurement-weight-regression', 'notification-session-state-regression', 'exercise-detail-regression',
   'muscle-catalog-regression', 'muscle-details-regression', 'opengym-regression',
-  'contour-loading-regression', 'navigation-feedback-regression', 'coaching-regression',
+  'contour-loading-regression', 'navigation-feedback-regression', 'coaching-regression', 'portal-migration-regression',
   'companion-regression', 'fitness-card-regression', 'catalog-accessibility-regression', 'connected-boundaries-regression', 'route-a11y-regression',
 ]
 const selected = process.argv.slice(2)

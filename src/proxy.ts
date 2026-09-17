@@ -47,7 +47,7 @@ export async function proxy(request: NextRequest) {
 
   // The mobile account endpoint verifies its bearer token itself. Cookie auth
   // redirects would turn an API failure into HTML or block Capacitor preflight.
-  if (pathname === '/api/account/delete') return supabaseResponse
+  if (pathname === '/api/account/delete' || /^\/api\/mobile\/(admin|coaching|chat)$/.test(pathname)) return supabaseResponse
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

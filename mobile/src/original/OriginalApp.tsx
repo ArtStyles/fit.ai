@@ -114,7 +114,7 @@ export default function OriginalApp() {
   }, [locationKey, change])
   const profile = state?.tables.profiles.find(row => row.id === state.accountId)
   const language = profile?.language === 'en' ? 'en' : 'es'
-  const chrome = state && !/^\/(login|register|recover-password|onboarding|suspended)(\/|$)/.test(location.pathname)
+  const chrome = state && !/^\/(login|register|recover-password|onboarding|suspended|admin)(\/|$)/.test(location.pathname)
   const body = error ? <main className="mx-auto max-w-lg space-y-4 px-5 py-12"><h1 className="font-display text-2xl font-bold">No se pudo abrir esta pantalla</h1><p role="alert" className="text-sm text-muted-foreground">{error}</p><Button onClick={() => navigate('/dashboard')}>Volver a Inicio</Button><Button variant="outline" onClick={() => navigate('/settings/almacenamiento')}>Cuenta y almacenamiento</Button></main>
     : (loading && !page) || pageRoute !== `${state?.accountId ?? ''}:${location.pathname}` ? <AppLoadingScreen /> : <ScreenBoundary key={pageRoute}>{page}</ScreenBoundary>
   const trainer = state?.tables.trainer_profiles?.find(row => row.user_id === state.accountId && row.status === 'active')

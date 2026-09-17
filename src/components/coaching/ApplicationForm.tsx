@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { CheckCircle2, Loader2, Save, Send, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Loader2, Save, Send } from 'lucide-react'
 import { saveTrainerApplicationDraft, submitTrainerApplication } from '@/app/actions/trainerApplications'
 import { validateTrainerApplication } from '@/lib/coaching/applicationValidation'
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/lib/coaching/applicationOptions'
 import type { TrainerApplicationStatus } from '@/lib/coaching/status'
 import { CredentialFields, type TrainerCredentialView } from './CredentialFields'
+import { TrainerProfilePhotoField } from '@/components/coaching/TrainerProfilePhotoField'
 
 export type TrainerApplicationView = {
   id: string
@@ -187,6 +188,9 @@ export function ApplicationForm({
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const values = { ...EMPTY_APPLICATION, ...initialValues, ...initialApplication }
+  const [professionalPhoto, setProfessionalPhoto] = useState(values.professionalPhotoUrl)
+  const [ownedPhotoUrls, setOwnedPhotoUrls] = useState(allowedPhotoUrls)
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [applicationId, setApplicationId] = useState(initialApplication?.id ?? null)
   const [status, setStatus] = useState<TrainerApplicationStatus>(initialApplication?.status ?? 'draft')
   const [credentialCount, setCredentialCount] = useState(initialCredentials.length)
@@ -210,7 +214,7 @@ export function ApplicationForm({
   }
 
   async function saveDraft(formData?: FormData): Promise<DraftActionResult | null> {
-    if (!formRef.current || saving || credentialMutating) return null
+    if (!formRef.current || saving || credentialMutating || photoBusy) return null
     const draftFormData = formData ?? new FormData(formRef.current)
     setSaving(true)
     const result = await persistTrainerApplicationDraft(draftFormData)
@@ -234,7 +238,7 @@ export function ApplicationForm({
     if (!saved?.ok) return
 
     const review = prepareTrainerApplicationReview(currentFormData, {
-      allowedPhotoUrls,
+      allowedPhotoUrls: ownedPhotoUrls,
       credentialCount,
     })
     setFieldErrors(review.fieldErrors)
@@ -249,7 +253,7 @@ export function ApplicationForm({
   }
 
   async function confirmSubmission() {
-    if (!applicationId || submitting || credentialMutating) return
+    if (!applicationId || submitting || credentialMutating || photoBusy) return
     setSubmitting(true)
     const formData = new FormData()
     formData.set('applicationId', applicationId)
@@ -285,24 +289,7 @@ export function ApplicationForm({
         </div>
 
         <fieldset disabled={!editable || saving || submitting || credentialMutating || phase === 'confirming'} className="mt-6 space-y-6">
-          <input type="hidden" name="professionalPhotoUrl" value={values.professionalPhotoUrl ?? ''} />
-          <div
-            id="professionalPhotoUrl"
-            role="group"
-            tabIndex={-1}
-            aria-labelledby="professional-photo-title"
-            aria-invalid={Boolean(fieldErrors.professionalPhotoUrl)}
-            aria-describedby={describedBy('professionalPhotoUrl', fieldErrors.professionalPhotoUrl)}
-            className="rounded-2xl border border-border/60 bg-background/40 p-4 focus:outline-none focus:ring-2 focus:ring-red-400"
-          >
-            <div id="professional-photo-title" className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <ShieldCheck className="h-4 w-4 text-emerald-300" aria-hidden="true" /> Foto profesional
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {values.professionalPhotoUrl ? 'Usaremos la foto de tu perfil actual.' : 'Añade una foto en tu perfil antes de enviar.'}
-            </p>
-            <FieldError name="professionalPhotoUrl" error={fieldErrors.professionalPhotoUrl} />
-          </div>
+          <TrainerProfilePhotoField photoUrl={professionalPhoto} error={fieldErrors.professionalPhotoUrl} onBusyChange={setPhotoBusy} onChange={url => { setProfessionalPhoto(url); if (url) setOwnedPhotoUrls(current => Array.from(new Set([...current, url]))) }} />
 
           <div className="grid gap-5 sm:grid-cols-2">
             <label htmlFor="professionalName" className="text-sm font-semibold text-foreground">
@@ -420,11 +407,11 @@ export function ApplicationForm({
 
         {editable && phase === 'editing' ? (
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <button type="button" onClick={() => void saveDraft()} disabled={saving || submitting || credentialMutating} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+            <button type="button" onClick={() => void saveDraft()} disabled={saving || submitting || credentialMutating || photoBusy} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-border/70 px-4 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
               {saving ? 'Guardando…' : 'Guardar borrador'}
             </button>
-            <button type="button" onClick={() => void reviewApplication()} disabled={saving || submitting || credentialMutating} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
+            <button type="button" onClick={() => void reviewApplication()} disabled={saving || submitting || credentialMutating || photoBusy} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
               <Send className="h-4 w-4" aria-hidden="true" /> Revisar y enviar
             </button>
           </div>
@@ -441,7 +428,7 @@ export function ApplicationForm({
         applicationId={applicationId}
         status={status}
         initialCredentials={initialCredentials}
-        disabled={saving || submitting || credentialMutating || phase !== 'editing'}
+        disabled={saving || submitting || credentialMutating || photoBusy || phase !== 'editing'}
         focusTargetId="credentials"
         errorId={describedBy('credentials', fieldErrors.credentials)}
         invalid={Boolean(fieldErrors.credentials)}
@@ -474,7 +461,7 @@ export function ApplicationForm({
           </dl>
           <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setPhase('editing')} disabled={submitting} className="min-h-11 rounded-xl border border-border/70 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Volver a editar</button>
-            <button type="button" onClick={() => void confirmSubmission()} disabled={!applicationId || submitting || credentialMutating} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
+            <button type="button" onClick={() => void confirmSubmission()} disabled={!applicationId || submitting || credentialMutating || photoBusy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               {submitting ? 'Enviando…' : 'Confirmar y enviar'}
             </button>
