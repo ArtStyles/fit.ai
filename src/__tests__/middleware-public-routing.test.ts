@@ -1,154 +1,49 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 import { isPublicPath, proxy } from '../proxy'
 
-vi.mock('@supabase/ssr', () => ({
-  createServerClient: vi.fn(),
-}))
+vi.mock('@supabase/ssr', () => ({ createServerClient: vi.fn(() => { throw new Error('Portal must not require Supabase auth') }) }))
 
-const mockedCreateServerClient = vi.mocked(createServerClient)
-
-function mockSupabaseUser(user: { id: string; email?: string } | null) {
-  mockedCreateServerClient.mockReturnValue({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user } }),
-    },
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: vi.fn().mockResolvedValue({ data: null }),
-        })),
-      })),
-    })),
-  } as never)
-}
-
-describe('public proxy routing', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('recognizes exact, auth, and localized public paths only', () => {
-    expect(isPublicPath('/')).toBe(true)
-    expect(isPublicPath('/auth/callback')).toBe(true)
-    expect(isPublicPath('/auth/verify')).toBe(true)
-    expect(isPublicPath('/es')).toBe(true)
-    expect(isPublicPath('/en/faq')).toBe(true)
-    expect(isPublicPath('/english')).toBe(false)
-    expect(isPublicPath('/dashboard')).toBe(false)
-  })
-
-  it('allows unauthenticated requests to reach the legacy language selector alias', async () => {
-    mockSupabaseUser(null)
-
-    const response = await proxy(new NextRequest('https://vekira.test/language-selector'))
-
+describe('download portal routing', () => {
+  it.each(['/', '/es', '/en', '/es/privacidad', '/en/terms', '/recover-password', '/delete-account'])('keeps public route %s accessible without authentication', async path => {
+    const response = await proxy(new NextRequest(`https://vekira.test${path}`, { headers: { cookie: 'sb-session=old-session' } }))
     expect(response.status).toBe(200)
     expect(response.headers.get('location')).toBeNull()
   })
-
-  it('forwards and persists the locale on a localized public request', async () => {
-    mockSupabaseUser(null)
-
-    const response = await proxy(new NextRequest('https://vekira.test/en'))
-
-    expect(response.status).toBe(200)
-    expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('en')
-    expect(response.cookies.get('fitai-language')?.value).toBe('en')
+  it.each(['/dashboard', '/plan', '/session/abc', '/coach/apply', '/coach/profile', '/chat', '/admin', '/admin/users', '/login', '/register', '/onboarding', '/settings'])('redirects product route %s to the download', async path => {
+    const response = await proxy(new NextRequest(`https://vekira.test${path}`))
+    expect(response.status).toBe(307)
+    expect(response.headers.get('location')).toBe('https://vekira.test/es#descargar')
   })
-
-  it.each(['en', 'es'] as const)(
-    'forwards %s from a supported registration query for the document language',
-    async locale => {
-      mockSupabaseUser(null)
-
-      const response = await proxy(
-        new NextRequest(`https://vekira.test/register?locale=${locale}`),
-      )
-
-      expect(response.status).toBe(200)
-      expect(response.headers.get('x-middleware-request-x-public-locale')).toBe(locale)
-      expect(response.cookies.get('fitai-language')?.value).toBe(locale)
-    },
-  )
-
-  it('rejects unsupported and forged registration locales while preserving the locale cookie', async () => {
-    mockSupabaseUser(null)
-    const request = new NextRequest('https://vekira.test/register?locale=pt', {
-      headers: {
-        cookie: 'fitai-language=en',
-        'x-public-locale': 'pt',
-      },
-    })
-
-    const response = await proxy(request)
-
-    expect(response.status).toBe(200)
-    expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('en')
-    expect(response.cookies.get('fitai-language')?.value).toBe('en')
+  it('uses a supported query locale or saved preference without trusting headers', async () => {
+    const response = await proxy(new NextRequest('https://vekira.test/register?locale=en', { headers: { 'x-public-locale': 'pt' } }))
+    expect(response.headers.get('location')).toBe('https://vekira.test/en#descargar')
+    const saved = await proxy(new NextRequest('https://vekira.test/chat', { headers: { cookie: 'fitai-language=en' } }))
+    expect(saved.headers.get('location')).toBe('https://vekira.test/en#descargar')
   })
-
-  it('falls back to Spanish instead of trusting a forged registration locale header', async () => {
-    mockSupabaseUser(null)
-    const request = new NextRequest('https://vekira.test/register?locale=pt', {
-      headers: { 'x-public-locale': 'en' },
-    })
-
-    const response = await proxy(request)
-
-    expect(response.status).toBe(200)
-    expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('es')
-  })
-
-  it('removes a client-supplied locale header from unprefixed requests', async () => {
-    mockSupabaseUser(null)
-    const request = new NextRequest('https://vekira.test/', {
-      headers: { 'x-public-locale': 'en' },
-    })
-
-    const response = await proxy(request)
-
-    expect(response.status).toBe(200)
-    expect(response.headers.get('x-middleware-request-x-public-locale')).toBeNull()
-  })
-
-  it('allows authenticated users to visit localized public pages', async () => {
-    mockSupabaseUser({ id: 'user-1', email: 'user@example.com' })
-
-    const response = await proxy(new NextRequest('https://vekira.test/es'))
-
-    expect(response.status).toBe(200)
-    expect(response.headers.get('location')).toBeNull()
-    expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('es')
-  })
-
-  it('never forwards a visitor-supplied identity without a verified session', async () => {
-    mockSupabaseUser(null)
-    const response = await proxy(new NextRequest('https://vekira.test/en', {
-      headers: { 'x-fitai-user-id': 'forged-user', 'x-fitai-user-email': 'forged@example.test' },
-    }))
-
+  it('forwards/persists localized page language and strips all visitor identity headers', async () => {
+    const response = await proxy(new NextRequest('https://vekira.test/en', { headers: { 'x-fitai-user-id': 'forged', 'x-fitai-user-email': 'forged@test', 'x-public-locale': 'pt' } }))
     expect(response.headers.get('x-middleware-request-x-fitai-user-id')).toBeNull()
     expect(response.headers.get('x-middleware-request-x-fitai-user-email')).toBeNull()
+    expect(response.headers.get('x-middleware-request-x-public-locale')).toBe('en')
+    expect(response.cookies.get('fitai-language')?.value).toBe('en')
   })
-
-  it('does not retain a forged email when the verified session has no email', async () => {
-    mockSupabaseUser({ id: 'verified-user' })
-    const response = await proxy(new NextRequest('https://vekira.test/dashboard', {
-      headers: { 'x-fitai-user-id': 'forged-user', 'x-fitai-user-email': 'forged@example.test' },
-    }))
-
-    expect(response.headers.get('x-middleware-request-x-fitai-user-id')).toBe('verified-user')
-    expect(response.headers.get('x-middleware-request-x-fitai-user-email')).toBeNull()
+  it.each(['POST', 'OPTIONS'])('lets %s reach bearer APIs without cookie redirects', async method => {
+    const response = await proxy(new NextRequest('https://vekira.test/api/account/delete', { method }))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('location')).toBeNull()
   })
-
-  it('retains the authenticated redirect on the neutral root', async () => {
-    mockSupabaseUser({ id: 'user-1' })
-
-    const response = await proxy(new NextRequest('https://vekira.test/'))
-
-    expect(response.status).toBe(307)
-    expect(response.headers.get('location')).toBe('https://vekira.test/dashboard')
+  it('does not run legacy product Server Actions', async () => {
+    const response = await proxy(new NextRequest('https://vekira.test/chat', { method: 'POST', headers: { 'next-action': 'old-id' } }))
+    expect(response.status).toBe(410)
+  })
+  it('keeps the narrowly scoped account deletion sign-in available', async () => {
+    const response = await proxy(new NextRequest('https://vekira.test/login?intent=delete-account'))
+    expect(response.status).toBe(200)
+  })
+  it('does not treat arbitrary localized routes as public product access', () => {
+    expect(isPublicPath('/en/admin')).toBe(false)
+    expect(isPublicPath('/es/dashboard')).toBe(false)
+    expect(isPublicPath('/es/privacidad')).toBe(true)
   })
 })

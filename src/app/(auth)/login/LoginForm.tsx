@@ -61,7 +61,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   )
 }
 
-export function LoginForm() {
+export function LoginForm({ destination = '/dashboard' }: { destination?: string }) {
   const { showToast } = useToast()
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({})
@@ -120,15 +120,15 @@ export function LoginForm() {
 
     showToast({
       title: 'Sesión iniciada',
-      description: 'Cargando tu panel.',
+      description: 'Continuando con tu cuenta.',
       variant: 'success',
     })
     window.dispatchEvent(new Event('fitai:navigation-start'))
-    window.location.assign('/dashboard')
+    window.location.assign(destination)
   }
 
   if (verifyEmail) {
-    return <VerifyCodeStep email={verifyEmail} />
+    return <VerifyCodeStep email={verifyEmail} destination={destination} />
   }
 
   return (
@@ -205,7 +205,7 @@ export function LoginForm() {
         {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
       </button>
 
-      <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-center text-sm text-muted-foreground">
+      {destination !== '/delete-account' && <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-center text-sm text-muted-foreground">
         ¿No tienes cuenta?{' '}
         <PendingLink
           href="/register"
@@ -214,7 +214,7 @@ export function LoginForm() {
         >
           Crear cuenta
         </PendingLink>
-      </p>
+      </p>}
     </form>
   )
 }

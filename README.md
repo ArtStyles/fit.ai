@@ -1,5 +1,9 @@
 # Vekira
 
+> **Distribución actual:** `main` es el portal de descarga y soporte público. La aplicación funcional vive en `codex/android-offline` (`.worktrees/android-offline`). Entrenamiento, entrenadores, chat y administración se usan desde Android. Las API autenticadas se alojan en el despliegue de `main`.
+>
+> La descripción histórica de módulos que sigue documenta código conservado para las API y compatibilidad; esas pantallas ya no se ofrecen como producto web. No compilar APK desde main ni fusionar ambas ramas por completo. Véase [diseño de separación](docs/superpowers/specs/2026-09-16-mobile-product-web-portal-design.md).
+
 Vekira es una aplicacion de entrenamiento personalizada, orientada a movil, que
 genera planes semanales, guia sesiones y registra progresion. El flujo principal
 usa Next.js y Supabase; la generacion de planes usa un motor determinista local.
@@ -37,8 +41,8 @@ conectado de extremo a extremo:
 - Conversaciones del coach persistidas en Supabase.
 - Ajustes de perfil, recordatorios locales nativos, politica de privacidad y
   eliminacion completa de cuenta.
-- PWA instalable y proyecto Android con Capacitor, splash screen, haptics y
-  notificaciones locales.
+- Aplicación Android en `codex/android-offline`, con Capacitor, recursos locales,
+  splash screen, haptics y notificaciones locales.
 - Biblioteca de ejercicios desde free-exercise-db con imagenes re-alojadas en Supabase Storage.
 - RLS en Supabase, RPCs optimizadas para dashboard e historial, y fallback a
   queries directas cuando una RPC no esta disponible.
@@ -73,7 +77,7 @@ conectado de extremo a extremo:
 - Anthropic SDK para chat e interpretacion de ajustes.
 - Zustand para el estado de la sesion activa.
 - Vitest para pruebas unitarias y Playwright para recorridos end-to-end.
-- `@ducanh2912/next-pwa` para PWA.
+- `@ducanh2912/next-pwa` permanece como dependencia histórica; el portal no genera PWA.
 - Capacitor 8 para Android y capacidades nativas.
 
 ## Puesta en marcha
@@ -311,28 +315,29 @@ idempotentes los reintentos durante 30 segundos. `pnpm audit:plans` revisa la
 cobertura del catalogo, planes incompletos, duplicados activos y la tasa diaria
 de exito del motor.
 
-## Android y PWA
+## Portal y aplicación Android
 
-Los comandos `pnpm dev` y `pnpm build` usan Webpack explícitamente para conservar
-la integración con `@ducanh2912/next-pwa`; Next.js 16 usa Turbopack por defecto.
-La PWA se genera durante `pnpm build`; en desarrollo el service worker esta
-desactivado. `public/sw.js`, `public/workbox-*.js` y `public/swe-worker-*.js`
-son salida de build y no se versionan.
+`pnpm build` en `main` compila el portal público y sus API con Webpack.
+No genera una PWA. `/sw.js` retira el antiguo service worker y sus cachés,
+conservando los datos del navegador. Las rutas del producto redirigen a la descarga.
 
-El proyecto Android usa `server.url` en `capacitor.config.ts`, por lo que la app
-nativa carga la version desplegada en Vercel. Para sincronizar y abrir Android:
+La aplicación se compila exclusivamente desde `codex/android-offline`, en
+`.worktrees/android-offline`, con `pnpm android:offline:release`. El APK incluye
+`mobile/dist` y no usa `server.url`. Chat, entrenadores y administración se abren
+dentro del APK; sus operaciones conectadas usan API autenticadas en `main`.
+La configuración Capacitor histórica que queda en `main` no es la línea móvil activa.
 
-```bash
-pnpm cap:sync
-pnpm cap:android
-```
+Distribuir juntos el servidor compatible y el APK firmado de `public/downloads`.
+Actualizar `src/lib/marketing/androidRelease.ts` con la versión, tamaño y SHA-256
+del mismo archivo. La recuperación y eliminación de cuenta siguen disponibles
+como páginas públicas de soporte.
 
 ## Scripts
 
 | Comando | Descripcion |
 | --- | --- |
 | `pnpm dev` | Inicia Next.js en desarrollo. |
-| `pnpm build` | Genera el build de produccion y la PWA. |
+| `pnpm build` | Compila el portal público y las API móviles de producción. |
 | `pnpm start` | Sirve el build de produccion. |
 | `pnpm lint` | Ejecuta ESLint. |
 | `pnpm type-check` | Genera los contratos de rutas de Next.js y ejecuta TypeScript sin emitir archivos. |

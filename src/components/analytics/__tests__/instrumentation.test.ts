@@ -17,7 +17,7 @@ describe('privacy-safe funnel instrumentation', () => {
     expect(tracker).toContain("trackEvent('landing_view', { locale, screen: 'landing' })")
     expect(tracker).toContain("trackEvent('primary_cta_clicked', {")
     expect(tracker).toContain("source: 'landing'")
-    expect(tracker).toContain("closest('a[href^=\"/register\"]')")
+    expect(tracker).toContain("closest('a[data-download-cta]')")
   })
 
   it('tracks signup completion for immediate sessions but not before required OTP', () => {

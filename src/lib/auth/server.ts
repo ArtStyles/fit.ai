@@ -7,6 +7,7 @@ import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { isSuspensionActive } from '@/lib/auth/access'
 import { isOwnerAdminEmail } from '@/lib/auth/identity'
+import { getMobileApiContext } from '@/lib/mobile-api/context'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 type AppUser = Pick<User, 'id'> & { email?: string }
@@ -38,8 +39,9 @@ type AppUserContext = {
 export const getAppUserContext = cache(async (): Promise<AppUserContext> => {
   const supabase = await createClient()
   const requestHeaders = await headers()
-  const headerUserId = requestHeaders.get('x-fitai-user-id')
-  const headerEmail = requestHeaders.get('x-fitai-user-email') ?? undefined
+  const mobile = getMobileApiContext()
+  const headerUserId = mobile ? mobile.user.id : requestHeaders.get('x-fitai-user-id')
+  const headerEmail = mobile ? mobile.user.email : requestHeaders.get('x-fitai-user-email') ?? undefined
 
   let user: AppUser | null = headerUserId
     ? { id: headerUserId, email: headerEmail }

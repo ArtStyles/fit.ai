@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { ArrowDown, ArrowRight, Check } from 'lucide-react'
 import { ProductScreenshot } from '@/components/marketing/ProductScreenshot'
 import type { PublicLocale } from '@/lib/i18n/routing'
@@ -31,13 +30,14 @@ export function HeroSection({ content, locale, preview, demoCaption }: HeroSecti
             {content.body}
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <Link
-              href={`/register?locale=${locale}`}
+            <a
+              href={`/${locale}#descargar`}
+              data-download-cta="section"
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-primary px-6 font-bold text-background transition-[filter] duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {content.cta}
               <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
-            </Link>
+            </a>
             <a
               href="#como-funciona"
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-control px-3 font-semibold text-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"

@@ -11,7 +11,7 @@ export function TrackPageView({ locale }: { locale: PublicLocale }) {
     function handleClick(event: MouseEvent) {
       const target = event.target
       if (!(target instanceof Element)) return
-      if (!target.closest('a[href^="/register"]')) return
+      if (!target.closest('a[data-download-cta]')) return
 
       void trackEvent('primary_cta_clicked', {
         locale,

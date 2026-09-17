@@ -23,8 +23,10 @@ export function DeleteAccountConfirmationForm({
 
   return (
     <form action={deleteAccount} className="mt-4 space-y-3">
-      <div className="rounded-xl border border-red-500/20 bg-background/60 px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
-        {t('Esta acción es irreversible. Se eliminarán tu perfil, rutinas, historial de entrenamientos, medidas y conversaciones con la IA. No se puede deshacer.')}
+      <div className="space-y-2 rounded-xl border border-red-500/20 bg-background/60 px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
+        <p>{t('Esta acción es irreversible. Se eliminarán tu perfil y los datos de tu cuenta, con estas excepciones:')}</p>
+        <p>{t('Las rutinas ya entregadas a otros clientes y su historial permanecen en sus cuentas; las rutinas quedan archivadas y sin relación profesional activa. Se conserva la auditoría profesional con identificadores de cuenta y datos de actividad.')}</p>
+        <p>{t('Los archivos exportados y las copias de otros dispositivos requieren su propia eliminación.')}</p>
       </div>
       <label className="block space-y-1.5">
         <span className="text-xs font-medium text-muted-foreground">
@@ -77,7 +79,7 @@ export function DeleteAccountSection() {
         </div>
         <div>
           <p className="text-sm font-semibold text-foreground">{t('Eliminar cuenta')}</p>
-          <p className="text-xs text-muted-foreground">{t('Borra tu cuenta y todos tus datos de forma permanente')}</p>
+          <p className="text-xs text-muted-foreground">{t('Elimina tu cuenta de forma permanente')}</p>
         </div>
       </div>
 

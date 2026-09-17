@@ -322,8 +322,16 @@ export async function expectLandingContract(
   const h1 = page.locator('h1')
   await expect(h1).toHaveCount(1)
   await expect(h1).toHaveText(landing.h1)
-  await expect(page.getByRole('link', { name: landing.cta, exact: true }).first())
-    .toHaveAttribute('href', `/register?locale=${landing.locale}`)
+  const downloadCtas = page.getByRole('link', { name: landing.cta, exact: true })
+  await expect(downloadCtas).toHaveCount(3)
+  for (const cta of await downloadCtas.all()) {
+    await expect(cta).toHaveAttribute('href', `/${landing.locale}#descargar`)
+  }
+  await expect(page.locator('a[href="/login"], a[href^="/register"]')).toHaveCount(0)
+  await expect(page.locator('#descargar a[download]')).toHaveAttribute('href', /^\/downloads\/[^/]+\.apk$/)
+  await expect(page.locator(`header a[href="/${landing.locale}#como-funciona"]`)).toBeVisible()
+  await expect(page.locator(`header a[href="/${landing.locale}#ayuda"]`)).toBeVisible()
+  await expect(page.locator('footer a[href^="mailto:"]')).toBeVisible()
   await expect(page.locator('link[rel="canonical"]'))
     .toHaveAttribute('href', new RegExp(`/${landing.locale}$`))
 }

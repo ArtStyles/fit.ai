@@ -4,7 +4,7 @@ import { Barlow_Condensed, Plus_Jakarta_Sans } from 'next/font/google'
 import { ToastProvider } from '@/components/feedback/ToastProvider'
 import { ActionNotice } from '@/components/feedback/ActionNotice'
 import { SkipLink } from '@/components/accessibility/SkipLink'
-import { NativeAppInit } from '@/components/native/NativeAppInit'
+import { RetireWebAppCache } from '@/components/marketing/RetireWebAppCache'
 import { cookies, headers } from 'next/headers'
 import { normalizeLanguage } from '@/lib/i18n'
 import { SITE_URL } from '@/lib/seo/site'
@@ -28,13 +28,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   metadataBase: SITE_URL,
   title: { default: 'Vekira', template: '%s | Vekira' },
-  description: 'Tu entrenador personal con IA. Rutinas adaptativas semana a semana.',
-  manifest: '/manifest.json',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'Vekira',
-  },
+  description: 'Descarga Vekira para Android. Registra tu rutina y sigue tu progreso desde la aplicación móvil.',
   formatDetection: { telephone: false },
   icons: {
     icon: '/icon.svg',
@@ -59,7 +53,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="bg-background font-sans text-foreground antialiased">
         <SkipLink />
         <I18nProvider language={language} syncDocumentLanguage={false}>
-          <NativeAppInit />
+          <RetireWebAppCache />
           <ToastProvider>
             <Suspense fallback={null}>
               <ActionNotice />

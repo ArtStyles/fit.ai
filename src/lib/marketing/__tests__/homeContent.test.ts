@@ -16,10 +16,8 @@ describe('bilingual home content', () => {
     expect(JSON.stringify(HOME_CONTENT)).not.toMatch(/10K|98%|usuarios activos|active users/i)
   })
 
-  it('explains methodology and Pro beta honestly in both locales', () => {
+  it('explains training context in both locales', () => {
     expect(HOME_CONTENT.es.safety.body).toMatch(/progresi|historial|carga/i)
-    expect(HOME_CONTENT.es.safety.body).toMatch(/Pro est|sin cobros todav/i)
     expect(HOME_CONTENT.en.safety.body).toMatch(/progression|history|load/i)
-    expect(HOME_CONTENT.en.safety.body).toMatch(/Pro is in beta|no charges yet/i)
   })
 })

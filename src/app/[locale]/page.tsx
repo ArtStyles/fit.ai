@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { TrackPageView } from '@/components/analytics/TrackPageView'
+import { DownloadSection } from '@/components/marketing/DownloadSection'
 import { HeroSection } from '@/components/marketing/HeroSection'
 import { MarketingFaq } from '@/components/marketing/MarketingFaq'
 import { MarketingFooter } from '@/components/marketing/MarketingFooter'
@@ -47,6 +48,7 @@ export default async function LocalizedHome({ params: paramsPromise }: Localized
       <MarketingHeader locale={locale} cta={content.hero.cta} />
       <main id="app-main-content">
         <HeroSection content={content.hero} locale={locale} preview={sessionPreview} demoCaption={content.demoCaption} />
+        <DownloadSection content={content.download} />
         <TrainingLoopSection problem={content.problem} loop={content.loop} />
         <ProductPreviewSection previews={content.previews} locale={locale} demoCaption={content.demoCaption} />
         <SafetySection content={content.safety} />

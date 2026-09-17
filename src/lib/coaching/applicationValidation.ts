@@ -25,24 +25,24 @@ export type TrainerApplicationValidationOptions = {
   credentialCount?: number
 }
 
-export type TrainerCredentialInput = {
+export type TrainerCredentialInput<TFile extends Pick<File, 'type' | 'size'> = File> = {
   credentialType: 'document' | 'link' | string
   title: string
   issuer?: string | null
   issuedOn?: string | null
   expiresOn?: string | null
   externalUrl?: string | null
-  file?: File | null
+  file?: TFile | null
 }
 
-export type ValidTrainerCredential = {
+export type ValidTrainerCredential<TFile extends Pick<File, 'type' | 'size'> = File> = {
   credentialType: 'document' | 'link'
   title: string
   issuer: string | null
   issuedOn: string | null
   expiresOn: string | null
   externalUrl: string | null
-  file: File | null
+  file: TFile | null
 }
 
 function stringValue(formData: FormData, key: string): string {
@@ -190,9 +190,9 @@ export function validateTrainerApplication(
   }
 }
 
-export function validateTrainerCredential(
-  input: TrainerCredentialInput,
-): ValidationResult<ValidTrainerCredential> {
+export function validateTrainerCredential<TFile extends Pick<File, 'type' | 'size'> = File>(
+  input: TrainerCredentialInput<TFile>,
+): ValidationResult<ValidTrainerCredential<TFile>> {
   const credentialType = input.credentialType
   const title = input.title.trim()
   const issuer = optional(input.issuer?.trim() ?? '')

@@ -19,27 +19,29 @@ export function MarketingHeader({ locale, cta }: MarketingHeaderProps) {
         </Link>
         <nav
           aria-label={locale === 'es' ? 'Navegación principal' : 'Main navigation'}
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-5"
+          className="order-last flex w-full items-center gap-x-5 sm:order-none sm:ml-auto sm:w-auto"
         >
           <a
-            href="#como-funciona"
-            className="hidden min-h-11 items-center justify-center rounded-control px-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:inline-flex"
+            href={`/${locale}#como-funciona`}
+            className="inline-flex min-h-11 items-center justify-center rounded-control px-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {locale === 'es' ? 'Cómo funciona' : 'How it works'}
           </a>
-          <Link
-            href="/login"
+          <a
+            href={`/${locale}#ayuda`}
             className="inline-flex min-h-11 items-center justify-center rounded-control px-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            {locale === 'es' ? 'Iniciar sesión' : 'Sign in'}
-          </Link>
-          <Link
-            href={`/register?locale=${locale}`}
-            className="hidden min-h-11 items-center justify-center rounded-control bg-primary px-5 text-sm font-bold text-background transition-[filter] duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:inline-flex"
-          >
-            {cta}
-          </Link>
+            {locale === 'es' ? 'Ayuda' : 'Help'}
+          </a>
         </nav>
+        <a
+          href={`/${locale}#descargar`}
+          data-download-cta="section"
+          aria-label={cta}
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-control bg-primary px-4 text-sm font-bold text-background transition-[filter] duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          {locale === 'es' ? 'Descargar' : 'Download'}
+        </a>
       </div>
     </header>
   )

@@ -8,7 +8,7 @@ type LegalSection = {
   items?: string[]
 }
 
-type LegalCopy = {
+export type LegalCopy = {
   title: string
   description: string
   lastUpdated: string
@@ -24,7 +24,7 @@ export const LEGAL_COPY: Record<PublicLocale, Record<LegalDocumentKind, LegalCop
     privacy: {
       title: 'Política de privacidad',
       description: 'Cómo Vekira recopila, usa y protege tus datos.',
-      lastUpdated: '6 de julio de 2026',
+      lastUpdated: '16 de septiembre de 2026',
       backLabel: 'Volver al inicio',
       intro:
         'En Vekira tratamos tus datos con cuidado. Esta política explica qué información recopilamos, para qué la usamos, con quién la compartimos y qué opciones tienes sobre ella.',
@@ -70,6 +70,7 @@ export const LEGAL_COPY: Record<PublicLocale, Record<LegalDocumentKind, LegalCop
           title: '5. Conservación de los datos',
           paragraphs: [
             'Conservamos tu información mientras tu cuenta esté activa o durante el tiempo necesario para prestar el servicio y cumplir obligaciones aplicables. Si eliminas tu cuenta, iniciaremos la eliminación de tus datos personales, salvo la información que debamos conservar por motivos legales o de seguridad.',
+            'Si eres entrenador, las rutinas ya entregadas a tus clientes y su historial permanecen en las cuentas de esos clientes; las rutinas quedan archivadas y sin relación profesional activa. Se conservan registros de auditoría profesional con identificadores de cuenta y datos de la actividad registrada. Los archivos exportados y las copias de otros dispositivos requieren su propia eliminación.',
           ],
         },
         {
@@ -162,7 +163,7 @@ export const LEGAL_COPY: Record<PublicLocale, Record<LegalDocumentKind, LegalCop
     privacy: {
       title: 'Privacy policy',
       description: 'How Vekira collects, uses, and protects your data.',
-      lastUpdated: 'July 6, 2026',
+      lastUpdated: 'September 16, 2026',
       backLabel: 'Back to home',
       intro:
         'Vekira handles your data with care. This policy explains what information we collect, why we use it, who we share it with, and the choices available to you.',
@@ -208,6 +209,7 @@ export const LEGAL_COPY: Record<PublicLocale, Record<LegalDocumentKind, LegalCop
           title: '5. Data retention',
           paragraphs: [
             'We keep information while your account is active or as needed to provide the service and meet applicable obligations. If you delete your account, we will begin deleting personal data except information we must retain for legal or security reasons.',
+            'If you are a trainer, plans already delivered to your clients and their history remain in those clients’ accounts; the plans are archived without an active professional relationship. Professional audit records retain account identifiers and recorded activity data. Exported files and copies on other devices require their own deletion.',
           ],
         },
         {

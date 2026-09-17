@@ -1,11 +1,13 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse, type NextRequest } from 'next/server'
+import { normalizeLanguage } from '@/lib/i18n'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  const locale = normalizeLanguage(request.cookies.get('fitai-language')?.value)
+  const next = searchParams.get('next') === '/delete-account' ? '/delete-account' : `/${locale}#descargar`
 
   if (code) {
     const cookieStore = await cookies()
@@ -30,5 +32,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+  return NextResponse.redirect(`${origin}/recover-password?error=auth_callback_failed&locale=${locale}`)
 }

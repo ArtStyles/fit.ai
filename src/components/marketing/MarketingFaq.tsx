@@ -8,9 +8,9 @@ type MarketingFaqProps = {
 
 export function MarketingFaq({ title, items }: MarketingFaqProps) {
   return (
-    <section className="border-b border-border/60 px-5 py-12 sm:px-8 sm:py-16 lg:px-12">
+    <section id="ayuda" aria-labelledby="faq-title" className="scroll-mt-8 border-b border-border/60 px-5 py-12 sm:px-8 sm:py-16 lg:px-12">
       <div className="mx-auto w-full max-w-4xl">
-        <h2 className="mb-7 font-display text-4xl font-bold leading-tight tracking-[-0.025em] text-foreground sm:text-5xl">
+        <h2 id="faq-title" className="mb-7 font-display text-4xl font-bold leading-tight tracking-[-0.025em] text-foreground sm:text-5xl">
           {title}
         </h2>
         <div className="space-y-3">

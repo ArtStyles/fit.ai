@@ -5,6 +5,7 @@ import { type PublicLocale } from '@/lib/i18n/routing'
 import { LEGAL_COPY, type LegalDocumentKind } from './legalContent'
 import { legalBackTarget, type LegalReturnSource } from './legalBackTarget'
 import { requiredSupportEmail } from './supportEmail'
+import { platformLegalCopy } from '@/lib/legal/platformLegalCopy'
 
 type LegalDocumentPageProps = {
   paramsLocale: string
@@ -21,13 +22,13 @@ export function LegalDocumentPage({
 }: LegalDocumentPageProps) {
   if (paramsLocale !== expectedLocale) notFound()
 
-  const content = LEGAL_COPY[expectedLocale][document]
+  const content = platformLegalCopy(expectedLocale, document, LEGAL_COPY[expectedLocale][document])
   const supportEmail = requiredSupportEmail()
   const Icon = document === 'privacy' ? ShieldCheck : Scale
   const backTarget = legalBackTarget(expectedLocale, returnTo)
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div lang={expectedLocale} className="min-h-screen bg-background text-foreground">
       <PageTopBar
         title={content.title}
         subtitle={`${expectedLocale === 'es' ? 'Última actualización' : 'Last updated'}: ${content.lastUpdated}`}

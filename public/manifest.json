@@ -1,9 +1,9 @@
 {
   "name": "Vekira",
   "short_name": "Vekira",
-  "description": "Tu entrenador personal con IA. Rutinas adaptativas semana a semana.",
+  "description": "Descarga la aplicación Vekira para Android.",
   "start_url": "/",
-  "display": "standalone",
+  "display": "browser",
   "background_color": "#0d0d14",
   "theme_color": "#7c3aed",
   "orientation": "portrait-primary",

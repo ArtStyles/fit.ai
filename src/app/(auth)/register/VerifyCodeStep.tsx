@@ -58,7 +58,7 @@ const COPY = {
   },
 } as const
 
-export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale?: AppLanguage }) {
+export function VerifyCodeStep({ email, locale = 'es', destination }: { email: string; locale?: AppLanguage; destination?: string }) {
   const router = useRouter()
   const { showToast } = useToast()
   const copy = COPY[locale]
@@ -104,7 +104,7 @@ export function VerifyCodeStep({ email, locale = 'es' }: { email: string; locale
           variant: 'success',
         })
         window.dispatchEvent(new Event('fitai:navigation-start'))
-        router.push(href)
+        router.push(destination ?? href)
         router.refresh()
       },
     })

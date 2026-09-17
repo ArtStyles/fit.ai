@@ -3,9 +3,9 @@ import { legalBackTarget } from '../legalBackTarget'
 
 describe('legalBackTarget', () => {
   it.each([
-    ['es', { href: '/settings/cuenta', label: 'Cuenta' }],
-    ['en', { href: '/settings/cuenta', label: 'Account' }],
-  ] as const)('returns to localized account settings for the exact allowlisted token in %s', (locale, expected) => {
+    ['es', { href: '/es', label: 'Volver al inicio' }],
+    ['en', { href: '/en', label: 'Back to home' }],
+  ] as const)('returns to the portal even for a retired account-settings link in %s', (locale, expected) => {
     expect(legalBackTarget(locale, 'settings-account')).toEqual(expected)
   })
 
